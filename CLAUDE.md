@@ -1,0 +1,11 @@
+## 하네스: civwar.io 게임 개발
+
+**목표:** 실시간 멀티플레이어 영토 정복 IO 게임(30~60분 세션)을 설계-백엔드-프론트엔드-QA 파이프라인으로 개발한다.
+
+**트리거:** 게임 개발/수정 관련 요청 시 `civwar-orchestrator` 스킬을 사용하라 (초기 개발뿐 아니라 규칙 수정, 밸런스 조정, 서버/프론트 보완 등 후속 요청도 포함). 단순 질문은 직접 응답 가능.
+
+**변경 이력:**
+| 날짜 | 변경 내용 | 대상 | 사유 |
+|------|----------|------|------|
+| 2026-08-04 | 초기 구성 (game-designer, multiplayer-backend-engineer, frontend-game-client-engineer, integration-qa + civwar-orchestrator) | 전체 | 빈 레포에서 실시간 IO 게임 개발 하네스 신규 구축 |
+| 2026-08-04 | Notion 프로젝트 관리 문서 자동 동기화 추가, Phase 2(GDD) 완료 후 사용자 승인 게이트 명시 | civwar-orchestrator | 사용자가 Notion을 프로젝트 관리 문서로 지정, 1단계 기획은 진행 전 반드시 검토받기로 합의 |
