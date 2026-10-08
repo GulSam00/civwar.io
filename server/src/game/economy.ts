@@ -7,6 +7,11 @@ import {
   FLAG_CAP_BASE,
   FLAG_CAP_HARD_MAX,
   FLAG_TILES_PER_SLOT,
+  GARRISON_ESCALATE_MAX,
+  GARRISON_UPKEEP_FREE_PERMILLE,
+  GARRISON_UPKEEP_MAX_PERMILLE,
+  GARRISON_UPKEEP_PERMILLE,
+  UNIT_GARRISON_PERMILLE,
   GOLD_RATE_PERMILLE,
   MOB_SLOT_BONUS_BY_TIER,
   REGEN_BASE_MILLI,
@@ -63,11 +68,17 @@ export function grossGoldMilliPerTick(p: Readonly<PlayerState>): number {
 }
 
 /**
- * 주둔 유지비 permille (GDD 4.4 — 2차 구현).
- * 1차: 깃발 시뮬레이션이 없으므로 0. 2차에서 f.calmTicks/isGarrison(9단계 결과, 1 tick 지연)을 읽어 산출한다.
+ * 주둔 유지비 permille (GDD 4.4 a). 2단계에서 호출 → 직전 tick 종료 시점 상태를 읽는다(1 tick 지연, 의도된 고정 규칙).
+ * isGarrison(f) = ENGAGED ∧ tile[anchor].owner == f.ownerId. escalate(f) ≡ 1 (GARRISON_ESCALATE_MAX = 1, 사용자 기각).
  */
-export function garrisonUpkeepPermille(_state: Readonly<GameState>, _p: Readonly<PlayerState>): number {
-  return 0;
+export function garrisonUpkeepPermille(state: Readonly<GameState>, p: Readonly<PlayerState>): number {
+  let w = 0;
+  for (const f of state.flags) {
+    if (f.ownerId !== p.id || f.state !== 'ENGAGED' || state.owners[f.anchorTileId] !== p.id) continue;
+    w += UNIT_GARRISON_PERMILLE[f.unit] * GARRISON_ESCALATE_MAX;
+  }
+  const billable = Math.max(0, w - GARRISON_UPKEEP_FREE_PERMILLE);
+  return Math.min(GARRISON_UPKEEP_MAX_PERMILLE, Math.floor((billable * GARRISON_UPKEEP_PERMILLE) / 1000));
 }
 
 export function flagCap(p: Readonly<PlayerState>): number {

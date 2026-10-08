@@ -80,11 +80,11 @@ describe('Simulation', () => {
     expect(sim.state.players[1].tech[1]).toBe(1);
   });
 
-  it('깃발 명령은 1차에서 NOT_IMPLEMENTED 로 회신', () => {
+  it('깃발 명령: 물 앵커는 WATER 로 거절 (2차 — NOT_IMPLEMENTED 소멸)', () => {
     const sim = makeSim();
     sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 5, unit: 1, troops: 50, anchorTileId: 0, originBaseTileId: null });
     const out = sim.step();
-    expect(out.personal[0].msg).toMatchObject({ type: 'cmd_ack', clientSeq: 5, accepted: false, reason: 'NOT_IMPLEMENTED' });
+    expect(out.personal[0].msg).toMatchObject({ type: 'cmd_ack', clientSeq: 5, accepted: false, reason: 'WATER' });
   });
 
   it('입력 큐 정렬: (recvSeq, connId, clientSeq)', () => {

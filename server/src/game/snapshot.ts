@@ -3,6 +3,7 @@
  */
 import {
   BASE_HP_DELTA_INTERVAL,
+  FLAG_BIT,
   BASE_HP_MAX_MILLI,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENDGAME_RUSH_TICK,
@@ -127,6 +128,8 @@ function flagSnap(f: Readonly<Flag>): FlagSnapshot {
     blocked: f.blocked,
     disengaging: f.disengageUntilTick !== null,
     postureCooldownUntilTick: f.postureCooldownUntilTick,
+    disengageUntilTick: f.disengageUntilTick,
+    breakaway: f.breakaway,
   };
 }
 
@@ -143,7 +146,25 @@ export function buildSnapshotFull(state: Readonly<GameState>): S2C_SnapshotFull 
     thresholdPct: thresholdPct(t),
     ticksRemaining: Math.max(0, HARD_TIMEOUT_TICK - t),
     endgameRushActive: state.endgameRushActive,
+    allyProposals: state.proposals.map((p) => ({ proposalId: p.id, fromPlayerId: p.from, toPlayerId: p.to, expireTick: p.expireTick })),
+    allianceFreezeUntilTick: state.allianceFreezeUntilTick,
+    lockoutDissolveTick: state.lockoutDissolveTick,
   };
+}
+
+export function flagBits(f: Readonly<Flag>): number {
+  return (
+    (f.inCombat ? FLAG_BIT.IN_COMBAT : 0) |
+    (f.routed ? FLAG_BIT.ROUTED : 0) |
+    (f.blocked ? FLAG_BIT.BLOCKED : 0) |
+    (f.disengageUntilTick !== null ? FLAG_BIT.DISENGAGING : 0) |
+    (f.breakaway ? FLAG_BIT.BREAKAWAY : 0) |
+    (f.stalled ? FLAG_BIT.STALLED : 0)
+  );
+}
+
+function flagFlagsKey(f: Readonly<Flag>): string {
+  return `${f.posture}|${flagBits(f)}|${f.postureCooldownUntilTick}`;
 }
 
 /** 델타용 "마지막으로 보낸 값" 캐시 */
@@ -152,6 +173,7 @@ export class DeltaTracker {
   private flagPos = new Map<number, number>();
   private flagStat = new Map<number, string>();
   private flagTarget = new Map<number, number | null>();
+  private flagFlag = new Map<number, string>();
   private baseHp = new Map<number, number>();
   private threshold = -1;
 
@@ -166,7 +188,9 @@ export class DeltaTracker {
     this.flagPos.clear();
     this.flagStat.clear();
     this.flagTarget.clear();
+    this.flagFlag.clear();
     for (const f of state.flags) {
+      this.flagFlag.set(f.id, flagFlagsKey(f));
       this.flagPos.set(f.id, f.posTileId);
       this.flagStat.set(f.id, `${Math.floor(f.troopsMilli / 1000)}|${f.state}`);
       this.flagTarget.set(f.id, f.targetTileId);
@@ -189,6 +213,7 @@ export class DeltaTracker {
       flagTargets: [],
       baseHp: [],
       flagsGone: state.changes.flagsGone.slice(),
+      flagFlags: [],
     };
     if (t % PLAYER_DELTA_INTERVAL === 0) {
       for (const p of state.players) {
@@ -206,7 +231,8 @@ export class DeltaTracker {
         this.flagPos.set(f.id, f.posTileId);
         d.flagMoves.push([f.id, f.posTileId]);
       }
-      if (t % PLAYER_DELTA_INTERVAL === 0) {
+      // 병력·상태: 1초 주기 — 단 교전 중 깃발은 매 tick (GDD 7.3 "교전 깃발은 매 tick 병력 필드가 델타에 실린다")
+      if (t % PLAYER_DELTA_INTERVAL === 0 || f.inCombat || this.flagStat.get(f.id) === undefined) {
         const troops = Math.floor(f.troopsMilli / 1000);
         const key = `${troops}|${f.state}`;
         if (this.flagStat.get(f.id) !== key) {
@@ -215,6 +241,11 @@ export class DeltaTracker {
         }
       }
       if (f.posture === POSTURE.ATTACK && f.state === 'ENGAGED') d.flagProgress.push([f.id, progressPct(f.progressMilli)]);
+      const fk = flagFlagsKey(f);
+      if (this.flagFlag.get(f.id) !== fk) {
+        this.flagFlag.set(f.id, fk);
+        d.flagFlags.push([f.id, f.posture, flagBits(f), f.postureCooldownUntilTick]);
+      }
       if (this.flagTarget.get(f.id) !== f.targetTileId) {
         this.flagTarget.set(f.id, f.targetTileId);
         d.flagTargets.push([f.id, f.targetTileId]);
@@ -224,6 +255,7 @@ export class DeltaTracker {
       this.flagPos.delete(id);
       this.flagStat.delete(id);
       this.flagTarget.delete(id);
+      this.flagFlag.delete(id);
     }
     if (t % BASE_HP_DELTA_INTERVAL === 0) {
       for (const b of state.bases) {

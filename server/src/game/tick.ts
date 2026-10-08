@@ -9,8 +9,8 @@
  *    플레이어 = playerId ASC. (state.flags / state.bases / state.players 는 항상 그 순서로 유지된다.)
  *  - Math.random·부동소수 누적 금지. 정수·floor/ceil·isqrt 만.
  *
- * 1차 구현 범위: 1(명령: 테크) · 2(병력·골드) · 3(타이머 일부) · 8(기지 회복) · 9 · 12 · 13 · 14.
- * 4·4a·4b·5·6·7·10·11 은 자리만 있다 (2차: 깃발·전투, 3차: 봇).
+ * 2차 구현 범위: 1~14 전 단계 (4 movement.ts / 4a·4b combat.ts / 5·6·7·9·10 gauge.ts / 3 alliance.ts).
+ * 11(봇)만 자리 — 3차.
  */
 import {
   BASE_HP_MAX_MILLI,
@@ -28,25 +28,25 @@ import {
   type C2S_GameCommand,
   type S2C_GameOver,
 } from '@civwar/shared';
+import { allianceTimers, dropPlayerDiplomacy } from './alliance.js';
+import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from './combat.js';
 import { stage1_drainInput, type QueuedCommand } from './commands.js';
+import { removeFlag } from './flagops.js';
+import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage9_derived, stage10_flagEnd } from './gauge.js';
+import { stage4_moveFlags } from './movement.js';
+import { destOf, fieldKey, mobilityTier } from './rules.js';
 import { garrisonUpkeepPermille, grossGoldMilliPerTick, regenMilliPerTick, troopCap } from './economy.js';
 import { newOutbox, type Outbox } from './outbox.js';
 import { DeltaTracker, buildSnapshotFull } from './snapshot.js';
 import { compareRank, judgeVictory, thresholdPct, thresholdScaled } from './victory.js';
 import type { GameState } from './state.js';
 
-// ───────────────────── Phase A 결과 타입 (tick 로컬, 2차에서 채움) ─────────────────────
-
-/** 4a 산출: flagId → 이번 tick 손실(milli). 무리 처리 순서와 무관하게 4b 이전 확정 */
-export interface FlagCombatPlan {
-  readonly lossMilliByFlag: ReadonlyMap<number, number>;
-}
-/** 6 산출: 깃발별 밀기(진척도 +), 방어 배분(되돌리기 −), 기지 피해 */
-export interface PushPlan {
-  readonly pushMilliByFlag: ReadonlyMap<number, number>;
-  readonly undoMilliByFlag: ReadonlyMap<number, number>;
-  readonly baseDamageByTile: ReadonlyMap<number, ReadonlyMap<number, number>>; // tileId → flagId → dmg
-}
+// Phase A 결과 타입은 각 모듈에 있다: FlagCombatPlan(combat.ts) / PushPlan(gauge.ts)
+export type { FlagCombatPlan } from './combat.js';
+export type { PushPlan } from './gauge.js';
+export { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from './combat.js';
+export { stage4_moveFlags } from './movement.js';
+export { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage9_derived, stage10_flagEnd } from './gauge.js';
 
 // ───────────────────── 봇 자리 (3차) ─────────────────────
 
@@ -64,9 +64,15 @@ export function stage2_produce(state: GameState): void {
   for (let id = 1; id < state.players.length; id++) {
     const p = state.players[id];
     if (!p.alive) continue;
-    // 병력 (3.2)
-    p.troopsMilli += regenMilliPerTick(p);
-    p.troopsMilli = Math.min(p.troopsMilli, troopCap(p) * 1000);
+    // 병력 (3.2) — troops = min(troops + regen, cap). cap 초과분(환급·영토 상실)은 잘리고 장부 capClamp 로 기록
+    const regen = regenMilliPerTick(p);
+    p.troopsMilli += regen;
+    state.ledger.regen += regen;
+    const capMilli = troopCap(p) * 1000;
+    if (p.troopsMilli > capMilli) {
+      state.ledger.capClamp += p.troopsMilli - capMilli;
+      p.troopsMilli = capMilli;
+    }
     // 골드 (3.3) — 유지비는 9단계(직전 tick)의 주둔 상태를 읽는다
     const gross = grossGoldMilliPerTick(p);
     const upkeepPm = garrisonUpkeepPermille(state, p);
@@ -77,9 +83,9 @@ export function stage2_produce(state: GameState): void {
   }
 }
 
-/** 3. 외교·시간 타이머 — 동맹(6.2)은 2차. 1차: 종반 러시 발동, 접속 유예 → 봇 인계, threshold_update */
+/** 3. 외교·시간 타이머 — 동맹(6.2), 종반 러시 발동, 접속 유예 → 봇 인계, threshold_update */
 export function stage3_timers(state: GameState, t: number, out: Outbox): void {
-  // (2차) 제안 만료, BREAKING→BROKEN, freeze 해제, lockout 카운트다운
+  allianceTimers(state, t, out);
   if (t === ENDGAME_RUSH_TICK) {
     state.endgameRushActive = true;
     out.broadcast.push({ type: 'endgame_rush', tick: t, costMultPermille: ENDGAME_RUSH_COST_MULT_PERMILLE });
@@ -99,30 +105,6 @@ export function stage3_timers(state: GameState, t: number, out: Outbox): void {
   }
 }
 
-/** 4. 깃발 이동 — flagId ASC (2차) */
-export function stage4_moveFlags(_state: GameState, _t: number, _out: Outbox): void {
-  // 2차: 전진, 노출 소모, MARCHING→ENGAGED, RETURNING 완료, ZOC(tick 시작 스냅숏 기준)
-}
-
-/** 4a. 깃발 전투 Phase A — 읽기 전용. 무리 탐색(flagId ASC 시드 BFS), 손실 산출 (2차) */
-export function stage4a_flagCombatPhaseA(_state: Readonly<GameState>, _t: number): FlagCombatPlan {
-  return { lossMilliByFlag: new Map() };
-}
-
-/** 4b. 깃발 전투 Phase B — flagId ASC. 손실 적용, inCombat/routed/blocked/breakaway 갱신 (2차) */
-export function stage4b_flagCombatPhaseB(_state: GameState, _plan: FlagCombatPlan, _t: number, _out: Outbox): void {}
-
-/** 5. AP 예산 누적 — flagId ASC, ENGAGED 이고 !inCombat 만. 이후 6·7 동결 (2차) */
-export function stage5_accumulateBudget(_state: GameState, _t: number): void {}
-
-/** 6. 전투 Phase A — 읽기 전용. 밀기 산출 + 방어 그리디 배분 (2차) */
-export function stage6_combatPhaseA(_state: Readonly<GameState>, _t: number): PushPlan {
-  return { pushMilliByFlag: new Map(), undoMilliByFlag: new Map(), baseDamageByTile: new Map() };
-}
-
-/** 7. 전투 Phase B — tileId ASC. 진척도·기지 체력 적용, 소유권 이전(setTileOwner), 병력 차감 (2차) */
-export function stage7_combatPhaseB(_state: GameState, _plan: PushPlan, _t: number, _out: Outbox): void {}
-
 /** 8. 기지 체력 회복 — tileId ASC. 이번 tick 피해 없음 + 지연 경과한 기지만 */
 export function stage8_baseRegen(state: GameState, t: number): void {
   for (const b of state.bases) {
@@ -135,12 +117,6 @@ export function stage8_baseRegen(state: GameState, t: number): void {
     b.hpMilli = Math.min(BASE_HP_MAX_MILLI, b.hpMilli + BASE_HP_REGEN_MILLI);
   }
 }
-
-/** 9. 파생 상태 — tiles/goldWeight 는 증분 완료. flagId ASC 로 calmTicks 갱신 (2차) */
-export function stage9_derived(_state: GameState, _t: number): void {}
-
-/** 10. 깃발 종료 판정 — 소진/전선 소멸/guard 소멸/중립 자동 전환/IDLE 타임아웃 (2차) */
-export function stage10_flagEnd(_state: GameState, _t: number, _out: Outbox): void {}
 
 /** 11. 봇 AI — t % BOT_DECISION_INTERVAL == 0, botIndex(=playerId) ASC. 명령은 다음 tick 큐로 */
 export function stage11_bots(state: GameState, t: number, brain: BotBrain): { playerId: number; cmds: C2S_GameCommand[] }[] {
@@ -162,17 +138,18 @@ export function stage12_elimination(state: GameState, t: number, out: Outbox): v
     if (!p.alive || p.tiles !== 0) continue;
     p.alive = false;
     p.eliminatedTick = t;
+    state.ledger.eliminated += p.troopsMilli;
     p.troopsMilli = 0;
     p.goldMilli = 0;
     p.goldWeight = 0;
     // 모든 깃발 즉시 소멸 (환불 없음)
-    state.flags = state.flags.filter((f) => {
-      if (f.ownerId !== id) return true;
-      state.changes.flagsGone.push(f.id);
-      return false;
-    });
-    // 모든 동맹 즉시 해제
-    state.alliances = state.alliances.filter((a) => a.a !== id && a.b !== id);
+    for (const f of state.flags.filter((x) => x.ownerId === id)) {
+      state.ledger.eliminated += f.troopsMilli;
+      f.troopsMilli = 0;
+      removeFlag(state, f, t, 'eliminated', 0, out);
+    }
+    // 모든 동맹·제안 즉시 해제 (쿨다운 없이)
+    dropPlayerDiplomacy(state, id, t, out);
     out.broadcast.push({ type: 'player_eliminated', tick: t, playerId: id, byPlayerId: p.lastLostTo });
   }
 }
@@ -203,6 +180,14 @@ export function stage14_broadcast(state: GameState, t: number, tracker: DeltaTra
     out.broadcast.push(buildSnapshotFull(state));
     tracker.resync(state);
   }
+}
+
+/** 거리장 캐시 정리 — 살아 있는 깃발이 쓰지 않는 키 삭제 (결과에 영향 없음, 메모리만) */
+function pruneFields(state: GameState): void {
+  if (state.fields.size === 0) return;
+  const used = new Set<string>();
+  for (const f of state.flags) used.add(fieldKey(destOf(f), mobilityTier(state.players[f.ownerId])));
+  for (const k of [...state.fields.keys()]) if (!used.has(k)) state.fields.delete(k);
 }
 
 // ───────────────────── 시뮬레이션 ─────────────────────
@@ -248,13 +233,14 @@ export class Simulation {
     const push = stage6_combatPhaseA(state, t); // 6 (읽기 전용)
     stage7_combatPhaseB(state, push, t, out); // 7
     stage8_baseRegen(state, t); // 8
-    stage9_derived(state, t); // 9
+    stage9_derived(state, t, out); // 9
     stage10_flagEnd(state, t, out); // 10
     for (const { playerId, cmds } of stage11_bots(state, t, this.brain)) {
       for (const c of cmds) this.enqueue(0, playerId, c); // 11 → 다음 tick 입력
     }
     stage12_elimination(state, t, out); // 12
     const gameOver = stage13_victory(state, t); // 13
+    pruneFields(state);
     stage14_broadcast(state, t, this.tracker, out); // 14
     if (gameOver) out.broadcast.push(gameOver); // 최종 스냅샷 뒤에 game_over
     return out;

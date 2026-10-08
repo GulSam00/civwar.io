@@ -11,7 +11,9 @@ import {
   type CmdRejectReason,
   type S2C_CmdAck,
 } from '@civwar/shared';
+import { allyBreak, allyPropose, allyRespond } from './alliance.js';
 import { flagCap, techCost } from './economy.js';
+import { issueFlag, recallFlag, retargetFlag, setPosture, type CmdResult } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import type { GameState } from './state.js';
 
@@ -32,6 +34,11 @@ function ack(out: Outbox, playerId: number, clientSeq: number, reason?: CmdRejec
   out.personal.push({ playerId, msg });
 }
 
+function flagAck(out: Outbox, playerId: number, clientSeq: number, r: CmdResult): void {
+  if ('reason' in r) ack(out, playerId, clientSeq, r.reason);
+  else ack(out, playerId, clientSeq, undefined, { flagId: r.flagId, posture: r.posture });
+}
+
 export function stage1_drainInput(state: GameState, queue: QueuedCommand[], t: number, out: Outbox): void {
   queue.sort(compareQueued);
   for (const q of queue) applyCommand(state, q, t, out);
@@ -45,17 +52,21 @@ function applyCommand(state: GameState, q: QueuedCommand, t: number, out: Outbox
   switch (q.msg.type) {
     case 'cmd_buy_tech':
       return buyTech(state, q.playerId, q.msg, t, out);
+    // 깃발 명령은 이 단계에서 즉시 적용 — 같은 tick 4·4a 가 새 상태(태세 포함)를 읽는다 (7.4)
     case 'cmd_flag_issue':
+      return flagAck(out, q.playerId, seq, issueFlag(state, q.playerId, q.msg, t, out));
     case 'cmd_flag_retarget':
+      return flagAck(out, q.playerId, seq, retargetFlag(state, q.playerId, q.msg, t, out));
     case 'cmd_flag_recall':
+      return flagAck(out, q.playerId, seq, recallFlag(state, q.playerId, q.msg, t, out));
     case 'cmd_set_posture':
-      // 2차: 4.3 / 4.3a / 4.4 검증 + 적용. 태세 전환은 이 단계에서 즉시 적용(같은 tick 4a 가 새 태세를 읽음)
-      return ack(out, q.playerId, seq, 'NOT_IMPLEMENTED');
+      return flagAck(out, q.playerId, seq, setPosture(state, q.playerId, q.msg, t, out));
     case 'cmd_ally_propose':
+      return ack(out, q.playerId, seq, allyPropose(state, q.playerId, q.msg, t, out) ?? undefined);
     case 'cmd_ally_respond':
+      return ack(out, q.playerId, seq, allyRespond(state, q.playerId, q.msg, t, out) ?? undefined);
     case 'cmd_ally_break':
-      // 2차 이후: 6.2 동맹
-      return ack(out, q.playerId, seq, 'NOT_IMPLEMENTED');
+      return ack(out, q.playerId, seq, allyBreak(state, q.playerId, q.msg, t, out) ?? undefined);
   }
 }
 

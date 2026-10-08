@@ -97,6 +97,37 @@ export interface Alliance {
   breakAtTick: number | null;
 }
 
+export interface AllyProposal {
+  id: number;
+  from: number;
+  to: number;
+  expireTick: number;
+}
+
+/**
+ * 병력 회계 장부 (GDD 4.8). 단위 milli.
+ * 불변식: Σ풀 + Σ깃발 + Σ소멸 == 시작 총량 + regen
+ */
+export interface TroopLedger {
+  initial: number;
+  regen: number;
+  capClamp: number; // 3.2 min(troops+regen, cap) 로 잘린 양 (환급·영토 상실로 cap 초과 시)
+  conversion: number; // 발령 시 풀 비용 − 깃발 병력 (기동 테크로 음수 가능)
+  spentAP: number; // ① 게이지·기지·되돌리기 지출
+  exposure: number; // ②
+  combat: number; // ③
+  exhausted: number; // ④ 소진 destroy 잔여
+  recallLoss: number; // ⑤ 회수 15%
+  eliminated: number; // 탈락 시 풀 + 깃발
+}
+
+/** 4a/4b 가 이어 붙이는 전투 표시 기록 (규칙에는 미사용 — 이벤트 송신용) */
+export interface CombatRecord {
+  key: number; // 마지막으로 송신한 groupKey
+  flagIds: Set<number>;
+  routed: number[];
+}
+
 export interface GameResult {
   finalTick: number;
   winnerId: number | null;
@@ -123,9 +154,48 @@ export interface GameState {
   readonly bases: BaseState[];
   readonly baseIndexOf: Map<number, number>;
   alliances: Alliance[];
+  /** (MAX_PLAYERS+1)² — 0 없음, 1 ACTIVE, 2 BREAKING. alliances 변경 시 rebuildAllyMatrix */
+  allyMat: Uint8Array;
+  proposals: AllyProposal[];
+  nextProposalId: number;
+  allianceFreezeUntilTick: number | null;
+  lockoutDissolveTick: number | null;
+  /** 거리장 캐시: key = `${dest}:${mobilityTier}` (매 tick 끝 미사용 키 정리) */
+  fields: Map<string, Int32Array>;
+  /** 4단계가 쓰고 4b 끝이 읽는 tick 로컬: 대치 깃발 → 차단 깃발들 */
+  zocBlocked: Map<number, number[]>;
+  combats: CombatRecord[];
+  ledger: TroopLedger;
   endgameRushActive: boolean;
   result: GameResult | null;
   changes: TickChanges;
+}
+
+export const ALLY_STRIDE = 16; // > MAX_PLAYERS
+
+export function rebuildAllyMatrix(state: GameState): void {
+  state.allyMat.fill(0);
+  for (const a of state.alliances) {
+    const v = a.state === 'ACTIVE' ? 1 : 2;
+    state.allyMat[a.a * ALLY_STRIDE + a.b] = v;
+    state.allyMat[a.b * ALLY_STRIDE + a.a] = v;
+  }
+}
+
+/** ACTIVE 또는 BREAKING — 둘 다 "서로 공격 불가"(6.2 백스탭 쿨다운) → 적대 아님 */
+export function isAlly(state: Readonly<GameState>, a: number, b: number): boolean {
+  if (a === 0 || b === 0 || a === b) return false;
+  return state.allyMat[a * ALLY_STRIDE + b] !== 0;
+}
+
+/** 회계 총량 검산값: (풀 + 깃발 + 소멸) − (시작 + regen). 항상 0 이어야 한다 */
+export function ledgerImbalance(state: Readonly<GameState>): number {
+  let held = 0;
+  for (const p of state.players) if (p) held += p.troopsMilli;
+  for (const f of state.flags) held += f.troopsMilli;
+  const L = state.ledger;
+  const sinks = L.capClamp + L.conversion + L.spentAP + L.exposure + L.combat + L.exhausted + L.recallLoss + L.eliminated;
+  return held + sinks - (L.initial + L.regen);
 }
 
 export function playerIdsAsc(state: Readonly<GameState>): number[] {
@@ -188,6 +258,26 @@ export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[]
     bases,
     baseIndexOf,
     alliances: [],
+    allyMat: new Uint8Array(ALLY_STRIDE * ALLY_STRIDE),
+    proposals: [],
+    nextProposalId: 1,
+    allianceFreezeUntilTick: null,
+    lockoutDissolveTick: null,
+    fields: new Map(),
+    zocBlocked: new Map(),
+    combats: [],
+    ledger: {
+      initial: N * START_TROOPS * 1000,
+      regen: 0,
+      capClamp: 0,
+      conversion: 0,
+      spentAP: 0,
+      exposure: 0,
+      combat: 0,
+      exhausted: 0,
+      recallLoss: 0,
+      eliminated: 0,
+    },
     endgameRushActive: false,
     result: null,
     changes: { tileChanges: [], flagsGone: [] },

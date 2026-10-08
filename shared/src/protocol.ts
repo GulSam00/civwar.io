@@ -44,7 +44,18 @@ export type CmdRejectReason =
   | 'NOT_IN_GAME'
   | 'TECH_ORDER'
   | 'RATE_LIMITED'
-  | 'NOT_IMPLEMENTED';
+  /** 2차부터 송신하지 않음 (호환용으로 타입만 유지) */
+  | 'NOT_IMPLEMENTED'
+  // 백엔드 추가 (2차, 동맹 — GDD 6.2 는 거절 코드를 정하지 않음)
+  | 'BAD_TARGET' // 자기 자신·없는·탈락한 플레이어
+  | 'ALLY_LIMIT' // MAX_ALLIES_PER_PLAYER 초과 (나 또는 상대)
+  | 'ALLY_CUTOFF' // t >= ALLIANCE_CUTOFF_TICK
+  | 'ALLY_FROZEN' // lockout 강제 해제 후 재체결 금지 기간
+  | 'ALREADY_ALLIED' // 이미 ACTIVE/BREAKING
+  | 'ALLY_PENDING' // 같은 상대에게 보낸 유효 제안이 이미 있음
+  | 'NO_PROPOSAL' // 없는·만료된·내게 온 것이 아닌 제안
+  | 'NOT_ALLIED' // 파기 대상이 ACTIVE 동맹이 아님
+  | 'MIN_DURATION'; // ALLIANCE_MIN_DURATION 미경과
 
 /** error.code (연결·로비 수준 오류) */
 export type ErrorCode =
@@ -281,6 +292,10 @@ export interface FlagSnapshot {
   blocked: boolean;
   disengaging: boolean;
   postureCooldownUntilTick: number;
+  /** 2차 추가: 이탈 대기 종료 tick (disengaging 이면 숫자) */
+  disengageUntilTick: number | null;
+  /** 2차 추가: 이탈 완료 후 첫 칸 이동 전 — 교전 대상 아님 */
+  breakaway: boolean;
 }
 
 export interface BaseSnapshot {
@@ -309,7 +324,28 @@ export interface S2C_SnapshotFull {
   thresholdPct: number;
   ticksRemaining: number;
   endgameRushActive: boolean;
+  /** 2차 추가: 유효한 동맹 제안 (proposalId ASC) */
+  allyProposals: AllyProposalSnapshot[];
+  /** 2차 추가: lockout 강제 해제 후 재체결 금지 종료 tick (없으면 null) */
+  allianceFreezeUntilTick: number | null;
+  /** 2차 추가: lockout 카운트다운 중이면 강제 해제 tick */
+  lockoutDissolveTick: number | null;
 }
+export interface AllyProposalSnapshot {
+  proposalId: number;
+  fromPlayerId: number;
+  toPlayerId: number;
+  expireTick: number;
+}
+/** flagFlags 비트 (2차 추가) */
+export const FLAG_BIT = {
+  IN_COMBAT: 1,
+  ROUTED: 2,
+  BLOCKED: 4,
+  DISENGAGING: 8,
+  BREAKAWAY: 16,
+  STALLED: 32,
+} as const;
 
 export interface PlayerDelta {
   id: number;
@@ -332,6 +368,8 @@ export interface S2C_SnapshotDelta {
   baseHp: [number, number][]; // [tileId, hpPct] — BASE_HP_DELTA_INTERVAL 마다, 바뀐 기지만
   flagsGone: number[];
   thresholdPct?: number; // 값이 바뀐 tick 에만
+  /** 2차 추가: [flagId, posture, bits(FLAG_BIT), postureCooldownUntilTick] — 셋 중 하나라도 바뀐 깃발만, 매 tick */
+  flagFlags: [number, Posture, number, number][];
 }
 
 export interface S2C_CmdAck {
@@ -412,7 +450,185 @@ export interface S2C_GameOver {
   standings: Standing[];
 }
 
-/** 1차에서 실제로 송신되는 S→C 메시지 */
+// ─────────────── 2차 이벤트 (GDD 7.3, 4장·6.2) ───────────────
+export type FlagIdleReason = 'front_cleared' | 'guard_lost' | 'unreachable' | 'allied';
+export type FlagEndReason = 'exhausted' | 'recalled' | 'attrited' | 'eliminated' | 'routed_returned';
+export interface S2C_FlagIssued {
+  type: 'flag_issued';
+  tick: number;
+  flagId: number;
+  playerId: number;
+  slotIndex: number;
+  unit: Unit;
+  posture: Posture;
+  troops: number;
+  originTileId: number;
+  anchorTileId: number;
+  targetOwnerId: number;
+  etaTick: number;
+}
+export interface S2C_FlagRetargeted {
+  type: 'flag_retargeted';
+  tick: number;
+  flagId: number;
+  anchorTileId: number;
+  targetOwnerId: number;
+  posture: Posture;
+  resumeTick: number;
+  etaTick: number;
+  auto: boolean;
+}
+export interface S2C_FlagRecalled {
+  type: 'flag_recalled';
+  tick: number;
+  flagId: number;
+  returnTileId: number;
+}
+export interface S2C_FlagEngaged {
+  type: 'flag_engaged';
+  tick: number;
+  flagId: number;
+  posture: Posture;
+  frontTileCount?: number; // ATTACK
+  guardTileCount?: number; // DEFEND
+}
+export interface S2C_FlagStalled {
+  type: 'flag_stalled';
+  tick: number;
+  flagId: number;
+  tileId: number | null;
+}
+export interface S2C_FlagProgressLost {
+  type: 'flag_progress_lost';
+  tick: number;
+  flagId: number;
+  tileId: number;
+  cause: 'captured_by_other' | 'target_lost';
+}
+export interface S2C_FlagIdle {
+  type: 'flag_idle';
+  tick: number;
+  flagId: number;
+  reason: FlagIdleReason;
+  autoRecallTick: number;
+}
+export interface S2C_FlagEnded {
+  type: 'flag_ended';
+  tick: number;
+  flagId: number;
+  reason: FlagEndReason;
+  refunded: number;
+}
+export interface CombatSide {
+  sideKey: number;
+  ownerIds: number[];
+  troops: number;
+  power: number; // 편 실효값 W (permille)
+}
+export interface S2C_CombatStarted {
+  type: 'combat_started';
+  tick: number;
+  groupKey: number;
+  flagIds: number[];
+  sides: CombatSide[];
+}
+export interface S2C_CombatEnded {
+  type: 'combat_ended';
+  tick: number;
+  groupKey: number;
+  winnerSideKey: number | null;
+  routedFlagIds: number[];
+}
+export interface S2C_FlagRouted {
+  type: 'flag_routed';
+  tick: number;
+  flagId: number;
+  returnTileId: number;
+}
+export interface S2C_FlagPostureChanged {
+  type: 'flag_posture_changed';
+  tick: number;
+  flagId: number;
+  posture: Posture;
+  cooldownUntilTick: number;
+  auto: boolean;
+}
+export interface S2C_FlagBlocked {
+  type: 'flag_blocked';
+  tick: number;
+  flagId: number;
+  byFlagIds: number[];
+}
+export interface S2C_FlagUnblocked {
+  type: 'flag_unblocked';
+  tick: number;
+  flagId: number;
+}
+export interface S2C_FlagDisengageStarted {
+  type: 'flag_disengage_started';
+  tick: number;
+  flagId: number;
+  untilTick: number;
+}
+export interface S2C_FlagDisengaged {
+  type: 'flag_disengaged';
+  tick: number;
+  flagId: number;
+  reason: 'broke_away' | 'combat_over';
+}
+export interface S2C_BaseCaptured {
+  type: 'base_captured';
+  tick: number;
+  tileId: number;
+  fromPlayerId: number;
+  toPlayerId: number;
+  newHpPct: number;
+}
+export interface S2C_AllyProposed {
+  type: 'ally_proposed';
+  tick: number;
+  proposalId: number;
+  fromPlayerId: number;
+  toPlayerId: number;
+  expireTick: number;
+}
+export interface S2C_AllyProposalClosed {
+  type: 'ally_proposal_closed';
+  tick: number;
+  proposalId: number;
+  reason: 'declined' | 'expired' | 'formed' | 'invalidated';
+}
+export interface S2C_AllyFormed {
+  type: 'ally_formed';
+  tick: number;
+  a: number;
+  b: number;
+}
+export interface S2C_AllyBreakStarted {
+  type: 'ally_break_started';
+  tick: number;
+  a: number;
+  b: number;
+  byPlayerId: number;
+  breakAtTick: number;
+}
+export interface S2C_AllyBroken {
+  type: 'ally_broken';
+  tick: number;
+  a: number;
+  b: number;
+  reason: 'cooldown_elapsed' | 'lockout' | 'eliminated';
+}
+export interface S2C_AllianceLockout {
+  type: 'alliance_lockout';
+  tick: number;
+  phase: 'countdown' | 'cancelled' | 'dissolved';
+  reason: 'all_allied';
+  forceDissolveTick: number | null;
+  freezeUntilTick: number | null;
+}
+
+/** 서버가 실제로 송신하는 S→C 메시지 (1차 + 2차) */
 export type ServerMessage =
   | S2C_Welcome
   | S2C_RoomState
@@ -430,10 +646,34 @@ export type ServerMessage =
   | S2C_BotTakeover
   | S2C_PlayerReconnected
   | S2C_EmoteBroadcast
-  | S2C_GameOver;
+  | S2C_GameOver
+  // 2차
+  | S2C_FlagIssued
+  | S2C_FlagRetargeted
+  | S2C_FlagRecalled
+  | S2C_FlagEngaged
+  | S2C_FlagStalled
+  | S2C_FlagProgressLost
+  | S2C_FlagIdle
+  | S2C_FlagEnded
+  | S2C_CombatStarted
+  | S2C_CombatEnded
+  | S2C_FlagRouted
+  | S2C_FlagPostureChanged
+  | S2C_FlagBlocked
+  | S2C_FlagUnblocked
+  | S2C_FlagDisengageStarted
+  | S2C_FlagDisengaged
+  | S2C_BaseCaptured
+  | S2C_AllyProposed
+  | S2C_AllyProposalClosed
+  | S2C_AllyFormed
+  | S2C_AllyBreakStarted
+  | S2C_AllyBroken
+  | S2C_AllianceLockout;
 
 /**
- * 2차·3차 예약 (GDD 7.3) — 타입 이름만 고정, 1차 서버는 송신하지 않는다.
+ * GDD 7.3 예약 이름 목록 — 2차부터 전부 실제 송신(위 S2C_* 타입 참조). 호환용으로 유지.
  * flag_issued, flag_retargeted, flag_engaged, flag_stalled, flag_progress_lost, flag_idle,
  * flag_ended, combat_started, combat_ended, flag_routed, flag_posture_changed,
  * flag_blocked, flag_unblocked, flag_disengage_started, flag_disengaged, base_captured,

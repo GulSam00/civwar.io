@@ -117,7 +117,41 @@ async function main(): Promise<void> {
     a.send({ type: 'cmd_buy_tech', clientSeq: 2, axis: 7, tier: 1 });
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 2)).reason === 'BAD_REQUEST', '형식 오류 → cmd_ack BAD_REQUEST');
     a.send({ type: 'cmd_flag_issue', clientSeq: 3, unit: 1, troops: 50, anchorTileId: 0 });
-    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 3)).reason === 'NOT_IMPLEMENTED', 'cmd_flag_issue → NOT_IMPLEMENTED (1차)');
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 3)).reason === 'WATER', 'cmd_flag_issue 물 앵커 → WATER');
+
+    // ── 2차: 깃발 발령 → 이동 → 교전(게이지) → 중립 점령 ──
+    const W = mc.width;
+    const owners0 = rleDecode(sf0.owners, mc.width * mc.height);
+    const home = mi.spawns.find((sp) => sp.playerId === 1)!.homeTileId;
+    const dist = (x: number, y: number) => Math.abs(Math.floor(x / W) - Math.floor(y / W)) + Math.abs((x % W) - (y % W));
+    let anchor = -1;
+    for (let t = 0; t < owners0.length && anchor < 0; t++) {
+      if (dist(t, home) === 4 && owners0[t] === 0 && terrain[t] !== 0 && terrain[t] !== 6 && !mi.bases.includes(t)) anchor = t;
+    }
+    a.send({ type: 'cmd_flag_issue', clientSeq: 4, unit: 2, troops: 100, anchorTileId: anchor, originBaseTileId: null });
+    const ackF = await a.wait('cmd_ack', (m) => m.clientSeq === 4);
+    ok(ackF.accepted && ackF.flagId === 1 && ackF.posture === 0, `cmd_flag_issue 수락 (flagId ${ackF.flagId}, posture ATTACK, anchor ${anchor})`);
+    const fi = await a.wait('flag_issued', (m) => m.flagId === 1);
+    ok(fi.playerId === 1 && fi.unit === 2 && fi.troops === 100 && fi.etaTick > fi.tick, `flag_issued (origin ${fi.originTileId}, eta tick ${fi.etaTick})`);
+    const mv = await a.wait('snapshot_delta', (m) => m.flagMoves.some(([id]) => id === 1), 15000);
+    ok(true, `flagMoves 수신 (tick ${mv.tick})`);
+    const fe = await a.wait('flag_engaged', (m) => m.flagId === 1, 20000);
+    ok(fe.posture === 0 && (fe.frontTileCount ?? 0) > 0, `flag_engaged (front ${fe.frontTileCount}칸, tick ${fe.tick})`);
+    const prog = await a.wait('snapshot_delta', (m) => m.flagProgress.some(([id, pct]) => id === 1 && pct > 0), 15000);
+    ok(true, `flagProgress 게이지 상승 (tick ${prog.tick})`);
+    const cap = await a.wait('snapshot_delta', (m) => m.tileChanges.some(([, o]) => o === 1), 20000);
+    ok(true, `중립 점령 tileChanges ${JSON.stringify(cap.tileChanges)} (tick ${cap.tick})`);
+    const sfF = await a.wait('snapshot_full', (m) => m.flags.some((f) => f.id === 1), 15000);
+    const fs = sfF.flags.find((f) => f.id === 1)!;
+    ok(fs.state === 'ENGAGED' && fs.breakaway === false && fs.disengageUntilTick === null && Array.isArray(sfF.allyProposals), 'snapshot_full.flags 2차 필드');
+    a.send({ type: 'cmd_set_posture', clientSeq: 5, flagId: 1, posture: 0 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 5)).reason === 'SAME_POSTURE', 'cmd_set_posture 같은 태세 → SAME_POSTURE');
+    a.send({ type: 'cmd_ally_propose', clientSeq: 6, targetPlayerId: 2 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 6)).accepted, 'cmd_ally_propose 수락');
+    const ap = await b.wait('ally_proposed');
+    b.send({ type: 'cmd_ally_respond', clientSeq: 1, proposalId: ap.proposalId, accept: true });
+    const af = await a.wait('ally_formed');
+    ok(af.a === 1 && af.b === 2, 'ally_proposed → ally_respond → ally_formed');
 
     a.send({ type: 'ping', clientTime: 123 });
     const pong = await a.wait('pong');
@@ -126,9 +160,9 @@ async function main(): Promise<void> {
     const d5 = await a.wait('snapshot_delta', (m) => m.tick === 5);
     ok(d5.playerDeltas.some((p) => p.id === 1), `playerDeltas 5 tick 주기 (표시값이 바뀐 ${d5.playerDeltas.length}명만)`);
 
-    const sf25 = await a.wait('snapshot_full', (m) => m.tick === 25, 15000);
+    const sf25 = await a.wait('snapshot_full', (m) => m.tick >= 25, 15000);
     const me = sf25.players.find((p) => p.id === 1)!;
-    ok(me.troops > 150 && me.gold >= 200, `snapshot_full tick 25 (troops ${me.troops}, gold ${me.gold})`);
+    ok(me.gold >= 200, `snapshot_full tick ${sf25.tick} (troops ${me.troops}, gold ${me.gold})`);
 
     // 관전자
     const c = new Client('C');

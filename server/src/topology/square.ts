@@ -47,6 +47,18 @@ export class SquareTopology implements Topology {
     return r === 0 || c === 0 || r === this.height - 1 || c === this.width - 1;
   }
 
+  disk(center: number, r: number): readonly number[] {
+    const w = this.width;
+    const cr = Math.floor(center / w);
+    const cc = center - cr * w;
+    const out: number[] = [];
+    for (let rr = Math.max(0, cr - r); rr <= Math.min(this.height - 1, cr + r); rr++) {
+      const rem = r - Math.abs(rr - cr);
+      for (let c = Math.max(0, cc - rem); c <= Math.min(w - 1, cc + rem); c++) out.push(rr * w + c);
+    }
+    return out;
+  }
+
   // ── 사각 전용 헬퍼: 맵 생성기(사각 구현체 내부 취급)만 사용 ──
 
   /** 8방향 이웃 중 pred 를 만족하는 개수 (경계 밖 = 0) */
@@ -116,5 +128,15 @@ export class TerrainGraph implements MapGraph {
   }
   neighbors(t: number): readonly number[] {
     return this.nb[t];
+  }
+  private readonly diskCache = new Map<number, readonly number[]>();
+  disk(center: number, r: number): readonly number[] {
+    const key = center * 128 + r;
+    let d = this.diskCache.get(key);
+    if (!d) {
+      d = this.topology.disk(center, r);
+      this.diskCache.set(key, d);
+    }
+    return d;
   }
 }

@@ -13,6 +13,8 @@ export interface Topology {
   adjacent(t: number): readonly number[];
   /** 맵 외곽 테두리 타일인가 */
   isBorder(t: number): boolean;
+  /** distance(center, t) <= r 인 모든 타일 (지형 무시), tileId 오름차순 */
+  disk(center: number, r: number): readonly number[];
 }
 
 /**
@@ -24,4 +26,6 @@ export interface MapGraph {
   tileCount(): number;
   distance(a: number, b: number): number;
   neighbors(t: number): readonly number[];
+  /** distance(center, t) <= r 인 모든 타일 (지형 무시, 캐시), tileId 오름차순 */
+  disk(center: number, r: number): readonly number[];
 }
