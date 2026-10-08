@@ -1,0 +1,111 @@
+/**
+ * 클라이언트 메시지 스키마 검증. 서버는 클라이언트를 신뢰하지 않는다.
+ * 여기서는 "모양"만 본다(타입·정수·범위). 소유권·인접·자원 같은 게임 규칙 검증은 tick 1단계에서.
+ */
+import { MAX_PLAYERS, MIN_PLAYERS, NICKNAME_MAX_LEN, ROOM_CODE_LENGTH, type ClientMessage } from '@civwar/shared';
+
+export type ParseResult =
+  | { ok: true; msg: ClientMessage }
+  | { ok: false; error: string; clientSeq?: number };
+
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
+const isU32 = (v: unknown): v is number => isInt(v) && v >= 0 && v <= 0xffffffff;
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
+const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+const inRange = (v: unknown, lo: number, hi: number): v is number => isInt(v) && v >= lo && v <= hi;
+
+export function parseClientMessage(raw: string): ParseResult {
+  let o: unknown;
+  try {
+    o = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: 'invalid JSON' };
+  }
+  if (typeof o !== 'object' || o === null || Array.isArray(o)) return { ok: false, error: 'not an object' };
+  const m = o as Record<string, unknown>;
+  const type = m.type;
+  if (typeof type !== 'string') return { ok: false, error: 'missing type' };
+
+  // cmd_* 공통: clientSeq
+  if (type.startsWith('cmd_')) {
+    if (!isU32(m.clientSeq)) return { ok: false, error: 'clientSeq must be uint32' };
+  }
+  const seq = isU32(m.clientSeq) ? m.clientSeq : undefined;
+  const bad = (error: string): ParseResult => ({ ok: false, error, clientSeq: seq });
+
+  switch (type) {
+    case 'hello':
+      if (!isStr(m.nickname, 64)) return bad('nickname must be string');
+      if (!isInt(m.clientVersion)) return bad('clientVersion must be int');
+      if (m.playerToken !== undefined && !isStr(m.playerToken, 128)) return bad('playerToken must be string');
+      return { ok: true, msg: { type, nickname: m.nickname, clientVersion: m.clientVersion, playerToken: m.playerToken as string | undefined } };
+    case 'lobby_join_public':
+    case 'lobby_leave':
+    case 'lobby_start_now':
+      return { ok: true, msg: { type } as ClientMessage };
+    case 'lobby_create_private':
+      if (!inRange(m.targetPlayers, MIN_PLAYERS, MAX_PLAYERS)) return bad(`targetPlayers must be ${MIN_PLAYERS}..${MAX_PLAYERS}`);
+      if (m.timeLimitMin !== undefined && !isInt(m.timeLimitMin)) return bad('timeLimitMin must be int');
+      return { ok: true, msg: { type, targetPlayers: m.targetPlayers, timeLimitMin: m.timeLimitMin as number | undefined } };
+    case 'lobby_join_private':
+    case 'lobby_spectate':
+      if (!isStr(m.roomCode, ROOM_CODE_LENGTH) || (m.roomCode as string).length !== ROOM_CODE_LENGTH) return bad('roomCode invalid');
+      return { ok: true, msg: { type, roomCode: (m.roomCode as string).toUpperCase() } };
+    case 'lobby_set_ready':
+      if (!isBool(m.ready)) return bad('ready must be bool');
+      return { ok: true, msg: { type, ready: m.ready } };
+    case 'cmd_flag_issue':
+      if (!inRange(m.unit, 0, 2)) return bad('unit must be 0..2');
+      if (!isInt(m.troops) || m.troops < 0) return bad('troops must be int >= 0');
+      if (!isU32(m.anchorTileId)) return bad('anchorTileId must be uint32');
+      if (m.originBaseTileId !== undefined && m.originBaseTileId !== null && !isU32(m.originBaseTileId)) return bad('originBaseTileId');
+      return {
+        ok: true,
+        msg: {
+          type,
+          clientSeq: seq!,
+          unit: m.unit as 0 | 1 | 2,
+          troops: m.troops,
+          anchorTileId: m.anchorTileId,
+          originBaseTileId: (m.originBaseTileId as number | null | undefined) ?? null,
+        },
+      };
+    case 'cmd_flag_retarget':
+      if (!isU32(m.flagId) || !isU32(m.anchorTileId)) return bad('flagId/anchorTileId must be uint32');
+      return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId, anchorTileId: m.anchorTileId } };
+    case 'cmd_flag_recall':
+      if (!isU32(m.flagId)) return bad('flagId must be uint32');
+      return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId } };
+    case 'cmd_set_posture':
+      if (!isU32(m.flagId)) return bad('flagId must be uint32');
+      if (!inRange(m.posture, 0, 1)) return bad('posture must be 0|1');
+      return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId, posture: m.posture as 0 | 1 } };
+    case 'cmd_buy_tech':
+      if (!inRange(m.axis, 0, 3)) return bad('axis must be 0..3');
+      if (!inRange(m.tier, 1, 3)) return bad('tier must be 1..3');
+      return { ok: true, msg: { type, clientSeq: seq!, axis: m.axis as 0 | 1 | 2 | 3, tier: m.tier as 1 | 2 | 3 } };
+    case 'cmd_ally_propose':
+      if (!inRange(m.targetPlayerId, 1, MAX_PLAYERS)) return bad('targetPlayerId');
+      return { ok: true, msg: { type, clientSeq: seq!, targetPlayerId: m.targetPlayerId } };
+    case 'cmd_ally_respond':
+      if (!isU32(m.proposalId) || !isBool(m.accept)) return bad('proposalId/accept');
+      return { ok: true, msg: { type, clientSeq: seq!, proposalId: m.proposalId, accept: m.accept } };
+    case 'cmd_ally_break':
+      if (!inRange(m.allyPlayerId, 1, MAX_PLAYERS)) return bad('allyPlayerId');
+      return { ok: true, msg: { type, clientSeq: seq!, allyPlayerId: m.allyPlayerId } };
+    case 'emote':
+      if (!isInt(m.code)) return bad('code must be int');
+      return { ok: true, msg: { type, code: m.code } };
+    case 'ping':
+      if (typeof m.clientTime !== 'number' || !Number.isFinite(m.clientTime)) return bad('clientTime must be number');
+      return { ok: true, msg: { type, clientTime: m.clientTime } };
+    default:
+      return bad(`unknown type ${type}`);
+  }
+}
+
+export function sanitizeNickname(raw: string): string | null {
+  const s = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (s.length < 1 || s.length > NICKNAME_MAX_LEN) return null;
+  return s;
+}

@@ -646,8 +646,8 @@ hpMilli <= 0 이 된 tick 에:
 |---|---|
 | `TICK_MS` | **200** (초당 5 tick) |
 | 1분 | 300 tick |
-| 종반 러시 발동 | 11,100 tick = **37분** |
-| 하드 타임아웃 | 12,600 tick = **42분** |
+| 종반 러시 발동 | 8,400 tick = **28분** (v4.0 3단계 2차, 구 37분) |
+| 하드 타임아웃 | 9,600 tick = **32분** (v4.0 3단계 2차, 구 42분) |
 
 ### 3.2 병력 (Troops) — 공식 불변, **의미 재정의** (design-decisions E항)
 
@@ -3105,7 +3105,7 @@ threshold(t) = clamp( 60 - 1.5 * max(0, (t - 4800)/300), 45, 60 )   // v4.0 3단
 
 1. 점유율은 개인 기준이므로 **동맹 합산으로는 절대 승리하지 않는다.** 두 명이 각각 40%씩 가져도 threshold(45%)에 미달이면 게임은 안 끝난다.
 2. 생존자가 2인이고 둘이 동맹이면 lockout 조건이 즉시 성립 → 30초 뒤 강제 해제 + 60초 재체결 금지. **반드시 서로 싸우게 된다.**
-3. 그래도 42분 하드 타임아웃에 걸리면 개인 점유율 1위가 승리한다. 무승부는 없다.
+3. 그래도 32분 하드 타임아웃(v4.0, 구 42분)에 걸리면 개인 점유율 1위가 승리한다. 무승부는 없다.
 4. 한쪽이 동맹 중에 혼자 45%를 넘겼다면 그 즉시 승리한다 — 규칙상 정상 승리다. 이것이 "동맹을 언제 깰 것인가"를 게임의 마지막 결정으로 만든다.
 
 ### 6.3 무승부 처리
@@ -3197,8 +3197,8 @@ CONNECTING → CONNECTED → IN_LOBBY → COUNTDOWN → IN_GAME → GAME_OVER �
 | **`base_captured`** ⟵ v3.0 | 룸 | `{ tick, tileId, fromPlayerId, toPlayerId, newHpPct: 50 }` — 화면 연출 + 사운드 트리거. **세션당 10~25회 발생하는 주요 이벤트** |
 | `tech_purchased` | 룸 | `{ tick, playerId, axis, tier, cost, newFlagCap }` |
 | `ally_proposed` / `ally_formed` / `ally_break_started` / `ally_broken` / `alliance_lockout` | 룸 | v2.1과 동일 |
-| `threshold_update` | 룸 | `{ tick, thresholdPct }` — 22분 이후 분당 1회만 |
-| `endgame_rush` | 룸 | `{ tick, costMult }` — 37분 1회. 화면 전체 연출 트리거 |
+| `threshold_update` | 룸 | `{ tick, thresholdPct }` — 16분(4800 tick) 이후 분당 1회만 (v4.0, 구 22분) |
+| `endgame_rush` | 룸 | `{ tick, costMult }` — 28분(8400 tick) 1회 (v4.0, 구 37분). 화면 전체 연출 트리거 |
 | `player_eliminated` | 룸 | `{ tick, playerId, byPlayerId\|null }` |
 | `bot_takeover` / `player_reconnected` | 룸 | `{ tick, playerId }` |
 | `emote_broadcast` | 룸 | `{ tick, playerId, code }` |

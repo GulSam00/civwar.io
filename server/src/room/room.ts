@@ -1,0 +1,373 @@
+/**
+ * 룸 — 로비 / 카운트다운 / 인게임 / 게임 종료 (GDD 7.1).
+ * 방마다 독립된 tick 루프(Simulation)와 멤버 목록을 가진다.
+ */
+import {
+  EMOTE_CODE_MAX,
+  LOBBY_COUNTDOWN_MS,
+  MAX_COMMANDS_PER_TICK,
+  PUBLIC_LOBBY_AUTOSTART_MS,
+  ROOM_CLOSE_AFTER_GAME_MS,
+  TICK_MS,
+  type C2S_GameCommand,
+  type ErrorCode,
+  type MemberStatus,
+  type RoomMember,
+  type RoomPhase,
+  type S2C_RoomState,
+  type ServerMessage,
+} from '@civwar/shared';
+import { generateMap } from '../map/generate.js';
+import type { Outbox } from '../game/outbox.js';
+import { buildMapInit, buildMatchConfig, buildSnapshotFull } from '../game/snapshot.js';
+import { createGameState } from '../game/state.js';
+import { IdleBot, Simulation, type BotBrain } from '../game/tick.js';
+import type { Session } from './session.js';
+
+export interface Member {
+  playerId: number;
+  session: Session | null; // 봇이면 null
+  nickname: string;
+  isBot: boolean;
+  ready: boolean;
+}
+
+export interface RoomHooks {
+  /** 룸이 정리될 때 (LobbyManager 가 인덱스에서 제거) */
+  onDispose(room: Room): void;
+  /** 맵 시드 결정 (테스트에서 고정 가능) */
+  nextSeed(): number;
+}
+
+export class Room {
+  phase: RoomPhase = 'LOBBY';
+  hostId: number | null = null;
+  readonly members = new Map<number, Member>();
+  readonly spectators = new Set<Session>();
+  sim: Simulation | null = null;
+  private countdownEndsAt: number | null = null;
+  private timers: ReturnType<typeof setTimeout>[] = [];
+  private tickTimer: ReturnType<typeof setTimeout> | null = null;
+  private loopStart = 0;
+  private disposed = false;
+
+  constructor(
+    readonly id: string,
+    readonly code: string,
+    readonly isPublic: boolean,
+    readonly targetPlayers: number,
+    private readonly hooks: RoomHooks,
+    private readonly brain: BotBrain = IdleBot,
+  ) {
+    if (isPublic) this.later(PUBLIC_LOBBY_AUTOSTART_MS, () => this.phase === 'LOBBY' && this.startCountdown());
+  }
+
+  // ───────────────────────── 조회 ─────────────────────────
+
+  get humanCount(): number {
+    let n = 0;
+    for (const m of this.members.values()) if (!m.isBot && m.session) n++;
+    return n;
+  }
+  get hasFreeSlot(): boolean {
+    return this.members.size < this.targetPlayers;
+  }
+  memberOf(session: Session): Member | undefined {
+    return session.playerId !== null ? this.members.get(session.playerId) : undefined;
+  }
+
+  private statusOf(m: Member): MemberStatus {
+    if (this.phase === 'LOBBY' || this.phase === 'COUNTDOWN') return 'LOBBY_WAITING';
+    const p = this.sim?.state.players[m.playerId];
+    if (p && !p.alive) return 'ELIMINATED_SPECTATING';
+    if (!m.isBot && !m.session?.socket) return 'DISCONNECTED';
+    return 'PLAYING';
+  }
+
+  roomState(): S2C_RoomState {
+    const players: RoomMember[] = [...this.members.values()]
+      .sort((a, b) => a.playerId - b.playerId)
+      .map((m) => ({
+        playerId: m.playerId,
+        sessionId: m.session?.id ?? null,
+        nickname: m.nickname,
+        isBot: m.isBot,
+        isHost: m.playerId === this.hostId,
+        ready: m.ready,
+        status: this.statusOf(m),
+      }));
+    return {
+      type: 'room_state',
+      roomId: this.id,
+      roomCode: this.code,
+      isPublic: this.isPublic,
+      phase: this.phase,
+      hostId: this.hostId,
+      targetPlayers: this.targetPlayers,
+      players,
+      spectatorCount: this.spectators.size,
+      countdownMs: this.countdownEndsAt !== null ? Math.max(0, this.countdownEndsAt - Date.now()) : null,
+    };
+  }
+
+  // ───────────────────────── 송신 ─────────────────────────
+
+  private recipients(): Session[] {
+    const out: Session[] = [];
+    for (const m of this.members.values()) if (m.session?.socket) out.push(m.session);
+    for (const s of this.spectators) if (s.socket) out.push(s);
+    return out;
+  }
+  broadcast(msg: ServerMessage): void {
+    const raw = JSON.stringify(msg);
+    for (const s of this.recipients()) s.sendRaw(raw);
+  }
+  broadcastRoomState(): void {
+    this.broadcast(this.roomState());
+  }
+  private deliver(out: Outbox): void {
+    for (const msg of out.broadcast) this.broadcast(msg);
+    for (const { playerId, msg } of out.personal) this.members.get(playerId)?.session?.send(msg);
+  }
+
+  // ───────────────────────── 로비 ─────────────────────────
+
+  /** 성공 시 null, 실패 시 오류 코드 */
+  join(session: Session): ErrorCode | null {
+    if (this.phase !== 'LOBBY') return 'ROOM_IN_PROGRESS';
+    if (!this.hasFreeSlot) return 'ROOM_FULL';
+    let pid = 1;
+    while (this.members.has(pid)) pid++;
+    this.members.set(pid, { playerId: pid, session, nickname: session.nickname, isBot: false, ready: false });
+    session.roomId = this.id;
+    session.playerId = pid;
+    session.spectator = false;
+    if (this.hostId === null) this.hostId = pid;
+    this.broadcastRoomState();
+    if (this.members.size >= this.targetPlayers) this.startCountdown();
+    return null;
+  }
+
+  spectate(session: Session): ErrorCode | null {
+    if (this.phase !== 'IN_GAME' && this.phase !== 'GAME_OVER') return 'NOT_LOBBY';
+    this.spectators.add(session);
+    session.roomId = this.id;
+    session.playerId = null;
+    session.spectator = true;
+    session.send(this.roomState());
+    this.sendGameBootstrap(session);
+    this.broadcastRoomState();
+    return null;
+  }
+
+  /** 명시적 퇴장 (lobby_leave / 다른 룸 입장) */
+  leave(session: Session): void {
+    if (session.spectator) {
+      this.spectators.delete(session);
+    } else {
+      const m = this.memberOf(session);
+      if (m) {
+        if (this.phase === 'LOBBY') {
+          this.members.delete(m.playerId);
+        } else if (this.phase === 'COUNTDOWN') {
+          m.session = null; // 자리는 봇으로
+          m.isBot = true;
+          m.nickname = `BOT ${m.playerId}`;
+        } else {
+          this.markDisconnected(m);
+          m.session = null;
+        }
+        if (this.hostId === m.playerId) this.reassignHost();
+      }
+    }
+    session.roomId = null;
+    session.playerId = null;
+    session.spectator = false;
+    // 붙어 있는 세션(접속 끊김 포함)이 하나도 없으면 정리. 끊긴 세션은 재접속을 위해 남아 있다
+    const anyAttached = [...this.members.values()].some((x) => x.session !== null) || this.spectators.size > 0;
+    if (!anyAttached) {
+      this.dispose();
+      return;
+    }
+    this.broadcastRoomState();
+  }
+
+  /** 소켓 끊김. 로비·카운트다운은 퇴장 처리, 인게임은 자리 유지 (GDD 7.1) */
+  onSocketClosed(session: Session): void {
+    if (session.spectator || this.phase === 'LOBBY' || this.phase === 'COUNTDOWN' || this.phase === 'GAME_OVER') {
+      this.leave(session);
+      return;
+    }
+    const m = this.memberOf(session);
+    if (m) this.markDisconnected(m);
+    this.broadcastRoomState();
+  }
+
+  private markDisconnected(m: Member): void {
+    const p = this.sim?.state.players[m.playerId];
+    if (p && p.connected) {
+      p.connected = false;
+      p.disconnectedSinceTick = this.sim!.state.tick;
+    }
+  }
+
+  /** 같은 playerToken 으로 재접속 */
+  onResume(session: Session): void {
+    session.send(this.roomState());
+    if (this.phase !== 'IN_GAME' && this.phase !== 'GAME_OVER') return;
+    this.sendGameBootstrap(session);
+    const m = this.memberOf(session);
+    const p = m && this.sim?.state.players[m.playerId];
+    if (p && !p.connected) {
+      p.connected = true;
+      p.disconnectedSinceTick = null;
+      if (!p.isBot) p.botControlled = false; // 인계 후 복귀해도 조종권 반환 (백엔드 결정)
+      this.broadcast({ type: 'player_reconnected', tick: this.sim!.state.tick, playerId: p.id });
+    }
+    this.broadcastRoomState();
+  }
+
+  setReady(session: Session, ready: boolean): ErrorCode | null {
+    const m = this.memberOf(session);
+    if (!m) return 'NOT_IN_ROOM';
+    if (this.phase !== 'LOBBY') return 'NOT_LOBBY';
+    m.ready = ready;
+    this.broadcastRoomState();
+    const humans = [...this.members.values()].filter((x) => !x.isBot);
+    if (humans.length > 0 && humans.every((x) => x.ready)) this.startCountdown();
+    return null;
+  }
+
+  startNow(session: Session): ErrorCode | null {
+    const m = this.memberOf(session);
+    if (!m) return 'NOT_IN_ROOM';
+    if (m.playerId !== this.hostId) return 'NOT_HOST';
+    if (this.phase !== 'LOBBY') return 'NOT_LOBBY';
+    this.startCountdown();
+    return null;
+  }
+
+  private reassignHost(): void {
+    this.hostId = null;
+    for (const m of [...this.members.values()].sort((a, b) => a.playerId - b.playerId)) {
+      if (!m.isBot && m.session) {
+        this.hostId = m.playerId;
+        return;
+      }
+    }
+  }
+
+  /** 남은 자리를 봇으로 채우고 카운트다운 */
+  startCountdown(): void {
+    if (this.phase !== 'LOBBY' || this.disposed) return;
+    for (let pid = 1; pid <= this.targetPlayers; pid++) {
+      if (!this.members.has(pid)) {
+        this.members.set(pid, { playerId: pid, session: null, nickname: `BOT ${pid}`, isBot: true, ready: true });
+      }
+    }
+    this.phase = 'COUNTDOWN';
+    this.countdownEndsAt = Date.now() + LOBBY_COUNTDOWN_MS;
+    this.broadcastRoomState();
+    this.later(LOBBY_COUNTDOWN_MS, () => this.beginGame());
+  }
+
+  // ───────────────────────── 인게임 ─────────────────────────
+
+  private sendGameBootstrap(session: Session): void {
+    if (!this.sim) return;
+    const st = this.sim.state;
+    session.send(buildMatchConfig(st));
+    session.send(buildMapInit(st));
+    session.send(buildSnapshotFull(st));
+  }
+
+  private beginGame(): void {
+    if (this.phase !== 'COUNTDOWN' || this.disposed) return;
+    const map = generateMap(this.hooks.nextSeed(), this.targetPlayers);
+    const setup = [...this.members.values()]
+      .sort((a, b) => a.playerId - b.playerId)
+      .map((m) => ({ playerId: m.playerId, isBot: m.isBot, connected: m.isBot || !!m.session?.socket }));
+    const state = createGameState(map, setup);
+    for (const s of setup) {
+      if (!s.connected) state.players[s.playerId].disconnectedSinceTick = 0;
+    }
+    this.sim = new Simulation(state, this.brain);
+    this.phase = 'IN_GAME';
+    this.countdownEndsAt = null;
+    this.broadcastRoomState();
+    this.broadcast(buildMatchConfig(state));
+    this.broadcast(buildMapInit(state));
+    this.broadcast(buildSnapshotFull(state));
+    this.loopStart = Date.now();
+    this.scheduleTick();
+  }
+
+  /** 드리프트 보정 고정 간격 루프: t번째 tick 은 loopStart + t × TICK_MS 에 실행 */
+  private scheduleTick(): void {
+    if (!this.sim || this.disposed) return;
+    const due = this.loopStart + (this.sim.state.tick + 1) * TICK_MS;
+    this.tickTimer = setTimeout(() => this.runTick(), Math.max(0, due - Date.now()));
+  }
+
+  private runTick(): void {
+    if (!this.sim || this.disposed) return;
+    for (const m of this.members.values()) if (m.session) m.session.cmdCount = 0;
+    const out = this.sim.step();
+    this.deliver(out);
+    const needRoomState = out.broadcast.some((m) => m.type === 'player_eliminated' || m.type === 'bot_takeover');
+    if (this.sim.finished) {
+      this.phase = 'GAME_OVER';
+      this.broadcastRoomState();
+      this.later(ROOM_CLOSE_AFTER_GAME_MS, () => this.dispose());
+      return;
+    }
+    if (needRoomState) this.broadcastRoomState();
+    this.scheduleTick();
+  }
+
+  /** cmd_* 수신 — 형식 검증은 끝난 상태. 게임 규칙 검증은 tick 1단계 */
+  submitCommand(session: Session, msg: C2S_GameCommand): void {
+    const m = this.memberOf(session);
+    const reject = (reason: 'NOT_IN_GAME' | 'RATE_LIMITED') =>
+      session.send({ type: 'cmd_ack', clientSeq: msg.clientSeq, accepted: false, reason });
+    if (!m || this.phase !== 'IN_GAME' || !this.sim) return reject('NOT_IN_GAME');
+    if (++session.cmdCount > MAX_COMMANDS_PER_TICK) return reject('RATE_LIMITED');
+    this.sim.enqueue(session.connId, m.playerId, msg);
+  }
+
+  emote(session: Session, code: number): void {
+    const m = this.memberOf(session);
+    if (!m || this.phase !== 'IN_GAME' || !this.sim) return;
+    if (!Number.isInteger(code) || code < 0 || code > EMOTE_CODE_MAX) return;
+    const now = Date.now();
+    if (now - session.lastEmoteAt < 1000) return;
+    session.lastEmoteAt = now;
+    this.broadcast({ type: 'emote_broadcast', tick: this.sim.state.tick, playerId: m.playerId, code });
+  }
+
+  get currentTick(): number {
+    return this.sim?.state.tick ?? 0;
+  }
+
+  // ───────────────────────── 정리 ─────────────────────────
+
+  private later(ms: number, fn: () => void): void {
+    this.timers.push(setTimeout(fn, ms));
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const t of this.timers) clearTimeout(t);
+    if (this.tickTimer) clearTimeout(this.tickTimer);
+    for (const m of this.members.values()) {
+      if (m.session && m.session.roomId === this.id) {
+        m.session.roomId = null;
+        m.session.playerId = null;
+      }
+    }
+    for (const s of this.spectators) if (s.roomId === this.id) s.roomId = null;
+    this.hooks.onDispose(this);
+  }
+}
+
