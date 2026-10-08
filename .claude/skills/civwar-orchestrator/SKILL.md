@@ -5,7 +5,7 @@ description: "civwar.io(실시간 멀티플레이어 영토 정복 IO 게임) �
 
 # civwar.io Orchestrator
 
-civwar.io(30~60분 세션의 실시간 영토 정복 IO 게임) 개발을 4개 전문 에이전트의 파이프라인으로 조율하는 오케스트레이터.
+civwar.io(25~32분 세션 · 표준 30분의 실시간 영토 정복 IO 게임) 개발을 4개 전문 에이전트의 파이프라인으로 조율하는 오케스트레이터.
 
 ## 실행 모드: 서브 에이전트
 
@@ -131,7 +131,7 @@ civwar.io의 프로젝트 관리 문서는 Notion 페이지 **civwar.io** (`page
 ### 정상 흐름
 1. 사용자가 "civwar.io 실시간 영토 정복 게임 만들어줘"라고 요청
 2. Phase 0에서 `_workspace/` 미존재 확인 → 초기 실행
-3. Phase 2에서 `game-designer`가 GDD 작성 (핵심 루프, 세션 페이싱 30~60분 근거 포함) → 사용자에게 보고하고 **승인 대기**
+3. Phase 2에서 `game-designer`가 GDD 작성 (핵심 루프, 세션 페이싱 25~32분(표준 30분) 근거 포함) → 사용자에게 보고하고 **승인 대기**
 4. 사용자가 승인 → Notion "로드맵"(1단계) + "기획" 섹션 갱신 → Phase 3 진행
 5. Phase 3에서 `multiplayer-backend-engineer`가 `server/` + 프로토콜 문서 작성 → Notion 갱신
 6. Phase 4에서 `integration-qa`가 백엔드 단독 검증 → 통과 → Notion 갱신
