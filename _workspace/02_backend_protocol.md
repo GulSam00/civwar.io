@@ -90,7 +90,7 @@ civwar.io/
 
 ```
 npm install
-npm test                 # vitest 전체 (68 tests)
+npm test                 # vitest 전체 (69 tests)
 npm run typecheck        # shared + server tsc --noEmit
 npm run start:server     # ws://localhost:8080  (PORT 환경변수로 변경)
 npm run dev:server       # tsx watch
@@ -377,7 +377,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `combat_started` | `{"type":"combat_started","tick":31,"groupKey":4,"flagIds":[4,7],"sides":[{"sideKey":1,"ownerIds":[1],"troops":1000,"power":1000},{"sideKey":2,"ownerIds":[2],"troops":1000,"power":1300}]}` | 무리가 새로 생기거나 기존 무리에 깃발이 합류. `troops`·`power`는 그 tick 손실 적용 **전** 값. `power` = 편 실효값 W(permille) — 교환비 k = W_방어 / W_공격 |
 | `combat_ended` | `{"type":"combat_ended","tick":129,"groupKey":4,"winnerSideKey":2,"routedFlagIds":[4]}` | 살아남은(패주·이탈 완료 제외) 편이 1개 이하가 된 tick. 동시 0 이면 `winnerSideKey:null`. 무리가 그냥 해체(상대 소멸·동맹 성립 등)되면 다음 tick 에 `winnerSideKey:null` |
 | `flag_routed` | `{"type":"flag_routed","tick":129,"flagId":4,"returnTileId":2103}` | 병력 0 → 자동 귀환. 이후 모든 명령 `ROUTED` |
-| `flag_posture_changed` | `{"type":"flag_posture_changed","tick":21,"flagId":1,"posture":1,"cooldownUntilTick":46,"auto":true}` | 수동 전환(`auto:false`) / 재지정·앵커 소유 변화에 따른 재파생(`auto:true`) |
+| `flag_posture_changed` | `{"type":"flag_posture_changed","tick":21,"flagId":1,"posture":1,"cooldownUntilTick":46,"auto":true}` | 수동 전환(`auto:false`) / 재지정에 따른 기본 태세 재파생(`auto:true`) |
 | `flag_blocked` / `flag_unblocked` | `{"type":"flag_blocked","tick":5,"flagId":2,"byFlagIds":[1]}` / `{"type":"flag_unblocked","tick":31,"flagId":2}` | 대치(ZOC 정지) 비트가 바뀐 tick (4b 끝). `byFlagIds` = 다음 칸에 ZOC 를 거는 적 방어 태세 깃발 |
 | `flag_disengage_started` | `{"type":"flag_disengage_started","tick":2,"flagId":2,"untilTick":17}` | 전투 중 재지정·회수 수락 |
 | `flag_disengaged` | `{"type":"flag_disengaged","tick":17,"flagId":2,"reason":"broke_away"}` | `broke_away`(대기 완료 → breakaway) / `combat_over`(대기 중 무리 소멸) |
@@ -438,7 +438,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 6 전투 Phase A (읽기 전용 → `PushPlan`: pushes/baseHits/defSpend) | `gauge.ts` | ✅ |
 | 7 전투 Phase B (tileId ASC, flagId ASC) | `gauge.ts` | ✅ 게이지·레이스·기지 피해/함락·방어 지출 |
 | 8 기지 체력 회복 tileId ASC | `stage8_baseRegen` | ✅ |
-| 9 파생 상태 | `gauge.ts stage9_derived` | ✅ 앵커 소유 변화 → 기본 태세 자동 재파생, calmTicks |
+| 9 파생 상태 | `gauge.ts stage9_derived` | ✅ calmTicks (태세 자동 재파생 폐지, §10-19) |
 | 10 깃발 종료 판정 | `gauge.ts stage10_flagEnd` | ✅ front/guard 소멸 → IDLE, 중립 자동 전환, 소진, IDLE 타임아웃 |
 | 11 봇 (t % 15 == 0, playerId ASC) | `stage11_bots` | ✅ 호출 구조, `IdleBot` |
 | 12 탈락 | `stage12_elimination` | ✅ |
@@ -468,7 +468,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 ## 9. 테스트·스모크 결과 (2026-10-08, 2차)
 
-- `npm run typecheck` 통과. `npm test`: **6 파일 / 68 테스트 통과** (1차 49 + 2차 `server/test/flags.test.ts` 19. 1차의 `NOT_IMPLEMENTED` 테스트는 `WATER` 거절로 교체).
+- `npm run typecheck` 통과. `npm test`: **6 파일 / 69 테스트 통과** (1차 49 + 2차 `server/test/flags.test.ts` 20 — 앵커 점령 후 계속 공격 테스트 포함. 1차의 `NOT_IMPLEMENTED` 테스트는 `WATER` 거절로 교체).
 - 2차 테스트: 대표 전투 표 6종 재현 · 방어↔방어 무전투 · combat 이벤트 · ZOC 대치 → 공격 전환 다음 tick 전투 · 태세 SAME/쿨타임 25 tick/IN_COMBAT · 이탈 대기(×0.5 손실, broke_away, breakaway 중 재교전 없음) · 패주 깃발 명령 `ROUTED` · 게이지 레이스 flagId 낙찰 · 되돌리기 → 정체 · 실제 명령 경로 발령 → 점령 · 주둔 유지비 90‰ · 기지 함락 · 동맹 제안/수락/IDLE(allied)/MIN_DURATION/ALLIED/BREAKING 해제 · Lockout · **결정론 해시(400 tick, 전투·게이지·점령 포함)**. 깃발이 있는 모든 풀 시뮬레이션 테스트는 **매 tick `ledgerImbalance(state) === 0`** (4.8 회계 불변식: Σ풀 + Σ깃발 + Σ소멸 = 시작 + regen) 을 단언한다.
 - 대표 전투 (`npx tsx server/scripts/duels.ts`, 1000 대 1000):
 
@@ -511,7 +511,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 16. **`isAlly` = ACTIVE ∪ BREAKING** 하나로 통일(GDD 는 `isAlly`/`isAllyOrBreaking`을 섞어 씀. 6.2 "쿨다운 동안 서로 공격 불가"에 따라 BREAKING 도 비적대). front 는 `targetOwnerId`가 고정된 경우에도 내 땅·동맹 타일을 항상 제외.
 17. **`LOCKED`**: GDD 거절 코드엔 있으나 쓰임이 없어, 재지정 경직(`t < lockUntilTick`) 중 재재지정 거절로 사용. 단 이탈 대기 중엔 허용(4.15 g "대기 중 추가 재지정 허용").
 18. **recallTarget ①** "출발 기지"를 "출발 타일(아직 내 소유)"로 읽음(기지 없이 발령한 깃발의 출발지는 기지가 아님). **④ 최근접 내 타일** 폴백 추가(수도 상실 시).
-19. **기본 태세 자동 재파생**(4.3a "앵커 함락")을 9단계에서 "앵커 소유가 바뀌어 기본 태세 ≠ 현 태세"라는 일반 규칙으로 구현(`postureManual=false` 만, 쿨타임 무관하게 적용 후 쿨타임 설정). **전투 중·패주 깃발은 보류**(전투 중 태세 고정 [A-28]과 충돌 방지 — 전투가 끝난 tick 이후 적용).
+19. ~~기본 태세 자동 재파생~~ → **폐지(사용자 결정, GDD 4.3a 개정)**. 기본 태세는 발령·재지정 때만 정해진다. 공격 깃발은 앵커를 점령한 뒤에도 front 가 빌 때까지 계속 밀고, 비면 기존 IDLE/중립 자동 전환 규칙을 따른다. 9단계는 calmTicks 만 갱신. (`flag_posture_changed auto:true`는 이제 재지정 때만 나온다.)
 20. **되돌리기 배분은 GDD 의사코드 그대로**: `pending = adv − undo`(기지는 `dmg − undo`) → 방어는 그 tick 전진량만 상쇄하고(ceil 잔여만큼 소폭 음수 가능) 이미 쌓인 진척도·깎인 기지 체력을 되돌리지는 않는다. 산문("역방향으로 민다")과 다를 수 있어 **확인 요청**.
 21. IDLE 공격 깃발은 front 가 다시 생겨도 자동 재교전하지 않는다(4.4 의사코드 그대로: ENGAGED/IDLE 은 이동·도착 판정 없음). 재지정·IDLE 타임아웃(600 tick) 자동 회수로만 빠진다.
 22. 소진 판정(< 40)은 GDD 4.11b 대로 **ENGAGED 깃발만**. MARCHING/IDLE/RETURNING 깃발은 40 미만이어도 유지.
@@ -531,7 +531,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 - 봇은 `BotBrain.decide(state, playerId, t)`에서 **일반 `C2S_GameCommand`** 를 돌려주면 된다(다음 tick 1단계, 인간과 같은 검증). 읽기 전용 헬퍼: `rules.ts`(`frontFirst`, `frontCount`, `tileCost`, `defRefCost`, `guardContains`, `availAP`, `minDistFromTerritory`, `recallTarget`), `combat.ts`(`flagValue`, `combatEligible`, `hostile`), `economy.ts`(`flagCap`, `techCost`), `state.isAlly`.
 - 8.6.0 규칙(태세·차단·후퇴)이 필요로 하는 상태는 전부 깃발 필드에 있다: `inCombat`, `blocked`, `disengageUntilTick`, `breakaway`, `routed`, `postureCooldownUntilTick`, `stalled`.
 - 주의: `etaTicks`/`stepToward`/`getField`는 거리장 캐시(`state.fields`)를 채운다(결과 불변·결정론 무관). 봇에서 써도 되지만 Phase A 코드에선 쓰지 말 것.
-- 페이싱 관찰(§13-3): 공격 깃발이 앵커를 먹으면 자동으로 방어 태세가 되므로, 봇의 확장 앵커는 국경에서 충분히 깊게(front 반경 6 안에서 최대 거리) 잡아야 한다.
+- 공격 깃발은 앵커 점령 후에도 front(앵커 반경 6) 가 빌 때까지 계속 민다(§10-19) — 앵커 깊이 제약 없음.
 
 ## 12. 2차 프로토콜 변경 요약 (프론트 영향)
 
@@ -550,7 +550,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 1. 4.7(a) `undoPerAP` 단위 오류(§10-14).
 2. 4.7(b) 되돌리기가 그 tick 전진량만 상쇄 — 기존 진척도·기지 피해 회복 불가(§10-20). 의도 확인.
-3. **페이싱**: 4.3a "공격 깃발이 앵커를 먹으면 방어로 전환" + front 정렬(앵커 거리 ASC) → 중립 확장 깃발은 국경 → 앵커 직선 몇 칸만 먹고 주둔으로 바뀐다(남은 병력은 주둔 유지비 대상). 4.6(d) "검 1,200 → 57타일" · 5.2 확장 속도는 깃발이 병력을 다 태운다고 가정. 임시 측정(8인, 국경 3칸 앞 앵커를 반복 발령하는 스크립트, 5분): 플레이어당 10~19 타일. 앵커를 깊게 잡으면 완화되지만 front 반경(6) 때문에 깊이에 상한이 있다. → 5.2 재검산 또는 규칙 확인 필요.
+3. ~~페이싱: 앵커 점령 시 자동 방어 전환으로 확장 정체~~ → **해결**(사용자 결정: 재파생 폐지, §10-19). 재측정: 검 1,200 단일 깃발이 중립 앵커(국경 7칸 앞)를 tick 7에 먹고도 계속 밀어 **44타일** 점령 후 소진(GDD 4.6(d) 적 타일 기준 57 — 이 테스트는 보급선 배율이 붙은 중립 비용이라 직접 비교는 근사). 8인 5분 스크립트: 플레이어당 **83~251 타일**(이전 10~19).
 4. 3.2 cap 클램프가 회수 환급을 자를 수 있음(§10-23).
 5. 동맹 거절 코드·이벤트 페이로드 미정의(§10-28), `isAlly` vs `isAllyOrBreaking` 혼용(§10-16), `LOCKED` 용도 미정의(§10-17).
 6. 1차 §10-5 (본문 구값 37/42분) 미해결 유지.

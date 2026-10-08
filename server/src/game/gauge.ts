@@ -14,7 +14,7 @@ import {
   POSTURE,
   isClaimable,
 } from '@civwar/shared';
-import { applyPosture, beginReturn, flagById, removeFlag } from './flagops.js';
+import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { availAP, frontNonEmpty, guardContains, guardCount, maxProgress, selectTargetRO, tileCost, undoPerAP } from './rules.js';
 import { NEUTRAL, isAlly, setTileOwner, type Flag, type GameState } from './state.js';
@@ -218,17 +218,14 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
 
 // ───────────────────────── 9. 파생 상태 ─────────────────────────
 
-/** 앵커 소유 변화에 따른 기본 태세 자동 재파생 (4.3a, postureManual == false 만) + calmTicks */
-export function stage9_derived(state: GameState, t: number, out: Outbox): void {
+/**
+ * 9단계: calmTicks 갱신만. 기본 태세는 발령·재지정 때만 정해진다 —
+ * "앵커 함락 → 자동 방어 전환" 재파생은 폐지(사용자 결정, GDD 4.3a 개정). 공격 깃발은 front 가 빌 때까지 계속 민다.
+ */
+export function stage9_derived(state: GameState, _t: number, _out: Outbox): void {
   for (const f of state.flags) {
     const garrison = f.state === 'ENGAGED' && state.owners[f.anchorTileId] === f.ownerId;
     f.calmTicks = garrison && !f.inCombat ? f.calmTicks + 1 : 0;
-    if (f.routed || f.postureManual || f.inCombat) continue; // 전투 중 태세 고정 [A-28]
-    const ao = state.owners[f.anchorTileId];
-    const def = ao === f.ownerId ? POSTURE.DEFEND : POSTURE.ATTACK;
-    if (def === f.posture) continue;
-    applyPosture(state, f, def, t);
-    out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: true });
   }
 }
 

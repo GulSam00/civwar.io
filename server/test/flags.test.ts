@@ -283,6 +283,23 @@ describe('게이지', () => {
     expect(s.players[1].tiles).toBeGreaterThan(tiles0);
   });
 
+  it('공격 깃발은 앵커를 먹어도 방어로 바뀌지 않고 front 가 빌 때까지 계속 민다 (4.3a 재파생 폐지)', () => {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c - 7, 1, false);
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1200, pos: c - 7, anchor: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'ENGAGED' });
+    const tiles0 = s.players[1].tiles;
+    let anchorTick = -1;
+    const r = run(sim, 400, () => {
+      if (anchorTick < 0 && s.owners[c] === 1) anchorTick = s.tick;
+    });
+    const captured = s.players[1].tiles - tiles0;
+    console.log(`[one-flag] sword 1200 neutral: captured ${captured} tiles, anchor at tick ${anchorTick}, end state ${s.flags.find((x) => x.id === f.id)?.state ?? 'gone'}`);
+    expect(anchorTick).toBeGreaterThan(0);
+    expect(r.all.some((m) => m.type === 'flag_posture_changed')).toBe(false);
+    expect(f.posture).toBe(POSTURE.ATTACK);
+    expect(captured).toBeGreaterThan(30); // 앵커(7칸)를 훨씬 넘어 계속 점령
+  });
+
   it('주둔 유지비: 내 땅 ENGAGED 검 2개 → 그로스의 9%', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 1, false);
