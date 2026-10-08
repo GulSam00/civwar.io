@@ -1,12 +1,12 @@
 /**
- * civwar.io WebSocket 프로토콜 타입 (GDD v4.0 7장).
+ * civwar.io WebSocket 프로토콜 타입 (GDD v4.1 7장).
  * 신뢰 소스 문서: _workspace/02_backend_protocol.md — 이 파일과 문서는 항상 함께 갱신한다.
  *
  * 전송: 텍스트 프레임 1개 = JSON 객체 1개. 모든 메시지는 `type` 판별 필드를 갖는다.
  * 정수 규칙: tileId/playerId/flagId/tick 은 정수. troops/gold 는 표시용 정수(내부 milli 의 floor).
  */
 
-import type { Posture, Terrain, TechAxis, Unit } from './constants.js';
+import type { BotDifficultyName, MapSizeClass, Posture, Terrain, TechAxis, Unit } from './constants.js';
 
 // ─────────────────────────────── 공통 ───────────────────────────────
 
@@ -72,7 +72,11 @@ export type ErrorCode =
   | 'NOT_IN_ROOM'
   | 'NOT_HOST'
   | 'NOT_LOBBY'
-  | 'RATE_LIMITED';
+  | 'RATE_LIMITED'
+  // v4.1 방 설정 (GDD 7.2a)
+  | 'BAD_ROOM_OPTIONS' // 필드 타입·범위 위반, size ∉ {S,M,L}, maxPlayers > 맵 최대 인원, maxPlayers < 현재 사람 수
+  | 'MAP_NOT_FOUND' // mapId 가 공식 맵 목록에 없음
+  | 'NOT_ENOUGH_PLAYERS'; // 시작 시 사람 + 봇 < 2 (프리셋은 max(2, players.min))
 
 // ─────────────────────────── Client → Server ───────────────────────────
 
@@ -86,11 +90,33 @@ export interface C2S_Hello {
 export interface C2S_LobbyJoinPublic {
   type: 'lobby_join_public';
 }
-export interface C2S_LobbyCreatePrivate {
+/** v4.1 방 설정 — 맵 선택 (GDD 2.8 / 7.2a) */
+export interface WaterConfigWire {
+  /** 'BORDER_ONLY' | 'SHALLOW_QUOTA' */
+  waterMode: 'BORDER_ONLY' | 'SHALLOW_QUOTA';
+  /** SHALLOW_QUOTA 에서만 의미. 0..1000 */
+  shallowPermille: number;
+}
+export type MapChoice =
+  | { kind: 'random'; size: MapSizeClass; water?: WaterConfigWire }
+  | { kind: 'preset'; mapId: string };
+/** 방 설정 옵션 — 모든 필드 생략 가능 (생략 = 기본값 / update 에서는 현재값 유지) */
+export interface RoomOptions {
+  map?: MapChoice;
+  maxPlayers?: number; // 2 .. min(12, 맵 최대 인원)
+  botCount?: number; // 0 .. maxPlayers − 1. 시작 시 maxPlayers − 사람 수로 클램프
+  botDifficulty?: BotDifficultyName;
+}
+export interface C2S_LobbyCreatePrivate extends RoomOptions {
   type: 'lobby_create_private';
-  targetPlayers: number; // 8..12
-  /** 1차: 수신하되 무시 (HARD_TIMEOUT_TICK 단일 소스) */
+  /** v4.0 호환: maxPlayers 가 없을 때만 maxPlayers 로 읽는다(범위 2..12). 다음 버전에서 제거 */
+  targetPlayers?: number;
+  /** 수신하되 무시 (HARD_TIMEOUT_TICK 단일 소스) */
   timeLimitMin?: number;
+}
+/** v4.1: 방장이 LOBBY 중 설정 변경 (부분 갱신) */
+export interface C2S_LobbyUpdateSettings extends RoomOptions {
+  type: 'lobby_update_settings';
 }
 export interface C2S_LobbyJoinPrivate {
   type: 'lobby_join_private';
@@ -182,6 +208,7 @@ export type ClientMessage =
   | C2S_Hello
   | C2S_LobbyJoinPublic
   | C2S_LobbyCreatePrivate
+  | C2S_LobbyUpdateSettings
   | C2S_LobbyJoinPrivate
   | C2S_LobbySpectate
   | C2S_LobbyLeave
@@ -203,6 +230,32 @@ export interface S2C_Welcome {
   tickMs: number;
   /** 재접속으로 복구된 세션이면 true */
   resumed: boolean;
+  /** v4.1: 공식 프리셋 맵 목록(파일의 메타만, id ASC). 없으면 [] */
+  officialMaps: OfficialMapInfo[];
+}
+
+export interface OfficialMapInfo {
+  id: string;
+  name: { ko: string; en: string };
+  sizeClass: MapSizeClass;
+  players: { min: number; recommendedMin: number; recommendedMax: number; max: number };
+}
+
+/** v4.1 room_state.settings — 방 설정 에코 + 표시용 파생값 */
+export interface RoomSettingsEcho {
+  /** random 이면 water 는 항상 채워서 보낸다(생략 시 기본 물) */
+  map: MapChoice;
+  maxPlayers: number;
+  botCount: number;
+  botDifficulty: BotDifficultyName;
+  /** 맵(크기 프리셋 또는 프리셋 파일)의 최대 인원 — 슬라이더 상한 */
+  mapMaxPlayers: number;
+  /** 추천 인원 [하한, 상한] */
+  recommended: [number, number];
+  /** 지금 시작하면 될 인원(사람 + 클램프된 봇, 공개 방은 정원) 기준. "guaranteed" | "estimate:<분>" | "timeout_likely" */
+  pacingNote: string;
+  /** pacingNote 계산에 쓴 예상 시작 인원 */
+  expectedPlayers: number;
 }
 
 export interface RoomMember {
@@ -221,7 +274,8 @@ export interface S2C_RoomState {
   isPublic: boolean;
   phase: RoomPhase;
   hostId: number | null; // playerId
-  targetPlayers: number;
+  /** v4.1: targetPlayers 제거 → settings.maxPlayers */
+  settings: RoomSettingsEcho;
   players: RoomMember[];
   spectatorCount: number;
   countdownMs: number | null; // COUNTDOWN 일 때 남은 ms
@@ -244,6 +298,12 @@ export interface S2C_MatchConfig {
     floorPct: number;
     scale: number;
   };
+  /** v4.1: 맵 출처 */
+  mapSource: 'random' | 'preset';
+  /** preset 일 때만 */
+  mapId?: string;
+  /** v4.1: 방 봇 난이도 (봇 인계 포함 전 봇 공통) */
+  botDifficulty: BotDifficultyName;
   /** shared/constants.ts 의 export 전체(함수·타입 제외) */
   constants: Record<string, unknown>;
 }
@@ -503,7 +563,8 @@ export interface S2C_FlagProgressLost {
   tick: number;
   flagId: number;
   tileId: number;
-  cause: 'captured_by_other' | 'target_lost';
+  /** v4.1: 'decayed' = 진척도 자동 감소로 0 도달 (4.7 e) */
+  cause: 'captured_by_other' | 'target_lost' | 'decayed';
 }
 export interface S2C_FlagIdle {
   type: 'flag_idle';

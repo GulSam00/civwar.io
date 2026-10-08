@@ -33,8 +33,32 @@ export interface CombatGroupPlan {
   flagIds: number[]; // ASC
   sides: CombatSidePlan[]; // key ASC
 }
+/**
+ * v4.1 (4.7 e): 4a 스냅숏 — 7c holdProgress 가 읽는다.
+ * posOf = 모든 깃발의 4a 위치, ownersAt = presentEnemy(g) = (not routed and troopsMilli > 0) 인 깃발의 타일별 소유자 목록(상태·태세 무관).
+ */
+export interface FlagPresence {
+  readonly posOf: ReadonlyMap<number, number>;
+  readonly ownersAt: ReadonlyMap<number, readonly number[]>;
+}
+
+export function snapshotPresence(state: Readonly<GameState>): FlagPresence {
+  const posOf = new Map<number, number>();
+  const ownersAt = new Map<number, number[]>();
+  for (const f of state.flags) {
+    posOf.set(f.id, f.posTileId);
+    if (f.routed || f.troopsMilli <= 0) continue;
+    const arr = ownersAt.get(f.posTileId);
+    if (arr) arr.push(f.ownerId);
+    else ownersAt.set(f.posTileId, [f.ownerId]);
+  }
+  return { posOf, ownersAt };
+}
+
 /** 4a 산출: flagId → 이번 tick 손실(milli). 무리 처리 순서와 무관하게 4b 이전 확정 */
 export interface FlagCombatPlan {
+  /** v4.1: 4a 스냅숏 (7c 진척도 유지 판정용) */
+  readonly presence: FlagPresence;
   readonly lossMilliByFlag: ReadonlyMap<number, number>;
   readonly groups: readonly CombatGroupPlan[];
   readonly groupOf: ReadonlyMap<number, CombatGroupPlan>;
@@ -187,7 +211,7 @@ export function stage4a_flagCombatPhaseA(state: Readonly<GameState>, _t: number)
     groups.push(g);
     for (const x of comp) groupOf.set(x.id, g);
   }
-  return { lossMilliByFlag: loss, groups, groupOf, sideOf };
+  return { presence: snapshotPresence(state), lossMilliByFlag: loss, groups, groupOf, sideOf };
 }
 
 /** 4b — flagId ASC 적용 */

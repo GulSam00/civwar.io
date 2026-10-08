@@ -4,17 +4,18 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { ROOM_CODE_LENGTH, type ErrorCode } from '@civwar/shared';
 import { IdleBot, type BotBrain } from '../game/tick.js';
+import { MapCatalog } from '../map/presets.js';
 import { Room } from './room.js';
 import { Session } from './session.js';
-
-/** 공개 룸 기본 인원 (GDD에 없음 — 기본 맵 10인 기준으로 임의 결정) */
-export const PUBLIC_ROOM_TARGET_PLAYERS = 10;
+import { applyRoomOptions, defaultPrivateSettings, publicSettings, type RoomSettings } from './settings.js';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 0/O/1/I 제외
 
 export interface LobbyOptions {
   /** 고정 시드(테스트·재현용). 없으면 crypto 난수 */
   seed?: number;
   brain?: BotBrain;
+  /** 공식 프리셋 맵 카탈로그. 없으면 server/maps/official 을 로드 (형식·checksum 오류 시 예외 = 기동 실패) */
+  catalog?: MapCatalog;
 }
 
 export class LobbyManager {
@@ -24,9 +25,11 @@ export class LobbyManager {
   readonly roomsByCode = new Map<string, Room>();
   private roomSeq = 0;
   private seedCounter: number | undefined;
+  readonly catalog: MapCatalog;
 
   constructor(private readonly opts: LobbyOptions = {}) {
     this.seedCounter = opts.seed;
+    this.catalog = opts.catalog ?? MapCatalog.loadDir();
   }
 
   createSession(nickname: string): Session {
@@ -60,13 +63,14 @@ export class LobbyManager {
     return randomInt(0, 0xffffffff);
   }
 
-  createRoom(isPublic: boolean, targetPlayers: number): Room {
+  createRoom(isPublic: boolean, settings: RoomSettings): Room {
     const id = `r${++this.roomSeq}`;
     const room = new Room(
       id,
       this.newCode(),
       isPublic,
-      targetPlayers,
+      settings,
+      this.catalog,
       {
         onDispose: (r) => {
           this.rooms.delete(r.id);
@@ -98,14 +102,18 @@ export class LobbyManager {
         break;
       }
     }
-    room ??= this.createRoom(true, PUBLIC_ROOM_TARGET_PLAYERS);
+    room ??= this.createRoom(true, publicSettings());
     return room.join(s);
   }
 
-  createPrivate(s: Session, targetPlayers: number): ErrorCode | null {
-    if (this.blockedByActiveGame(s)) return 'ALREADY_IN_ROOM';
+  /** v4.1: 옵션(7.2a) 검증 실패 시 방을 만들지 않는다 → { code, message } */
+  createPrivate(s: Session, raw: Record<string, unknown>): { code: ErrorCode; message: string } | null {
+    if (this.blockedByActiveGame(s)) return { code: 'ALREADY_IN_ROOM', message: 'ALREADY_IN_ROOM' };
+    const r = applyRoomOptions(raw, defaultPrivateSettings(), this.catalog, 1, true);
+    if (!r.ok) return { code: r.code, message: r.message };
     this.leaveCurrent(s);
-    return this.createRoom(false, targetPlayers).join(s);
+    const code = this.createRoom(false, r.settings).join(s);
+    return code ? { code, message: code } : null;
   }
 
   joinPrivate(s: Session, code: string): ErrorCode | null {

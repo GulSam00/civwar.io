@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { HARD_TIMEOUT_TICK, THRESHOLD_DECAY_START } from '@civwar/shared';
+import { BOT_DIFFICULTY, HARD_TIMEOUT_TICK, THRESHOLD_DECAY_START } from '@civwar/shared';
 import { flagCap, grossGoldMilliPerTick, isqrt, regenMilliPerTick, techCost, troopCap } from '../src/game/economy.js';
 import type { PlayerState } from '../src/game/state.js';
 import { meetsThreshold, thresholdScaled } from '../src/game/victory.js';
 
 function player(over: Partial<PlayerState> = {}): PlayerState {
   return {
-    id: 1, isBot: false, botControlled: false, connected: true, disconnectedSinceTick: null, alive: true,
+    id: 1, isBot: false, botControlled: false, botDifficulty: 'NORMAL', bot: BOT_DIFFICULTY.NORMAL, connected: true, disconnectedSinceTick: null, alive: true,
     eliminatedTick: null, lastLostTo: null, homeTileId: 0, tiles: 9, goldWeight: 0, baseTiles: [],
     troopsMilli: 150_000, goldMilli: 200_000, goldEarnedMilli: 0, upkeepPm: 0, tech: [0, 0, 0, 0], techPurchased: 0,
     ...over,

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { HARD_TIMEOUT_TICK, SNAPSHOT_FULL_INTERVAL, isClaimable, rleDecode, type S2C_SnapshotFull, type ServerMessage } from '@civwar/shared';
-import { generateMap } from '../src/map/generate.js';
+import { generateMapForPlayers } from '../src/map/generate.js';
 import { NEUTRAL, createGameState, setTileOwner } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
 
 function makeSim(seed = 4242, N = 8) {
-  const map = generateMap(seed, N);
+  const map = generateMapForPlayers(seed, N);
   const setup = Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true }));
   return new Simulation(createGameState(map, setup));
 }

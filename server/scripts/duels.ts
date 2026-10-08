@@ -1,6 +1,6 @@
 /** 4.15 대표 전투 표 재현 출력 (npx tsx server/scripts/duels.ts) */
 import { POSTURE, TERRAIN, UNIT, isClaimable } from '@civwar/shared';
-import { generateMap } from '../src/map/generate.js';
+import { generateMapForPlayers } from '../src/map/generate.js';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { NEUTRAL, createGameState, makeFlag, type GameState } from '../src/game/state.js';
@@ -13,7 +13,7 @@ function open(s: GameState): number {
   throw new Error('none');
 }
 function duel(name: string, au: number, du: number, dTer: number, aTer: number = TERRAIN.PLAIN, dPost: number = POSTURE.DEFEND) {
-  const map = generateMap(4242, 8);
+  const map = generateMapForPlayers(4242, 8);
   const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
   const c = open(s);
   s.map.terrain[c] = aTer;

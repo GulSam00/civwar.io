@@ -20,16 +20,17 @@ export const PROTOCOL_VERSION = 1;
 export const TICK_MS = 200; // 초당 5 tick
 export const TICKS_PER_MIN = 300;
 export const ENDGAME_RUSH_TICK = 8400; // 28분 [A-38]
-export const ENDGAME_RUSH_COST_MULT_PERMILLE = 750; // tileCost × 0.75 (defRefCost 미적용)
+export const ENDGAME_RUSH_COST_MULT_PERMILLE = 750; // tileCost × 0.75
 export const HARD_TIMEOUT_TICK = 9600; // 32분 [A-38]
 export const SNAPSHOT_FULL_INTERVAL = 25; // 5초
 export const PLAYER_DELTA_INTERVAL = 5; // 1초. troops/gold/flagStats 델타 주기
 export const BASE_HP_DELTA_INTERVAL = 5; // 1초
 export const DISCONNECT_GRACE_TICK = 450; // 90초
 
-// ══ 인원 ══
-export const MIN_PLAYERS = 8;
-export const MAX_PLAYERS = 12;
+// ══ 인원 ══ (v4.1 2.8: 방 최대 인원 2~12)
+export const ROOM_MAX_PLAYERS_RANGE = [2, 12] as const;
+export const MIN_PLAYERS = ROOM_MAX_PLAYERS_RANGE[0];
+export const MAX_PLAYERS = ROOM_MAX_PLAYERS_RANGE[1];
 
 // ══ 맵 ══ (v2.1 불변)
 export const LAND_TILES_PER_PLAYER = 390;
@@ -42,12 +43,20 @@ export const CA_MAX_ATTEMPTS = 10;
 export const CA_SMOOTH_STEPS = 4;
 export const CA_LAND_NEIGHBOR_MIN = 5; // 8방향 기준
 export const SPAWN_BLOCK = 3; // 3×3
+/** v4.1: "인원별 기본 크기"(2.3 표) — 생성기는 lookup 하지 않고 W×H 를 인자로 받는다. 테스트·스크립트 편의용 */
 export const MAP_SIZE: Readonly<Record<number, readonly [number, number]>> = {
   8: [90, 54],
   9: [95, 57],
   10: [100, 60],
   11: [104, 63],
   12: [108, 66],
+};
+/** [A-45] 크기 프리셋 (2.8 b). recommended = [하한, 상한], max = 맵 최대 인원 */
+export type MapSizeClass = 'S' | 'M' | 'L';
+export const MAP_SIZE_PRESETS: Readonly<Record<MapSizeClass, { w: number; h: number; recommended: readonly [number, number]; max: number }>> = {
+  S: { w: 72, h: 42, recommended: [5, 6], max: 7 },
+  M: { w: 100, h: 60, recommended: [9, 11], max: 12 }, // 기본 · 페이싱 보증
+  L: { w: 108, h: 66, recommended: [11, 12], max: 12 },
 };
 export const MAPGEN_MAX_SEED_RETRIES = 16; // 불변식 실패 시 seed+1 재생성 상한 (GDD에 없음 — 임의)
 
@@ -185,13 +194,15 @@ export type Unit = (typeof UNIT)[keyof typeof UNIT];
 //                                     SPEAR SWORD CAVALRY
 export const UNIT_SPEED_PERMILLE = [750, 1000, 1450] as const;
 export const UNIT_ATK_MULT_PERMILLE = [1150, 1000, 850] as const;
-export const UNIT_DEF_PUSH_PERMILLE = [1300, 1000, 550] as const;
 export const UNIT_GARRISON_PERMILLE = [600, 1000, 1600] as const;
 export const UNIT_ASSAULT_PERMILLE = [700, 1000, 1400] as const;
 export const UNIT_CONVERT_PERMILLE = [1000, 1000, 1150] as const;
 
-// ══ 방어 (양방향 진척도) ══
-export const DEFENSE_LEVERAGE_PERMILLE = 900;
+// ══ v4.1 진척도 자동 감소 (4.7 e) ══
+// v4.1 삭제: DEFENSE_LEVERAGE_PERMILLE, UNIT_DEF_PUSH_PERMILLE (게이지 되돌리기 폐지).
+// UNIT_DEF_PERMILLE(깃발 전투 DEF, A-23)은 독립 상수로 유지.
+export const PROGRESS_DECAY_MILLI_PER_TICK = 20; // [A-40] 밀지 않는 tick 마다 감소 — 1000 → 0 에 50 tick(10초)
+export const PROGRESS_HOLD_RANGE = 1; // [A-41] = FLAG_ENGAGE_RANGE. 4a 스냅숏 거리 ≤ 1 적 깃발 → 감소 면제
 
 // ══ 태세 ══
 export const POSTURE = { ATTACK: 0, DEFEND: 1 } as const;
@@ -244,8 +255,21 @@ export const LOCKOUT_COUNTDOWN_TICK = 150;
 export const LOCKOUT_FREEZE_TICK = 300;
 
 // ══ 봇 ══
-export const BOT_DECISION_INTERVAL = 15;
-export const BOT_RESERVE_RATIO_PERMILLE = 300;
+// v4.1 [A-46]: BOT_DECISION_INTERVAL / BOT_RESERVE_RATIO / BOT_MIN_DEFENSE_RATIO / 병종 선택은 난이도별 값(BOT_DIFFICULTY)으로 이동.
+export type BotDifficultyName = 'EASY' | 'NORMAL' | 'HARD';
+export interface BotDifficultyParams {
+  decisionInterval: number; // tick
+  reserveRatioPermille: number;
+  minDefenseRatioPermille: number;
+  /** null = chooseUnit 정상, 값 = 항상 그 병종 (UNIT) */
+  fixedUnit: number | null;
+}
+export const BOT_DIFFICULTY: Readonly<Record<BotDifficultyName, Readonly<BotDifficultyParams>>> = {
+  EASY: { decisionInterval: 30, reserveRatioPermille: 450, minDefenseRatioPermille: 100, fixedUnit: 1 /* SWORD */ },
+  NORMAL: { decisionInterval: 15, reserveRatioPermille: 300, minDefenseRatioPermille: 250, fixedUnit: null }, // 기본
+  HARD: { decisionInterval: 10, reserveRatioPermille: 200, minDefenseRatioPermille: 300, fixedUnit: null },
+};
+export const BOT_DIFFICULTY_DEFAULT: BotDifficultyName = 'NORMAL';
 export const BOT_COMMIT_NEUTRAL_PERMILLE = 450;
 export const BOT_COMMIT_ENEMY_PERMILLE = 350;
 export const BOT_DEFEND_COMMIT_PERMILLE = 400;
@@ -253,7 +277,6 @@ export const BOT_NEUTRAL_BIAS_TICK = 2442;
 export const BOT_THREAT_TRIGGER = 3000;
 export const BOT_THREAT_LOOKAHEAD = 25;
 export const BOT_BASE_THREAT_W = 3;
-export const BOT_MIN_DEFENSE_RATIO_PERMILLE = 250;
 export const BOT_PREEMPT_FACTOR_PERMILLE = 1600;
 export const BOT_STALL_SWITCH_PERMILLE = 1300;
 export const BOT_GARRISON_PATIENCE = 900;
@@ -279,12 +302,15 @@ export const DISENGAGE_VALUE_PERMILLE = 500; // [A-31]
 export const ANY_HOSTILE = 254; // targetOwnerId 예약값 [A-27]
 // 폐기·구현 금지: COMBAT_HOME_DEF_PERMILLE, COMBAT_TERRAIN_DEF_PERMILLE(A-16), UNIT_POWER, LOSER_ATTRITION_RATIO 등
 
-// ══ 로비 (GDD에 없음 — 백엔드 임의 결정, 02_backend_protocol.md 참조) ══
+// ══ 로비 (v4.1 2.8 h — 사용자 승인값 + 백엔드 결정) ══
 export const ROOM_CODE_LENGTH = 6;
 export const NICKNAME_MAX_LEN = 16;
 export const LOBBY_COUNTDOWN_MS = 3000;
-/** 공개 룸: 첫 인간 입장 후 이 시간이 지나면 남은 자리를 봇으로 채우고 시작 */
+/** 공개 룸: 첫 인간 입장 후 이 시간이 지나면 남은 자리를 봇으로 채우고 시작 (GDD PUBLIC_AUTOSTART_MS) */
 export const PUBLIC_LOBBY_AUTOSTART_MS = 30000;
+/** 공개 룸 정원 — 시작 시 빈자리를 NORMAL 봇으로 충원 */
+export const PUBLIC_ROOM_PLAYERS = 10;
+export const PUBLIC_ROOM_SIZE: MapSizeClass = 'M';
 /** 게임 종료 후 룸을 정리하기까지 대기 */
 export const ROOM_CLOSE_AFTER_GAME_MS = 60000;
 /** 세션당 tick 당 최대 명령 수 — 초과분은 RATE_LIMITED */

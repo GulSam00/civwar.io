@@ -1,5 +1,9 @@
 /**
- * 맵 생성 (GDD v4.0 2.4 + v2.1 2.6 placeBases).
+ * 맵 생성 (GDD v4.0 2.4 + v2.1 2.6 placeBases, v4.1 2.8 c: 격자 W×H 를 인자로 받는다).
+ *
+ * v4.1 확인: 인원 의존 파라미터는 스폰 수(placeSpawns 의 count — 최원점 순차 배치, 고정 간격 상수 없음)와
+ * 기지 수(수도 N + 셀당 1개 = 2N)뿐이며 둘 다 N 만 받는다. 격자 크기는 1단계 육지 비율(permille)·지형 쿼터(육지 비례)로만 들어가므로
+ * "인원 → 격자" lookup 을 인자로 바꿔도 다른 단계는 수정이 필요 없다.
  *
  * 이 파일은 "사각 구현체 내부"로 취급한다 — 격자 전용 헬퍼(count8, block)를 직접 쓴다(GDD 2.2 규칙 3).
  * 결정론: mulberry32 만 사용, 모든 정렬은 tileId/playerId 로 완전 순서화, 부동소수 없음.
@@ -24,6 +28,8 @@ import {
   MAPGEN_MAX_SEED_RETRIES,
   MAP_GEN_DEFAULT,
   MAP_SIZE,
+  MAP_SIZE_PRESETS,
+  type MapSizeClass,
   SPAWN_BLOCK,
   TERRAIN,
   TERRAIN_GEN,
@@ -63,15 +69,17 @@ export interface GeneratedMap {
   initialOwners: Uint8Array;
   /** 분할 전 물(DEEP ∪ SHALLOW) 거리 — 테스트·디버그용 */
   waterDist: Int32Array;
-  /** 지형 쿼터 (스폰/기지 산 강등 전) — 테스트용 */
+  /** 지형 쿼터 (스폰/기지 산 강등 전) — 테스트용. 프리셋 맵은 전부 0/null */
   quotas: { mountain: number; hills: number; fertile: number; desert: number; shallow: number | null };
+  /** v4.1: 맵 출처 (match_config.mapSource / mapId) */
+  source: { kind: 'random' } | { kind: 'preset'; mapId: string };
 }
 
 export class InvariantError extends Error {}
 
 // ───────────────────────────── 유틸 ─────────────────────────────
 
-function bfs(
+export function bfs(
   topo: SquareTopology,
   sources: readonly number[],
   allowed: (t: number) => boolean,
@@ -301,10 +309,9 @@ function placeBases(
 
 // ───────────────────────────── 메인 ─────────────────────────────
 
-function generateOnce(seed: number, playerCount: number, cfg: MapGenConfig): GeneratedMap {
-  const size = MAP_SIZE[playerCount];
-  if (!size) throw new Error(`unsupported playerCount ${playerCount}`);
-  const [W, H] = size;
+function generateOnce(seed: number, W: number, H: number, playerCount: number, cfg: MapGenConfig): GeneratedMap {
+  if (!Number.isInteger(W) || !Number.isInteger(H) || W < 8 || H < 8) throw new Error(`bad grid ${W}x${H}`);
+  if (!Number.isInteger(playerCount) || playerCount < 1) throw new Error(`bad playerCount ${playerCount}`);
   const topo = new SquareTopology(W, H);
   const n = topo.tileCount();
   const rng = new Mulberry32(seed);
@@ -416,6 +423,7 @@ function generateOnce(seed: number, playerCount: number, cfg: MapGenConfig): Gen
     initialOwners,
     waterDist,
     quotas: { mountain: quotaM, hills: quotaH, fertile: quotaF, desert: quotaD, shallow: quotaS },
+    source: { kind: 'random' },
   };
   assertInvariants(map);
   return map;
@@ -481,13 +489,16 @@ export function assertInvariants(map: GeneratedMap): void {
   }
 }
 
-/** 불변식 실패 시 seed+1 로 재생성 (GDD 2.4) */
-export function generateMap(seed: number, playerCount: number, cfg: MapGenConfig = MAP_GEN_DEFAULT): GeneratedMap {
+/**
+ * generateMap(seed, W, H, N, cfg) — GDD 2.8 (c) 호출 규약. W×H = 크기 프리셋(또는 임의 격자), N = 시작 시점 실제 인원.
+ * 불변식 실패 시 seed+1 로 재생성 (GDD 2.4).
+ */
+export function generateMap(seed: number, W: number, H: number, playerCount: number, cfg: MapGenConfig = MAP_GEN_DEFAULT): GeneratedMap {
   let lastErr: unknown;
   for (let k = 0; k < MAPGEN_MAX_SEED_RETRIES; k++) {
     const s = (seed + k) >>> 0;
     try {
-      const map = generateOnce(s, playerCount, cfg);
+      const map = generateOnce(s, W, H, playerCount, cfg);
       map.requestedSeed = seed >>> 0;
       return map;
     } catch (e) {
@@ -496,4 +507,17 @@ export function generateMap(seed: number, playerCount: number, cfg: MapGenConfig
     }
   }
   throw lastErr;
+}
+
+/** 크기 프리셋 S/M/L 로 생성 (2.8 b) */
+export function generateMapForSize(seed: number, size: MapSizeClass, playerCount: number, cfg: MapGenConfig = MAP_GEN_DEFAULT): GeneratedMap {
+  const p = MAP_SIZE_PRESETS[size];
+  return generateMap(seed, p.w, p.h, playerCount, cfg);
+}
+
+/** 테스트·스크립트 편의: 2.3 "인원별 기본 크기" 표(MAP_SIZE, 8~12인)로 격자를 고른다. 서버 룸은 쓰지 않는다 */
+export function generateMapForPlayers(seed: number, playerCount: number, cfg: MapGenConfig = MAP_GEN_DEFAULT): GeneratedMap {
+  const size = MAP_SIZE[playerCount];
+  if (!size) throw new Error(`no default grid for ${playerCount} players`);
+  return generateMap(seed, size[0], size[1], playerCount, cfg);
 }

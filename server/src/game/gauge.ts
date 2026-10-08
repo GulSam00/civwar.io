@@ -1,5 +1,6 @@
 /**
- * 게이지 줄다리기 (GDD 4.6 / 4.7 / 4.10 / 4.12) — 5·6·7단계, 그리고 9·10단계 깃발 처리.
+ * 게이지 (GDD v4.1 4.6 / 4.7 / 4.10 / 4.12) — 5·6·7·7c단계, 그리고 9·10단계 깃발 처리.
+ * v4.1: 게이지 되돌리기 폐지 -> 밀지 않는 공격 게이지는 자동 감소(7c), 주변 적 깃발이 있으면 유지.
  */
 import {
   BASE_CAPTURE_LOCK_TICK,
@@ -12,11 +13,14 @@ import {
   FLAG_STALL_TICKS,
   FRONT_RADIUS,
   POSTURE,
+  PROGRESS_DECAY_MILLI_PER_TICK,
+  PROGRESS_HOLD_RANGE,
   isClaimable,
 } from '@civwar/shared';
 import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
-import { availAP, frontNonEmpty, guardContains, guardCount, maxProgress, selectTargetRO, tileCost, undoPerAP } from './rules.js';
+import type { FlagPresence } from './combat.js';
+import { availAP, frontNonEmpty, guardCount, maxProgress, selectTargetRO, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, setTileOwner, type Flag, type GameState } from './state.js';
 
 // ───────────────────────── 5. AP 예산 누적 ─────────────────────────
@@ -35,21 +39,18 @@ export interface Push {
   flagId: number;
   tileId: number;
   cost: number;
-  adv: number;
-  cur: number;
-  undo: number;
+  adv: number; // > 0 (v4.1: adv == 0 은 push 가 아니다)
 }
 export interface BaseHit {
   flagId: number;
   tileId: number;
   cost: number;
-  dmg: number;
-  undo: number;
+  dmg: number; // > 0
 }
+/** v4.1: 방어 배분(defSpend)·되돌리기(undo) 삭제 — 방어 태세 깃발은 게이지 단계에서 아무것도 쓰지 않는다 (4.7 a) */
 export interface PushPlan {
   readonly pushes: readonly Push[];
   readonly baseHits: readonly BaseHit[];
-  readonly defSpend: ReadonlyMap<number, number>; // flagId → AP
 }
 
 export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): PushPlan {
@@ -61,35 +62,16 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
     if (X === null) continue;
     const c = tileCost(state, f, X);
     const adv = Math.min(Math.floor((availAP(f) * 1000) / c), maxProgress(f));
+    if (adv === 0) continue; // v4.1: 0 전진은 push 가 아니다
     if (state.map.isBase[X]) {
       const b = state.bases[state.baseIndexOf.get(X)!];
       if (t < b.lockUntilTick) continue;
-      baseHits.push({ flagId: f.id, tileId: X, cost: c, dmg: adv, undo: 0 });
+      baseHits.push({ flagId: f.id, tileId: X, cost: c, dmg: adv });
     } else {
-      pushes.push({ flagId: f.id, tileId: X, cost: c, adv, cur: X === f.targetTileId ? f.progressMilli : 0, undo: 0 });
+      pushes.push({ flagId: f.id, tileId: X, cost: c, adv });
     }
   }
-  const defSpend = new Map<number, number>();
-  for (const d of state.flags) {
-    if (d.state !== 'ENGAGED' || d.posture !== POSTURE.DEFEND || d.inCombat) continue;
-    const ap = availAP(d);
-    let remain = ap;
-    const bt = baseHits.filter((b) => guardContains(state, d, b.tileId)).sort((a, b) => b.dmg - a.dmg || a.tileId - b.tileId);
-    const pt = pushes.filter((p) => guardContains(state, d, p.tileId)).sort((a, b) => b.cur + b.adv - (a.cur + a.adv) || a.flagId - b.flagId);
-    const targets: (Push | BaseHit)[] = [...bt, ...pt];
-    for (const tgt of targets) {
-      if (remain === 0) break;
-      const u = undoPerAP(state, d, tgt.tileId);
-      if (u === 0) continue;
-      const pending = ('dmg' in tgt ? tgt.dmg : tgt.adv) - tgt.undo;
-      if (pending <= 0) continue;
-      const use = Math.min(remain, Math.ceil(pending / u));
-      tgt.undo += use * u;
-      remain -= use;
-    }
-    if (ap - remain > 0) defSpend.set(d.id, ap - remain);
-  }
-  return { pushes, baseHits, defSpend };
+  return { pushes, baseHits };
 }
 
 // ───────────────────────── 7. Phase B (쓰기) ─────────────────────────
@@ -101,6 +83,7 @@ function spend(state: GameState, f: Flag, ap: number): void {
   state.ledger.spentAP += m;
 }
 
+/** 4.7 (f) — 민 깃발은 net = adv, ENGAGED·ATTACK·비전투인데 못 민 깃발은 net = 0. inCombat 은 호출하지 않는다 */
 function updateStall(f: Flag, net: number, t: number, out: Outbox): void {
   if (net <= 0) {
     if (f.stallSinceTick === null) f.stallSinceTick = t;
@@ -123,7 +106,12 @@ function setTarget(f: Flag, X: number, t: number, out: Outbox): void {
   f.progressMilli = 0;
 }
 
-export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number, out: Outbox): void {
+/**
+ * 7단계. 반환값 = 이번 tick 에 민 깃발 집합 pushedSet (tick 로컬, 7c 가 읽는다).
+ * 순서: (tileId ASC, flagId ASC) 로 게이지·기지 적용 → 안 민 ENGAGED·ATTACK·비전투 깃발 updateStall(f, 0) (flagId ASC).
+ */
+export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number, out: Outbox): Set<number> {
+  const pushedSet = new Set<number>();
   type Entry = { kind: 'push'; e: Push } | { kind: 'base'; e: BaseHit };
   const entries: Entry[] = [
     ...plan.pushes.map((e) => ({ kind: 'push' as const, e })),
@@ -137,16 +125,18 @@ export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number,
     while (j < entries.length && entries[j].e.tileId === X) j++;
     const group = entries.slice(i, j);
     i = j;
+    for (const g of group) pushedSet.add(g.e.flagId);
     if (group[0].kind === 'push') applyTilePushes(state, X, group.map((g) => g.e as Push), t, out);
     else applyBaseHits(state, X, group.map((g) => g.e as BaseHit), t, out);
   }
-  for (const [id, ap] of plan.defSpend) {
-    const d = flagById(state, id);
-    if (d) spend(state, d, ap);
+  for (const f of state.flags) {
+    if (f.state !== 'ENGAGED' || f.posture !== POSTURE.ATTACK || f.inCombat || pushedSet.has(f.id)) continue;
+    updateStall(f, 0, t, out);
   }
+  return pushedSet;
 }
 
-/** 4.7 b + 4.10 게이지 레이스 — 한 타일에 걸린 게이지들 (flagId ASC) */
+/** 4.7 b + 4.10 게이지 레이스 — 한 타일에 걸린 게이지들 (flagId ASC). net = adv (되돌리기 없음) */
 function applyTilePushes(state: GameState, X: number, list: Push[], t: number, out: Outbox): void {
   let winner: Flag | null = null;
   const touched: Flag[] = [];
@@ -155,7 +145,6 @@ function applyTilePushes(state: GameState, X: number, list: Push[], t: number, o
     if (!f) continue;
     setTarget(f, X, t, out);
     spend(state, f, Math.ceil((p.adv * p.cost) / 1000));
-    const net = p.adv - p.undo;
     if (winner) {
       // 같은 tick 에 먼저(flagId ASC) 1000 에 닿은 깃발이 이미 가져감
       f.progressMilli = 0;
@@ -163,8 +152,8 @@ function applyTilePushes(state: GameState, X: number, list: Push[], t: number, o
       out.broadcast.push({ type: 'flag_progress_lost', tick: t, flagId: f.id, tileId: X, cause: 'captured_by_other' });
       continue;
     }
-    f.progressMilli += net;
-    updateStall(f, net, t, out);
+    f.progressMilli += p.adv;
+    updateStall(f, p.adv, t, out);
     if (f.progressMilli >= 1000) {
       winner = f;
       setTileOwner(state, X, f.ownerId);
@@ -177,7 +166,6 @@ function applyTilePushes(state: GameState, X: number, list: Push[], t: number, o
         out.broadcast.push({ type: 'flag_progress_lost', tick: t, flagId: g.id, tileId: X, cause: 'captured_by_other' });
       }
     } else {
-      f.progressMilli = Math.max(0, f.progressMilli);
       touched.push(f);
     }
   }
@@ -195,9 +183,8 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
     setTarget(f, B, t, out);
     hitters.push(f);
     spend(state, f, Math.ceil((h.dmg * h.cost) / 1000));
-    const net = h.dmg - h.undo;
+    const net = h.dmg; // v4.1: 기지 방어 = 격파 + 회복만 [A-44]
     updateStall(f, net, t, out);
-    if (net <= 0) continue;
     base.hpMilli -= net;
     base.lastDamageTick = t;
     base.damagedThisTick = true;
@@ -216,16 +203,49 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
   }
 }
 
+// ───────────────────────── 7c. 진척도 자동 감소 (v4.1, 4.7 e) ─────────────────────────
+
+/**
+ * 7c — flagId ASC. 이번 tick 안 민 깃발(pushedSet 밖) 중 holdProgress 가 아닌 것만
+ * progressMilli -= PROGRESS_DECAY_MILLI_PER_TICK (0 클램프). 0 도달 시 flag_progress_lost(cause="decayed") 1회.
+ * targetTileId 는 유지(sticky) — 다시 밀면 같은 타깃에서 0부터.
+ *
+ * holdProgress(f) = f.inCombat or 적대 깃발 g in presence4a : distance(pos4a[f], pos4a[g]) <= PROGRESS_HOLD_RANGE.
+ * presence4a 는 4a 스냅숏(이동 직후, 4b 손실 전)이라 4b 에서 패주한 깃발도 이번 tick 엔 "주변 적"이다.
+ * 각 깃발은 자기 progressMilli 만 바꾸므로 처리 순서가 결과를 바꾸지 않는다.
+ */
+export function stage7c_progressDecay(state: GameState, presence: FlagPresence, pushedSet: ReadonlySet<number>, t: number, out: Outbox): void {
+  for (const f of state.flags) {
+    if (f.progressMilli <= 0 || pushedSet.has(f.id)) continue;
+    if (holdProgress(state, presence, f)) continue;
+    f.progressMilli = Math.max(0, f.progressMilli - PROGRESS_DECAY_MILLI_PER_TICK);
+    if (f.progressMilli === 0) {
+      out.broadcast.push({ type: 'flag_progress_lost', tick: t, flagId: f.id, tileId: f.targetTileId!, cause: 'decayed' }); // progress > 0 ⇒ 타깃 있음
+    }
+  }
+}
+
+export function holdProgress(state: Readonly<GameState>, presence: FlagPresence, f: Readonly<Flag>): boolean {
+  if (f.inCombat) return true;
+  const pos = presence.posOf.get(f.id) ?? f.posTileId;
+  for (const x of state.graph.disk(pos, PROGRESS_HOLD_RANGE)) {
+    const owners = presence.ownersAt.get(x);
+    if (!owners) continue;
+    for (const o of owners) if (o !== f.ownerId && !isAlly(state, f.ownerId, o)) return true;
+  }
+  return false;
+}
+
 // ───────────────────────── 9. 파생 상태 ─────────────────────────
 
 /**
- * 9단계: calmTicks 갱신만. 기본 태세는 발령·재지정 때만 정해진다 —
+ * 9단계: calmTicks 갱신만 (threatened = v4.1 [A-43] 재정의. GARRISON_ESCALATE_MAX = 1 이라 현재 규칙 영향 없음). 기본 태세는 발령·재지정 때만 정해진다 —
  * "앵커 함락 → 자동 방어 전환" 재파생은 폐지(사용자 결정, GDD 4.3a 개정). 공격 깃발은 front 가 빌 때까지 계속 민다.
  */
 export function stage9_derived(state: GameState, _t: number, _out: Outbox): void {
   for (const f of state.flags) {
     const garrison = f.state === 'ENGAGED' && state.owners[f.anchorTileId] === f.ownerId;
-    f.calmTicks = garrison && !f.inCombat ? f.calmTicks + 1 : 0;
+    f.calmTicks = garrison && !threatened(state, f) ? f.calmTicks + 1 : 0;
   }
 }
 

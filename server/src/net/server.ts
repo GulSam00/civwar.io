@@ -61,6 +61,7 @@ export function startServer(port: number, opts: LobbyOptions = {}): Promise<Game
           protocolVersion: PROTOCOL_VERSION,
           tickMs: TICK_MS,
           resumed,
+          officialMaps: lobby.catalog.list(),
         });
         if (resumed) lobby.roomOf(session)?.onResume(session);
         return;
@@ -106,8 +107,15 @@ function route(lobby: LobbyManager, s: Session, msg: ClientMessage, error: (c: E
   switch (msg.type) {
     case 'lobby_join_public':
       return fail(lobby.joinPublic(s));
-    case 'lobby_create_private':
-      return fail(lobby.createPrivate(s, msg.targetPlayers));
+    case 'lobby_create_private': {
+      const e = lobby.createPrivate(s, msg as unknown as Record<string, unknown>);
+      return e ? error(e.code, e.message) : undefined;
+    }
+    case 'lobby_update_settings': {
+      if (!room) return error('NOT_IN_ROOM', 'not in a room');
+      const e = room.updateSettings(s, msg as unknown as Record<string, unknown>);
+      return e ? error(e.code, e.message) : undefined;
+    }
     case 'lobby_join_private':
       return fail(lobby.joinPrivate(s, msg.roomCode));
     case 'lobby_spectate':

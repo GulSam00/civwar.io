@@ -4,6 +4,10 @@
  */
 import {
   BASE_HP_INIT_MILLI,
+  BOT_DIFFICULTY,
+  BOT_DIFFICULTY_DEFAULT,
+  type BotDifficultyName,
+  type BotDifficultyParams,
   POSTURE,
   START_GOLD,
   START_TROOPS,
@@ -22,6 +26,10 @@ export interface PlayerState {
   id: number; // 1..N
   isBot: boolean; // 처음부터 봇 슬롯
   botControlled: boolean; // 봇 슬롯 또는 DISCONNECT_GRACE 초과로 인계됨
+  /** v4.1 [A-46]: 이 자리를 봇이 조종할 때 쓰는 난이도 (방 단위 하나 — 사람 자리도 인계 대비로 같은 값) */
+  botDifficulty: BotDifficultyName;
+  /** BOT_DIFFICULTY[botDifficulty] — 봇 인스턴스 레버 4개 (전역 상수 → 봇별 값) */
+  bot: Readonly<BotDifficultyParams>;
   connected: boolean;
   disconnectedSinceTick: number | null;
   alive: boolean;
@@ -113,7 +121,7 @@ export interface TroopLedger {
   regen: number;
   capClamp: number; // 3.2 min(troops+regen, cap) 로 잘린 양 (환급·영토 상실로 cap 초과 시)
   conversion: number; // 발령 시 풀 비용 − 깃발 병력 (기동 테크로 음수 가능)
-  spentAP: number; // ① 게이지·기지·되돌리기 지출
+  spentAP: number; // ① 게이지·기지 지출 (v4.1: DEFEND 지출 삭제)
   exposure: number; // ②
   combat: number; // ③
   exhausted: number; // ④ 소진 destroy 잔여
@@ -142,6 +150,8 @@ export interface TickChanges {
 
 export interface GameState {
   readonly map: GeneratedMap;
+  /** v4.1: 방 봇 난이도 (match_config.botDifficulty) */
+  readonly botDifficulty: BotDifficultyName;
   readonly graph: MapGraph;
   tick: number;
   readonly owners: Uint8Array;
@@ -208,9 +218,12 @@ export interface PlayerSetup {
   playerId: number;
   isBot: boolean;
   connected: boolean;
+  /** 생략 시 BOT_DIFFICULTY_DEFAULT (NORMAL) */
+  botDifficulty?: BotDifficultyName;
 }
 
-export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[]): GameState {
+/** botDifficulty = 방 봇 난이도 (2.8 g — 방 단위 하나, bot_takeover 도 따른다). PlayerSetup.botDifficulty 가 있으면 그 자리만 덮어쓴다 */
+export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[], botDifficulty: BotDifficultyName = BOT_DIFFICULTY_DEFAULT): GameState {
   const N = map.playerCount;
   if (setup.length !== N) throw new Error(`setup ${setup.length} != map players ${N}`);
   const players: PlayerState[] = new Array(N + 1);
@@ -220,6 +233,8 @@ export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[]
       id: s.playerId,
       isBot: s.isBot,
       botControlled: s.isBot,
+      botDifficulty: s.botDifficulty ?? botDifficulty,
+      bot: BOT_DIFFICULTY[s.botDifficulty ?? botDifficulty],
       connected: s.connected,
       disconnectedSinceTick: null,
       alive: true,
@@ -249,6 +264,7 @@ export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[]
 
   const state: GameState = {
     map,
+    botDifficulty,
     graph: map.graph,
     tick: 0,
     owners: new Uint8Array(map.topology.tileCount()),

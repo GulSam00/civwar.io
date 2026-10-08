@@ -1,5 +1,5 @@
 /**
- * 깃발 규칙의 순수 함수 모음 (GDD 4.1 / 4.4 / 4.6 / 4.7). 상태를 쓰지 않는다 — Phase A 에서 안전.
+ * 깃발 규칙의 순수 함수 모음 (GDD 4.1 / 4.4 / 4.6 / 4.7 v4.1). 상태를 쓰지 않는다 — Phase A 에서 안전.
  *
  * 정수 규칙: 비용 산출은 micro(1e-6) 고정소수점으로 곱셈마다 floor, 마지막에 ceil.
  * (GDD 의 실수 곱 후 ceil 과 같은 값을 내며, 차이는 중간 floor 의 1e-6 미만 절사뿐 — 프로토콜 §10)
@@ -7,7 +7,6 @@
 import {
   ADJACENCY_COEF_PERMILLE,
   ANY_HOSTILE,
-  DEFENSE_LEVERAGE_PERMILLE,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENEMY_BASE,
   FLAG_SPEED_BASE_MILLI,
@@ -19,6 +18,7 @@ import {
   MOB_SPEED_PERMILLE_BY_TIER,
   NEUTRAL_BASE,
   NEUTRAL_SQRT_COEF_PERMILLE,
+  POSTURE,
   SHALLOW_MOVE_PERMILLE_BY_TIER,
   SHALLOW_MOVE_PERMILLE_MIN,
   SUPPLY_COEF_PERMILLE,
@@ -32,7 +32,6 @@ import {
   TERRAIN_MOVE_PERMILLE,
   UNIT_ASSAULT_PERMILLE,
   UNIT_ATK_MULT_PERMILLE,
-  UNIT_DEF_PUSH_PERMILLE,
   UNIT_SPEED_PERMILLE,
   isClaimable,
 } from '@civwar/shared';
@@ -134,6 +133,20 @@ export function guardCount(state: Readonly<GameState>, f: Readonly<Flag>): numbe
   return k;
 }
 
+/**
+ * 4.4 (d) threatened — v4.1 재정의 [A-43]: 타일 진척 조회 → 적 공격 깃발 타깃 조회.
+ * threatened(f) = f.inCombat or 적대 g : g.posture == ATTACK and g.state == ENGAGED and g.targetTileId in guard(f)
+ */
+export function threatened(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  if (f.inCombat) return true;
+  for (const g of state.flags) {
+    if (g.posture !== POSTURE.ATTACK || g.state !== 'ENGAGED' || g.targetTileId === null) continue;
+    if (g.ownerId === f.ownerId || isAlly(state, f.ownerId, g.ownerId)) continue;
+    if (guardContains(state, f, g.targetTileId)) return true;
+  }
+  return false;
+}
+
 /** 4.4 [A-29] 방어 태세 도착 */
 export function defendArrived(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
   if (f.posTileId === f.anchorTileId) return true;
@@ -200,25 +213,6 @@ export function tileCost(state: Readonly<GameState>, f: Readonly<Flag>, X: numbe
   v = Math.floor((v * supplyPermille(state, p, X)) / 1000);
   if (state.endgameRushActive) v = Math.floor((v * ENDGAME_RUSH_COST_MULT_PERMILLE) / 1000);
   return Math.max(MIN_TILE_COST, ceilMicro(v));
-}
-
-/** 방어 기준 비용 — 공격자 병종·공격테크·보급선·종반러시 제외 (4.7 a) */
-export function defRefCost(state: Readonly<GameState>, X: number): number {
-  const o = state.owners[X];
-  let v = ENEMY_BASE * MICRO;
-  if (o !== NEUTRAL) v = Math.floor((v * MIL_DEF_COST_PERMILLE_BY_TIER[militaryTier(state.players[o])]) / 1000);
-  v = Math.floor((v * (1000 + ADJACENCY_COEF_PERMILLE * sameOwnerNeighbors(state, X))) / 1000);
-  v = Math.floor((v * TERRAIN_COST_PERMILLE[state.map.terrain[X]]) / 1000);
-  return Math.max(MIN_TILE_COST, ceilMicro(v));
-}
-
-/**
- * 방어 AP 1점이 되돌리는 진척도 (milli).
- * GDD 4.7(a) 식 `floor(1000·LEV·PUSH / (1000·c))` 는 permille 나눗셈 하나가 빠져 1000배 크다(검 평원 c=11 → 81818).
- * 손익분기표(4.7 d, λ = 0.9 × 1.3)와 맞는 `floor(LEV·PUSH / (1000·c))` 를 쓴다 → c=11 검 81, 창 106. (프로토콜 §10)
- */
-export function undoPerAP(state: Readonly<GameState>, d: Readonly<Flag>, X: number): number {
-  return Math.floor((DEFENSE_LEVERAGE_PERMILLE * UNIT_DEF_PUSH_PERMILLE[d.unit]) / (1000 * defRefCost(state, X)));
 }
 
 export function availAP(f: Readonly<Flag>): number {

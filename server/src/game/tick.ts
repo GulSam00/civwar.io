@@ -16,7 +16,6 @@ import {
   BASE_HP_MAX_MILLI,
   BASE_HP_REGEN_MILLI,
   BASE_REGEN_DELAY_TICK,
-  BOT_DECISION_INTERVAL,
   DISCONNECT_GRACE_TICK,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENDGAME_RUSH_TICK,
@@ -25,6 +24,7 @@ import {
   THRESHOLD_FLOOR_PCT,
   THRESHOLD_SCALE,
   TICKS_PER_MIN,
+  type BotDifficultyParams,
   type C2S_GameCommand,
   type S2C_GameOver,
 } from '@civwar/shared';
@@ -32,7 +32,7 @@ import { allianceTimers, dropPlayerDiplomacy } from './alliance.js';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from './combat.js';
 import { stage1_drainInput, type QueuedCommand } from './commands.js';
 import { removeFlag } from './flagops.js';
-import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage9_derived, stage10_flagEnd } from './gauge.js';
+import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 import { stage4_moveFlags } from './movement.js';
 import { destOf, fieldKey, mobilityTier } from './rules.js';
 import { garrisonUpkeepPermille, grossGoldMilliPerTick, regenMilliPerTick, troopCap } from './economy.js';
@@ -46,13 +46,16 @@ export type { FlagCombatPlan } from './combat.js';
 export type { PushPlan } from './gauge.js';
 export { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from './combat.js';
 export { stage4_moveFlags } from './movement.js';
-export { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage9_derived, stage10_flagEnd } from './gauge.js';
+export { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 
 // ───────────────────── 봇 자리 (3차) ─────────────────────
 
 export interface BotBrain {
-  /** 11단계에서 호출. 반환 명령은 다음 tick 1단계 입력 큐에 들어간다 */
-  decide(state: Readonly<GameState>, playerId: number, t: number): C2S_GameCommand[];
+  /**
+   * 11단계에서 호출. 반환 명령은 다음 tick 1단계 입력 큐에 들어간다.
+   * params = 그 봇의 난이도 레버(state.players[playerId].bot 과 같은 객체, v4.1 [A-46]).
+   */
+  decide(state: Readonly<GameState>, playerId: number, t: number, params: Readonly<BotDifficultyParams>): C2S_GameCommand[];
 }
 /** 1차: 아무것도 하지 않는 봇 */
 export const IdleBot: BotBrain = { decide: () => [] };
@@ -118,14 +121,14 @@ export function stage8_baseRegen(state: GameState, t: number): void {
   }
 }
 
-/** 11. 봇 AI — t % BOT_DECISION_INTERVAL == 0, botIndex(=playerId) ASC. 명령은 다음 tick 큐로 */
+/** 11. 봇 AI — 봇별 t % bot.decisionInterval == 0 (v4.1 [A-46]), botIndex(=playerId) ASC. 명령은 다음 tick 큐로 */
 export function stage11_bots(state: GameState, t: number, brain: BotBrain): { playerId: number; cmds: C2S_GameCommand[] }[] {
-  if (t % BOT_DECISION_INTERVAL !== 0) return [];
   const res: { playerId: number; cmds: C2S_GameCommand[] }[] = [];
   for (let id = 1; id < state.players.length; id++) {
     const p = state.players[id];
     if (!p.alive || !p.botControlled) continue;
-    const cmds = brain.decide(state, id, t);
+    if (t % p.bot.decisionInterval !== 0) continue;
+    const cmds = brain.decide(state, id, t, p.bot);
     if (cmds.length) res.push({ playerId: id, cmds });
   }
   return res;
@@ -231,7 +234,8 @@ export class Simulation {
     stage4b_flagCombatPhaseB(state, combat, t, out); // 4b
     stage5_accumulateBudget(state, t); // 5
     const push = stage6_combatPhaseA(state, t); // 6 (읽기 전용)
-    stage7_combatPhaseB(state, push, t, out); // 7
+    const pushedSet = stage7_combatPhaseB(state, push, t, out); // 7
+    stage7c_progressDecay(state, combat.presence, pushedSet, t, out); // 7c (v4.1)
     stage8_baseRegen(state, t); // 8
     stage9_derived(state, t, out); // 9
     stage10_flagEnd(state, t, out); // 10

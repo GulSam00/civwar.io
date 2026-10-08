@@ -68,6 +68,9 @@ export function buildMatchConfig(state: Readonly<GameState>): S2C_MatchConfig {
       floorPct: THRESHOLD_FLOOR_PCT,
       scale: THRESHOLD_SCALE,
     },
+    mapSource: m.source.kind,
+    ...(m.source.kind === 'preset' ? { mapId: m.source.mapId } : {}),
+    botDifficulty: state.botDifficulty,
     constants: constantsTable(),
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAP_SIZE, TERRAIN, WATER_MODE, isClaimable } from '@civwar/shared';
-import { assertInvariants, generateMap } from '../src/map/generate.js';
+import { MAP_SIZE, MAP_SIZE_PRESETS, TERRAIN, WATER_MODE, isClaimable } from '@civwar/shared';
+import { assertInvariants, generateMap, generateMapForPlayers, generateMapForSize } from '../src/map/generate.js';
 import { Mulberry32 } from '../src/map/rng.js';
 
 function counts(terrain: Uint8Array): number[] {
@@ -19,8 +19,8 @@ describe('mulberry32', () => {
 
 describe('generateMap 결정론', () => {
   it('같은 시드 → 비트 단위로 같은 맵', () => {
-    const a = generateMap(12345, 10);
-    const b = generateMap(12345, 10);
+    const a = generateMapForPlayers(12345, 10);
+    const b = generateMapForPlayers(12345, 10);
     expect(Buffer.from(a.terrain).equals(Buffer.from(b.terrain))).toBe(true);
     expect(Buffer.from(a.initialOwners).equals(Buffer.from(b.initialOwners))).toBe(true);
     expect(a.baseTiles).toEqual(b.baseTiles);
@@ -28,13 +28,13 @@ describe('generateMap 결정론', () => {
     expect(a.seed).toBe(b.seed);
   });
   it('다른 시드 → 다른 맵', () => {
-    const a = generateMap(1, 10);
-    const b = generateMap(2, 10);
+    const a = generateMapForPlayers(1, 10);
+    const b = generateMapForPlayers(2, 10);
     expect(Buffer.from(a.terrain).equals(Buffer.from(b.terrain))).toBe(false);
   });
   it('SHALLOW_QUOTA 는 물만 바꾸고 육지·기지·스폰은 BORDER_ONLY 와 동일 (rng 마지막 소비)', () => {
-    const a = generateMap(777, 10);
-    const b = generateMap(777, 10, { waterMode: WATER_MODE.SHALLOW_QUOTA, shallowPermille: 250 });
+    const a = generateMapForPlayers(777, 10);
+    const b = generateMapForPlayers(777, 10, { waterMode: WATER_MODE.SHALLOW_QUOTA, shallowPermille: 250 });
     expect(b.seed).toBe(a.seed);
     for (let t = 0; t < a.terrain.length; t++) {
       if (isClaimable(a.terrain[t])) expect(b.terrain[t]).toBe(a.terrain[t]);
@@ -49,7 +49,7 @@ describe('불변식과 지형 쿼터 (인원 8~12 × 시드 3개)', () => {
   for (const N of [8, 9, 10, 11, 12]) {
     for (const seed of [1, 2024, 0xdeadbeef]) {
       it(`N=${N} seed=${seed}`, () => {
-        const m = generateMap(seed, N);
+        const m = generateMapForPlayers(seed, N);
         expect(() => assertInvariants(m)).not.toThrow();
         const [W, H] = MAP_SIZE[N];
         expect([m.width, m.height]).toEqual([W, H]);
@@ -95,9 +95,39 @@ describe('불변식과 지형 쿼터 (인원 8~12 × 시드 3개)', () => {
   }
 
   it('SHALLOW_QUOTA 커스텀: |SHALLOW| == quotaS, 불변식 성립', () => {
-    const m = generateMap(99, 10, { waterMode: WATER_MODE.SHALLOW_QUOTA, shallowPermille: 400 });
+    const m = generateMapForPlayers(99, 10, { waterMode: WATER_MODE.SHALLOW_QUOTA, shallowPermille: 400 });
     const c = counts(m.terrain);
     expect(c[TERRAIN.SHALLOW]).toBe(m.quotas.shallow);
     expect(() => assertInvariants(m)).not.toThrow();
+  });
+});
+
+describe('v4.1 크기 프리셋 S/L · 격자-인원 분리 (2.8 b·c)', () => {
+  const cases: [Parameters<typeof generateMapForSize>[1], number][] = [
+    ['S', 2], ['S', 5], ['S', 7],
+    ['M', 2], ['M', 12],
+    ['L', 2], ['L', 11], ['L', 12],
+  ];
+  for (const [size, N] of cases) {
+    for (const seed of [3, 20261009]) {
+      it(`${size} × ${N}인 seed=${seed}: 격자·불변식·기지 2N·스폰 N`, () => {
+        const m = generateMapForSize(seed, size, N);
+        const p = MAP_SIZE_PRESETS[size];
+        expect([m.width, m.height]).toEqual([p.w, p.h]);
+        expect(() => assertInvariants(m)).not.toThrow();
+        expect(m.baseTiles.length).toBe(2 * N);
+        expect(m.spawns.length).toBe(N);
+        const n = p.w * p.h;
+        expect(m.totalLandTiles * 1000).toBeGreaterThanOrEqual(600 * n);
+        expect(m.totalLandTiles * 1000).toBeLessThanOrEqual(700 * n);
+        expect(m.source).toEqual({ kind: 'random' });
+      });
+    }
+  }
+  it('같은 격자·인원이면 generateMap(W,H,N) == generateMapForPlayers(N) (v4.0 맵 비트 보존)', () => {
+    const a = generateMap(4242, 90, 54, 8);
+    const b = generateMapForPlayers(4242, 8);
+    expect([...a.terrain]).toEqual([...b.terrain]);
+    expect(a.spawns).toEqual(b.spawns);
   });
 });

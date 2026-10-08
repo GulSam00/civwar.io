@@ -17,7 +17,9 @@ import {
   type S2C_RoomState,
   type ServerMessage,
 } from '@civwar/shared';
-import { generateMap } from '../map/generate.js';
+import { generateMapForSize, type GeneratedMap } from '../map/generate.js';
+import { mapFromPreset, type MapCatalog } from '../map/presets.js';
+import { applyRoomOptions, mapLimits, plannedPlayers, settingsEcho, type RoomSettings } from './settings.js';
 import type { Outbox } from '../game/outbox.js';
 import { buildMapInit, buildMatchConfig, buildSnapshotFull } from '../game/snapshot.js';
 import { createGameState } from '../game/state.js';
@@ -55,7 +57,9 @@ export class Room {
     readonly id: string,
     readonly code: string,
     readonly isPublic: boolean,
-    readonly targetPlayers: number,
+    /** v4.1 방 설정 (2.8). 비공개 방은 방장이 LOBBY 중 lobby_update_settings 로 바꾼다 */
+    public settings: RoomSettings,
+    private readonly catalog: MapCatalog,
     private readonly hooks: RoomHooks,
     private readonly brain: BotBrain = IdleBot,
   ) {
@@ -70,7 +74,7 @@ export class Room {
     return n;
   }
   get hasFreeSlot(): boolean {
-    return this.members.size < this.targetPlayers;
+    return this.members.size < this.settings.maxPlayers;
   }
   memberOf(session: Session): Member | undefined {
     return session.playerId !== null ? this.members.get(session.playerId) : undefined;
@@ -103,7 +107,7 @@ export class Room {
       isPublic: this.isPublic,
       phase: this.phase,
       hostId: this.hostId,
-      targetPlayers: this.targetPlayers,
+      settings: settingsEcho(this.settings, this.catalog, this.lobbyHumanCount(), this.isPublic),
       players,
       spectatorCount: this.spectators.size,
       countdownMs: this.countdownEndsAt !== null ? Math.max(0, this.countdownEndsAt - Date.now()) : null,
@@ -144,7 +148,29 @@ export class Room {
     session.spectator = false;
     if (this.hostId === null) this.hostId = pid;
     this.broadcastRoomState();
-    if (this.members.size >= this.targetPlayers) this.startCountdown();
+    // 공개 방만 정원 도달 시 자동 시작 (2.8 h). 비공개 방은 방장 lobby_start_now 로만 시작
+    if (this.isPublic && this.members.size >= this.settings.maxPlayers) this.startCountdown();
+    return null;
+  }
+
+  /** 사람 수 (봇 슬롯 제외) */
+  private lobbyHumanCount(): number {
+    let n = 0;
+    for (const m of this.members.values()) if (!m.isBot) n++;
+    return n;
+  }
+
+  /** v4.1 lobby_update_settings — 방장·LOBBY·비공개 방만 (7.2a) */
+  updateSettings(session: Session, raw: Record<string, unknown>): { code: ErrorCode; message: string } | null {
+    const m = this.memberOf(session);
+    if (!m) return { code: 'NOT_IN_ROOM', message: 'not in a room' };
+    if (m.playerId !== this.hostId) return { code: 'NOT_HOST', message: 'host only' };
+    if (this.phase !== 'LOBBY') return { code: 'NOT_LOBBY', message: 'lobby only' };
+    if (this.isPublic) return { code: 'BAD_ROOM_OPTIONS', message: 'public room settings are fixed' };
+    const r = applyRoomOptions(raw, this.settings, this.catalog, this.lobbyHumanCount(), false);
+    if (!r.ok) return { code: r.code, message: r.message };
+    this.settings = r.settings;
+    this.broadcastRoomState();
     return null;
   }
 
@@ -232,9 +258,7 @@ export class Room {
     if (!m) return 'NOT_IN_ROOM';
     if (this.phase !== 'LOBBY') return 'NOT_LOBBY';
     m.ready = ready;
-    this.broadcastRoomState();
-    const humans = [...this.members.values()].filter((x) => !x.isBot);
-    if (humans.length > 0 && humans.every((x) => x.ready)) this.startCountdown();
+    this.broadcastRoomState(); // v4.1: 준비 완료는 표시용 — 자동 시작 조건이 아니다 (2.8 h)
     return null;
   }
 
@@ -243,8 +267,7 @@ export class Room {
     if (!m) return 'NOT_IN_ROOM';
     if (m.playerId !== this.hostId) return 'NOT_HOST';
     if (this.phase !== 'LOBBY') return 'NOT_LOBBY';
-    this.startCountdown();
-    return null;
+    return this.startCountdown();
   }
 
   private reassignHost(): void {
@@ -257,11 +280,30 @@ export class Room {
     }
   }
 
-  /** 남은 자리를 봇으로 채우고 카운트다운 */
-  startCountdown(): void {
-    if (this.phase !== 'LOBBY' || this.disposed) return;
-    for (let pid = 1; pid <= this.targetPlayers; pid++) {
-      if (!this.members.has(pid)) {
+  /**
+   * 카운트다운 시작 — 인원 확정.
+   * 공개 방: 1..maxPlayers 빈 번호를 봇으로 채운다. 비공개 방: 사람을 1..H 로 다시 번호 매기고(빈 번호 제거)
+   * 봇 min(botCount, maxPlayers - H) 개를 H+1.. 에 붙인다. 시작 인원 < 맵 최소(2) 면 NOT_ENOUGH_PLAYERS.
+   */
+  startCountdown(): ErrorCode | null {
+    if (this.phase !== 'LOBBY' || this.disposed) return 'NOT_LOBBY';
+    const humans = [...this.members.values()].filter((x) => !x.isBot).sort((a, b) => a.playerId - b.playerId);
+    const plan = plannedPlayers(this.settings, humans.length, this.isPublic);
+    if (plan.total < mapLimits(this.settings.map, this.catalog).min) return 'NOT_ENOUGH_PLAYERS';
+    if (this.isPublic) {
+      for (let pid = 1; pid <= this.settings.maxPlayers; pid++) {
+        if (!this.members.has(pid)) this.members.set(pid, { playerId: pid, session: null, nickname: `BOT ${pid}`, isBot: true, ready: true });
+      }
+    } else {
+      const hostMember = this.hostId !== null ? this.members.get(this.hostId) : undefined;
+      this.members.clear();
+      humans.forEach((m, i) => {
+        m.playerId = i + 1;
+        if (m.session) m.session.playerId = m.playerId;
+        this.members.set(m.playerId, m);
+      });
+      this.hostId = hostMember ? hostMember.playerId : null;
+      for (let pid = humans.length + 1; pid <= plan.total; pid++) {
         this.members.set(pid, { playerId: pid, session: null, nickname: `BOT ${pid}`, isBot: true, ready: true });
       }
     }
@@ -269,6 +311,14 @@ export class Room {
     this.countdownEndsAt = Date.now() + LOBBY_COUNTDOWN_MS;
     this.broadcastRoomState();
     this.later(LOBBY_COUNTDOWN_MS, () => this.beginGame());
+    return null;
+  }
+
+  /** 카운트다운 종료 시점(인원 확정 후) 맵 생성 — 2.8 (c) */
+  private buildMap(N: number): GeneratedMap {
+    const m = this.settings.map;
+    if (m.kind === 'preset') return mapFromPreset(this.catalog.get(m.mapId)!, N);
+    return generateMapForSize(this.hooks.nextSeed(), m.size, N, m.water);
   }
 
   // ───────────────────────── 인게임 ─────────────────────────
@@ -283,11 +333,11 @@ export class Room {
 
   private beginGame(): void {
     if (this.phase !== 'COUNTDOWN' || this.disposed) return;
-    const map = generateMap(this.hooks.nextSeed(), this.targetPlayers);
+    const map = this.buildMap(this.members.size);
     const setup = [...this.members.values()]
       .sort((a, b) => a.playerId - b.playerId)
       .map((m) => ({ playerId: m.playerId, isBot: m.isBot, connected: m.isBot || !!m.session?.socket }));
-    const state = createGameState(map, setup);
+    const state = createGameState(map, setup, this.settings.botDifficulty);
     for (const s of setup) {
       if (!s.connected) state.players[s.playerId].disconnectedSinceTick = 0;
     }

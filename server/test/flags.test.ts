@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { POSTURE, TERRAIN, UNIT, isClaimable, type C2S_GameCommand, type ServerMessage } from '@civwar/shared';
-import { generateMap } from '../src/map/generate.js';
-import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
+import { generateMapForPlayers } from '../src/map/generate.js';
+import { snapshotPresence, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
+import { holdProgress } from '../src/game/gauge.js';
+import { threatened } from '../src/game/rules.js';
 import { newOutbox } from '../src/game/outbox.js';
-import { NEUTRAL, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
+import { NEUTRAL, createGameState, ledgerImbalance, makeFlag, rebuildAllyMatrix, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
 
 function makeSim(seed = 4242, N = 8) {
-  const map = generateMap(seed, N);
+  const map = generateMapForPlayers(seed, N);
   const setup = Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true }));
   return new Simulation(createGameState(map, setup));
 }
@@ -246,21 +248,129 @@ describe('게이지', () => {
     expect(delta && delta.type === 'snapshot_delta' && delta.tileChanges).toContainEqual([c, 1]);
   });
 
-  it('되돌리기: 방어 깃발이 적 게이지 전진을 상쇄 → 정체(flag_stalled)', () => {
+  it('v4.1 되돌리기 폐지: 거리 2 방어 깃발은 공격 게이지를 막지 못한다 → 점령, 방어 병력 지출 0', () => {
     const { sim, s, c } = scenario();
     for (const t of s.graph.disk(c, 2)) setTileOwner(s, t, 2, false);
     setTileOwner(s, c - 3, 1, false);
-    // p1 공격 깃발: c-2(적 땅)를 민다. p2 창 방어 깃발: 거리 2 (인접 아님 → 격파 아닌 되돌리기)
+    // p1 공격 깃발: c-2(적 땅)를 민다. p2 창 방어 깃발: 거리 2 (인접 아님 → 전투 없음, v4.0 이면 되돌리기)
     const atk = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 300, pos: c - 3, anchor: c - 2, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'ENGAGED' });
     const def = addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 2000, pos: c + 1, anchor: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-    const r = run(sim, 40);
+    run(sim, 40);
     expect(atk.inCombat || def.inCombat).toBe(false);
-    expect(s.owners[c - 2]).toBe(2);
-    expect(atk.stalled).toBe(true);
-    expect(r.all.find((m) => m.type === 'flag_stalled')).toMatchObject({ flagId: atk.id });
-    expect(def.troopsMilli).toBeLessThan(2000_000); // 되돌리기 AP 지출
+    expect(s.owners[c - 2]).toBe(1);
+    expect(def.troopsMilli).toBe(2000_000); // 방어 태세 깃발은 게이지 단계에서 아무것도 쓰지 않는다
+  });
+});
+
+describe('v4.1 진척도 자동 감소 (4.7 e) · 정체 재정의 (4.7 f)', () => {
+  /** 감소 대상 공격 깃발: IDLE(밀지 않음), 진척 500, 타깃 X */
+  function decayScenario() {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c, 1, false);
+    const X = c + 1;
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'IDLE', idleSinceTick: 0, targetTileId: X, progressMilli: 500 });
+    return { sim, s, c, X, f };
+  }
+
+  it('밀지 않으면 tick 당 20 감소, 0 도달 시 decayed 1회, 타깃 유지', () => {
+    const { sim, f, X } = decayScenario();
+    run(sim, 1);
+    expect(f.progressMilli).toBe(480);
+    const r = run(sim, 40);
+    expect(f.progressMilli).toBe(0);
+    const lost = r.all.filter((m) => m.type === 'flag_progress_lost');
+    expect(lost).toEqual([expect.objectContaining({ flagId: f.id, tileId: X, cause: 'decayed', tick: 25 })]);
+    expect(f.targetTileId).toBe(X); // sticky
   });
 
+  it('주변 경계: 거리 1 적 깃발(대치, 방어↔방어 무전투) → 유지 / 거리 2 → 감소', () => {
+    for (const [dist, expected] of [
+      [1, 500],
+      [2, 300],
+    ] as const) {
+      const { sim, s, c, f } = decayScenario();
+      f.posture = POSTURE.DEFEND; // 전투 없이 "주변 적" 규칙만 본다
+      const W = s.map.width;
+      addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c + dist * W, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
+      run(sim, 10);
+      expect(f.inCombat).toBe(false);
+      expect(f.progressMilli).toBe(expected);
+    }
+  });
+
+  it('동맹 깃발은 유지 근거가 아니다 / 패주 깃발은 presentEnemy 가 아니다', () => {
+    const { sim, s, c, f } = decayScenario();
+    f.posture = POSTURE.DEFEND;
+    s.alliances.push({ a: 1, b: 2, state: 'ACTIVE', sinceTick: 0, breakAtTick: null });
+    rebuildAllyMatrix(s);
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c + s.map.width, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
+    run(sim, 5);
+    expect(f.progressMilli).toBe(400);
+    // 패주 깃발 (holdProgress 직접)
+    const g = addFlag(s, { ownerId: 3, unit: UNIT.SWORD, troops: 10, pos: c - 1, posture: POSTURE.DEFEND, state: 'IDLE' });
+    expect(holdProgress(s, snapshotPresence(s), f)).toBe(true);
+    g.routed = true;
+    expect(holdProgress(s, snapshotPresence(s), f)).toBe(false);
+  });
+
+  it('전투 중 유지 → 상대 패주 tick 도 유지(4a 스냅숏) → 다음 tick 부터 감소', () => {
+    const { sim, s, c, f } = decayScenario();
+    const g = addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: 60, pos: c + s.map.width, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
+    let routTick = -1;
+    run(sim, 200, () => {
+      if (routTick < 0 && g.routed) {
+        routTick = sim.state.tick;
+        expect(f.progressMilli).toBe(500); // 패주 tick: 4a 스냅숏에 g 가 있다
+      }
+    });
+    expect(routTick).toBeGreaterThan(1);
+    expect(f.routed).toBe(false);
+    // 패주 다음 tick 부터 감소 → 200 tick 이 끝나면 0
+    expect(f.progressMilli).toBe(0);
+  });
+
+  it('패주한 공격 깃발의 진척도는 즉시 0 (기존 규칙)', () => {
+    const { sim, s, c, f } = decayScenario();
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 2000, pos: c + s.map.width, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
+    f.troopsMilli = 60_000;
+    s.ledger.initial -= 440_000;
+    run(sim, 200, () => {
+      if (!f.routed) expect(f.progressMilli).toBe(500); // 전투 중 유지
+    });
+    expect(f.routed).toBe(true);
+    expect(f.progressMilli).toBe(0);
+  });
+
+  it('ENGAGED·ATTACK 인데 AP 0 이라 못 미는 깃발: updateStall(f, 0) → 25 tick 뒤 flag_stalled, 진척도는 감소', () => {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c, 1, false);
+    // initialTroops 1 → 예산 15 milli/tick, 상한 375 milli → availAP 영원히 0
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1, pos: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'ENGAGED', targetTileId: c + 1, progressMilli: 300 });
+    f.troopsMilli = 100_000;
+    s.ledger.initial += 99_000;
+    const r = run(sim, 30);
+    expect(f.stalled).toBe(true);
+    expect(r.all.find((m) => m.type === 'flag_stalled')).toMatchObject({ flagId: f.id });
+    expect(f.progressMilli).toBe(0);
+    expect(r.all.filter((m) => m.type === 'flag_progress_lost' && m.cause === 'decayed')).toHaveLength(1);
+  });
+
+  it('threatened [A-43]: 관할 원 안 칸을 미는 적 ENGAGED 공격 깃발 → calmTicks 0', () => {
+    const { sim, s, c } = scenario();
+    for (const t of s.graph.disk(c, 2)) setTileOwner(s, t, 2, false);
+    setTileOwner(s, c - 3, 1, false);
+    const def = addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c + 2, anchor: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    run(sim, 3);
+    expect(def.calmTicks).toBe(3);
+    addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 300, pos: c - 3, anchor: c - 2, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'ENGAGED' });
+    run(sim, 3);
+    expect(threatened(s, def)).toBe(true);
+    expect(def.calmTicks).toBe(0);
+  });
+
+});
+
+describe('게이지 (계속)', () => {
   it('발령 → 행군 → 교전 → 중립 점령 (실제 명령 경로), 회계 불변식 매 tick', () => {
     const sim = makeSim();
     const s = sim.state;

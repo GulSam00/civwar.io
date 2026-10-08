@@ -79,11 +79,23 @@ async function main(): Promise<void> {
     ok((await a.wait('error')).code === 'NOT_HELLO', 'hello 이전 명령 거절 NOT_HELLO');
     a.send({ type: 'hello', nickname: 'alice', clientVersion: PROTOCOL_VERSION });
     const wa = await a.wait('welcome');
-    ok(wa.protocolVersion === PROTOCOL_VERSION && wa.tickMs === 200 && wa.playerToken.length > 10, 'welcome 수신');
+    ok(wa.protocolVersion === PROTOCOL_VERSION && wa.tickMs === 200 && wa.playerToken.length > 10 && Array.isArray(wa.officialMaps), `welcome 수신 (officialMaps ${wa.officialMaps.length})`);
 
-    a.send({ type: 'lobby_create_private', targetPlayers: 8 });
+    // v4.1 방 설정 (7.2a)
+    a.send({ type: 'lobby_create_private', map: { kind: 'random', size: 'S' }, maxPlayers: 8 });
+    ok((await a.wait('error')).code === 'BAD_ROOM_OPTIONS', 'lobby_create_private 작음 + 8인 → BAD_ROOM_OPTIONS');
+    a.send({ type: 'lobby_create_private', map: { kind: 'preset', mapId: 'no-such-map' } });
+    ok((await a.wait('error')).code === 'MAP_NOT_FOUND', 'lobby_create_private 없는 프리셋 → MAP_NOT_FOUND');
+    a.send({ type: 'lobby_create_private', map: { kind: 'random', size: 'M' }, maxPlayers: 8, botCount: 5, botDifficulty: 'EASY' });
     const rs1 = await a.wait('room_state');
-    ok(rs1.phase === 'LOBBY' && rs1.roomCode.length === 6 && rs1.hostId === 1 && rs1.players.length === 1, `방 생성 (code=${rs1.roomCode})`);
+    ok(
+      rs1.phase === 'LOBBY' && rs1.roomCode.length === 6 && rs1.hostId === 1 && rs1.players.length === 1 &&
+        rs1.settings.maxPlayers === 8 && rs1.settings.botCount === 5 && rs1.settings.mapMaxPlayers === 12 && rs1.settings.pacingNote === 'timeout_likely',
+      `방 생성 (code=${rs1.roomCode}, settings 에코 ${JSON.stringify(rs1.settings)})`,
+    );
+    a.send({ type: 'lobby_update_settings', botCount: 6 });
+    const rsU = await a.wait('room_state', (m) => m.settings.botCount === 6);
+    ok(rsU.settings.expectedPlayers === 7, 'lobby_update_settings botCount 6 → room_state 에코');
 
     const b = new Client('B');
     await b.open(server.port);
@@ -95,16 +107,23 @@ async function main(): Promise<void> {
 
     b.send({ type: 'lobby_start_now' });
     ok((await b.wait('error')).code === 'NOT_HOST', '방장 아닌 lobby_start_now 거절');
+    b.send({ type: 'lobby_update_settings', botCount: 1 });
+    ok((await b.wait('error')).code === 'NOT_HOST', '방장 아닌 lobby_update_settings 거절');
 
     a.send({ type: 'lobby_start_now' });
     const cd = await a.wait('room_state', (m) => m.phase === 'COUNTDOWN');
-    ok(cd.players.length === 8 && cd.players.filter((p) => p.isBot).length === 6, '카운트다운 + 봇 6명 충원');
+    ok(cd.players.length === 8 && cd.players.filter((p) => p.isBot).length === 6, '카운트다운 + 봇 6명 (botCount)');
 
     const mc = await a.wait('match_config');
-    ok(mc.width === 90 && mc.height === 54 && mc.hardTimeoutTick === 9600 && (mc.constants as any).ENEMY_BASE === 11, 'match_config (8인 90×54, 상수표)');
+    ok(
+      mc.width === 100 && mc.height === 60 && mc.hardTimeoutTick === 9600 && (mc.constants as any).ENEMY_BASE === 11 &&
+        mc.mapSource === 'random' && mc.botDifficulty === 'EASY' && (mc.constants as any).PROGRESS_DECAY_MILLI_PER_TICK === 20 &&
+        (mc.constants as any).DEFENSE_LEVERAGE_PERMILLE === undefined,
+      'match_config (보통 100×60 · 8인, mapSource/botDifficulty, v4.1 상수표)',
+    );
     const mi = await a.wait('map_init');
     const terrain = rleDecode(mi.terrain, mc.width * mc.height);
-    ok(terrain.length === 4860 && mi.bases.length === 16 && mi.spawns.length === 8, 'map_init (RLE 지형, 기지 16, 스폰 8)');
+    ok(terrain.length === 6000 && mi.bases.length === 16 && mi.spawns.length === 8, 'map_init (RLE 지형, 기지 16, 스폰 8)');
     const sf0 = await a.wait('snapshot_full', (m) => m.tick === 0);
     ok(sf0.players.length === 8 && sf0.bases.length === 16 && sf0.thresholdPct === 60, 'snapshot_full tick 0');
 

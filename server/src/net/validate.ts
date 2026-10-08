@@ -2,7 +2,7 @@
  * 클라이언트 메시지 스키마 검증. 서버는 클라이언트를 신뢰하지 않는다.
  * 여기서는 "모양"만 본다(타입·정수·범위). 소유권·인접·자원 같은 게임 규칙 검증은 tick 1단계에서.
  */
-import { MAX_PLAYERS, MIN_PLAYERS, NICKNAME_MAX_LEN, ROOM_CODE_LENGTH, type ClientMessage } from '@civwar/shared';
+import { MAX_PLAYERS, NICKNAME_MAX_LEN, ROOM_CODE_LENGTH, type ClientMessage } from '@civwar/shared';
 
 export type ParseResult =
   | { ok: true; msg: ClientMessage }
@@ -44,9 +44,15 @@ export function parseClientMessage(raw: string): ParseResult {
     case 'lobby_start_now':
       return { ok: true, msg: { type } as ClientMessage };
     case 'lobby_create_private':
-      if (!inRange(m.targetPlayers, MIN_PLAYERS, MAX_PLAYERS)) return bad(`targetPlayers must be ${MIN_PLAYERS}..${MAX_PLAYERS}`);
+    case 'lobby_update_settings': {
+      // v4.1: 방 설정 필드의 타입·범위 검증은 room/settings.ts (위반 = error BAD_ROOM_OPTIONS / MAP_NOT_FOUND).
+      // 여기서는 알려진 필드만 골라 넘긴다. timeLimitMin 은 수신·무시(형식만 확인).
       if (m.timeLimitMin !== undefined && !isInt(m.timeLimitMin)) return bad('timeLimitMin must be int');
-      return { ok: true, msg: { type, targetPlayers: m.targetPlayers, timeLimitMin: m.timeLimitMin as number | undefined } };
+      const pick: Record<string, unknown> = { type };
+      for (const k of ['map', 'maxPlayers', 'botCount', 'botDifficulty'] as const) if (m[k] !== undefined) pick[k] = m[k];
+      if (type === 'lobby_create_private' && m.targetPlayers !== undefined) pick.targetPlayers = m.targetPlayers;
+      return { ok: true, msg: pick as unknown as ClientMessage };
+    }
     case 'lobby_join_private':
     case 'lobby_spectate':
       if (!isStr(m.roomCode, ROOM_CODE_LENGTH) || (m.roomCode as string).length !== ROOM_CODE_LENGTH) return bad('roomCode invalid');

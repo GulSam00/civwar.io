@@ -23,7 +23,10 @@ describe('입력 검증', () => {
   it('정상/비정상 메시지', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 1, axis: 0, tier: 1 })).ok).toBe(true);
     expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', targetPlayers: 8 })).ok).toBe(true);
-    expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', targetPlayers: 13 })).ok).toBe(false);
+    // v4.1: 방 설정 값 검증은 room/settings.ts (error BAD_ROOM_OPTIONS) — 파서는 모양만 본다
+    expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', maxPlayers: 4, botCount: 2, map: { kind: 'random', size: 'S' } })).ok).toBe(true);
+    expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', timeLimitMin: 1.5 })).ok).toBe(false);
+    expect(parseClientMessage(JSON.stringify({ type: 'lobby_update_settings', botDifficulty: 'HARD' }))).toMatchObject({ ok: true, msg: { type: 'lobby_update_settings', botDifficulty: 'HARD' } });
     expect(parseClientMessage(JSON.stringify({ type: 'cmd_flag_issue', clientSeq: 1, unit: 1, troops: 1.5, anchorTileId: 3 })).ok).toBe(false);
   });
 });
