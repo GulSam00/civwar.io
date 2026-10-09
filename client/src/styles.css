@@ -1,0 +1,570 @@
+/* civwar.io — 깔끔한 플랫. 프레임워크 없음. */
+:root {
+  --bg: #121a24;
+  --panel: #1c2733;
+  --panel-2: #243240;
+  --line: #33465a;
+  --text: #e8edf2;
+  --muted: #94a3b3;
+  --primary: #2f80ed;
+  --primary-hi: #4a93f5;
+  --atk: #ff3b30;
+  --def: #2f80ed;
+  --warn: #ffb300;
+  --danger: #e53935;
+  --radius: 6px;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  text-align: center;
+  background: var(--panel-2);
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 12px;
+}
+.warn {
+  color: var(--warn);
+  font-size: 13px;
+}
+
+/* ── 버튼 ── */
+.btn {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hi);
+}
+.btn-huge {
+  width: 100%;
+  padding: 18px;
+  font-size: 22px;
+  margin-top: 8px;
+}
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-link:hover:not(:disabled) {
+  color: var(--text);
+}
+
+/* ── 로비 ── */
+.lobby {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+.lobby-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 28px;
+}
+.lobby-card.wide {
+  max-width: 760px;
+}
+.logo {
+  margin: 0;
+  font-size: 40px;
+  letter-spacing: -1px;
+}
+.tagline {
+  color: var(--muted);
+  margin: 6px 0 22px;
+}
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 14px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.field input:not([type='range']),
+.field select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 16px;
+  color: var(--text);
+}
+.field.inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.field.inline input,
+.field.inline select {
+  width: 110px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.secondary-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.conn-line {
+  color: var(--warn);
+  font-size: 13px;
+  margin: 14px 0 0;
+}
+
+/* ── 대기실 ── */
+.room-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.room-head h2 {
+  margin: 0;
+}
+.room-code {
+  color: var(--muted);
+}
+.room-code b {
+  color: var(--text);
+  font-size: 22px;
+  letter-spacing: 2px;
+  margin-left: 6px;
+  user-select: all;
+}
+.countdown {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 12px 0;
+  color: var(--warn);
+}
+.room-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 12px;
+}
+@media (max-width: 640px) {
+  .room-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.room-grid h3 {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.member-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.member-list li.me {
+  font-weight: 700;
+}
+.dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  flex: none;
+}
+.tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.tag.ok {
+  color: #7bd88f;
+}
+.settings {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 14px;
+}
+.settings dt {
+  color: var(--muted);
+}
+.settings dd {
+  margin: 0;
+}
+.host-settings {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* ── 인게임 ── */
+.game {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+}
+.game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+.hud-top {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 230px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+  align-items: center;
+}
+.stat {
+  background: rgba(18, 26, 36, 0.88);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 70px;
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.stat.warn .stat-value {
+  color: var(--warn);
+}
+.pill {
+  background: var(--panel-2);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.warn-pill {
+  background: var(--warn);
+  color: #222;
+  font-weight: 700;
+}
+.scoreboard {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 210px;
+  background: rgba(18, 26, 36, 0.88);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-size: 13px;
+  pointer-events: none;
+}
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.score-row .nick {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.score-row .num {
+  font-variant-numeric: tabular-nums;
+}
+.score-row.me {
+  font-weight: 700;
+}
+.score-row.dead {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.command-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 500px);
+  min-width: 360px;
+  flex-wrap: wrap;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(18, 26, 36, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.unit-btn {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.unit-btn small {
+  color: var(--muted);
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.unit-btn.armed {
+  border-color: #fff;
+  background: var(--primary);
+}
+.unit-btn.armed small {
+  color: #dfe9ff;
+}
+.ratio {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 6px;
+}
+.ratio b {
+  color: var(--text);
+}
+.cmd-hint {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .cmd-hint {
+    display: none;
+  }
+  .command-bar {
+    left: 8px;
+    transform: none;
+    max-width: calc(100% - 260px);
+  }
+}
+.flag-panel {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  width: 230px;
+  background: rgba(18, 26, 36, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 14px;
+}
+.flag-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.flag-panel-body > div {
+  margin: 2px 0;
+}
+.flag-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.flag-panel-actions .btn {
+  padding: 5px 10px;
+}
+.atk {
+  color: var(--atk);
+}
+.def {
+  color: var(--primary-hi);
+}
+.cursor-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  background: rgba(10, 14, 20, 0.92);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.cursor-tip[data-kind='attack'] {
+  border-left-color: var(--atk);
+}
+.cursor-tip[data-kind='defend'] {
+  border-left-color: var(--def);
+}
+.banner {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--warn);
+  color: #222;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 18, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gameover-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 24px;
+  min-width: 420px;
+  max-width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+.gameover-card h2 {
+  margin: 0 0 4px;
+  font-size: 30px;
+}
+.standings {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.standings th,
+.standings td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.standings th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.standings tr.me td {
+  font-weight: 700;
+}
+.gameover-reopen {
+  position: absolute;
+  top: 70px;
+  right: 8px;
+}
+
+/* ── 토스트 ── */
+.toasts {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+.toast {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  font-size: 14px;
+}
+.toast.error {
+  border-color: var(--danger);
+  background: #3a1c1f;
+}

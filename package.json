@@ -4,14 +4,18 @@
   "version": "0.1.0",
   "workspaces": [
     "shared",
-    "server"
+    "server",
+    "client"
   ],
   "scripts": {
     "dev:server": "npm run dev -w @civwar/server",
     "start:server": "npm run start -w @civwar/server",
-    "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
+    "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit",
     "test": "vitest run",
-    "smoke": "npm run smoke -w @civwar/server"
+    "smoke": "npm run smoke -w @civwar/server",
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "npm run dev -w @civwar/client",
+    "build:client": "npm run build -w @civwar/client"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
