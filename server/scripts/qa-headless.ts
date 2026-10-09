@@ -46,7 +46,7 @@ let rejects = new Map<string, number>();
 // ───────── 프론트 재구성 모델 (문서만 보고 구현한다고 가정) ─────────
 type FM = Record<string, any>;
 const M = {
-  owners: [] as number[],
+  owners: new Uint8Array(0) as Uint8Array,
   players: new Map<number, FM>(),
   flags: new Map<number, FM>(),
   bases: new Map<number, number>(), // tileId → hpPct
@@ -82,17 +82,19 @@ function applyEvent(e: any): void {
     }
     case 'flag_posture_changed': {
       const f = M.flags.get(e.flagId);
-      if (f) Object.assign(f, { posture: e.posture, postureCooldownUntilTick: e.cooldownUntilTick });
-      // 문서에 없는 파생(검증용): applyPosture 의 targetOwnerId 재계산을 클라가 흉내 낼 수 있는가
-      if (f && process.env.QA_DERIVE_TOI === '1') {
-        const ao = M.owners[f.anchorTileId];
-        f.targetOwnerId = ao === f.ownerId ? 254 : ao;
-      }
+      // I-1 수정 후: 이벤트의 targetOwnerId 를 그대로 쓴다 (문서 §5)
+      if (f) Object.assign(f, { posture: e.posture, postureCooldownUntilTick: e.cooldownUntilTick, targetOwnerId: e.targetOwnerId });
       break;
     }
     case 'flag_disengage_started': {
       const f = M.flags.get(e.flagId);
       if (f) f.disengageUntilTick = e.untilTick;
+      break;
+    }
+    case 'flag_routed': {
+      // 문서 §5: 패주 시 disengageUntilTick = null (m-8)
+      const f = M.flags.get(e.flagId);
+      if (f) f.disengageUntilTick = null;
       break;
     }
     case 'flag_disengaged': {

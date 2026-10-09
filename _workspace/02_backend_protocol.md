@@ -16,7 +16,7 @@
 | `shared/constants.ts` (부록 A 전부, permille 정수) | ✅ |
 | 토폴로지 추상화 (`Topology` / `MapGraph` + 사각 구현) | ✅ |
 | 맵 생성 (mulberry32, 육지/물 → 지형 → 스폰·기지(v2.1 placeBases) → 물 분할, I1~I4 assert, seed+1 재생성) | ✅ |
-| 룸/로비 (방 코드·공개 대기열·8~12인·봇 슬롯·관전·재접속) | ✅ |
+| 룸/로비 (방 코드·공개 대기열·2~12인(v4.1)·봇 슬롯·관전·재접속) | ✅ |
 | tick 루프 (GDD 7.4 14단계 함수 분리, Phase A/B 타입 분리) | ✅ 골격 |
 | 실제 동작: 병력 재생·골드 수입·테크 구매·기지 체력 회복·탈락·승리 판정·하드 타임아웃·종반 러시 신호·threshold_update·`snapshot_full`/`snapshot_delta` | ✅ |
 | 깃발 발령·재지정·회수·태세 전환 (4.3/4.3a/4.4) | ✅ 2차 |
@@ -103,7 +103,7 @@ civwar.io/
 
 ```
 npm install
-npm test                 # vitest 전체 (8 파일 / 119 tests)
+npm test                 # vitest 전체 (8 파일 / 122 tests)
 npm run typecheck        # shared + server tsc --noEmit
 npm run start:server     # ws://localhost:8080  (PORT 환경변수로 변경)
 npm run dev:server       # tsx watch
@@ -130,7 +130,7 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 
 ## 2. 전송 규칙
 
-- 텍스트 프레임 1개 = JSON 객체 1개. 모든 메시지에 `type` 문자열. 바이너리 프레임은 거절(`error BAD_MESSAGE`). 최대 페이로드 4 KB(C→S).
+- 텍스트 프레임 1개 = JSON 객체 1개. 모든 메시지에 `type` 문자열. 바이너리 프레임은 거절(`error BAD_MESSAGE`). 최대 페이로드 4 KB(C→S) — **넘으면 `error` 없이 소켓이 close 1009 로 끊긴다**(ws `maxPayload`). 클라이언트는 재접속(`hello.playerToken`)으로 복구한다.
 - 정수 필드: `tileId`, `playerId`(1..12, 0 = NEUTRAL), `flagId`, `tick`, `clientSeq`. 서버 내부 병력·골드는 milli 정수이며 **전송값 `troops`/`gold`는 `floor(milli/1000)`**.
 - `thresholdPct`는 **표시용 실수**(예 `58.5`). 판정은 서버 정수식(§8).
 - **RLE**: `[value, runLength, value, runLength, …]` 평탄 배열. tileId 오름차순. 디코드는 `shared`의 `rleDecode(rle, width*height)`.
@@ -154,13 +154,13 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 | playerId 배정 | **룸 입장 시** 비어 있는 가장 작은 번호. **v4.1: 비공개 방은 카운트다운 시작 때 사람을 기존 번호 순서대로 1..H 로 다시 매기고**(빈 번호 제거) 봇을 H+1..N 에 붙인다(`"BOT n"`). 공개 룸은 1..10 빈 번호를 봇으로 채운다 | 백엔드 결정 |
 | 스폰 | `spawn[k]` → `playerId k+1`. 무작위 = 생성기 배치 순서, 프리셋 = `spawnSets[N]` 또는 `spawns[0..N-1]` | 백엔드 결정 / GDD 2.8 f |
 | 방장 | 첫 입장자. 퇴장 시 남은 인간 중 playerId 최소 | GDD 7.2 |
-| 카운트다운 시작 조건 (v4.1) | **비공개: 방장 `lobby_start_now` 만.** 공개: 정원(10) 도달 또는 첫 입장 후 30초(`PUBLIC_LOBBY_AUTOSTART_MS`). **`ready` 는 표시용**(자동 시작 조건 아님 — v4.0 의 "인간 전원 ready"·비공개 "정원 도달" 자동 시작 폐지) | GDD 2.8 h |
+| 카운트다운 시작 조건 (v4.1) | **비공개: 방장 `lobby_start_now` 만.** 공개: 정원(10) 도달 또는 첫 입장 후 30초(`PUBLIC_LOBBY_AUTOSTART_MS`). **공개 룸의 `lobby_start_now` → `error NOT_HOST`**(공개 룸에는 방장 권한이 없다 — QA m-6). **`ready` 는 표시용**(자동 시작 조건 아님 — v4.0 의 "인간 전원 ready"·비공개 "정원 도달" 자동 시작 폐지) | GDD 2.8 h |
 | 카운트다운 | `LOBBY_COUNTDOWN_MS = 3000`. 이 동안 신규 입장 불가(`ROOM_IN_PROGRESS`). 퇴장 시 그 자리는 봇. **맵은 카운트다운 종료 시점(인원 확정 후)에 생성** | 사용자 승인 (GDD 2.8 h, c) |
 | 공개 룸 | 무작위·보통(M)·기본 물·10인·NORMAL 봇 충원. 옵션 받지 않음(`lobby_update_settings` → `BAD_ROOM_OPTIONS`) | 사용자 승인 (GDD 2.8 h) |
 | 방 코드 | 6자, `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`. 대소문자 무시. 공개 룸도 코드를 가진다(관전용) | GDD 7.2 + 결정 |
 | 로비에서 소켓 끊김 | 즉시 퇴장 처리 | 결정 |
 | 인게임 소켓 끊김 | 자리 유지, `connected=false`. `DISCONNECT_GRACE_TICK = 450`(90초) 초과 시 `bot_takeover` | GDD 7.1 |
-| 재접속 | `hello.playerToken`으로 같은 세션 복구 → `welcome.resumed=true` + 부트스트랩 + 룸에 `player_reconnected`. **봇 인계 후 복귀해도 조종권을 돌려준다** | 토큰 방식·복귀 규칙 **임의 결정** |
+| 재접속 | `hello.playerToken`으로 같은 세션 복구 → `welcome.resumed=true` → `room_state` → 부트스트랩(`match_config`·`map_init`·`snapshot_full` — **본인 `connected=true` 반영 후**) → 룸에 `player_reconnected`. **봇 인계 후 복귀해도 조종권을 돌려준다**. `players[].connected` 갱신 경로: `snapshot_full`, `player_reconnected`(→ true), `room_state.players[].status`. `PlayerDelta` 에는 없다(끊김은 `room_state` 로) | 토큰 방식·복귀 규칙 **임의 결정** |
 | 관전 | `lobby_spectate` (IN_GAME/GAME_OVER 룸). 탈락자는 같은 룸에서 그대로 수신(`ELIMINATED_SPECTATING`) | GDD 4.14 + 결정 |
 | 진행 중 게임의 생존자 | 다른 룸 입장 불가(`ALREADY_IN_ROOM`) — 먼저 `lobby_leave` | 결정 |
 | 인게임 `lobby_leave` | 자리는 끊긴 상태로 남음(봇 인계 타이머 진행), 세션은 룸에서 분리 → 재접속 불가 | 결정 |
@@ -171,13 +171,13 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 ## 4. Client → Server
 
 공통: `hello` 이전의 모든 메시지 → `error NOT_HELLO`. 형식 오류 → `cmd_*`면 `cmd_ack {accepted:false, reason:"BAD_REQUEST"}`, 그 외 `error BAD_MESSAGE`.
-**모든 `cmd_*`는 반드시 `cmd_ack` 1회**(다음 tick 1단계에서 처리 후 송신. 형식 오류·룸 없음·rate limit은 즉시).
+**모든 `cmd_*`는 반드시 `cmd_ack` 1회**(다음 tick 1단계에서 처리 후 송신. 형식 오류·룸 없음·rate limit은 즉시. 게임이 끝난 tick 뒤 큐에 남은 명령은 종료 직후 `NOT_IN_GAME`). **예외: `clientSeq` 가 없거나 uint32 가 아니면 매칭할 수 없으므로 `error BAD_MESSAGE`**(QA m-3).
 
 ### hello
 ```json
 { "type": "hello", "nickname": "alice", "clientVersion": 1, "playerToken": "선택 — 재접속 시" }
 ```
-→ `welcome`. 버전 불일치 `BAD_VERSION`, 닉네임 불량 `BAD_NICKNAME`, 같은 소켓 두 번째 `ALREADY_HELLO`. 다른 소켓이 같은 토큰을 쓰고 있으면 기존 소켓을 닫고(close 4000) 새 소켓이 이어받는다.
+→ `welcome`. 버전 불일치 `BAD_VERSION`, 닉네임 불량(문자열이지만 정리 후 1~16자가 아님 — 길이 무관) `BAD_NICKNAME`, 닉네임이 문자열이 아니면 `error BAD_MESSAGE`, 같은 소켓 두 번째 `ALREADY_HELLO`. 다른 소켓이 같은 토큰을 쓰고 있으면 기존 소켓을 닫고(close 4000) 새 소켓이 이어받는다.
 
 ### lobby_join_public
 ```json
@@ -233,7 +233,7 @@ axis `0=MILITARY 1=ECONOMY 2=TERRITORY 3=MOBILITY`, tier 1..3.
 
 ### 깃발 명령 (2차 — GDD 4.3 / 4.3a / 4.4 / 4.15 g)
 
-스키마는 GDD 7.2 그대로(1차 문서와 동일). 형식 검증(정수·범위: unit 0..2, posture 0|1, troops 정수, tileId uint32, playerId 1..12)을 통과하면 다음 tick 1단계에서 아래 순서로 검증한다. **성공 시 `cmd_ack`에 `flagId`와 결과 `posture`가 붙는다.**
+스키마는 GDD 7.2 그대로(1차 문서와 동일). 형식 검증(정수·범위: unit 0..2, posture 0|1, troops 정수, tileId uint32, playerId 1..12 — 위반은 `BAD_REQUEST`. 그래서 **아래 표의 `BAD_UNIT` 은 WS 경로에선 나오지 않는 예약 코드**, QA m-2)을 통과하면 다음 tick 1단계에서 아래 순서로 검증한다. **성공 시 `cmd_ack`에 `flagId`와 결과 `posture`가 붙는다.**
 
 ```json
 { "type": "cmd_flag_issue", "clientSeq": 1, "unit": 2, "troops": 100, "anchorTileId": 1743, "originBaseTileId": null }
@@ -246,9 +246,9 @@ axis `0=MILITARY 1=ECONOMY 2=TERRITORY 3=MOBILITY`, tier 1..3.
 | 명령 | 검증 순서 (먼저 걸린 코드 1개 회신) | 효과 |
 |---|---|---|
 | `cmd_flag_issue` | `ELIMINATED` → `BAD_REQUEST`(tileId 범위 밖·troops 비정수) → `NO_SLOT`(내 깃발 수 ≥ flagCap — 패주 귀환 중인 깃발도 슬롯 점유) → `BAD_UNIT` → `WATER`(DEEP·SHALLOW) → `OUT_OF_RANGE`(내 타일까지 거리 > 40) → `TOO_SMALL`(< 40) → `ALLIED`(앵커 소유자가 ACTIVE/BREAKING 동맹) → `NOT_BASE` / `NOT_OWNED_BASE`(originBaseTileId 지정 시) → `INSUFFICIENT` | 기본 태세: 내 땅 앵커 = DEFEND(`targetOwnerId = 254 ANY_HOSTILE`), 그 외 ATTACK(`targetOwnerId` = 앵커 소유자, 중립 0). 풀 차감 `ceil(troops × UNIT_CONVERT[unit] / MOB_CONVERT[기동 단계])`. 슬롯 = 최소 미사용 번호. 출발 = 지정 기지 / 앵커 최근접 내 기지 / (기지 없음) 수도 최근접 내 타일. → `flag_issued` |
-| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING` → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생(쿨타임 중·전투 중이면 현 태세 유지), `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
-| `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING` | `state=RETURNING`, 귀환지 = recallTarget. 도착 시 잔여 × 85% 풀 환급. **전투 중이면 이탈 대기**. → `flag_recalled` (+`flag_disengage_started`) |
-| `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산, `postureManual=true`. → `flag_posture_changed auto:false` |
+| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**귀환 중이고 전투 중이 아닐 때만** — 귀환 중 교전에 붙잡힌 깃발은 재지정 가능, QA I-2) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생(쿨타임 중·전투 중이면 현 태세 유지), `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
+| `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING`(**귀환 중이고 전투 중이 아닐 때만**, QA I-2) | `state=RETURNING`, 귀환지 = recallTarget. 도착 시 잔여 × 85% 풀 환급. **전투 중이면 이탈 대기**(귀환 중 교전도 같음 — GDD 4.15 g 재이탈: 다시 명령하고 3초 × 실효값 0.5 를 또 치른다). → `flag_recalled` (+`flag_disengage_started`) |
+| `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
 
 `recallTarget`: ① 출발 타일(아직 내 소유) → ② 내 기지 중 현재 위치 최근접(동률 tileId ASC) → ③ 수도(내 소유면) → ④ 최근접 내 타일. **매 tick 재평가**.
 
@@ -324,7 +324,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ```json
 {
   "type": "match_config", "seed": 20261008, "topology": "square",
-  "width": 90, "height": 54, "totalLandTiles": 3201, "tickMs": 200, "hardTimeoutTick": 9600,
+  "width": 100, "height": 60, "totalLandTiles": 3622, "tickMs": 200, "hardTimeoutTick": 9600,
   "endgameRush": { "tick": 8400, "costMultPermille": 750 },
   "thresholdCurve": { "startPct": 60, "decayStartTick": 4800, "decayPerMinPermille": 1500, "floorPct": 45, "scale": 200 },
   "mapSource": "random", "botDifficulty": "NORMAL",
@@ -350,6 +350,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
   "flags": [],
   "bases": [{ "tileId": 431, "ownerId": 0, "hpPct": 100 }],
   "alliances": [],
+  "allyProposals": [], "allianceFreezeUntilTick": null, "lockoutDissolveTick": null,
   "thresholdPct": 60, "ticksRemaining": 9575, "endgameRushActive": false
 }
 ```
@@ -394,6 +395,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 { "type": "cmd_ack", "clientSeq": 13, "accepted": true }
 ```
 `flagId`, `posture`는 깃발 명령(발령·재지정·회수·태세 전환) 성공 시 포함. 동맹 명령 성공은 `{accepted:true}`만.
+**순서 (QA m-5)**: 처리 tick 의 `cmd_ack` 은 그 tick 의 방송(이벤트 → `snapshot_delta` → `snapshot_full` → `game_over`)보다 **먼저** 온다. 그래서 내 발령의 `cmd_ack.flagId` 가 같은 tick 의 `flag_issued` 보다 먼저 도착하고, `game_over` 는 그 tick 의 마지막 메시지다. 봇이 낸 명령(봇 자리·인계 중)의 ack 은 어떤 세션에도 보내지 않는다(QA m-10).
 
 ### error (개인)
 ```json
@@ -417,7 +419,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `bot_takeover` | `{ "type":"bot_takeover","tick":900,"playerId":2 }` | 끊긴 지 450 tick |
 | `player_reconnected` | `{ "type":"player_reconnected","tick":910,"playerId":2 }` | 끊긴 플레이어가 토큰으로 복귀 |
 | `emote_broadcast` | `{ "type":"emote_broadcast","tick":77,"playerId":1,"code":3 }` | 수신 즉시(현재 tick 표기) |
-| `game_over` | 아래 | 승리 판정 tick. **그 tick의 `snapshot_delta`(+`snapshot_full`) 뒤 마지막 메시지** |
+| `game_over` | 아래 | 승리 판정 tick. **그 tick의 `cmd_ack`·이벤트·`snapshot_delta`(+`snapshot_full`) 뒤 마지막 메시지**(이후 종료 직후 남은 명령의 `NOT_IN_GAME` ack 와 `room_state(GAME_OVER)`) |
 
 ```json
 { "type": "game_over", "finalTick": 9600, "winnerId": 3, "reason": "timeout",
@@ -441,8 +443,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `flag_ended` | `{"type":"flag_ended","tick":90,"flagId":1,"reason":"recalled","refunded":76}` | `recalled`(85% 환급) / `routed_returned`(0) / `exhausted`(0) / `attrited`(0) / `eliminated`(0). `refunded`는 정수 병력 |
 | `combat_started` | `{"type":"combat_started","tick":31,"groupKey":4,"flagIds":[4,7],"sides":[{"sideKey":1,"ownerIds":[1],"troops":1000,"power":1000},{"sideKey":2,"ownerIds":[2],"troops":1000,"power":1300}]}` | 무리가 새로 생기거나 기존 무리에 깃발이 합류. `troops`·`power`는 그 tick 손실 적용 **전** 값. `power` = 편 실효값 W(permille) — 교환비 k = W_방어 / W_공격 |
 | `combat_ended` | `{"type":"combat_ended","tick":129,"groupKey":4,"winnerSideKey":2,"routedFlagIds":[4]}` | 살아남은(패주·이탈 완료 제외) 편이 1개 이하가 된 tick. 동시 0 이면 `winnerSideKey:null`. 무리가 그냥 해체(상대 소멸·동맹 성립 등)되면 다음 tick 에 `winnerSideKey:null` |
-| `flag_routed` | `{"type":"flag_routed","tick":129,"flagId":4,"returnTileId":2103}` | 병력 0 → 자동 귀환. 이후 모든 명령 `ROUTED` |
-| `flag_posture_changed` | `{"type":"flag_posture_changed","tick":21,"flagId":1,"posture":1,"cooldownUntilTick":46,"auto":true}` | 수동 전환(`auto:false`) / 재지정에 따른 기본 태세 재파생(`auto:true`) |
+| `flag_routed` | `{"type":"flag_routed","tick":129,"flagId":4,"returnTileId":2103}` | 병력 0 → 자동 귀환. 이후 모든 명령 `ROUTED`. **이탈 대기 중 패주하면 `disengageUntilTick = null`(별도 `flag_disengaged` 없음, QA m-8)** |
+| `flag_posture_changed` | `{"type":"flag_posture_changed","tick":21,"flagId":1,"posture":1,"cooldownUntilTick":46,"auto":true,"targetOwnerId":254}` | 수동 전환(`auto:false`) / 재지정에 따른 기본 태세 재파생(`auto:true`). **QA I-1 추가 필드 `targetOwnerId`** = 전환 후 값(`owners[anchor] == 소유자 ? 254 : owners[anchor]`, 1단계 처리 시점) — 클라이언트는 이 값으로 덮어쓴다 |
 | `flag_blocked` / `flag_unblocked` | `{"type":"flag_blocked","tick":5,"flagId":2,"byFlagIds":[1]}` / `{"type":"flag_unblocked","tick":31,"flagId":2}` | 대치(ZOC 정지) 비트가 바뀐 tick (4b 끝). `byFlagIds` = 다음 칸에 ZOC 를 거는 적 방어 태세 깃발 |
 | `flag_disengage_started` | `{"type":"flag_disengage_started","tick":2,"flagId":2,"untilTick":17}` | 전투 중 재지정·회수 수락 |
 | `flag_disengaged` | `{"type":"flag_disengaged","tick":17,"flagId":2,"reason":"broke_away"}` | `broke_away`(대기 완료 → breakaway) / `combat_over`(대기 중 무리 소멸) |
@@ -545,7 +547,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ## 9. 테스트·스모크 결과
 
 ### 3차-2 봇 (2026-10-09, GDD v4.1 8장)
-- `npm run typecheck` 통과. `npm test`: **8 파일 / 116 테스트 통과**. `npm run smoke`: `SMOKE PASSED` (룸 기본 두뇌가 이제 `CivBot` — 봇 자리가 실제로 발령·테크·동맹 응답을 한다).
+- `npm run typecheck` 통과. `npm test`: **8 파일 / 116 테스트 통과**(이후 aggression 3개 추가 → 119, QA 후속 3개 → 122). `npm run smoke`: `SMOKE PASSED` (룸 기본 두뇌가 이제 `CivBot` — 봇 자리가 실제로 발령·테크·동맹 응답을 한다).
 - 신규 `server/test/bot.test.ts` (6): ① 10인 NORMAL 5분 — **거절 명령 비율 < 2%**(실측 0), 매 tick `ledgerImbalance == 0`, 평균 타일 > 80 ② **결정론** — 혼합 난이도 900 tick 상태 해시 동일, `decideBot` 같은 입력 → 같은 명령 ③ 난이도 — 결정 주기 30/15/10 호출 tick, 예비 비율에 따른 발령 시점·크기 (EASY < HARD) ④ EASY 공격 깃발 전부 검병, NORMAL 은 기병 사용 ⑤ **요격** — 내 땅을 미는 적 공격 깃발에 거리 1 인 내 땅 칸으로 방어 깃발 (≥ 적 × 1.25 × v 비) → 실제 명령 경로에서 `accepted, posture DEFEND` ⑥ 외교 수락/거절, 먼저 제안 안 함.
 - 자가대전 (`selfplay.ts`, M 100×60, 10인, 전원 NORMAL, 시드 1000~1009, 실시간 대기 없음):
 
@@ -699,6 +701,14 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
    난이도가 기준을 정하고 성향이 띠 안에서 민다 (EASY reserve 350~550, HARD 100~300). 테크 빌드 가중은 넣지 않음 (빌드는 목록 순서라 "값만 보간" 원칙에 맞지 않음). `aggressionPermille` 은 **서버 전용** (snapshot 미노출). 단 `match_config.constants` 는 shared 상수 전체를 싣으므로 새 상수 4개 (`BOT_AGGRESSION_NEUTRAL_PERMILLE`, `BOT_MAX_DEFENSE_RATIO_PERMILLE`, `BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE`, `BOT_AGGRESSION_SPAN`) 가 추가로 보인다 (추가만).
 66. 사용자 확인 (2026-10-09): 공격 깃발 최소 병력 120 (§10-57), 요격 병종 = 출발지 거리 > 12 이면 기병 아니면 창병 (§10-46) 확정. 페이싱은 사람 플레이테스트 후 재검토 (상수 불변).
 
+### QA 후속 (04_qa_report_backend.md, 2026-10-09)에서 정한 것
+
+67. **I-1** `flag_posture_changed.targetOwnerId` 추가(필드 추가만). 값 = 전환 후 `targetOwnerId` — 재지정(`auto:true`)이면 새 앵커 기준, 수동 전환이면 `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점 owners = 직전 tick 상태). QA 재구성 모델이 이 필드를 쓰면 `snapshot_full` 과 불일치 0.
+68. **I-2** 귀환(RETURNING) 깃발도 **전투 중이면** `cmd_flag_recall`·`cmd_flag_retarget` 수락 → 이탈 대기 15 tick(실효값 ×0.5) 개시(GDD 4.15 g 재이탈 — 사용자 확정 규칙). 전투 중이 아닌 귀환 깃발은 종전대로 `RETURNING` 거절, 패주 깃발은 `ROUTED`.
+69. **m-5 / m-10** 룸 배달 순서 = 개인(`cmd_ack`) → 방송(이벤트 → delta → full → game_over). 개인 메시지는 1단계 산출이라 앞당겨도 상태 의미가 바뀌지 않는다. 봇 명령(connId 0)의 ack 은 `Outbox.personal[].fromBot` 으로 표시하고 룸이 버린다(헤드리스·테스트에서는 그대로 보인다).
+70. **m-6** 공개 룸 `lobby_start_now` → `error NOT_HOST`(새 코드 없이 기존 코드 재사용). **m-7** 재접속 시 `connected`/`botControlled` 를 부트스트랩 **전에** 바꾼다. **m-9** 게임 종료 tick 뒤 큐에 남은 사람 명령은 `Simulation.flushPending()` 으로 `NOT_IN_GAME` ack(봇 명령은 버림). **m-1** `hello.nickname` 형식 검사는 문자열 여부만 — 길이 위반은 전부 `BAD_NICKNAME`.
+71. **m-12** GDD 와 다른 세부: `botCount` 범위는 GDD `0..maxPlayers − 사람`, 서버는 `0..maxPlayers − 1` 을 받고 시작 시 `min(botCount, maxPlayers − H)` 로 클램프(로비 중 사람 수가 바뀌므로). 상수 이름: GDD `PUBLIC_AUTOSTART_MS` = 코드 `PUBLIC_LOBBY_AUTOSTART_MS`, GDD `PUBLIC_ROOM_MAP` = 코드 `PUBLIC_ROOM_SIZE`(+ `PUBLIC_ROOM_PLAYERS`).
+
 ---
 
 ## 11. 봇 (3차-2 완료 — 중간 보고)
@@ -747,7 +757,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 3. ~~페이싱: 앵커 점령 시 자동 방어 전환으로 확장 정체~~ → **해결**(사용자 결정: 재파생 폐지, §10-19). 재측정: 검 1,200 단일 깃발이 중립 앵커(국경 7칸 앞)를 tick 7에 먹고도 계속 밀어 **44타일** 점령 후 소진(GDD 4.6(d) 적 타일 기준 57 — 이 테스트는 보급선 배율이 붙은 중립 비용이라 직접 비교는 근사). 8인 5분 스크립트: 플레이어당 **83~251 타일**(이전 10~19).
 4. 3.2 cap 클램프가 회수 환급을 자를 수 있음(§10-23).
 5. 동맹 거절 코드·이벤트 페이로드 미정의(§10-28), `isAlly` vs `isAllyOrBreaking` 혼용(§10-16), `LOCKED` 용도 미정의(§10-17).
-6. 1차 §10-5 (본문 구값 37/42분) 미해결 유지.
+6. ~~1차 §10-5 (본문 구값 37/42분)~~ → **해소**: GDD 3.1 표가 28/32분으로 정리됨 (QA m-11).
 7. **(봇, 3차-2)** 8.1 기지 위협 식 `/1000` 단위 오류 (§10-62). 8.2 "방어는 항상 창병" vs 8.6 요격 "가장 빠른 병종 (기병 우선)" 충돌 (§10-46). 8.2 정체 (갈아타기/회수) vs 8.6.0 굳히기 (→ DEFEND) 충돌 — 8.6.0 우선 + 방어 상한 (§10-51). `engagedSinceTick` 미정의 (§10-53). 같은 소유자 다중 깃발이 같은 앵커를 고르는 문제 (§10-54). 수비형 빌드의 `기동T2` 선행 누락 (§10-60). 공격 깃발 하한 40 의 소진 함정 (§10-57). 8.6.0 차단 쓰기의 "적 재배치 경로" 정의 없음 (§10-55 근사).
 8. **(봇 페이싱)** 5.2 `u = 0.7` 가정과 `BOT_RESERVE_RATIO 0.30` 의 모순, 5.1 "깃발 메커니즘 비병목" 가정이 봇 실측과 다름, 2.8 g 레버만으로 HARD/NORMAL 차등이 작음 — §11 페이싱 관찰. **자가대전 9/10 판 하드 타임아웃**. 게임 상수는 바꾸지 않았다 (game-designer 판단 필요).
 
@@ -770,3 +780,13 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 메시지·필드 | **변경 없음** |
 | 동작 | 봇 자리 (처음부터 봇 + `bot_takeover`) 가 실제로 명령을 낸다 — `flag_issued`/`flag_retargeted`/`flag_recalled`/`flag_posture_changed`/`tech_purchased`/`ally_proposal_closed` (봇 거절)/`ally_formed` (봇 수락)/`ally_break_started` 가 봇 발로도 나온다 |
 | 수정 | `combat_ended.routedFlagIds` 중복 제거 (원래 의미대로) |
+
+## 16. QA 후속 변경 요약 (프론트 영향)
+
+| 구분 | 내용 |
+|---|---|
+| 필드 추가 | `flag_posture_changed.targetOwnerId` (I-1) — 받으면 깃발의 `targetOwnerId` 를 덮어쓴다 |
+| 규칙 | 귀환 중 교전에 붙잡힌 깃발에 회수·재지정 가능 → `flag_disengage_started` (I-2). 패주 깃발은 그대로 불가 |
+| 순서 | `cmd_ack` 이 그 tick 방송보다 먼저 온다 → `flag_issued` 전에 `cmd_ack.flagId` 를 알 수 있고 `game_over` 가 그 tick 마지막 (m-5) |
+| 기타 | 공개 룸 `lobby_start_now` → `NOT_HOST` (m-6). 재접속 부트스트랩의 본인 `connected=true` (m-7). 봇 명령 ack 미배달 (m-10). 종료 후 남은 명령 `NOT_IN_GAME` ack (m-9). 65자 이상 닉네임도 `BAD_NICKNAME` (m-1) |
+| QA 스크립트 | `npm run qa:headless|qa:scenarios|qa:ws -w @civwar/server` (`qa-schema.ts` 는 모듈) |

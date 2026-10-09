@@ -192,7 +192,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   const f = flagById(state, msg.flagId);
   if (!f || f.ownerId !== playerId) return { reason: 'NO_FLAG' };
   if (f.routed) return { reason: 'ROUTED' };
-  if (f.state === 'RETURNING') return { reason: 'RETURNING' };
+  if (f.state === 'RETURNING' && !f.inCombat) return { reason: 'RETURNING' };
   // LOCKED: 재지정 경직 중 재재지정 금지. 단 이탈 대기 중엔 허용 (4.15 g "목적지만 바뀌고 타이머 유지")
   if (t < f.lockUntilTick && f.disengageUntilTick === null) return { reason: 'LOCKED' };
   const anchor = msg.anchorTileId;
@@ -230,7 +230,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
     auto: false,
   });
   if (postureChanged) {
-    out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: true });
+    out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: true, targetOwnerId: f.targetOwnerId });
   }
   return { flagId: f.id, posture: f.posture };
 }
@@ -241,7 +241,7 @@ export function recallFlag(state: GameState, playerId: number, msg: C2S_CmdFlagR
   const f = flagById(state, msg.flagId);
   if (!f || f.ownerId !== playerId) return { reason: 'NO_FLAG' };
   if (f.routed) return { reason: 'ROUTED' };
-  if (f.state === 'RETURNING') return { reason: 'RETURNING' };
+  if (f.state === 'RETURNING' && !f.inCombat) return { reason: 'RETURNING' };
   startDisengageIfInCombat(f, t, out);
   beginReturn(state, f);
   out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
@@ -260,7 +260,7 @@ export function setPosture(state: GameState, playerId: number, msg: C2S_CmdSetPo
   if (t < f.postureCooldownUntilTick) return { reason: 'POSTURE_COOLDOWN' };
   applyPosture(state, f, msg.posture, t);
   f.postureManual = true;
-  out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: false });
+  out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: false, targetOwnerId: f.targetOwnerId });
   return { flagId: f.id, posture: f.posture };
 }
 

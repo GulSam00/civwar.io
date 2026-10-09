@@ -516,3 +516,50 @@ describe('결정론 (전투·게이지 포함)', () => {
     for (const ty of ['flag_issued', 'flag_engaged', 'combat_started', 'combat_ended', 'tileChanges']) expect(a.types).toContain(ty);
   });
 });
+
+describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
+  it('I-2: 교전 중 귀환(RETURNING) 깃발 재회수·재지정 수락 → 이탈 대기 시작, 패주 깃발은 여전히 ROUTED', () => {
+    const sim = makeSim();
+    const s = sim.state;
+    const c = findOpenArea(s, 3);
+    plainify(s, c, 3);
+    const back = addFlag(s, { ownerId: 1, unit: 0, troops: 1000, pos: c, posture: POSTURE.DEFEND, state: 'RETURNING', returnTileId: s.players[1].homeTileId });
+    addFlag(s, { ownerId: 2, unit: 2, troops: 1000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED', targetOwnerId: 1 });
+    sim.step();
+    expect(back.inCombat).toBe(true);
+    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 1, flagId: back.id });
+    const out = sim.step();
+    expect(out.personal.find((p) => p.msg.type === 'cmd_ack')?.msg).toMatchObject({ accepted: true });
+    expect(out.broadcast.some((m) => m.type === 'flag_disengage_started' && m.flagId === back.id)).toBe(true);
+    back.routed = true;
+    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 2, flagId: back.id });
+    expect(sim.step().personal.find((p) => p.msg.type === 'cmd_ack')?.msg).toMatchObject({ accepted: false, reason: 'ROUTED' });
+    expect(ledgerImbalance(s)).toBe(0);
+  });
+
+  it('I-1: flag_posture_changed 에 targetOwnerId (내 땅 앵커 → 254)', () => {
+    const sim = makeSim();
+    const s = sim.state;
+    const home = s.players[1].homeTileId;
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: 0, troops: 60, anchorTileId: home, originBaseTileId: null });
+    sim.step();
+    const f = s.flags.find((x) => x.ownerId === 1)!;
+    for (let i = 0; i < 30; i++) sim.step();
+    sim.enqueue(1, 1, { type: 'cmd_set_posture', clientSeq: 2, flagId: f.id, posture: POSTURE.ATTACK });
+    const ev = sim.step().broadcast.find((m) => m.type === 'flag_posture_changed');
+    expect(ev).toMatchObject({ flagId: f.id, posture: POSTURE.ATTACK, targetOwnerId: 254 });
+  });
+
+  it('m-10: 봇(connId 0) 명령 ack 은 fromBot 표시, m-9: 종료 후 남은 사람 명령은 NOT_IN_GAME ack', () => {
+    const sim = makeSim();
+    sim.enqueue(0, 2, { type: 'cmd_buy_tech', clientSeq: 9, axis: 0, tier: 3 });
+    sim.enqueue(5, 1, { type: 'cmd_buy_tech', clientSeq: 10, axis: 0, tier: 3 });
+    const out = sim.step();
+    expect(out.personal.find((p) => p.playerId === 2)?.fromBot).toBe(true);
+    expect(out.personal.find((p) => p.playerId === 1)?.fromBot).toBeUndefined();
+    sim.enqueue(5, 1, { type: 'cmd_buy_tech', clientSeq: 11, axis: 0, tier: 1 });
+    sim.enqueue(0, 2, { type: 'cmd_buy_tech', clientSeq: 12, axis: 0, tier: 1 });
+    expect(sim.flushPending()).toEqual([{ playerId: 1, msg: { type: 'cmd_ack', clientSeq: 11, accepted: false, reason: 'NOT_IN_GAME' } }]);
+    expect(sim.flushPending()).toEqual([]);
+  });
+});

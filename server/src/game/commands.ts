@@ -41,7 +41,12 @@ function flagAck(out: Outbox, playerId: number, clientSeq: number, r: CmdResult)
 
 export function stage1_drainInput(state: GameState, queue: QueuedCommand[], t: number, out: Outbox): void {
   queue.sort(compareQueued);
-  for (const q of queue) applyCommand(state, q, t, out);
+  for (const q of queue) {
+    const before = out.personal.length;
+    applyCommand(state, q, t, out);
+    // QA m-10: 봇(connId 0) 명령의 ack 은 표시만 해 두고 룸이 배달하지 않는다 (인계 후 복귀한 사람에게 모르는 clientSeq ack 방지)
+    if (q.connId === 0) for (let i = before; i < out.personal.length; i++) out.personal[i].fromBot = true;
+  }
 }
 
 function applyCommand(state: GameState, q: QueuedCommand, t: number, out: Outbox): void {

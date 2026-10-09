@@ -130,9 +130,14 @@ export class Room {
   broadcastRoomState(): void {
     this.broadcast(this.roomState());
   }
+  /**
+   * QA m-5: 개인 메시지(cmd_ack — 1단계 산출)를 그 tick 의 방송(이벤트 → delta → full → game_over)보다 먼저 보낸다.
+   * → game_over 가 그 tick 의 마지막 메시지, cmd_ack(flagId) 이 같은 tick 의 flag_issued 보다 먼저 온다.
+   * QA m-10: 봇 명령(connId 0)의 ack 은 배달하지 않는다.
+   */
   private deliver(out: Outbox): void {
+    for (const { playerId, msg, fromBot } of out.personal) if (!fromBot) this.members.get(playerId)?.session?.send(msg);
     for (const msg of out.broadcast) this.broadcast(msg);
-    for (const { playerId, msg } of out.personal) this.members.get(playerId)?.session?.send(msg);
   }
 
   // ───────────────────────── 로비 ─────────────────────────
@@ -240,17 +245,22 @@ export class Room {
 
   /** 같은 playerToken 으로 재접속 */
   onResume(session: Session): void {
-    session.send(this.roomState());
-    if (this.phase !== 'IN_GAME' && this.phase !== 'GAME_OVER') return;
-    this.sendGameBootstrap(session);
+    if (this.phase !== 'IN_GAME' && this.phase !== 'GAME_OVER') {
+      session.send(this.roomState());
+      return;
+    }
+    // QA m-7: 플래그를 먼저 바꿔 부트스트랩 snapshot_full 에 본인 connected=true 가 담기게 한다
     const m = this.memberOf(session);
     const p = m && this.sim?.state.players[m.playerId];
-    if (p && !p.connected) {
+    const reconnected = !!p && !p.connected;
+    if (p && reconnected) {
       p.connected = true;
       p.disconnectedSinceTick = null;
       if (!p.isBot) p.botControlled = false; // 인계 후 복귀해도 조종권 반환 (백엔드 결정)
-      this.broadcast({ type: 'player_reconnected', tick: this.sim!.state.tick, playerId: p.id });
     }
+    session.send(this.roomState());
+    this.sendGameBootstrap(session);
+    if (p && reconnected) this.broadcast({ type: 'player_reconnected', tick: this.sim!.state.tick, playerId: p.id });
     this.broadcastRoomState();
   }
 
@@ -266,7 +276,8 @@ export class Room {
   startNow(session: Session): ErrorCode | null {
     const m = this.memberOf(session);
     if (!m) return 'NOT_IN_ROOM';
-    if (m.playerId !== this.hostId) return 'NOT_HOST';
+    // QA m-6: 공개 방은 방장 권한이 없다 (정원 도달 또는 30초 자동 시작만 — GDD 2.8 h)
+    if (this.isPublic || m.playerId !== this.hostId) return 'NOT_HOST';
     if (this.phase !== 'LOBBY') return 'NOT_LOBBY';
     return this.startCountdown();
   }
@@ -369,6 +380,8 @@ export class Room {
     this.deliver(out);
     const needRoomState = out.broadcast.some((m) => m.type === 'player_eliminated' || m.type === 'bot_takeover');
     if (this.sim.finished) {
+      // QA m-9: 종료 뒤 큐에 남은 사람 명령에도 ack 1회 (NOT_IN_GAME)
+      for (const { playerId, msg } of this.sim.flushPending()) this.members.get(playerId)?.session?.send(msg);
       this.phase = 'GAME_OVER';
       this.broadcastRoomState();
       this.later(ROOM_CLOSE_AFTER_GAME_MS, () => this.dispose());

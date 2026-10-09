@@ -5,7 +5,7 @@ export interface Outbox {
   /** 룸 전원(관전자 포함) */
   broadcast: ServerMessage[];
   /** 특정 플레이어(세션이 없으면 버림 — 봇) */
-  personal: { playerId: number; msg: ServerMessage }[];
+  personal: { playerId: number; msg: ServerMessage; fromBot?: boolean }[];
 }
 
 export function newOutbox(): Outbox {

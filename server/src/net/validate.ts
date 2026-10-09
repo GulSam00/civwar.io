@@ -35,7 +35,8 @@ export function parseClientMessage(raw: string): ParseResult {
 
   switch (type) {
     case 'hello':
-      if (!isStr(m.nickname, 64)) return bad('nickname must be string');
+      // QA m-1: 길이 위반은 server.ts 의 BAD_NICKNAME 으로 (형식 검사는 문자열 여부만 — 프레임 4 KB 상한이 크기를 막는다)
+      if (typeof m.nickname !== 'string') return bad('nickname must be string');
       if (!isInt(m.clientVersion)) return bad('clientVersion must be int');
       if (m.playerToken !== undefined && !isStr(m.playerToken, 128)) return bad('playerToken must be string');
       return { ok: true, msg: { type, nickname: m.nickname, clientVersion: m.clientVersion, playerToken: m.playerToken as string | undefined } };

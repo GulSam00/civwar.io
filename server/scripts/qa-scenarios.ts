@@ -59,7 +59,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   const n6 = findTile(s, (t) => near(t, 6));
   const water = findTile(s, (t) => s.map.terrain[t] === TERRAIN.DEEP);
   const far = findTile(s, (t) => isClaimable(s.map.terrain[t]) && minDistFromTerritory(s, 1, t) > 40);
-  const neutralBase = findTile(s, (t) => s.map.isBase[t] && s.owners[t] === NEUTRAL);
+  const neutralBase = findTile(s, (t) => !!s.map.isBase[t] && s.owners[t] === NEUTRAL);
   const ownNonBase = findTile(s, (t) => s.owners[t] === 1 && !s.map.isBase[t]);
   const issue = (anchor: number, troops = 40, extra: Record<string, unknown> = {}) => ({ type: 'cmd_flag_issue', unit: UNIT.SWORD, troops, anchorTileId: anchor, originBaseTileId: null, ...extra });
 
@@ -337,16 +337,6 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
 }
 
 console.log('\n=== qa-scenarios ===');
-let fail = 0;
-for (const r of results) {
-  if (!r.ok) fail++;
-  console.log(`${r.ok ? '  ok  ' : '  FAIL'} ${r.name}${r.ok ? '' : '  — ' + r.detail}`);
-}
-console.log(`\n문서 스키마 위반 ${schemaErrs.length}`);
-for (const e of [...new Set(schemaErrs)].slice(0, 20)) console.log('  ' + e);
-console.log(`수신 type: ${[...seen.keys()].sort().join(', ')}`);
-console.log(`\n${results.length - fail}/${results.length} 통과`);
-
 // ───────── 6. 귀환 중(RETURNING) 깃발이 추격당해 교전 → 다시 빠질 수 있는가 (GDD 4.15 g "재교전 … 명령을 다시 내리고 3초") ─────────
 {
   const { s, sim } = setup(4242, 4);
@@ -368,7 +358,7 @@ console.log(`\n${results.length - fail}/${results.length} 통과`);
   stepWith(sim, []);
   check('[전제] 귀환 중 깃발이 공격 깃발과 인접 → 교전(inCombat, RETURNING)', ret.inCombat && ret.state === 'RETURNING', `inCombat=${ret.inCombat} state=${ret.state}`);
   const r = stepWith(sim, [[1, { type: 'cmd_flag_recall', flagId: 1 }], [1, { type: 'cmd_flag_retarget', flagId: 1, anchorTileId: s.players[1].homeTileId }]]);
-  check('교전 중 귀환 깃발 재회수 → 이탈 대기 가능해야 (GDD 4.15 g)', reason(r.acks[0]) === 'ACCEPT' || reason(r.acks[1]) === 'ACCEPT', `recall ${reason(r.acks[0])}, retarget ${reason(r.acks[1])} — 이탈 수단 없음`);
+  check('교전 중 귀환 깃발 재회수 → 이탈 대기 가능해야 (GDD 4.15 g)', reason(r.acks[0]) === 'ACCEPT' || reason(r.acks[1]) === 'ACCEPT', `recall ${reason(r.acks[0])}, retarget ${reason(r.acks[1])}`);
   let moved = false;
   const p0 = ret.posTileId;
   for (let i = 0; i < 40; i++) { stepWith(sim, []); if (ret.posTileId !== p0) moved = true; }
@@ -376,3 +366,14 @@ console.log(`\n${results.length - fail}/${results.length} 통과`);
 }
 console.log('\n--- 6 ---');
 for (const r of results.slice(-3)) console.log(`${r.ok ? '  ok  ' : '  FAIL'} ${r.name} — ${r.detail}`);
+
+// ───────── 요약 (섹션 6 포함) ─────────
+let fail = 0;
+for (const r of results) {
+  if (!r.ok) fail++;
+  console.log(`${r.ok ? '  ok  ' : '  FAIL'} ${r.name}${r.ok ? '' : '  — ' + r.detail}`);
+}
+console.log(`\n문서 스키마 위반 ${schemaErrs.length}`);
+for (const e of [...new Set(schemaErrs)].slice(0, 20)) console.log('  ' + e);
+console.log(`수신 type: ${[...seen.keys()].sort().join(', ')}`);
+console.log(`\n${results.length - fail}/${results.length} 통과`);

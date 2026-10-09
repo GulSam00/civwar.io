@@ -148,7 +148,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   combat_started: { tick: 'int', groupKey: 'int', flagIds: arr('int'), sides: arr(obj({ sideKey: 'int', ownerIds: arr('int'), troops: 'int', power: 'int' })) },
   combat_ended: { tick: 'int', groupKey: 'int', winnerSideKey: 'int|null', routedFlagIds: arr('int') },
   flag_routed: { tick: 'int', flagId: 'int', returnTileId: 'int' },
-  flag_posture_changed: { tick: 'int', flagId: 'int', posture: POSTURE, cooldownUntilTick: 'int', auto: 'bool' },
+  flag_posture_changed: { tick: 'int', flagId: 'int', posture: POSTURE, cooldownUntilTick: 'int', auto: 'bool', targetOwnerId: 'int' },
   flag_blocked: { tick: 'int', flagId: 'int', byFlagIds: arr('int') },
   flag_unblocked: { tick: 'int', flagId: 'int' },
   flag_disengage_started: { tick: 'int', flagId: 'int', untilTick: 'int' },

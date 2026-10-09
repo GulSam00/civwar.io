@@ -613,6 +613,8 @@ export interface S2C_FlagPostureChanged {
   posture: Posture;
   cooldownUntilTick: number;
   auto: boolean;
+  /** QA I-1 (추가 필드): 전환 후 targetOwnerId — owners[anchor] == 소유자 ? 254(ANY_HOSTILE) : owners[anchor] (1단계 처리 시점 owners) */
+  targetOwnerId: number;
 }
 export interface S2C_FlagBlocked {
   type: 'flag_blocked';

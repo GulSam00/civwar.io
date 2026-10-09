@@ -26,11 +26,12 @@ import {
   TICKS_PER_MIN,
   type BotDifficultyParams,
   type C2S_GameCommand,
+  type S2C_CmdAck,
   type S2C_GameOver,
 } from '@civwar/shared';
 import { allianceTimers, dropPlayerDiplomacy } from './alliance.js';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from './combat.js';
-import { stage1_drainInput, type QueuedCommand } from './commands.js';
+import { compareQueued, stage1_drainInput, type QueuedCommand } from './commands.js';
 import { removeFlag } from './flagops.js';
 import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 import { stage4_moveFlags } from './movement.js';
@@ -210,6 +211,16 @@ export class Simulation {
   /** 다음 tick 1단계에서 처리할 명령을 받는다. 수신 순번(recvSeq)이 1차 정렬 키 */
   enqueue(connId: number, playerId: number, msg: C2S_GameCommand): void {
     this.queue.push({ recvSeq: ++this.recvSeq, connId, playerId, msg });
+  }
+
+  /** 게임 종료 후 처리되지 못한 명령 — 사람(connId ≠ 0) 명령마다 NOT_IN_GAME ack 을 만들고 큐를 비운다 (QA m-9) */
+  flushPending(): { playerId: number; msg: S2C_CmdAck }[] {
+    const res = this.queue
+      .filter((q) => q.connId !== 0)
+      .sort(compareQueued)
+      .map((q) => ({ playerId: q.playerId, msg: { type: 'cmd_ack', clientSeq: q.msg.clientSeq, accepted: false, reason: 'NOT_IN_GAME' } as S2C_CmdAck }));
+    this.queue = [];
+    return res;
   }
 
   get finished(): boolean {

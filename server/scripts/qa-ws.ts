@@ -224,12 +224,14 @@ async function main() {
     const rl = h.log.slice(k).filter((m) => m.type === 'cmd_ack' && m.clientSeq >= 5000 && m.clientSeq < 5025);
     const nRL = rl.filter((m) => m.reason === 'RATE_LIMITED').length;
     check('rate limit: 25개 연사 → 모두 ack, 일부 RATE_LIMITED', rl.length === 25 && nRL >= 5, `ack ${rl.length}, RATE_LIMITED ${nRL}, 기타 ${[...new Set(rl.map((m) => m.reason))]}`);
-    // cmd_ack 이 같은 tick 의 broadcast(delta) 뒤에 오는지 — 순서 관찰
+    // QA m-5 수정 후 (문서 §5): cmd_ack 은 처리 tick 의 방송(이벤트 → delta → full → game_over)보다 먼저 온다
     k = h.mark();
-    const a1 = await h.cmd({ type: 'cmd_buy_tech', axis: 0, tier: 1 });
+    const a1 = await h.cmd({ type: 'cmd_ally_propose', targetPlayerId: 2 });
+    await sleep(300);
     const idxAck = h.log.indexOf(a1);
-    const prev = h.log.slice(k, idxAck).filter((m) => m.type === 'snapshot_delta').pop();
-    check('[관찰] cmd_ack 은 처리 tick 의 snapshot_delta 뒤에 도착 (문서 미기술)', !!prev, `ack 직전 delta tick ${prev?.tick}`);
+    const ev = h.log.slice(k).find((m) => m.type === 'ally_proposed' || m.type === 'ally_formed');
+    const deltaAfter = h.log.slice(idxAck + 1).find((m) => m.type === 'snapshot_delta');
+    check('cmd_ack 이 같은 tick 의 이벤트·snapshot_delta 보다 먼저 도착 (문서 §5)', a1?.accepted === true && (!!ev && h.log.indexOf(ev) > idxAck && !!deltaAfter && deltaAfter.tick === ev.tick), `ack ${JSON.stringify(a1)} idx ${idxAck}, 이벤트 idx ${ev ? h.log.indexOf(ev) : -1} tick ${ev?.tick}, 다음 delta tick ${deltaAfter?.tick}`);
 
     // ── 재접속 ──
     const tokenG = (g.log.find((m) => m.type === 'welcome') as any).playerToken;
