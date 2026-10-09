@@ -28,7 +28,7 @@ export interface PlayerState {
   botControlled: boolean; // 봇 슬롯 또는 DISCONNECT_GRACE 초과로 인계됨
   /** v4.1 [A-46]: 이 자리를 봇이 조종할 때 쓰는 난이도 (방 단위 하나 — 사람 자리도 인계 대비로 같은 값) */
   botDifficulty: BotDifficultyName;
-  /** BOT_DIFFICULTY[botDifficulty] — 봇 인스턴스 레버 4개 (전역 상수 → 봇별 값) */
+  /** BOT_DIFFICULTY[botDifficulty] + aggressionPermille(봇 성향, 서버 전용) — 봇 인스턴스 레버 */
   bot: Readonly<BotDifficultyParams>;
   connected: boolean;
   disconnectedSinceTick: number | null;
@@ -220,10 +220,29 @@ export interface PlayerSetup {
   connected: boolean;
   /** 생략 시 BOT_DIFFICULTY_DEFAULT (NORMAL) */
   botDifficulty?: BotDifficultyName;
+  /** 봇 성향 강제 (테스트·진단용). 생략 시 botAggressionPermille(aggressionSeed, playerId) */
+  aggressionPermille?: number;
+}
+
+/**
+ * 봇 성향 배정 (사용자 결정 2026-10-09): (룸 시드, playerId) 정수 해시 → 0..1000. Math.random 없음, 플랫폼 무관(Math.imul).
+ */
+export function botAggressionPermille(seed: number, playerId: number): number {
+  let h = (seed ^ Math.imul(playerId + 0x632be5ab, 0x9e3779b1)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h % 1001;
 }
 
 /** botDifficulty = 방 봇 난이도 (2.8 g — 방 단위 하나, bot_takeover 도 따른다). PlayerSetup.botDifficulty 가 있으면 그 자리만 덮어쓴다 */
-export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[], botDifficulty: BotDifficultyName = BOT_DIFFICULTY_DEFAULT): GameState {
+/** aggressionSeed = 룸 시드 (생략 시 map.seed — 프리셋 맵은 룸이 따로 넘긴다) */
+export function createGameState(
+  map: GeneratedMap,
+  setup: readonly PlayerSetup[],
+  botDifficulty: BotDifficultyName = BOT_DIFFICULTY_DEFAULT,
+  aggressionSeed: number = map.seed,
+): GameState {
   const N = map.playerCount;
   if (setup.length !== N) throw new Error(`setup ${setup.length} != map players ${N}`);
   const players: PlayerState[] = new Array(N + 1);
@@ -234,7 +253,7 @@ export function createGameState(map: GeneratedMap, setup: readonly PlayerSetup[]
       isBot: s.isBot,
       botControlled: s.isBot,
       botDifficulty: s.botDifficulty ?? botDifficulty,
-      bot: BOT_DIFFICULTY[s.botDifficulty ?? botDifficulty],
+      bot: { ...BOT_DIFFICULTY[s.botDifficulty ?? botDifficulty], aggressionPermille: s.aggressionPermille ?? botAggressionPermille(aggressionSeed, s.playerId) },
       connected: s.connected,
       disconnectedSinceTick: null,
       alive: true,

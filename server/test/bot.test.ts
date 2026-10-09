@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
-import { CivBot, decideBot } from '../src/game/bot.js';
+import { CivBot, botKnobs, decideBot } from '../src/game/bot.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
-import { NEUTRAL, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
+import { NEUTRAL, botAggressionPermille, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
 import { Simulation, type BotBrain } from '../src/game/tick.js';
 
-function botGame(seed: number, N: number, diff: BotDifficultyName | BotDifficultyName[] = 'NORMAL', brain: BotBrain = CivBot) {
+function botGame(seed: number, N: number, diff: BotDifficultyName | BotDifficultyName[] = 'NORMAL', brain: BotBrain = CivBot, aggression?: number) {
   const P = MAP_SIZE_PRESETS.M;
   const map = generateMap(seed, P.w, P.h, N);
   const diffs = Array.isArray(diff) ? diff : Array.from({ length: N }, () => diff);
   const state = createGameState(
     map,
-    diffs.map((d, i) => ({ playerId: i + 1, isBot: true, connected: true, botDifficulty: d })),
+    diffs.map((d, i) => ({ playerId: i + 1, isBot: true, connected: true, botDifficulty: d, aggressionPermille: aggression })),
   );
   return new Simulation(state, brain);
 }
@@ -178,5 +178,46 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     expect(r1).toMatchObject({ proposalId: 1, accept: true });
     expect(r2).toMatchObject({ proposalId: 2, accept: false });
     for (const id of [1, 2, 3, 4]) expect(decideBot(s, id, 15, BOT_DIFFICULTY.NORMAL).some((c) => c.type === 'cmd_ally_propose')).toBe(false);
+  });
+
+  it('성향 배정: (룸 시드, playerId) 결정론 해시, 0..1000, 봇마다 다름', () => {
+    expect(botAggressionPermille(1234, 3)).toBe(botAggressionPermille(1234, 3));
+    const vals = Array.from({ length: 12 }, (_, i) => botAggressionPermille(1234, i + 1));
+    for (const v of vals) expect(v >= 0 && v <= 1000).toBe(true);
+    expect(new Set(vals).size).toBeGreaterThan(8);
+    expect(vals).not.toEqual(Array.from({ length: 12 }, (_, i) => botAggressionPermille(1235, i + 1)));
+    const a = botGame(9, 4).state;
+    const b = botGame(9, 4).state;
+    expect(a.players.filter(Boolean).map((p) => p.bot.aggressionPermille)).toEqual(b.players.filter(Boolean).map((p) => p.bot.aggressionPermille));
+    expect(a.players[2].bot.aggressionPermille).toBe(botAggressionPermille(a.map.seed, 2));
+  });
+
+  it('성향 보간: 난이도 기준 ± 띠 (a = 500 이면 기준 그대로)', () => {
+    const N = BOT_DIFFICULTY.NORMAL;
+    expect(botKnobs({ ...N, aggressionPermille: 500 })).toMatchObject({ reserveRatioPermille: 300, minDefenseRatioPermille: 250, maxDefenseRatioPermille: 500, counterMarginPermille: 1200, retreatRatioPermille: 800, blockAttackRatioPermille: 500, enemyAnchorWeightPermille: 1000 });
+    expect(botKnobs({ ...N, aggressionPermille: 0 })).toMatchObject({ reserveRatioPermille: 400, minDefenseRatioPermille: 350, maxDefenseRatioPermille: 700, counterMarginPermille: 1400, retreatRatioPermille: 1000, blockAttackRatioPermille: 300, enemyAnchorWeightPermille: 600 });
+    expect(botKnobs({ ...N, aggressionPermille: 1000 })).toMatchObject({ reserveRatioPermille: 200, minDefenseRatioPermille: 150, maxDefenseRatioPermille: 300, counterMarginPermille: 1000, retreatRatioPermille: 600, blockAttackRatioPermille: 700, enemyAnchorWeightPermille: 1400 });
+    expect(botKnobs(BOT_DIFFICULTY.HARD)).toMatchObject({ reserveRatioPermille: 200, minDefenseRatioPermille: 300 });
+  });
+
+  it('성향 0 vs 1000: 짧은 판에서 방어 슬롯 비중과 공격 발령 수가 측정 가능하게 다르다', () => {
+    const run = (aggr: number) => {
+      const sim = botGame(1000, 10, 'NORMAL', CivBot, aggr);
+      let def = 0;
+      let all = 0;
+      let attacks = 0;
+      for (let i = 0; i < 4500; i++) {
+        for (const m of sim.step().broadcast) if (m.type === 'flag_issued' && m.posture === POSTURE.ATTACK) attacks++;
+        if (sim.state.tick % 15 === 0) for (const f of sim.state.flags) {
+          all++;
+          if (f.posture === POSTURE.DEFEND) def++;
+        }
+      }
+      return { defShare: def / all, attacks };
+    };
+    const lo = run(0);
+    const hi = run(1000);
+    expect(lo.defShare).toBeGreaterThan(hi.defShare + 0.05);
+    expect(hi.attacks).toBeGreaterThan(lo.attacks);
   });
 });

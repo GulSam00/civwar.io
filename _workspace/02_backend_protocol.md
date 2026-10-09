@@ -103,7 +103,7 @@ civwar.io/
 
 ```
 npm install
-npm test                 # vitest 전체 (8 파일 / 116 tests)
+npm test                 # vitest 전체 (8 파일 / 119 tests)
 npm run typecheck        # shared + server tsc --noEmit
 npm run start:server     # ws://localhost:8080  (PORT 환경변수로 변경)
 npm run dev:server       # tsx watch
@@ -670,7 +670,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 48. hotspot "같은 구간 중복 방지" = 거리 ≤ 6 에 그 위협 깃발 실효력 이상인 내 방어 깃발이 있을 때만 "덮였다" 로 본다.
 49. **kEst = 실효 전투력 비**: 깃발 실효력 = 병력 × `flagValue` (4.15 d — 편 손실이 1/v 비례이므로 버티는 시간 ∝ 병력×v). 반격 (×1.2)·차단 당하기 (×0.5)·후퇴 (×0.8)·요격 (×1.25)·회피 (×0.9) 모두 이 값으로 비교.
 50. **후퇴** 잔여 추정: 이탈 15 tick × (L = S×1.5%/n) × 내 몫 (v×0.5 역수 배분). 잔여 ≥ 120 일 때만 회수.
-51. **방어 깃발 상한 = max(최소 방어선, floor(슬롯 × 0.5))** — GDD 에 없음. 8.6.0 굳히기 (정체·병력 < 40% → DEFEND) 는 앵커 거리 ≤ 7 에 적 플레이어 땅이 있고 상한 미만일 때만, 아니면 8.2 정체 규칙 (점수 ×1.3 이상 앵커로 갈아타기, 없으면 회수). 상한 없이 돌리면 슬롯의 60% 가 영구 주둔으로 묶여 공격이 멈췄다.
+51. **방어 깃발 상한 = max(최소 방어선, floor(슬롯 × maxDefenseRatio))** — GDD 에 없음. 기준 `BOT_MAX_DEFENSE_RATIO_PERMILLE` 500, 성향으로 300~700 (§10-65). 8.6.0 굳히기 (정체·병력 < 40% → DEFEND) 는 앵커 거리 ≤ 7 에 적 플레이어 땅이 있고 상한 미만일 때만, 아니면 8.2 정체 규칙 (점수 ×1.3 이상 앵커로 갈아타기, 없으면 회수). 상한 없이 돌리면 슬롯의 60% 가 영구 주둔으로 묶여 공격이 멈췄다.
 52. **최소 방어선** (8.2 3) "인접 적 수 최대 국경 구간" = 적 플레이어 땅과 맞닿은 내 칸 중 거리 ≤ 2 적 칸 수 최대 (동률 tileId 최소), 기존 방어 관할 원 밖. 병력 = 풀 × 40%, 상한 풀 − 예비.
 53. **주둔 해제**: `engagedSinceTick` 이 없어 `calmTicks` (주둔 ∧ 비위협 연속 tick) ≥ 900 으로 판정. 제자리 반격 (위협 0, 병력 ≥ 70%, 쿨타임 없음) 은 front (ANY_HOSTILE) 가 있고 반격 후에도 최소 방어선이 유지될 때만.
 54. **앵커 중복 방지**: 같은 소유자를 노리는 내 공격 앵커 (계획 포함) 와 거리 ≤ 6 인 국경 칸은 후보에서 뺀다 (GDD 식은 같은 소유자 두 깃발이 같은 앵커를 고름). `tileCost` 비교는 검병 기준. 재지정 점수의 `march` 는 기지가 아닌 **깃발 현재 위치**에서 잰다 (발령은 originFor = 최근접 기지).
@@ -684,6 +684,20 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 62. **기지 위협 가중** `(BASE_HP_MAX_MILLI − hp) × 3` — GDD 식의 `/1000` 은 hpMilli 단위와 맞지 않아 (최대 45, 트리거 3000 대비 무의미) 뺐다.
 63. **명령 적용 시점 보정**: 봇 명령은 다음 tick 1단계에 적용되므로 경직 (`lockUntilTick`)·태세 쿨타임을 `t+1` 기준으로 본다. `clientSeq = t × 64 + 순번` (무상태·결정론). 한 결정에서 같은 깃발에 명령 2개를 내지 않는다.
 64. **룸·로비 기본 두뇌 `IdleBot` → `CivBot`**. `IdleBot` 은 테스트용으로 남김.
+65. **봇 성향 aggression (사용자 결정 2026-10-09)**: `PlayerState.bot.aggressionPermille` ∈ 0..1000 (0 수비적, 1000 공격적). 배정 = `botAggressionPermille(룸 시드, playerId)` 정수 해시 (Math.imul, Math.random 없음). 룸 시드는 무작위 맵이면 `map.seed`, 프리셋 맵이면 룸이 `nextSeed()` 로 따로 뽑아 `createGameState(…, aggressionSeed)` 로 넘긴다. 사람 자리에도 배정 (인계 대비). `PlayerSetup.aggressionPermille` 로 강제 가능 (테스트·진단). **알고리즘 분기 없음 — 값만 보간**: `값 = 기준 + trunc((a − 500) × SPAN / 500)` 후 clamp (`bot.ts botKnobs`, 상수 단일 소스 `shared/constants.ts BOT_AGGRESSION_SPAN`):
+
+| 값 | 기준 | SPAN (a=0 → a=1000) | NORMAL 범위 |
+|---|---|---|---|
+| reserveRatio | 난이도 (450/300/200) | +100 → −100 | 400 → 200 |
+| minDefenseRatio | 난이도 (100/250/300) | +100 → −100 | 350 → 150 |
+| maxDefenseRatio (방어 상한) | `BOT_MAX_DEFENSE_RATIO_PERMILLE` 500 | +200 → −200 | 700 → 300 |
+| counterMargin (주둔 반격) | `BOT_COUNTER_MARGIN_PERMILLE` 1200 | +200 → −200 | 1400 → 1000 |
+| retreatRatio (후퇴) | `BOT_RETREAT_RATIO_PERMILLE` 800 | +200 → −200 | 1000 → 600 |
+| blockAttackRatio (차단 당할 때 공격 전환) | `BOT_BLOCK_ATTACK_RATIO_PERMILLE` 500 | −200 → +200 | 300 → 700 |
+| enemyAnchorWeight (적 앵커 점수 배율) | `BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE` 1000 | −400 → +400 | 600 → 1400 |
+
+   난이도가 기준을 정하고 성향이 띠 안에서 민다 (EASY reserve 350~550, HARD 100~300). 테크 빌드 가중은 넣지 않음 (빌드는 목록 순서라 "값만 보간" 원칙에 맞지 않음). `aggressionPermille` 은 **서버 전용** (snapshot 미노출). 단 `match_config.constants` 는 shared 상수 전체를 싣으므로 새 상수 4개 (`BOT_AGGRESSION_NEUTRAL_PERMILLE`, `BOT_MAX_DEFENSE_RATIO_PERMILLE`, `BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE`, `BOT_AGGRESSION_SPAN`) 가 추가로 보인다 (추가만).
+66. 사용자 확인 (2026-10-09): 공격 깃발 최소 병력 120 (§10-57), 요격 병종 = 출발지 거리 > 12 이면 기병 아니면 창병 (§10-46) 확정. 페이싱은 사람 플레이테스트 후 재검토 (상수 불변).
 
 ---
 
@@ -701,6 +715,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 7. 빈 슬롯 채우기 (8.2 3): 최소 방어선 → bestAnchor (8.3, 중립 ×1.6 bias, 상륙 ×0.8, 회피) → chooseUnit (8.4, EASY = 검 고정) → 병력 clamp
 
 **난이도 레버 (2.8 g, 로직 동일)**: `decisionInterval` 30/15/10, `reserveRatioPermille` 450/300/200, `minDefenseRatioPermille` 100/250/300, `fixedUnit` SWORD/null/null.
+
+**성향 aggression (§10-65)**: 봇마다 (룸 시드, playerId) 해시로 0..1000. 난이도 값을 기준으로 예비·최소 방어·방어 상한·반격 여유·후퇴·차단 공격·적 앵커 선호 7개 값을 띠 안에서 보간 (분기 없음). 측정 (자가대전 10판, NORMAL, 시드 1000~1009): 종료 평균 32.0분 (timeout 10/10), 방어 슬롯 비중 평균 48.3%, 최종 점유율 평균 — 성향 0~333: 6.5% (31석, 1위 2회) / 334~666: 8.1% (34석, 4회) / 667~1000: 11.3% (35석, 4회). 짧은 판 테스트 (4500 tick, 전원 0 vs 전원 1000): 방어 비중 차 > 5%p, 공격 발령 수 1000 쪽이 더 많음.
 
 **테스트·측정**: §9 "3차-2". **프로토콜 변경 없음** (메시지·필드 동일). 프론트 영향: 봇 자리가 이제 실제로 깃발·테크·동맹 응답 이벤트를 만든다 — 기존 이벤트 처리 그대로.
 

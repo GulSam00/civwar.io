@@ -263,6 +263,8 @@ export interface BotDifficultyParams {
   minDefenseRatioPermille: number;
   /** null = chooseUnit 정상, 값 = 항상 그 병종 (UNIT) */
   fixedUnit: number | null;
+  /** 봇 성향 0..1000 (서버 전용, 생략 = 500 중립). PlayerState.bot 에만 채워진다 */
+  aggressionPermille?: number;
 }
 export const BOT_DIFFICULTY: Readonly<Record<BotDifficultyName, Readonly<BotDifficultyParams>>> = {
   EASY: { decisionInterval: 30, reserveRatioPermille: 450, minDefenseRatioPermille: 100, fixedUnit: 1 /* SWORD */ },
@@ -286,6 +288,33 @@ export const BOT_AVOID_RATIO_PERMILLE = 900;
 export const BOT_RETREAT_RATIO_PERMILLE = 800; // [A-32]
 export const BOT_COUNTER_MARGIN_PERMILLE = 1200; // [A-32]
 export const BOT_BLOCK_ATTACK_RATIO_PERMILLE = 500; // [A-32]
+
+// ══ 봇 성향 aggression (사용자 결정 2026-10-09, 3차-2 후속) ══
+// 봇마다 aggressionPermille ∈ [0, 1000] (0 = 수비적, 1000 = 공격적) 을 (룸 시드, playerId) 정수 해시로 배정.
+// 알고리즘 분기 없음 — 아래 값만 보간: 값(a) = 기준 + (a − 500) × SPAN / 500 (floor 아님: 정수 나눗셈 trunc, 결과 clamp).
+// 기준 = 난이도 값(BOT_DIFFICULTY) 또는 아래 전역 기준. a = 500 이면 성향 없음(기준 그대로).
+export const BOT_AGGRESSION_NEUTRAL_PERMILLE = 500;
+export const BOT_MAX_DEFENSE_RATIO_PERMILLE = 500; // 방어 깃발 상한 비율 기준 (굳히기·새 요격 발령 상한, 이전 임의값 "슬롯 절반")
+export const BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE = 1000; // 적(비중립) 앵커 점수 가중 기준
+export interface BotAggressionSpan {
+  reserveRatioPermille: number; // 난이도 기준 ± — 공격적일수록 예비 작게
+  minDefenseRatioPermille: number; // 난이도 기준 ±
+  maxDefenseRatioPermille: number; // BOT_MAX_DEFENSE_RATIO_PERMILLE ±
+  counterMarginPermille: number; // BOT_COUNTER_MARGIN_PERMILLE ± — 공격적일수록 낮은 우위에도 반격
+  retreatRatioPermille: number; // BOT_RETREAT_RATIO_PERMILLE ± — 공격적일수록 덜 후퇴
+  blockAttackRatioPermille: number; // BOT_BLOCK_ATTACK_RATIO_PERMILLE ± — 공격적일수록 차단 깃발을 더 쉽게 공격
+  enemyAnchorWeightPermille: number; // BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE ± — 공격적일수록 적 땅 앵커 선호
+}
+/** a = 0 / 1000 에서의 편차 = ∓SPAN. 예: reserve NORMAL 300 → 400(수비) … 200(공격) */
+export const BOT_AGGRESSION_SPAN: Readonly<BotAggressionSpan> = {
+  reserveRatioPermille: -100,
+  minDefenseRatioPermille: -100,
+  maxDefenseRatioPermille: -200,
+  counterMarginPermille: -200,
+  retreatRatioPermille: -200,
+  blockAttackRatioPermille: 200,
+  enemyAnchorWeightPermille: 400,
+};
 
 // ══ v4.0 깃발 대 깃발 전투 (4.15) ══
 export const COMBAT_LOSS_BP = 150; // [A-11]

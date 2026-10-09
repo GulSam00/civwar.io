@@ -13,7 +13,11 @@ import {
   ALLIANCE_MIN_DURATION,
   BASE_HP_MAX_MILLI,
   ANY_HOSTILE,
+  BOT_AGGRESSION_NEUTRAL_PERMILLE,
+  BOT_AGGRESSION_SPAN,
   BOT_AVOID_RATIO_PERMILLE,
+  BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE,
+  BOT_MAX_DEFENSE_RATIO_PERMILLE,
   BOT_BASE_THREAT_W,
   BOT_BLOCK_ATTACK_RATIO_PERMILLE,
   BOT_COMMIT_ENEMY_PERMILLE,
@@ -101,12 +105,46 @@ interface Anchor {
 }
 
 /** 봇 한 번의 결정에 쓰는 지역 상태 (decide 호출마다 새로 만든다) */
+/**
+ * 봇 성향(aggression) 보간 결과 — 난이도 기준값 + (a − 500) × SPAN / 500 (shared BOT_AGGRESSION_SPAN).
+ * 알고리즘은 같고 값만 다르다 (사용자 결정 2026-10-09).
+ */
+export interface BotKnobs {
+  aggressionPermille: number;
+  reserveRatioPermille: number;
+  minDefenseRatioPermille: number;
+  maxDefenseRatioPermille: number;
+  counterMarginPermille: number;
+  retreatRatioPermille: number;
+  blockAttackRatioPermille: number;
+  enemyAnchorWeightPermille: number;
+}
+
+export function botKnobs(params: Readonly<BotDifficultyParams>): BotKnobs {
+  const a = Math.min(1000, Math.max(0, params.aggressionPermille ?? BOT_AGGRESSION_NEUTRAL_PERMILLE));
+  const d = a - BOT_AGGRESSION_NEUTRAL_PERMILLE; // −500..500
+  const lerp = (base: number, span: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, base + Math.trunc((d * span) / BOT_AGGRESSION_NEUTRAL_PERMILLE)));
+  const S = BOT_AGGRESSION_SPAN;
+  const minDef = lerp(params.minDefenseRatioPermille, S.minDefenseRatioPermille, 0, 1000);
+  return {
+    aggressionPermille: a,
+    reserveRatioPermille: lerp(params.reserveRatioPermille, S.reserveRatioPermille, 0, 900),
+    minDefenseRatioPermille: minDef,
+    maxDefenseRatioPermille: lerp(BOT_MAX_DEFENSE_RATIO_PERMILLE, S.maxDefenseRatioPermille, minDef, 1000),
+    counterMarginPermille: lerp(BOT_COUNTER_MARGIN_PERMILLE, S.counterMarginPermille, 500, 3000),
+    retreatRatioPermille: lerp(BOT_RETREAT_RATIO_PERMILLE, S.retreatRatioPermille, 0, 2000),
+    blockAttackRatioPermille: lerp(BOT_BLOCK_ATTACK_RATIO_PERMILLE, S.blockAttackRatioPermille, 0, 2000),
+    enemyAnchorWeightPermille: lerp(BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE, S.enemyAnchorWeightPermille, 100, 5000),
+  };
+}
+
 interface Ctx {
   readonly state: Readonly<GameState>;
   readonly me: number;
   readonly p: Readonly<PlayerState>;
   readonly t: number;
   readonly params: Readonly<BotDifficultyParams>;
+  readonly k: BotKnobs;
   readonly cmds: C2S_GameCommand[];
   readonly touched: Set<number>;
   /** 남은 풀 병력 (정수, 이번 결정에서 낸 발령 비용 차감) */
@@ -364,6 +402,7 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
       const b = state.bases[state.baseIndexOf.get(anchor)!];
       if (b.hpMilli < BASE_HP_MAX_MILLI / 2) score = Math.floor((score * 140) / 100);
     }
+    score = Math.floor((score * ctx.k.enemyAnchorWeightPermille) / 1000); // 성향: 적 앵커 선호
   }
   return score;
 }
@@ -610,10 +649,9 @@ function defendCount(ctx: Ctx): number {
   for (const f of ctx.mine) if (isLive(f) && f.posture === POSTURE.DEFEND && !ctx.touched.has(f.id)) k++;
   return k;
 }
-const minDefense = (ctx: Ctx): number => Math.ceil((ctx.cap * ctx.params.minDefenseRatioPermille) / 1000);
-/** GDD 에 없어 정함 (§10): 굳히기로 늘릴 수 있는 방어 깃발 상한 = max(최소 방어선, 슬롯의 절반) — 넘으면 8.2 정체 규칙(갈아타기/회수) */
-export const BOT_MAX_DEFENSE_PERMILLE = 500;
-const maxDefense = (ctx: Ctx): number => Math.max(minDefense(ctx), Math.floor((ctx.cap * BOT_MAX_DEFENSE_PERMILLE) / 1000));
+const minDefense = (ctx: Ctx): number => Math.ceil((ctx.cap * ctx.k.minDefenseRatioPermille) / 1000);
+/** 방어 깃발 상한 = max(최소 방어선, floor(슬롯 × maxDefenseRatio)) — 기준 BOT_MAX_DEFENSE_RATIO_PERMILLE 500, 성향 보간. 넘으면 8.2 정체 규칙(갈아타기/회수) */
+const maxDefense = (ctx: Ctx): number => Math.max(minDefense(ctx), Math.floor((ctx.cap * ctx.k.maxDefenseRatioPermille) / 1000));
 
 /** 8.2 (2) + 8.6.0 태세·차단·후퇴 — flagId ASC */
 function maintain(ctx: Ctx): void {
@@ -638,7 +676,7 @@ function maintain(ctx: Ctx): void {
         S += g.troopsMilli;
         invE += Math.floor(1_000_000_000 / v);
       }
-      if (myEff * 1000 < enEff * BOT_RETREAT_RATIO_PERMILLE) {
+      if (myEff * 1000 < enEff * ctx.k.retreatRatioPermille) {
         // 이탈 대기 3초 손실 추정: L = S × 1.5% / n, 내 몫 = inv(v × 0.5) / Σinv
         const n = foes.length + 1;
         const L = Math.floor((S * COMBAT_LOSS_BP) / (n * 10000));
@@ -672,7 +710,7 @@ function maintain(ctx: Ctx): void {
       let bEff = 0;
       for (const g of state.flags) if (!g.routed && hostilePlayer(state, me, g.ownerId) && state.graph.distance(g.posTileId, f.posTileId) <= 1) bEff += effOf(state, g);
       const myEff = myTroops * valueAs(state, me, f.unit, POSTURE.ATTACK, f.posTileId);
-      if (bEff * 1000 <= myEff * BOT_BLOCK_ATTACK_RATIO_PERMILLE && f.posture !== POSTURE.ATTACK && canPosture(ctx, f)) {
+      if (bEff * 1000 <= myEff * ctx.k.blockAttackRatioPermille && f.posture !== POSTURE.ATTACK && canPosture(ctx, f)) {
         posture(ctx, f, POSTURE.ATTACK);
         continue;
       }
@@ -752,7 +790,7 @@ function maintain(ctx: Ctx): void {
         }
         if (x < 0 || x === f.anchorTileId) continue;
         const myEff = myTroops * valueAs(state, me, f.unit, POSTURE.DEFEND, x);
-        if (myEff * 1000 >= effOf(state, g) * BOT_COUNTER_MARGIN_PERMILLE) {
+        if (myEff * 1000 >= effOf(state, g) * ctx.k.counterMarginPermille) {
           retarget(ctx, f, x);
           moved = true;
           break;
@@ -829,7 +867,7 @@ export const BOT_RECYCLE_RATIO = 4;
 function recycle(ctx: Ctx): void {
   const { state, p, params } = ctx;
   if (ctx.slots < ctx.cap) return;
-  const reserve = Math.floor((troopCap(p) * params.reserveRatioPermille) / 1000);
+  const reserve = Math.floor((troopCap(p) * ctx.k.reserveRatioPermille) / 1000);
   const newQ = Math.min(Math.floor((ctx.pool * BOT_COMMIT_ENEMY_PERMILLE) / 1000), ctx.pool - reserve);
   if (newQ < 2 * minAttack(ctx, reserve)) return;
   let weak: Flag | null = null;
@@ -845,12 +883,12 @@ function recycle(ctx: Ctx): void {
 /** 8.2 (3) 빈 슬롯 채우기 */
 function fill(ctx: Ctx): void {
   const { state, me, p, params } = ctx;
-  const reserve = Math.floor((troopCap(p) * params.reserveRatioPermille) / 1000);
+  const reserve = Math.floor((troopCap(p) * ctx.k.reserveRatioPermille) / 1000);
   let minDefDone = false;
   while (ctx.slots < ctx.cap) {
     if (ctx.pool - reserve < FLAG_MIN_TROOPS) break;
     scanBorder(ctx);
-    if (!minDefDone && defendCount(ctx) * 1000 < ctx.cap * params.minDefenseRatioPermille && ctx.hostileBorder) {
+    if (!minDefDone && defendCount(ctx) * 1000 < ctx.cap * ctx.k.minDefenseRatioPermille && ctx.hostileBorder) {
       minDefDone = true;
       // 최소 방어선: 내 국경 칸 중 (거리 ≤ 2 의 적 칸 수 최대, tileId 최소), 기존 방어 관할 원 밖
       let h = -1;
@@ -909,6 +947,7 @@ export function decideBot(state: Readonly<GameState>, me: number, t: number, par
     p,
     t,
     params,
+    k: botKnobs(params),
     cmds: [],
     touched: new Set(),
     pool: Math.floor(p.troopsMilli / 1000),

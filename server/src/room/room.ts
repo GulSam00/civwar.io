@@ -338,7 +338,9 @@ export class Room {
     const setup = [...this.members.values()]
       .sort((a, b) => a.playerId - b.playerId)
       .map((m) => ({ playerId: m.playerId, isBot: m.isBot, connected: m.isBot || !!m.session?.socket }));
-    const state = createGameState(map, setup, this.settings.botDifficulty);
+    // 봇 성향 시드 = 룸 맵 시드. 프리셋 맵은 시드가 파일 고정이라 룸 시드를 따로 뽑는다
+    const aggressionSeed = this.settings.map.kind === 'preset' ? this.hooks.nextSeed() : map.seed;
+    const state = createGameState(map, setup, this.settings.botDifficulty, aggressionSeed);
     for (const s of setup) {
       if (!s.connected) state.players[s.playerId].disconnectedSinceTick = 0;
     }

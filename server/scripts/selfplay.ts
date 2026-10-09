@@ -44,7 +44,8 @@ export interface GameReport {
   winnerId: number | null;
   winnerDiff: BotDifficultyName | null;
   topShare5m: number[]; // %, 5분 간격 (마지막은 종료 시점)
-  finalShares: { id: number; diff: BotDifficultyName; sharePct: number; alive: boolean }[];
+  finalShares: { id: number; diff: BotDifficultyName; aggr: number; sharePct: number; alive: boolean }[];
+  defSharePct: number;
   apm: number;
   rejectPct: number;
   rejects: Record<string, number>;
@@ -91,6 +92,8 @@ function playGame(seed: number, k: number): GameReport {
   const rejects: Record<string, number> = {};
   let msSum = 0;
   let msMax = 0;
+  let defFlags = 0;
+  let allFlags = 0;
   let gameOver: { finalTick: number; reason: string; winnerId: number | null } | null = null;
   while (!sim.finished && state.tick < HARD_TIMEOUT_TICK + 10) {
     const t0 = performance.now();
@@ -106,6 +109,10 @@ function playGame(seed: number, k: number): GameReport {
         rejects[pm.msg.reason ?? '?'] = (rejects[pm.msg.reason ?? '?'] ?? 0) + 1;
       }
     }
+    if (state.tick % 15 === 0) for (const f of state.flags) {
+      allFlags++;
+      if (f.posture === 1) defFlags++;
+    }
     for (const m of out.broadcast) if (m.type === 'game_over') gameOver = { finalTick: m.finalTick, reason: m.reason, winnerId: m.winnerId };
     if (state.tick % (5 * TICKS_PER_MIN) === 0 || sim.finished) {
       let top = 0;
@@ -115,7 +122,7 @@ function playGame(seed: number, k: number): GameReport {
     if (checkLedger && ledgerImbalance(state) !== 0) throw new Error(`ledger imbalance seed ${seed} tick ${state.tick}`);
   }
   const ticks = state.tick;
-  const finalShares = state.players.filter(Boolean).map((p) => ({ id: p.id, diff: diffs[p.id - 1], sharePct: Math.round((p.tiles * 1000) / land) / 10, alive: p.alive }));
+  const finalShares = state.players.filter(Boolean).map((p) => ({ id: p.id, diff: diffs[p.id - 1], aggr: p.bot.aggressionPermille ?? 500, sharePct: Math.round((p.tiles * 1000) / land) / 10, alive: p.alive }));
   const w = gameOver?.winnerId ?? null;
   return {
     seed,
@@ -124,6 +131,7 @@ function playGame(seed: number, k: number): GameReport {
     winnerId: w,
     winnerDiff: w ? diffs[w - 1] : null,
     topShare5m: topShare,
+    defSharePct: Math.round((defFlags * 1000) / Math.max(1, allFlags)) / 10,
     finalShares,
     apm: Math.round(((accepted / N) * TICKS_PER_MIN * 10) / ticks) / 10,
     rejectPct: Math.round((rejected * 1000) / Math.max(1, accepted + rejected)) / 10,
@@ -163,6 +171,22 @@ const rejAll: Record<string, number> = {};
 for (const r of reports) for (const [k, v] of Object.entries(r.rejects)) rejAll[k] = (rejAll[k] ?? 0) + v;
 console.log(`rejects: ${JSON.stringify(rejAll)}`);
 console.log(`tick ms mean ${(reports.reduce((a, r) => a + r.msAvg, 0) / reports.length).toFixed(2)} max ${Math.max(...reports.map((r) => r.msMax))}; bot ms/tick mean ${(reports.reduce((a, r) => a + r.botMsAvg, 0) / reports.length).toFixed(2)} max ${Math.max(...reports.map((r) => r.botMsMax))}`);
+console.log(`defense-slot share (DEFEND flags / all flags, sampled every 15 ticks) mean ${(reports.reduce((a, r) => a + r.defSharePct, 0) / reports.length).toFixed(1)}%`);
+{
+  const buckets = [
+    { name: 'aggr 0-333', lo: 0, hi: 333 },
+    { name: 'aggr 334-666', lo: 334, hi: 666 },
+    { name: 'aggr 667-1000', lo: 667, hi: 1000 },
+  ].map((b) => ({ ...b, n: 0, sum: 0, wins: 0 }));
+  for (const r of reports)
+    for (const s of r.finalShares) {
+      const b = buckets.find((x) => s.aggr >= x.lo && s.aggr <= x.hi)!;
+      b.n++;
+      b.sum += s.sharePct;
+      if (r.winnerId === s.id) b.wins++;
+    }
+  for (const b of buckets) console.log(`${b.name}: seats ${b.n}, mean final share ${(b.sum / Math.max(1, b.n)).toFixed(1)}%, wins ${b.wins}`);
+}
 if (mix.some((d) => d !== mix[0])) {
   const byDiff: Record<string, { wins: number; seats: number; shareSum: number }> = {};
   for (const r of reports) {
