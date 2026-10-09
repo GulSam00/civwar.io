@@ -8,7 +8,10 @@
  *   우클릭      선택한 내 깃발 재지정 / 병종 선택 취소
  *   F          선택 깃발 태세 전환      R  선택 깃발 회수      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
- *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌
+ *   Alt+클릭 내 기지 / B(기지 위에서) = 발령 출발 기지 지정 (다시 하면 자동)
+ *   T 테크 · P 외교 · C 색각 보조 · ? 도움말 (React 패널 — Interaction 플래그)
+ *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
+ *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
 import { POSTURE, UNIT_CONVERT_PERMILLE, MOB_CONVERT_PERMILLE_BY_TIER, type Unit } from '@civwar/shared';
 import { panBy, screenToWorld, zoomAt, clampCamera } from '../render/camera.js';
@@ -23,6 +26,12 @@ export class Interaction {
   hoverTile = -1;
   hoverX = 0;
   hoverY = 0;
+  /** 발령 출발 기지 (null = 서버 자동: 앵커 최근접 내 기지) */
+  originBase: number | null = null;
+  /** 열린 패널 */
+  panel: 'tech' | 'ally' | null = null;
+  helpOpen = false;
+  colorblind = false;
   /** React 패널이 다시 그릴지 판단 */
   version = 0;
   bump(): void {
@@ -32,12 +41,15 @@ export class Interaction {
 
 export class GameInputController {
   private dragging: { x: number; y: number; moved: boolean; button: number } | null = null;
+  private touches = new Map<number, { x: number; y: number }>();
+  private pinchDist = 0;
+  private touchMoved = false;
   private keysHeld = new Set<string>();
   private detach: (() => void) | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly renderer: GameRenderer,
+    readonly renderer: GameRenderer,
     private readonly store: ClientStore,
     readonly ix: Interaction,
   ) {}
@@ -87,6 +99,13 @@ export class GameInputController {
     c.addEventListener('wheel', onWheel, { passive: false });
     c.addEventListener('contextmenu', onCtx);
     c.addEventListener('mouseleave', onLeave);
+    const onTouchStart = (e: TouchEvent) => this.onTouch(e, 'start');
+    const onTouchMove = (e: TouchEvent) => this.onTouch(e, 'move');
+    const onTouchEnd = (e: TouchEvent) => this.onTouch(e, 'end');
+    c.addEventListener('touchstart', onTouchStart, { passive: false });
+    c.addEventListener('touchmove', onTouchMove, { passive: false });
+    c.addEventListener('touchend', onTouchEnd);
+    c.addEventListener('touchcancel', onTouchEnd);
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
@@ -97,6 +116,10 @@ export class GameInputController {
       c.removeEventListener('wheel', onWheel);
       c.removeEventListener('contextmenu', onCtx);
       c.removeEventListener('mouseleave', onLeave);
+      c.removeEventListener('touchstart', onTouchStart);
+      c.removeEventListener('touchmove', onTouchMove);
+      c.removeEventListener('touchend', onTouchEnd);
+      c.removeEventListener('touchcancel', onTouchEnd);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
@@ -118,6 +141,7 @@ export class GameInputController {
     if (this.keysHeld.has('w') || this.keysHeld.has('arrowup')) dy += speed;
     if (this.keysHeld.has('s') || this.keysHeld.has('arrowdown')) dy -= speed;
     if (dx || dy) {
+      this.store.setFollowSilently(null);
       panBy(this.renderer.camera, dx, dy);
       this.clamp();
       this.refreshHover();
@@ -161,6 +185,7 @@ export class GameInputController {
       const dy = p.y - this.dragging.y;
       if (!this.dragging.moved && Math.abs(dx) + Math.abs(dy) > 5) this.dragging.moved = true;
       if (this.dragging.moved) {
+        this.store.setFollowSilently(null);
         panBy(this.renderer.camera, dx, dy);
         this.clamp();
         this.dragging.x = p.x;
@@ -178,7 +203,79 @@ export class GameInputController {
     this.dragging = null;
     if (!d || d.moved || e.button !== 0 || d.button !== 0) return;
     const p = this.local(e);
+    if (e.altKey && this.ix.armedUnit !== null) {
+      this.toggleOriginAt(this.pixelToTileId(p.x, p.y));
+      return;
+    }
     this.click(p.x, p.y, e.shiftKey);
+  }
+
+  /** 출발 기지 지정/해제 — 내 기지 칸이어야 한다 (서버 검증 NOT_BASE/NOT_OWNED_BASE 는 그대로 ack 로 받는다) */
+  toggleOriginAt(tile: number): void {
+    const g = this.store.game;
+    const me = this.store.myPlayerId;
+    if (!g || me === null || tile < 0) return;
+    const b = g.bases.get(tile);
+    if (!b || b.ownerId !== me) {
+      this.store.toast('출발 기지는 내 기지만 지정할 수 있습니다 (기지 칸 위에서)', 'error', 2000);
+      return;
+    }
+    this.ix.originBase = this.ix.originBase === tile ? null : tile;
+    this.ix.bump();
+  }
+
+  /** 출발 기지가 더는 내 것이 아니면 자동으로 되돌린다 */
+  validateOrigin(): void {
+    const o = this.ix.originBase;
+    if (o === null) return;
+    const g = this.store.game;
+    if (!g || g.bases.get(o)?.ownerId !== this.store.myPlayerId) {
+      this.ix.originBase = null;
+      this.ix.bump();
+    }
+  }
+
+  private onTouch(e: TouchEvent, phase: 'start' | 'move' | 'end'): void {
+    e.preventDefault();
+    const r = this.canvas.getBoundingClientRect();
+    const prev = new Map(this.touches);
+    for (const t of Array.from(e.changedTouches)) {
+      if (phase === 'end') this.touches.delete(t.identifier);
+      else this.touches.set(t.identifier, { x: t.clientX - r.left, y: t.clientY - r.top });
+    }
+    if (phase === 'start') {
+      this.touchMoved = false;
+      this.pinchDist = 0;
+    }
+    const pts = [...this.touches.values()];
+    if (phase === 'move' && pts.length === 1) {
+      const id = [...this.touches.keys()][0];
+      const before = prev.get(id);
+      if (before) {
+        const dx = pts[0].x - before.x;
+        const dy = pts[0].y - before.y;
+        if (Math.abs(dx) + Math.abs(dy) > 1) this.touchMoved = true;
+        this.store.setFollowSilently(null);
+        panBy(this.renderer.camera, dx, dy);
+        this.clamp();
+      }
+    } else if (pts.length === 2) {
+      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mx = (pts[0].x + pts[1].x) / 2;
+      const my = (pts[0].y + pts[1].y) / 2;
+      if (this.pinchDist > 0) zoomAt(this.renderer.camera, mx, my, d / this.pinchDist);
+      this.pinchDist = d;
+      this.touchMoved = true;
+      this.clamp();
+    }
+    if (phase === 'end' && this.touches.size === 0 && !this.touchMoved) {
+      const t = e.changedTouches[0];
+      if (t) {
+        // 탭 = 깃발 선택만 (모바일은 관전·간단 보기 — 명령은 PC)
+        this.ix.selectedFlagId = this.renderer.flagAt(t.clientX - r.left, t.clientY - r.top);
+        this.ix.bump();
+      }
+    }
   }
 
   /** 좌클릭 (드래그 아님) — 테스트에서도 직접 호출 */
@@ -187,7 +284,8 @@ export class GameInputController {
     if (this.ix.armedUnit !== null) {
       if (tile < 0 || !this.canCommand()) return;
       const unit = this.ix.armedUnit;
-      this.store.issueFlag(unit, this.troopsToSend(unit), tile);
+      this.validateOrigin();
+      this.store.issueFlag(unit, this.troopsToSend(unit), tile, this.ix.originBase);
       if (!keepArmed) this.ix.armedUnit = null;
       this.ix.bump();
       return;
@@ -227,6 +325,16 @@ export class GameInputController {
 
   setRatio(r: number): void {
     this.ix.ratio = Math.round(Math.min(1, Math.max(0.1, r)) * 10) / 10;
+    this.ix.bump();
+  }
+
+  setColorblind(on: boolean): void {
+    this.ix.colorblind = on;
+    try {
+      localStorage.setItem('civwar.colorblind', on ? '1' : '0');
+    } catch {
+      /* 저장 불가 — 이번 세션만 */
+    }
     this.ix.bump();
   }
 
@@ -304,9 +412,33 @@ export class GameInputController {
       case 'tab':
         e.preventDefault();
         return this.cycleMyFlags();
+      case 'b':
+        if (this.ix.armedUnit !== null) this.toggleOriginAt(this.ix.hoverTile);
+        return;
+      case 't':
+        this.ix.panel = this.ix.panel === 'tech' ? null : 'tech';
+        this.ix.bump();
+        return;
+      case 'p':
+        this.ix.panel = this.ix.panel === 'ally' ? null : 'ally';
+        this.ix.bump();
+        return;
+      case 'c':
+        this.setColorblind(!this.ix.colorblind);
+        return;
+      case '?':
+      case '/':
+        this.ix.helpOpen = !this.ix.helpOpen;
+        this.ix.bump();
+        return;
       case 'escape':
-        this.ix.armedUnit = null;
-        this.ix.selectedFlagId = null;
+        if (this.ix.helpOpen || this.ix.panel) {
+          this.ix.helpOpen = false;
+          this.ix.panel = null;
+        } else {
+          this.ix.armedUnit = null;
+          this.ix.selectedFlagId = null;
+        }
         this.ix.bump();
         return;
     }

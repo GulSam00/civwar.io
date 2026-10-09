@@ -11,6 +11,7 @@ import {
   type ClientMessage,
   type OfficialMapInfo,
   type Posture,
+  type TechAxis,
   type RoomOptions,
   type S2C_RoomState,
   type ServerMessage,
@@ -18,6 +19,7 @@ import {
 } from '@civwar/shared';
 import { GameSocket, type ConnState } from '../net/socket.js';
 import { GameModel } from './gameModel.js';
+import { describeEvent, type FeedEntry } from './feed.js';
 import { ERROR_TEXT, REJECT_TEXT } from '../ui/text.js';
 
 export interface Toast {
@@ -222,8 +224,20 @@ export class ClientStore {
     this.pending.set(clientSeq, { type: msg.type, sentAt: this.now() });
     return clientSeq;
   }
-  issueFlag(unit: Unit, troops: number, anchorTileId: number): number {
-    return this.command({ type: 'cmd_flag_issue', unit, troops, anchorTileId, originBaseTileId: null });
+  issueFlag(unit: Unit, troops: number, anchorTileId: number, originBaseTileId: number | null = null): number {
+    return this.command({ type: 'cmd_flag_issue', unit, troops, anchorTileId, originBaseTileId });
+  }
+  buyTech(axis: TechAxis, tier: 1 | 2 | 3): number {
+    return this.command({ type: 'cmd_buy_tech', axis, tier });
+  }
+  proposeAlly(targetPlayerId: number): number {
+    return this.command({ type: 'cmd_ally_propose', targetPlayerId });
+  }
+  respondAlly(proposalId: number, accept: boolean): number {
+    return this.command({ type: 'cmd_ally_respond', proposalId, accept });
+  }
+  breakAlly(allyPlayerId: number): number {
+    return this.command({ type: 'cmd_ally_break', allyPlayerId });
   }
   retarget(flagId: number, anchorTileId: number): number {
     return this.command({ type: 'cmd_flag_retarget', flagId, anchorTileId });
@@ -243,6 +257,21 @@ export class ClientStore {
     return this.room.players.find((p) => p.sessionId === this.sessionId)?.playerId ?? null;
   }
 
+  /** 관전 중 따라가는 플레이어 (null = 자유 카메라) */
+  followPlayerId: number | null = null;
+  /** HUD·피드 기준 플레이어: 나, 관전이면 따라가는 플레이어 */
+  get viewerId(): number | null {
+    return this.myPlayerId ?? this.followPlayerId;
+  }
+  setFollow(id: number | null): void {
+    this.followPlayerId = id;
+    this.emit();
+  }
+  /** 입력 루프에서 호출 (React 알림은 값이 바뀔 때만) */
+  setFollowSilently(id: number | null): void {
+    if (this.followPlayerId !== id) this.setFollow(id);
+  }
+
   get isHost(): boolean {
     const me = this.myPlayerId;
     return me !== null && this.room?.hostId === me && !this.room.isPublic;
@@ -250,6 +279,21 @@ export class ClientStore {
 
   nicknameOf(playerId: number): string {
     return this.room?.players.find((p) => p.playerId === playerId)?.nickname ?? `P${playerId}`;
+  }
+
+  // ───────────── 이벤트 피드 ─────────────
+
+  feed: FeedEntry[] = [];
+  feedVersion = 0;
+  private feedSeq = 0;
+  private feedFrom(m: ServerMessage): void {
+    const g = this.game;
+    if (!g || !g.ready) return;
+    const e = describeEvent(m, { me: this.viewerId, nick: (id) => this.nicknameOf(id), flagOwner: (id) => g.flags.get(id)?.ownerId ?? null, tickMs: g.config.tickMs });
+    if (!e) return;
+    this.feed = [...this.feed, { ...e, id: ++this.feedSeq, tick: 'tick' in m ? (m as { tick: number }).tick : g.tick }].slice(-40);
+    this.feedVersion++;
+    if (e.toast) this.toast(e.text, e.important ? 'error' : 'info', 4000);
   }
 
   // ───────────── 토스트 ─────────────
@@ -271,6 +315,8 @@ export class ClientStore {
   // ───────────── 수신 ─────────────
 
   private clearRoom(): void {
+    this.feed = [];
+    this.followPlayerId = null;
     this.room = null;
     this.game = null;
     this.spectating = false;
@@ -279,6 +325,7 @@ export class ClientStore {
 
   onMessage(m: ServerMessage): void {
     for (const fn of this.msgObservers) fn(m);
+    this.feedFrom(m);
     switch (m.type) {
       case 'welcome': {
         this.welcomed = true;

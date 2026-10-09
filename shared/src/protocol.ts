@@ -279,6 +279,8 @@ export interface S2C_RoomState {
   players: RoomMember[];
   spectatorCount: number;
   countdownMs: number | null; // COUNTDOWN 일 때 남은 ms
+  /** 프론트 2차 추가: 공개 룸 LOBBY 일 때 자동 시작까지 남은 ms (그 외 null). 수신 시각 기준 — 클라이언트가 로컬로 줄인다 */
+  autoStartMs: number | null;
 }
 
 export interface S2C_MatchConfig {

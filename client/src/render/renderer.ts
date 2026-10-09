@@ -2,7 +2,8 @@
  * Canvas 렌더러 — requestAnimationFrame 루프에서 GameModel 을 "읽기만" 한다.
  * 상태 갱신(WS 수신)과 분리: 모델이 바뀌어도 루프를 재시작하지 않는다.
  *
- * 레이어: 타일(지형+영토, 1 타일 = 1 픽셀 오프스크린) → 경계선 → 게이지 대상 칸 → 기지 → 앵커 선 → 깃발 → 커서 예고
+ * 레이어: 타일(지형+영토, 1 타일 = 1 픽셀 오프스크린) → (색각 보조 패턴) → 경계선 → 게이지 대상 칸(공격 방향 그라데이션)
+ *        → 예고 원 → 기지 → 앵커 선 → 깃발 → (미니맵은 별도 캔버스)
  * 타일 좌표 변환은 전부 TopologyView 를 거친다 (사각 전제 식은 topology.ts 에만).
  */
 import { DISENGAGE_TICKS, POSTURE, POSTURE_COOLDOWN_TICKS, type FlagSnapshot } from '@civwar/shared';
@@ -11,6 +12,7 @@ import { createTopologyView, type TileLayer, type TopologyView } from './topolog
 import { fitZoom, worldToScreen, type Camera } from './camera.js';
 import { FlagInterpolator, type Pt } from './flagInterp.js';
 import { COLOR_ATTACK, COLOR_DEFEND, COLOR_DISABLED, playerColor, playerDark, tileRgba } from './palette.js';
+import { ownerPattern } from './patterns.js';
 import type { CursorPreview } from '../input/preview.js';
 import { UNIT_SHORT } from '../ui/text.js';
 
@@ -19,6 +21,12 @@ export interface RenderView {
   selectedFlagId: number | null;
   hoverTile: number;
   preview: CursorPreview | null;
+  /** 발령 출발 기지 (null = 자동) */
+  originBase: number | null;
+  /** 병종이 선택된 상태 — 내 기지를 강조(출발 기지 선택 가능) */
+  armed: boolean;
+  /** 색각 보조: 영토 패턴 + 깃발 플레이어 번호 */
+  colorblind: boolean;
   nicknameOf(id: number): string;
 }
 
@@ -29,6 +37,17 @@ interface FlagScreen {
   r: number;
 }
 
+/** 진척도 감소 표시 상태 (GDD 7.6: 전진은 부드럽게, 후퇴는 짧은 플래시) */
+interface ProgressTrack {
+  pct: number;
+  shownPct: number;
+  decayUntil: number;
+}
+
+/** 깃발 수가 이보다 많으면(또는 줌이 작으면) 남의 깃발 라벨을 생략 (LOD) */
+export const LABEL_LOD_FLAGS = 36;
+export const LABEL_LOD_ZOOM = 7;
+
 export class GameRenderer {
   readonly camera: Camera = { cx: 0, cy: 0, zoom: 12, viewW: 1, viewH: 1 };
   topo: TopologyView | null = null;
@@ -36,13 +55,17 @@ export class GameRenderer {
   private layer: TileLayer | null = null;
   private layerOwnersVersion = -1;
   private borders: Map<number, Path2D> = new Map();
+  private fills: Map<number, Path2D> = new Map();
   private bordersDirty = true;
   private bordersBuiltAt = 0;
   private interp = new FlagInterpolator();
+  private progress = new Map<number, ProgressTrack>();
   private flagScreens: FlagScreen[] = [];
   private previewPathKey = '';
   private previewPath: Path2D | null = null;
   private dpr = 1;
+  /** 마지막 프레임에 화면에 보인 깃발 위치 (미니맵·따라가기) */
+  readonly flagWorld = new Map<number, Pt>();
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
 
@@ -54,12 +77,15 @@ export class GameRenderer {
     this.layerOwnersVersion = -1;
     this.bordersDirty = true;
     this.interp.clear();
+    this.progress.clear();
     const cam = this.camera;
-    cam.zoom = Math.max(fitZoom(cam.viewW, cam.viewH, this.topo.worldWidth, this.topo.worldHeight), 10);
     const home = me !== null ? model.spawns.find((s) => s.playerId === me) : undefined;
-    const c = home ? this.topo.tileCenter(home.homeTileId) : { x: this.topo.worldWidth / 2, y: this.topo.worldHeight / 2 };
-    cam.cx = c.x;
-    cam.cy = c.y;
+    if (home) {
+      cam.zoom = Math.max(fitZoom(cam.viewW, cam.viewH, this.topo.worldWidth, this.topo.worldHeight), 10);
+      const c = this.topo.tileCenter(home.homeTileId);
+      cam.cx = c.x;
+      cam.cy = c.y;
+    } else this.fitWorld();
   }
 
   fitWorld(): void {
@@ -110,27 +136,24 @@ export class GameRenderer {
     this.syncTiles(model, now);
 
     const cam = this.camera;
-    // 월드 변환
     ctx.save();
     ctx.translate(cam.viewW / 2, cam.viewH / 2);
     ctx.scale(cam.zoom, cam.zoom);
     ctx.translate(-cam.cx, -cam.cy);
     this.layer!.draw(ctx);
-    // 영토 경계
+    if (view.colorblind) this.drawPatterns(ctx);
     ctx.lineWidth = Math.max(1.2 / cam.zoom, 0.06);
     for (const [owner, path] of this.borders) {
       ctx.strokeStyle = playerDark(owner);
       ctx.stroke(path);
     }
-    // 내 영토는 한 번 더 밝게
     if (view.me !== null && this.borders.has(view.me)) {
       ctx.lineWidth = Math.max(2.4 / cam.zoom, 0.1);
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke(this.borders.get(view.me)!);
     }
-    this.drawGaugeTargets(ctx, model, topo);
+    this.drawGaugeTargets(ctx, model, topo, now);
     this.drawPreview(ctx, topo, view.preview);
-    // 호버 칸
     if (view.hoverTile >= 0) {
       ctx.beginPath();
       topo.tilePath(ctx, view.hoverTile, 0.04);
@@ -140,8 +163,8 @@ export class GameRenderer {
     }
     ctx.restore();
 
-    // 화면 공간 (선명한 아이콘·텍스트)
     this.drawBases(ctx, model, topo, view);
+    this.drawOriginLine(ctx, topo, view);
     this.drawFlags(ctx, model, topo, view, now);
   }
 
@@ -160,28 +183,94 @@ export class GameRenderer {
       this.bordersDirty = true;
     }
     layer.flush();
-    // 경계선은 최대 5Hz 로 다시 만든다
     if (this.bordersDirty && now - this.bordersBuiltAt > 180) {
-      this.borders = topo.buildBorderPaths(model.owners, (t) => model.isLand(t));
+      const isLand = (t: number) => model.isLand(t);
+      this.borders = topo.buildBorderPaths(model.owners, isLand);
+      this.fills = topo.buildOwnerFillPaths(model.owners, isLand);
       this.bordersDirty = false;
       this.bordersBuiltAt = now;
     }
   }
 
-  private drawGaugeTargets(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView): void {
+  private drawPatterns(ctx: CanvasRenderingContext2D): void {
+    const z = this.camera.zoom;
+    for (const [owner, path] of this.fills) {
+      const pat = ownerPattern(ctx, owner);
+      if (!pat) continue;
+      // 패턴은 화면 픽셀 크기로 고정 (줌과 무관하게 같은 촘촘함)
+      pat.setTransform(new DOMMatrix().scale(1 / z, 1 / z));
+      ctx.fillStyle = pat;
+      ctx.fill(path);
+    }
+  }
+
+  /**
+   * 공격 대상 칸: 내 땅 쪽에서 반대쪽으로 진척도만큼 차오르는 그라데이션 (GDD v3.0 "공격 방향에서 그라데이션").
+   * 진척도가 줄어드는 중(자동 감소)이면 회색 + 깜빡임 테두리로 구분 (GDD 7.6).
+   */
+  private drawGaugeTargets(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, now: number): void {
+    const seen = new Set<number>();
     for (const f of model.flags.values()) {
-      if (f.posture !== POSTURE.ATTACK || f.targetTileId === null || f.state !== 'ENGAGED') continue;
-      const pct = f.progressPct / 100;
+      const tr = this.trackProgress(f, now);
+      seen.add(f.id);
+      if (f.posture !== POSTURE.ATTACK || f.targetTileId === null) continue;
+      if (tr.shownPct <= 0 && f.state !== 'ENGAGED') continue;
+      const t = f.targetTileId;
+      const c = topo.tileCenter(t);
+      // 공격 방향 = 대상 칸 이웃 중 공격자 소유 칸들의 평균 방향
+      let dx = 0;
+      let dy = 0;
+      for (const n of topo.neighbors(t)) {
+        if (model.owners[n] !== f.ownerId) continue;
+        const p = topo.tileCenter(n);
+        dx += p.x - c.x;
+        dy += p.y - c.y;
+      }
+      if (dx === 0 && dy === 0) {
+        // 내 땅과 맞닿지 않은 칸(상륙 등) — 깃발 쪽에서 차오른다
+        const fp = topo.tileCenter(f.posTileId);
+        dx = fp.x - c.x;
+        dy = fp.y - c.y;
+        if (dx === 0 && dy === 0) dy = 1;
+      }
+      const len = Math.hypot(dx, dy);
+      const ux = dx / len;
+      const uy = dy / len;
+      const pct = Math.max(0, Math.min(1, tr.shownPct / 100));
+      const decaying = now < tr.decayUntil;
+      const color = decaying ? '#9aa5b1' : playerColor(f.ownerId);
+      const g = ctx.createLinearGradient(c.x + ux * 0.5, c.y + uy * 0.5, c.x - ux * 0.5, c.y - uy * 0.5);
+      g.addColorStop(0, color);
+      g.addColorStop(Math.max(0.001, pct), color);
+      g.addColorStop(Math.min(1, pct + 0.08), 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.beginPath();
-      topo.tilePath(ctx, f.targetTileId, 0);
-      ctx.fillStyle = playerColor(f.ownerId);
-      ctx.globalAlpha = 0.25 + 0.65 * pct;
+      topo.tilePath(ctx, t, 0);
+      ctx.fillStyle = g;
+      ctx.globalAlpha = 0.9;
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = 2 / this.camera.zoom;
-      ctx.strokeStyle = f.stalled ? '#ffb300' : playerDark(f.ownerId);
+      const flash = decaying && Math.floor(now / 150) % 2 === 0;
+      ctx.lineWidth = (flash ? 3 : 2) / this.camera.zoom;
+      ctx.strokeStyle = flash ? '#ffffff' : f.stalled ? '#ffb300' : playerDark(f.ownerId);
       ctx.stroke();
     }
+    for (const id of this.progress.keys()) if (!seen.has(id)) this.progress.delete(id);
+  }
+
+  private trackProgress(f: FlagSnapshot, now: number): ProgressTrack {
+    let tr = this.progress.get(f.id);
+    if (!tr) {
+      tr = { pct: f.progressPct, shownPct: f.progressPct, decayUntil: 0 };
+      this.progress.set(f.id, tr);
+      return tr;
+    }
+    if (f.progressPct < tr.pct && f.progressPct > 0) tr.decayUntil = now + 450; // 자동 감소 (0 으로 리셋은 감소 표시 아님)
+    if (f.progressPct > tr.pct) tr.decayUntil = 0;
+    tr.pct = f.progressPct;
+    // 전진은 부드럽게 따라가고, 감소·리셋은 즉시
+    tr.shownPct = tr.pct >= tr.shownPct ? tr.shownPct + (tr.pct - tr.shownPct) * 0.35 : tr.pct;
+    return tr;
   }
 
   private drawPreview(ctx: CanvasRenderingContext2D, topo: TopologyView, p: CursorPreview | null): void {
@@ -206,6 +295,29 @@ export class GameRenderer {
     ctx.restore();
   }
 
+  private drawOriginLine(ctx: CanvasRenderingContext2D, topo: TopologyView, view: RenderView): void {
+    if (view.originBase === null || !view.armed) return;
+    const o = topo.tileCenter(view.originBase);
+    const p = worldToScreen(this.camera, o.x, o.y);
+    ctx.save();
+    ctx.strokeStyle = '#ffd600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(10, this.camera.zoom * 0.7), 0, Math.PI * 2);
+    ctx.stroke();
+    if (view.preview) {
+      const a = topo.tileCenter(view.preview.tile);
+      const q = worldToScreen(this.camera, a.x, a.y);
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawBases(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
     const cam = this.camera;
     const s = Math.max(8, Math.min(22, cam.zoom * 0.8));
@@ -216,6 +328,14 @@ export class GameRenderer {
       const p = worldToScreen(cam, c.x, c.y);
       if (p.x < -40 || p.y < -40 || p.x > cam.viewW + 40 || p.y > cam.viewH + 40) continue;
       const capital = model.capitalTiles.has(tile);
+      if (view.armed && view.me !== null && b.ownerId === view.me) {
+        // 출발 기지로 고를 수 있음 (Alt+클릭 / B)
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, s * 0.95, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,214,0,0.55)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
       ctx.fillStyle = b.ownerId ? playerColor(b.ownerId) : '#f5f1e6';
       ctx.strokeStyle = '#111';
       ctx.lineWidth = 2;
@@ -223,7 +343,6 @@ export class GameRenderer {
       ctx.rect(p.x - s / 2, p.y - s / 2, s, s);
       ctx.fill();
       ctx.stroke();
-      // 기지 표식: 안쪽 사각(일반) / 이중 테두리(수도)
       ctx.strokeStyle = b.ownerId ? 'rgba(255,255,255,0.9)' : '#555';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -235,7 +354,6 @@ export class GameRenderer {
         ctx.lineTo(p.x, p.y + s / 4);
       }
       ctx.stroke();
-      // 체력 바
       const bw = Math.max(s * 1.4, 18);
       const bh = 4;
       const bx = p.x - bw / 2;
@@ -245,27 +363,34 @@ export class GameRenderer {
       ctx.fillStyle = b.ownerId ? playerColor(b.ownerId) : '#ddd';
       ctx.fillRect(bx, by, (bw * Math.max(0, Math.min(100, b.hpPct))) / 100, bh);
       if (capital && b.ownerId && cam.zoom >= 9) {
-        this.label(ctx, view.nicknameOf(b.ownerId), p.x, p.y + s / 2 + 11, 11, '#fff');
+        const name = view.colorblind ? `${b.ownerId}. ${view.nicknameOf(b.ownerId)}` : view.nicknameOf(b.ownerId);
+        this.label(ctx, name, p.x, p.y + s / 2 + 11, 11, '#fff');
       }
     }
   }
 
   private drawFlags(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView, now: number): void {
     const cam = this.camera;
-    const r = Math.max(8, Math.min(16, cam.zoom * 0.55));
     this.interp.retain((id) => model.flags.has(id));
     const screens: FlagScreen[] = [];
-    const positions = new Map<number, Pt>();
-    // 위치 계산 (보간)
+    this.flagWorld.clear();
     for (const f of model.flags.values()) {
       const w = this.interp.update(f.id, f.posTileId, topo.tileCenter(f.posTileId), now);
-      positions.set(f.id, w);
+      this.flagWorld.set(f.id, w);
     }
-    // 내 깃발 · 선택 깃발: 앵커까지 선
+    // LOD: 화면 안 깃발 수
+    let visible = 0;
+    for (const w of this.flagWorld.values()) {
+      const p = worldToScreen(cam, w.x, w.y);
+      if (p.x >= 0 && p.y >= 0 && p.x <= cam.viewW && p.y <= cam.viewH) visible++;
+    }
+    const lod = visible > LABEL_LOD_FLAGS || cam.zoom < LABEL_LOD_ZOOM;
+    const baseR = Math.max(lod ? 6 : 8, Math.min(16, cam.zoom * 0.55));
+
     for (const f of model.flags.values()) {
       const mine = f.ownerId === view.me;
       if (!mine && f.id !== view.selectedFlagId) continue;
-      const w = positions.get(f.id)!;
+      const w = this.flagWorld.get(f.id)!;
       const a = topo.tileCenter(f.anchorTileId);
       const p = worldToScreen(cam, w.x, w.y);
       const q = worldToScreen(cam, a.x, a.y);
@@ -279,7 +404,6 @@ export class GameRenderer {
       ctx.lineTo(q.x, q.y);
       ctx.stroke();
       ctx.setLineDash([]);
-      // 앵커 표식 (X)
       ctx.beginPath();
       ctx.moveTo(q.x - 4, q.y - 4);
       ctx.lineTo(q.x + 4, q.y + 4);
@@ -289,26 +413,25 @@ export class GameRenderer {
       ctx.stroke();
       ctx.restore();
     }
-    // 깃발 본체: 선택·내 깃발을 위에 그리도록 정렬
     const order = [...model.flags.values()].sort((a, b) => rank(a, view) - rank(b, view) || a.id - b.id);
     for (const f of order) {
-      const w = positions.get(f.id)!;
+      const w = this.flagWorld.get(f.id)!;
       const p = worldToScreen(cam, w.x, w.y);
       if (p.x < -50 || p.y < -50 || p.x > cam.viewW + 50 || p.y > cam.viewH + 50) continue;
-      this.drawFlag(ctx, model, f, p.x, p.y, r, view, now);
+      const important = f.ownerId === view.me || f.id === view.selectedFlagId;
+      const r = important ? Math.max(8, baseR) : baseR;
+      this.drawFlag(ctx, model, f, p.x, p.y, r, view, now, !lod || important);
       screens.push({ id: f.id, x: p.x, y: p.y, r });
     }
     this.flagScreens = screens;
   }
 
-  private drawFlag(ctx: CanvasRenderingContext2D, model: GameModel, f: FlagSnapshot, x: number, y: number, r: number, view: RenderView, now: number): void {
+  private drawFlag(ctx: CanvasRenderingContext2D, model: GameModel, f: FlagSnapshot, x: number, y: number, r: number, view: RenderView, now: number, detail: boolean): void {
     const attack = f.posture === POSTURE.ATTACK;
     const postureColor = attack ? COLOR_ATTACK : COLOR_DEFEND;
     const selected = f.id === view.selectedFlagId;
     ctx.save();
     if (f.routed) ctx.globalAlpha = 0.55;
-
-    // 교전: 붉은 맥동 링
     if (f.inCombat) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 120);
       ctx.beginPath();
@@ -324,7 +447,6 @@ export class GameRenderer {
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
-    // 본체 모양: 공격 = 마름모, 방어 = 원 (색 + 모양 이중 신호)
     ctx.beginPath();
     if (attack) {
       const k = r * 1.2;
@@ -347,24 +469,47 @@ export class GameRenderer {
     ctx.strokeStyle = '#111';
     ctx.stroke();
 
-    // 병종 글자
-    this.label(ctx, UNIT_SHORT[f.unit] ?? '?', x, y + 1, Math.round(r * 1.05), '#fff', true);
+    if (r >= 8) this.label(ctx, UNIT_SHORT[f.unit] ?? '?', x, y + 1, Math.round(r * 1.05), '#fff', true);
+    // 색각 보조: 플레이어 번호 배지
+    if (view.colorblind && r >= 7) {
+      const bx = x - r - 2;
+      const by = y - r - 2;
+      ctx.fillStyle = '#111';
+      ctx.fillRect(bx - 6, by - 6, 12, 12);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(f.ownerId), bx, by + 0.5);
+    }
+    if (!detail) {
+      ctx.restore();
+      return;
+    }
+    // 병력 + (내 행군 깃발) 도착 예상
+    const eta = model.flagEta.get(f.id);
+    const etaSec = eta !== undefined && f.state === 'MARCHING' && f.ownerId === view.me ? Math.max(0, Math.ceil(((eta - model.tick) * model.config.tickMs) / 1000)) : null;
+    this.label(ctx, etaSec !== null ? `${f.troops} · ${etaSec}초` : String(f.troops), x, y + r + 12, 12, '#fff');
 
-    // 병력 수
-    this.label(ctx, String(f.troops), x, y + r + 12, 12, '#fff');
-
-    // 진척도 게이지 (공격·교전)
     if (attack && f.state === 'ENGAGED') {
+      const tr = this.progress.get(f.id);
+      const decaying = tr ? now < tr.decayUntil : false;
+      const pct = tr ? tr.shownPct : f.progressPct;
       const bw = r * 2.4;
       const bx = x - bw / 2;
       const by = y - r - 10;
       ctx.fillStyle = 'rgba(0,0,0,0.65)';
       ctx.fillRect(bx - 1, by - 1, bw + 2, 6);
-      ctx.fillStyle = f.stalled ? '#ffb300' : '#ffe082';
-      ctx.fillRect(bx, by, (bw * f.progressPct) / 100, 4);
+      ctx.fillStyle = decaying ? '#9aa5b1' : f.stalled ? '#ffb300' : '#ffe082';
+      ctx.fillRect(bx, by, (bw * pct) / 100, 4);
+      if (decaying) {
+        ctx.fillStyle = '#cfd8dc';
+        ctx.font = 'bold 10px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('▼', bx + bw + 3, by + 2);
+      }
     }
-
-    // 이탈 대기: 노란 감소 호
     if (f.disengaging && f.disengageUntilTick !== null) {
       const left = Math.max(0, f.disengageUntilTick - model.tick) / DISENGAGE_TICKS;
       ctx.beginPath();
@@ -373,7 +518,6 @@ export class GameRenderer {
       ctx.lineWidth = 3;
       ctx.stroke();
     }
-    // 태세 쿨타임 링 (선택된 내 깃발)
     if (selected && model.tick < f.postureCooldownUntilTick) {
       const left = (f.postureCooldownUntilTick - model.tick) / POSTURE_COOLDOWN_TICKS;
       ctx.beginPath();
@@ -382,8 +526,6 @@ export class GameRenderer {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-
-    // 상태 태그
     const tag = f.routed ? '패주' : f.disengaging ? '이탈' : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? '대기' : null;
     if (tag) {
       const tx = x + r + 4;
@@ -398,6 +540,54 @@ export class GameRenderer {
       ctx.fillText(tag, tx + 3, ty);
     }
     ctx.restore();
+  }
+
+  /**
+   * 미니맵: 전체 맵 축소 + 깃발 점 + 현재 카메라 영역. 월드 경계 비율로만 변환(토폴로지 무관).
+   */
+  drawMinimap(mini: HTMLCanvasElement, model: GameModel | null, me: number | null): void {
+    const ctx = mini.getContext('2d');
+    if (!ctx || !this.topo || !this.layer || !model?.ready) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = mini.clientWidth;
+    const h = mini.clientHeight;
+    if (mini.width !== Math.round(w * dpr) || mini.height !== Math.round(h * dpr)) {
+      mini.width = Math.round(w * dpr);
+      mini.height = Math.round(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#0c1118';
+    ctx.fillRect(0, 0, w, h);
+    const r = this.minimapRect(w, h);
+    this.layer.drawScaled(ctx, r.x, r.y, r.w, r.h);
+    const sx = r.w / this.topo.worldWidth;
+    const sy = r.h / this.topo.worldHeight;
+    for (const f of model.flags.values()) {
+      const p = this.flagWorld.get(f.id) ?? this.topo.tileCenter(f.posTileId);
+      ctx.fillStyle = f.ownerId === me ? '#fff' : playerDark(f.ownerId);
+      const s = f.ownerId === me ? 3 : 2;
+      ctx.fillRect(r.x + p.x * sx - s / 2, r.y + p.y * sy - s / 2, s, s);
+    }
+    const cam = this.camera;
+    const vw = (cam.viewW / cam.zoom) * sx;
+    const vh = (cam.viewH / cam.zoom) * sy;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(r.x + cam.cx * sx - vw / 2, r.y + cam.cy * sy - vh / 2, vw, vh);
+  }
+
+  /** 미니맵 안 맵 영역 (비율 유지, 가운데 정렬) */
+  minimapRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
+    const ww = this.topo?.worldWidth ?? 1;
+    const wh = this.topo?.worldHeight ?? 1;
+    const k = Math.min(w / ww, h / wh);
+    return { x: (w - ww * k) / 2, y: (h - wh * k) / 2, w: ww * k, h: wh * k };
+  }
+
+  /** 미니맵 좌표 → 월드 좌표 */
+  minimapToWorld(mx: number, my: number, w: number, h: number): Pt {
+    const r = this.minimapRect(w, h);
+    return { x: ((mx - r.x) / r.w) * (this.topo?.worldWidth ?? 0), y: ((my - r.y) / r.h) * (this.topo?.worldHeight ?? 0) };
   }
 
   private label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, color: string, bold = true): void {

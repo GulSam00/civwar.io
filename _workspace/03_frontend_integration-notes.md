@@ -83,11 +83,39 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 - **실제 서버 ws 헤드리스**(`headless-check.ts 75`): 비공개 방 봇 9 HARD, 359 tick, full 비교 14회 불일치 0, cmd_ack 수락 24 / 거절 0, 수신 flag_issued 54·flag_engaged 48·flag_recalled 13·flag_ended 40·flag_posture_changed 6.
 - **브라우저(Claude 내장 브라우저, 800×600)**: 닉네임 → 빠른 시작 → 공개 방 대기실 → 30초 자동 시작 → 맵·영토·기지·봇 깃발 렌더 → `3` 기병 + 클릭 발령(중립 3칸 점령 후 소진) → `2` 검병 100% 발령 → Tab 선택 → `F` 방어 전환(쿨타임 링) → 즉시 `F` 재시도 = `POSTURE_COOLDOWN` 토스트 → 우클릭 재지정(공격 자동 재파생) → `R` 회수(귀환 태그). 새로고침 → 토큰 재접속으로 같은 게임 복귀. 개발 모드 reconStats full 15회 불일치 0, 콘솔 오류 0. 게임 종료 오버레이는 store 에 `game_over` 를 주입해 렌더·"로비로" 복귀만 확인(실제 32분 판은 미실행). 방 만들기 패널에 공식 맵 9장 표시 확인.
 
-## 6. 2차로 넘길 것
+## 6. 2차 (2026-10-09) — 추가 구현
 
-- HUD 완성: 테크 구매 UI(`cmd_buy_tech`), 골드 수입·유지비(`upkeepPm`) 표시, threshold 곡선·내 점유율 대비, 미니맵, 이벤트 피드(전투·함락·탈락), 이모트.
-- 동맹 UI(제안·수락·파기·Lockout 카운트다운·동맹 영토 표시), 관전 UI(플레이어 따라가기·관전자 HUD), 도움말(규칙) 페이지.
-- 방 설정 UI 세부: 물 설정(SHALLOW_QUOTA), 공식 맵 미리보기, 추천 인원 경고·pacingNote 세분, 방장 위임 표시.
-- 깃발: 출발 기지 지정(`originBaseTileId`), 진척도 감소/전진 시각 구분(GDD 7.6), 공격 방향 그라데이션, 전투 무리(`combat_*`) 연결선, ETA 표시(`etaTick`), 다중 선택, 사거리(40칸) 경계 표시, 색각 보조 패턴.
-- 성능: 큰 줌아웃에서 깃발 다수일 때 라벨 생략(LOD), 경계선 증분 갱신.
-- 모바일 관전 레이아웃(현재 PC 우선 — 좁은 화면에서는 커맨드 바가 좌하단으로만 이동).
+| 영역 | 내용 | 파일 |
+|---|---|---|
+| 테크 | `T` 패널: 4축 × T1~T3, 가격(§4 식, 총구매수 누진), 살 수 있음/골드 부족/잠김 표시, 효과 문구는 **상수에서 생성**(군사 깃발 전투 ×1.025~1.075, 기동 물 위 이동·노출 소모·상륙/물 대 물 전투 포함). `cmd_buy_tech` → ack | `ui/panels.tsx`, `ui/techInfo.ts` |
+| 골드·유지비 | HUD 골드 `+n/초`(§8 식: goldWeight·경제 테크·upkeepPm), 유지비 −% 표시(30% 이상 경고) | `ui/GameScreen.tsx` |
+| 미니맵 | 좌하단. 타일 레이어 축소 + 깃발 점 + 카메라 사각형, 클릭·드래그로 이동(월드 경계 비율 — 토폴로지 무관) | `render/renderer.ts` |
+| 이벤트 피드 | 전원 공지(기지 함락·탈락·동맹 체결/파기/봉쇄·종반 러시·승리 기준 하락·봇 인계/재접속) + 나(관전 시 따라가는 플레이어) 관련(전투 개시·패배/패주·깃발 종료·정체·진척도 감소로 0·IDLE·테크 구매). 중요 항목은 토스트 | `state/feed.ts`, `ui/panels.tsx` |
+| 외교 | `P` 패널: 제안/수락/거절/파기, 제안 만료, 최소 유지(파기 가능까지), BREAKING 해제까지(백스탭 쿨다운), 신규 마감까지, 재체결 금지, Lockout 카운트다운(HUD 에도), 동맹 수 한도. 받은 제안은 패널을 닫아도 상단 카드 | `ui/panels.tsx` |
+| 관전 | HUD "관전 · 닉네임", 순위표 이름 클릭 = 따라가기(수도, 잃으면 영토 무게중심), 드래그·키·미니맵 = 자유 카메라, 전원 순위표, 명령 UI 숨김. 탈락자도 동일 | `ui/GameScreen.tsx`, `ui/panels.tsx` |
+| 도움말 | 로비 「규칙 도움말」·인게임 `?` — 목표/승리·기준·타임아웃, 깃발, 태세, 게이지·감소, 깃발 전투·지형, 대치(ZOC)·후퇴 페널티, 물·상륙, 기지, 테크·골드, 동맹, 종반, 조작. 수치는 shared 상수에서. 튜토리얼 없음 | `ui/Help.tsx` |
+| 방 설정 | 무작위 맵 물 구성(기본 / 얕은 물 비율 → SHALLOW_QUOTA), 공식 맵 썸네일(지형·스폰·기지), 추천 인원 이탈 경고 + 예상 판 길이(생성 전 = 서버 pacingNote 와 같은 식, 생성 후 = 서버 값). 대기실에도 썸네일·물 설정 | `ui/Lobby.tsx`, `ui/pacing.ts`, `ui/officialMaps.ts`, `render/mapPreview.ts` |
+| 출발 기지 | 병종 선택 중 내 기지 `Alt+클릭` / 기지 위 `B` → `originBaseTileId`(노란 링 + 점선, 커맨드 바 표시·해제). 기지를 잃으면 자동 해제 | `input/controller.ts` |
+| 진척도 표시 | 대상 칸을 공격자 땅 쪽에서 진척도만큼 채우는 **방향 그라데이션**. 전진은 부드럽게, **감소 중이면 회색 + 흰 테두리 깜빡임 + ▼**(GDD 7.6) | `render/renderer.ts` |
+| ETA | `flag_issued`/`flag_retargeted(auto:false).etaTick` → 모델 `flagEta`(engaged·idle·recalled·ended 에 삭제) → 내 행군 깃발 라벨 "병력 · n초", 깃발 패널 | `state/gameModel.ts` |
+| 색각 보조 | `C`(저장됨): 플레이어별 12종 무늬를 영토에 겹침(화면 크기 고정) + 깃발 플레이어 번호 배지 + 수도 이름·순위표 번호 | `render/patterns.ts` |
+| 라벨 LOD | 화면 안 깃발 > 36 또는 줌 < 7 → 남의 깃발 작게·라벨 생략(내·선택 깃발은 항상 전체) | `render/renderer.ts` |
+| 모바일 | `(max-width:760px), (pointer:coarse)` → 관전·간단 보기: 축약 HUD, 상위 4 순위표, 작은 미니맵, 커맨드 바·테크·외교·피드 숨김, 한 손가락 이동·핀치 확대·탭 선택(명령은 PC) | `ui/GameScreen.tsx`, `input/controller.ts` |
+| 공개방 자동 시작 | **서버 필드 추가** `room_state.autoStartMs`(프로토콜 §5·§10-72·§16·§17) → 대기실 "n초 후 자동 시작" + 진행 바 | `server/src/room/room.ts`, `shared/src/protocol.ts`, `ui/WaitingRoom.tsx` |
+
+### 2차에서 문서와 다르게/문서에 없어 정한 것
+8. **공식 맵 썸네일 데이터는 번들에서**: `welcome.officialMaps` 는 메타만 주므로 `server/maps/official/*.json` 을 Vite `import.meta.glob`(지연 로드)으로 번들. 번들에 없는 id 는 "미리보기 없음". 서버가 다른 맵 세트로 배포되면 어긋날 수 있다 → 필요 시 `officialMaps[]` 에 미리보기 필드 추가를 백엔드에 제안.
+9. **방 생성 전 판 길이 추정**은 서버 pacingNote 식 복제(`ui/pacing.ts`) — 무작위 S/M/L × 인원 × 난이도 전 조합에서 서버 함수와 같은 결과(테스트). 시작 인원 = 방장 + 봇.
+10. 골드 초당 수입·테크 가격·효과 문구는 §4/§8 식 + `match_config.constants` 로 계산(표시 전용).
+11. 피드의 "나 관련" 판정은 이벤트 적용 **전** 깃발 소유자 기준.
+12. 공개 룸에서도 서버 `isHost` 대로 "방장" 태그가 보인다(권한은 없음 — 미세 이슈).
+
+### 2차 검증
+- typecheck 통과, `npm test` 12 파일 / 152 통과(클라이언트 29: `panels.test.ts` 6 추가, 서버 `rooms.test.ts` +1 autoStartMs), smoke PASSED, `qa:ws` 73/73(스키마 위반 0, `qa-schema.ts` 에 autoStartMs 반영), build:client 성공(공식 맵 9 청크).
+- `headless-check.ts 75`: full 14회 불일치 0, ack 수락 23 / 거절 0.
+- 브라우저: **패널이 숨겨져 스크린샷·rAF 불가** → 페이지에서 rAF 를 setTimeout 으로 대체하고 DOM·캔버스 픽셀로 확인(눈으로 본 것 아님). 썸네일 렌더, S + 얕은 물 40% 방 → 대기실 표시·예상 26분(서버와 동일) → 게임 캔버스·미니맵 렌더, HUD 골드 수입, 검병 발령(ETA 기록), Alt+클릭 출발 기지 → `accepted`, `flag_issued.originTileId == 수도`, 테크·외교 패널, 봇에 동맹 제안·피드, 색각 보조 픽셀 변화, 도움말 열기/Esc, 관전 따라가기 → 자유 카메라, 공개방 "28→25초 후 자동 시작", 모바일 375×812 narrow 레이아웃·가로 넘침 0·토큰 재접속. reconStats full 18회 불일치 0, JS 오류 0.
+
+## 7. 남은 일
+- 2차 시각 요소(그라데이션·감소 플래시·패턴·LOD·배치)의 **스크린샷 확인**(통합 QA).
+- 모바일 명령(현재 보기 전용), 전투 무리 연결선, 다중 선택, 사거리 경계, 이모트.
+- 공식 맵 미리보기를 프로토콜로 받을지 결정, 공개 룸 "방장" 태그 정리.

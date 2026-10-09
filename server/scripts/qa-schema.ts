@@ -100,7 +100,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
       expectedPlayers: 'int',
     }),
     players: arr(obj({ playerId: range(1, 12), sessionId: 'str|null', nickname: 'str', isBot: 'bool', isHost: 'bool', ready: 'bool', status: ['enum', 'LOBBY_WAITING', 'PLAYING', 'ELIMINATED_SPECTATING', 'DISCONNECTED'] })),
-    spectatorCount: 'int', countdownMs: 'int|null',
+    spectatorCount: 'int', countdownMs: 'int|null', autoStartMs: 'int|null',
   },
   match_config: {
     seed: 'int', topology: ['enum', 'square'], width: 'int', height: 'int', totalLandTiles: 'int', tickMs: 'int', hardTimeoutTick: 'int',

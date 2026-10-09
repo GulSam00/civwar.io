@@ -68,6 +68,11 @@ export class GameModel {
   endgameRushActive = false;
   tick = 0;
   gameOver: S2C_GameOver | null = null;
+  /**
+   * 행군 도착 추정 tick (flag_issued / flag_retargeted.etaTick — 서버 "추정", ZOC·전투 무시).
+   * snapshot 에는 없는 표시 전용 값이라 이벤트로만 유지하고, 행군이 아니게 되면 지운다.
+   */
+  flagEta = new Map<number, number>();
 
   /** snapshot_full 을 1회 이상 받았는가 — 그 전에는 delta 를 적용하지 않는다 */
   ready = false;
@@ -104,6 +109,7 @@ export class GameModel {
     this.owners = rleDecode(f.owners, this.tileCount);
     this.players = new Map(f.players.map((p) => [p.id, { ...p, tech: [...p.tech] as PlayerSnapshot['tech'] }]));
     this.flags = new Map(f.flags.map((x) => [x.id, { ...x }]));
+    for (const id of [...this.flagEta.keys()]) if (this.flags.get(id)?.state !== 'MARCHING') this.flagEta.delete(id);
     this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b }]));
     this.alliances = new Map(f.alliances.map((a) => [allianceKey(a.a, a.b), { ...a }]));
     this.proposals = new Map(f.allyProposals.map((p) => [p.proposalId, { ...p }]));
@@ -167,10 +173,12 @@ export class GameModel {
           disengageUntilTick: null,
           breakaway: false,
         });
+        this.flagEta.set(e.flagId, e.etaTick);
         break;
       case 'flag_retargeted': {
         const f = this.flags.get(e.flagId);
         if (f) Object.assign(f, { anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, posture: e.posture });
+        if (!e.auto) this.flagEta.set(e.flagId, e.etaTick);
         break;
       }
       case 'flag_posture_changed': {
@@ -193,6 +201,7 @@ export class GameModel {
       }
       case 'flag_ended':
         this.flags.delete(e.flagId);
+        this.flagEta.delete(e.flagId);
         break;
       case 'tech_purchased': {
         const p = this.players.get(e.playerId);
@@ -245,10 +254,12 @@ export class GameModel {
         if (e.phase === 'dissolved') this.allianceFreezeUntilTick = e.freezeUntilTick;
         break;
       case 'flag_engaged':
-      case 'flag_stalled':
-      case 'flag_progress_lost':
       case 'flag_idle':
       case 'flag_recalled':
+        this.flagEta.delete(e.flagId);
+        break;
+      case 'flag_stalled':
+      case 'flag_progress_lost':
       case 'flag_blocked':
       case 'flag_unblocked':
       case 'combat_started':
@@ -303,7 +314,10 @@ export class GameModel {
       const b = this.bases.get(tile);
       if (b) b.hpPct = hp;
     }
-    for (const id of d.flagsGone) this.flags.delete(id);
+    for (const id of d.flagsGone) {
+      this.flags.delete(id);
+      this.flagEta.delete(id);
+    }
     if (d.thresholdPct !== undefined) this.thresholdPct = d.thresholdPct;
     for (const [id, posture, bits, cd] of d.flagFlags) {
       const f = this.flags.get(id);

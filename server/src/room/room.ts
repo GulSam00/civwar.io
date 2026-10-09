@@ -49,6 +49,8 @@ export class Room {
   readonly spectators = new Set<Session>();
   sim: Simulation | null = null;
   private countdownEndsAt: number | null = null;
+  /** 공개 룸 자동 시작 예정 시각 (Date.now 기준). 비공개 룸은 null — room_state.autoStartMs (프론트 2차 추가) */
+  private autoStartAt: number | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private loopStart = 0;
@@ -64,7 +66,10 @@ export class Room {
     private readonly hooks: RoomHooks,
     private readonly brain: BotBrain = CivBot,
   ) {
-    if (isPublic) this.later(PUBLIC_LOBBY_AUTOSTART_MS, () => this.phase === 'LOBBY' && this.startCountdown());
+    if (isPublic) {
+      this.autoStartAt = Date.now() + PUBLIC_LOBBY_AUTOSTART_MS;
+      this.later(PUBLIC_LOBBY_AUTOSTART_MS, () => this.phase === 'LOBBY' && this.startCountdown());
+    }
   }
 
   // ───────────────────────── 조회 ─────────────────────────
@@ -112,6 +117,7 @@ export class Room {
       players,
       spectatorCount: this.spectators.size,
       countdownMs: this.countdownEndsAt !== null ? Math.max(0, this.countdownEndsAt - Date.now()) : null,
+      autoStartMs: this.isPublic && this.phase === 'LOBBY' && this.autoStartAt !== null ? Math.max(0, this.autoStartAt - Date.now()) : null,
     };
   }
 

@@ -304,10 +304,11 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
     { "playerId": 1, "sessionId": "s_3f2a…", "nickname": "alice", "isBot": false, "isHost": true, "ready": false, "status": "LOBBY_WAITING" },
     { "playerId": 3, "sessionId": null, "nickname": "BOT 3", "isBot": true, "isHost": false, "ready": true, "status": "LOBBY_WAITING" }
   ],
-  "spectatorCount": 0, "countdownMs": 2998
+  "spectatorCount": 0, "countdownMs": 2998, "autoStartMs": null
 }
 ```
 `phase`: `LOBBY|COUNTDOWN|IN_GAME|GAME_OVER`. `status`: `LOBBY_WAITING|PLAYING|ELIMINATED_SPECTATING|DISCONNECTED`. `countdownMs`는 COUNTDOWN일 때만 숫자, 그 외 `null`. players는 playerId 오름차순.
+**`autoStartMs` (프론트 2차 추가, 2026-10-09 — 필드 추가만)**: **공개 룸이고 `phase == "LOBBY"`일 때만** 자동 시작(`PUBLIC_LOBBY_AUTOSTART_MS`, 룸 생성 = 첫 입장 시각 기준)까지 남은 ms(정수, 0 이상). 비공개 룸·그 외 phase는 `null`. `countdownMs`와 같이 **송신 시각 기준 값**이고 room_state는 주기적으로 오지 않으므로 클라이언트가 수신 시각부터 로컬로 줄인다. 정원 도달로 먼저 시작하면 다음 room_state(COUNTDOWN)에서 `null`.
 
 **v4.1: `targetPlayers` 제거 → `settings.maxPlayers`.** `settings` (항상 존재):
 | 필드 | 의미 |
@@ -708,6 +709,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 69. **m-5 / m-10** 룸 배달 순서 = 개인(`cmd_ack`) → 방송(이벤트 → delta → full → game_over). 개인 메시지는 1단계 산출이라 앞당겨도 상태 의미가 바뀌지 않는다. 봇 명령(connId 0)의 ack 은 `Outbox.personal[].fromBot` 으로 표시하고 룸이 버린다(헤드리스·테스트에서는 그대로 보인다).
 70. **m-6** 공개 룸 `lobby_start_now` → `error NOT_HOST`(새 코드 없이 기존 코드 재사용). **m-7** 재접속 시 `connected`/`botControlled` 를 부트스트랩 **전에** 바꾼다. **m-9** 게임 종료 tick 뒤 큐에 남은 사람 명령은 `Simulation.flushPending()` 으로 `NOT_IN_GAME` ack(봇 명령은 버림). **m-1** `hello.nickname` 형식 검사는 문자열 여부만 — 길이 위반은 전부 `BAD_NICKNAME`.
 71. **m-12** GDD 와 다른 세부: `botCount` 범위는 GDD `0..maxPlayers − 사람`, 서버는 `0..maxPlayers − 1` 을 받고 시작 시 `min(botCount, maxPlayers − H)` 로 클램프(로비 중 사람 수가 바뀌므로). 상수 이름: GDD `PUBLIC_AUTOSTART_MS` = 코드 `PUBLIC_LOBBY_AUTOSTART_MS`, GDD `PUBLIC_ROOM_MAP` = 코드 `PUBLIC_ROOM_SIZE`(+ `PUBLIC_ROOM_PLAYERS`).
+72. **프론트 2차 — `room_state.autoStartMs` 추가**(오케스트레이터 승인, 필드 추가만): 공개 대기실의 "자동 시작까지 n초" 표시용. 기존 필드·의미 불변. 타입 `S2C_RoomState.autoStartMs: number | null`, QA 스키마(`qa-schema.ts`) 반영, `rooms.test.ts` 테스트 1개 추가.
 
 ---
 
@@ -790,3 +792,12 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 순서 | `cmd_ack` 이 그 tick 방송보다 먼저 온다 → `flag_issued` 전에 `cmd_ack.flagId` 를 알 수 있고 `game_over` 가 그 tick 마지막 (m-5) |
 | 기타 | 공개 룸 `lobby_start_now` → `NOT_HOST` (m-6). 재접속 부트스트랩의 본인 `connected=true` (m-7). 봇 명령 ack 미배달 (m-10). 종료 후 남은 명령 `NOT_IN_GAME` ack (m-9). 65자 이상 닉네임도 `BAD_NICKNAME` (m-1) |
 | QA 스크립트 | `npm run qa:headless|qa:scenarios|qa:ws -w @civwar/server` (`qa-schema.ts` 는 모듈) |
+| 필드 추가 (프론트 2차) | `room_state.autoStartMs: number \| null` — 공개 룸 LOBBY 에서 자동 시작까지 남은 ms(수신 시각 기준), 그 외 null. §5·§10-72·§17 |
+
+## 17. 프론트 2차 변경 요약 (2026-10-09, frontend-game-client-engineer — 오케스트레이터 지시)
+
+| 구분 | 내용 |
+|---|---|
+| 필드 추가 | `room_state.autoStartMs: number \| null` — 공개 룸 LOBBY 에서 자동 시작까지 남은 ms, 그 외 null (§5, §10-72) |
+| 제거·의미 변경 | 없음 |
+| 서버 코드 | `server/src/room/room.ts` (`autoStartAt` 기록·에코), `shared/src/protocol.ts` 타입, `server/scripts/qa-schema.ts`, `server/test/rooms.test.ts` |

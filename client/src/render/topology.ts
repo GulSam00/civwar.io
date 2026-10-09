@@ -37,6 +37,8 @@ export interface TopologyView {
   createTileLayer(): TileLayer;
   /** 소유자별 경계선 경로 (owners[t] 와 다른 이웃 사이 변). 0(중립)은 만들지 않는다 */
   buildBorderPaths(owners: Uint8Array, isLand: (t: number) => boolean): Map<number, Path2D>;
+  /** 소유자별 영역 채우기 경로 (색각 보조 패턴용). 0(중립) 제외 */
+  buildOwnerFillPaths(owners: Uint8Array, isLand: (t: number) => boolean): Map<number, Path2D>;
   /** 타일 칸 하나의 외곽 경로 (월드 좌표) — 선택·게이지 표시용 */
   tilePath(ctx: CanvasRenderingContext2D | Path2D, tileId: number, inset?: number): void;
   /** 타일 집합의 바깥 외곽선 (disk 미리보기 등) */
@@ -48,6 +50,8 @@ export interface TileLayer {
   /** 변경분을 오프스크린 캔버스로 반영 */
   flush(): void;
   draw(ctx: CanvasRenderingContext2D): void;
+  /** 화면 좌표 사각형에 전체 맵을 축소해 그린다 (미니맵·썸네일) */
+  drawScaled(ctx: CanvasRenderingContext2D, dx: number, dy: number, dw: number, dh: number): void;
 }
 
 export function createTopologyView(topology: string, width: number, height: number): TopologyView {
@@ -169,6 +173,10 @@ export class SquareTopologyView implements TopologyView {
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(canvas as CanvasImageSource, 0, 0, w, h);
       },
+      drawScaled(ctx, dx, dy, dw, dh) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(canvas as CanvasImageSource, dx, dy, dw, dh);
+      },
     };
   }
 
@@ -206,6 +214,33 @@ export class SquareTopologyView implements TopologyView {
           p.moveTo(c + 1, r);
           p.lineTo(c + 1, r + 1);
         }
+      }
+    }
+    return paths;
+  }
+
+  buildOwnerFillPaths(owners: Uint8Array, isLand: (t: number) => boolean): Map<number, Path2D> {
+    const w = this.width;
+    const paths = new Map<number, Path2D>();
+    for (let r = 0; r < this.height; r++) {
+      // 같은 소유자 가로 구간을 한 사각형으로 묶는다
+      let c = 0;
+      while (c < w) {
+        const t = r * w + c;
+        const o = owners[t];
+        if (o === 0 || !isLand(t)) {
+          c++;
+          continue;
+        }
+        let e = c + 1;
+        while (e < w && owners[r * w + e] === o && isLand(r * w + e)) e++;
+        let p = paths.get(o);
+        if (!p) {
+          p = new Path2D();
+          paths.set(o, p);
+        }
+        p.rect(c, r, e - c, 1);
+        c = e;
       }
     }
     return paths;

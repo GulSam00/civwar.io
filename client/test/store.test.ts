@@ -7,7 +7,7 @@ function room(phase: S2C_RoomState['phase'], players: S2C_RoomState['players']):
   return {
     type: 'room_state', roomId: 'r1', roomCode: 'ABCDEF', isPublic: false, phase, hostId: 1,
     settings: { map: { kind: 'random', size: 'M' }, maxPlayers: 4, botCount: 2, botDifficulty: 'NORMAL', mapMaxPlayers: 12, recommended: [9, 11], pacingNote: 'timeout_likely', expectedPlayers: 4 },
-    players, spectatorCount: 0, countdownMs: null,
+    players, spectatorCount: 0, countdownMs: null, autoStartMs: null,
   };
 }
 

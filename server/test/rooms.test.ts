@@ -236,4 +236,19 @@ describe('룸 흐름 — 비공개 방 설정·시작', () => {
     expect(lastOf(A.inbox, 'match_config')).toMatchObject({ width: MAP_SIZE_PRESETS.M.w, height: MAP_SIZE_PRESETS.M.h, mapSource: 'random' });
     expect(room.sim!.state.players.filter(Boolean)).toHaveLength(10);
   });
+
+  it('room_state.autoStartMs (프론트 2차 추가): 공개 LOBBY 에서만 남은 ms, 그 외 null', () => {
+    const A = fakeSession(lobby, 'alice');
+    expect(lobby.joinPublic(A.s)).toBeNull();
+    const room = lobby.roomOf(A.s)!;
+    expect(lastOf(A.inbox, 'room_state')!.autoStartMs).toBe(30000);
+    vi.advanceTimersByTime(12000);
+    expect(room.roomState().autoStartMs).toBe(18000);
+    vi.advanceTimersByTime(18000);
+    expect(room.phase).toBe('COUNTDOWN');
+    expect(lastOf(A.inbox, 'room_state')!.autoStartMs).toBeNull();
+    const B = fakeSession(lobby, 'bob');
+    expect(lobby.createPrivate(B.s, {})).toBeNull();
+    expect(lastOf(B.inbox, 'room_state')!.autoStartMs).toBeNull();
+  });
 });
