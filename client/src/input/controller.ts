@@ -32,6 +32,8 @@ export class Interaction {
   panel: 'tech' | 'ally' | null = null;
   helpOpen = false;
   colorblind = false;
+  /** 나가기 확인 대화상자 */
+  leaveConfirm = false;
   /** React 패널이 다시 그릴지 판단 */
   version = 0;
   bump(): void {
@@ -59,6 +61,8 @@ export class GameInputController {
     const g = this.store.game;
     const me = this.store.myPlayerId;
     if (!g || me === null || this.store.spectating || g.gameOver) return false;
+    // QA J-2: 종료 단계(재접속·늦은 입장으로 game_over 를 못 받은 경우 포함)에는 명령하지 않는다
+    if (this.store.room?.phase === 'GAME_OVER') return false;
     return g.players.get(me)?.alive ?? false;
   }
 
@@ -432,9 +436,10 @@ export class GameInputController {
         this.ix.bump();
         return;
       case 'escape':
-        if (this.ix.helpOpen || this.ix.panel) {
+        if (this.ix.helpOpen || this.ix.panel || this.ix.leaveConfirm) {
           this.ix.helpOpen = false;
           this.ix.panel = null;
+          this.ix.leaveConfirm = false;
         } else {
           this.ix.armedUnit = null;
           this.ix.selectedFlagId = null;

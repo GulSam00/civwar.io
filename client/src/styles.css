@@ -944,3 +944,38 @@ kbd {
     padding: 18px;
   }
 }
+
+/* ══════════ QA 후속 ══════════ */
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+.leave-btn {
+  border-color: #7a3b3b;
+}
+.leave-card {
+  min-width: 0;
+  max-width: 440px;
+}
+.leave-card h2 {
+  font-size: 22px;
+}
+.emote-wrap {
+  position: relative;
+}
+.emote-menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  width: 260px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px;
+  z-index: 5;
+}

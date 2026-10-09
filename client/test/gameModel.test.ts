@@ -151,7 +151,7 @@ describe('GameModel — 단위', () => {
 
   it('flag_issued → delta(move/stats/progress/flags) → flag_ended', () => {
     const m = bootstrap();
-    m.apply({ type: 'flag_issued', tick: 26, flagId: 9, playerId: 1, slotIndex: 0, unit: 2, posture: 0, troops: 100, originTileId: 4, anchorTileId: 6, targetOwnerId: 0, etaTick: 40 });
+    m.apply({ type: 'flag_issued', tick: 26, flagId: 9, playerId: 1, slotIndex: 0, unit: 2, posture: 0, troops: 100, originTileId: 4, anchorTileId: 6, targetOwnerId: 0, etaTick: 40, engageEtaTick: 38 });
     expect(m.flags.get(9)!.state).toBe('MARCHING');
     m.apply({
       ...emptyDelta(26),
@@ -178,7 +178,7 @@ describe('GameModel — 단위', () => {
 
   it('flag_posture_changed 는 targetOwnerId 를 덮어쓴다 (QA I-1), 이탈 대기 → 패주 시 null', () => {
     const m = bootstrap();
-    m.apply({ type: 'flag_issued', tick: 26, flagId: 1, playerId: 1, slotIndex: 0, unit: 1, posture: 1, troops: 60, originTileId: 4, anchorTileId: 5, targetOwnerId: 254, etaTick: 30 });
+    m.apply({ type: 'flag_issued', tick: 26, flagId: 1, playerId: 1, slotIndex: 0, unit: 1, posture: 1, troops: 60, originTileId: 4, anchorTileId: 5, targetOwnerId: 254, etaTick: 30, engageEtaTick: 28 });
     m.apply({ type: 'flag_posture_changed', tick: 27, flagId: 1, posture: 0, cooldownUntilTick: 52, auto: false, targetOwnerId: 254 });
     expect(m.flags.get(1)!.posture).toBe(0);
     m.apply({ type: 'flag_disengage_started', tick: 28, flagId: 1, untilTick: 43 });

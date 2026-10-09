@@ -13,6 +13,7 @@ import { fitZoom, worldToScreen, type Camera } from './camera.js';
 import { FlagInterpolator, type Pt } from './flagInterp.js';
 import { COLOR_ATTACK, COLOR_DEFEND, COLOR_DISABLED, playerColor, playerDark, tileRgba } from './palette.js';
 import { ownerPattern } from './patterns.js';
+import { isDecayTick } from './progressRule.js';
 import type { CursorPreview } from '../input/preview.js';
 import { UNIT_SHORT } from '../ui/text.js';
 
@@ -27,6 +28,9 @@ export interface RenderView {
   armed: boolean;
   /** 색각 보조: 영토 패턴 + 깃발 플레이어 번호 */
   colorblind: boolean;
+  /** 최근 이모트 (수도 위 말풍선) */
+  emotes: readonly { playerId: number; code: number; at: number }[];
+  emoteText(code: number): string;
   nicknameOf(id: number): string;
 }
 
@@ -40,6 +44,7 @@ interface FlagScreen {
 /** 진척도 감소 표시 상태 (GDD 7.6: 전진은 부드럽게, 후퇴는 짧은 플래시) */
 interface ProgressTrack {
   pct: number;
+  tgt: number | null;
   shownPct: number;
   decayUntil: number;
 }
@@ -166,6 +171,42 @@ export class GameRenderer {
     this.drawBases(ctx, model, topo, view);
     this.drawOriginLine(ctx, topo, view);
     this.drawFlags(ctx, model, topo, view, now);
+    this.drawEmotes(ctx, model, topo, view);
+  }
+
+  /** 이모트 말풍선 — 그 플레이어의 수도(스폰) 위, 4초 동안 서서히 사라진다 */
+  private drawEmotes(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
+    const t = Date.now();
+    for (const e of view.emotes) {
+      const age = t - e.at;
+      if (age > 4000) continue;
+      const sp = model.spawns.find((s) => s.playerId === e.playerId);
+      if (!sp) continue;
+      const c = topo.tileCenter(sp.homeTileId);
+      const p = worldToScreen(this.camera, c.x, c.y);
+      const text = `${view.nicknameOf(e.playerId)}: ${view.emoteText(e.code)}`;
+      ctx.save();
+      ctx.globalAlpha = age > 3000 ? (4000 - age) / 1000 : 1;
+      ctx.font = 'bold 12px system-ui, "Malgun Gothic", sans-serif';
+      const w = ctx.measureText(text).width + 12;
+      const x = p.x - w / 2;
+      const y = p.y - 46;
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.strokeStyle = playerDark(e.playerId);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.rect(x, y, w, 20);
+      ctx.moveTo(p.x - 5, y + 20);
+      ctx.lineTo(p.x, y + 27);
+      ctx.lineTo(p.x + 5, y + 20);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#111';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, p.x, y + 10);
+      ctx.restore();
+    }
   }
 
   private syncTiles(model: GameModel, now: number): void {
@@ -261,13 +302,18 @@ export class GameRenderer {
   private trackProgress(f: FlagSnapshot, now: number): ProgressTrack {
     let tr = this.progress.get(f.id);
     if (!tr) {
-      tr = { pct: f.progressPct, shownPct: f.progressPct, decayUntil: 0 };
+      tr = { pct: f.progressPct, tgt: f.targetTileId, shownPct: f.progressPct, decayUntil: 0 };
       this.progress.set(f.id, tr);
       return tr;
     }
-    if (f.progressPct < tr.pct && f.progressPct > 0) tr.decayUntil = now + 450; // 자동 감소 (0 으로 리셋은 감소 표시 아님)
-    if (f.progressPct > tr.pct) tr.decayUntil = 0;
-    tr.pct = f.progressPct;
+    const cur = { pct: f.progressPct, tgt: f.targetTileId };
+    if (cur.pct !== tr.pct || cur.tgt !== tr.tgt) {
+      if (isDecayTick(tr, cur)) tr.decayUntil = now + 450;
+      else if (cur.pct > tr.pct || cur.tgt !== tr.tgt) tr.decayUntil = 0;
+    }
+    if (cur.tgt !== tr.tgt) tr.shownPct = cur.pct; // 대상이 바뀌면 새 칸 값에서 시작
+    tr.pct = cur.pct;
+    tr.tgt = cur.tgt;
     // 전진은 부드럽게 따라가고, 감소·리셋은 즉시
     tr.shownPct = tr.pct >= tr.shownPct ? tr.shownPct + (tr.pct - tr.shownPct) * 0.35 : tr.pct;
     return tr;

@@ -89,7 +89,7 @@ const flagSnap = obj({
 export const DOC_SCHEMA: Record<string, Shape> = {
   welcome: {
     sessionId: 'str', playerToken: 'str', serverTick: 'int', protocolVersion: 'int', tickMs: 'int', resumed: 'bool',
-    officialMaps: arr(obj({ id: 'str', name: obj({ ko: 'str', en: 'str' }), sizeClass: ['enum', 'S', 'M', 'L'], players: obj({ min: 'int', recommendedMin: 'int', recommendedMax: 'int', max: 'int' }) })),
+    officialMaps: arr(obj({ id: 'str', name: obj({ ko: 'str', en: 'str' }), sizeClass: ['enum', 'S', 'M', 'L'], players: obj({ min: 'int', recommendedMin: 'int', recommendedMax: 'int', max: 'int' }), checksum: 'str' })),
   },
   room_state: {
     roomId: 'str', roomCode: 'str', isPublic: 'bool', phase: ['enum', 'LOBBY', 'COUNTDOWN', 'IN_GAME', 'GAME_OVER'], hostId: 'int|null',
@@ -137,8 +137,8 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   player_reconnected: { tick: 'int', playerId: 'int' },
   emote_broadcast: { tick: 'int', playerId: 'int', code: range(0, 15) },
   game_over: { finalTick: 'int', winnerId: 'int|null', reason: ['enum', 'last_standing', 'threshold', 'timeout'], standings: arr(obj({ rank: 'int', playerId: 'int', tiles: 'int', troops: 'int', goldEarned: 'int', alive: 'bool' })) },
-  flag_issued: { tick: 'int', flagId: 'int', playerId: 'int', slotIndex: 'int', unit: UNIT, posture: POSTURE, troops: 'int', originTileId: 'int', anchorTileId: 'int', targetOwnerId: 'int', etaTick: 'int' },
-  flag_retargeted: { tick: 'int', flagId: 'int', anchorTileId: 'int', targetOwnerId: 'int', posture: POSTURE, resumeTick: 'int', etaTick: 'int', auto: 'bool' },
+  flag_issued: { tick: 'int', flagId: 'int', playerId: 'int', slotIndex: 'int', unit: UNIT, posture: POSTURE, troops: 'int', originTileId: 'int', anchorTileId: 'int', targetOwnerId: 'int', etaTick: 'int', engageEtaTick: 'int' },
+  flag_retargeted: { tick: 'int', flagId: 'int', anchorTileId: 'int', targetOwnerId: 'int', posture: POSTURE, resumeTick: 'int', etaTick: 'int', engageEtaTick: 'int', auto: 'bool' },
   flag_recalled: { tick: 'int', flagId: 'int', returnTileId: 'int' },
   flag_engaged: { tick: 'int', flagId: 'int', posture: POSTURE, 'frontTileCount?': 'int', 'guardTileCount?': 'int' },
   flag_stalled: { tick: 'int', flagId: 'int', tileId: 'int|null' },

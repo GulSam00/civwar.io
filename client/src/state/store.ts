@@ -199,11 +199,21 @@ export class ClientStore {
   startNow(): void {
     this.lobby({ type: 'lobby_start_now' });
   }
+  /**
+   * 로비로 나가기 (QA J-1). 인게임 생존자는 자리가 끊긴 상태로 남고 90초 뒤 봇이 맡는다(§3 "인게임 lobby_leave" — 재접속 불가).
+   * 저장된 토큰을 지워 새로고침해도 이 판으로 돌아가지 않게 한다(다음 룸에 들어가면 다시 저장).
+   * 룸이 이미 정리됐을 수 있으므로(종료 60초 뒤 dispose — 통지 없음) 직후의 NOT_IN_ROOM 은 조용히 무시한다(QA m-1).
+   */
   leaveRoom(): void {
-    if (this.welcomed) this.socket.send({ type: 'lobby_leave' });
+    if (this.welcomed && this.room) {
+      this.socket.send({ type: 'lobby_leave' });
+      this.ignoreNotInRoomUntil = this.now() + 5000;
+    }
+    this.storage?.removeItem(LS_TOKEN);
     this.clearRoom();
     this.emit();
   }
+  private ignoreNotInRoomUntil = 0;
   /** 웰컴만 받고 아무 데도 없을 때 (로비 메뉴용) */
   ensureHello(): void {
     if (this.welcomed) return;
@@ -236,6 +246,13 @@ export class ClientStore {
   respondAlly(proposalId: number, accept: boolean): number {
     return this.command({ type: 'cmd_ally_respond', proposalId, accept });
   }
+  /** 이모트 (§4 emote — 코드 0..15 의미는 클라이언트 정의, 위반·1초 1회 초과는 서버가 조용히 무시) */
+  sendEmote(code: number): void {
+    this.socket.send({ type: 'emote', code });
+  }
+  /** 최근 이모트 (렌더러가 수도 위 말풍선으로 그린다) */
+  emotes: { playerId: number; code: number; at: number }[] = [];
+
   breakAlly(allyPlayerId: number): number {
     return this.command({ type: 'cmd_ally_break', allyPlayerId });
   }
@@ -289,7 +306,7 @@ export class ClientStore {
   private feedFrom(m: ServerMessage): void {
     const g = this.game;
     if (!g || !g.ready) return;
-    const e = describeEvent(m, { me: this.viewerId, nick: (id) => this.nicknameOf(id), flagOwner: (id) => g.flags.get(id)?.ownerId ?? null, tickMs: g.config.tickMs });
+    const e = describeEvent(m, { me: this.viewerId, nick: (id) => this.nicknameOf(id), flagOwner: (id) => g.flags.get(id)?.ownerId ?? null, tickMs: g.config.tickMs, proposal: (id) => g.proposals.get(id) });
     if (!e) return;
     this.feed = [...this.feed, { ...e, id: ++this.feedSeq, tick: 'tick' in m ? (m as { tick: number }).tick : g.tick }].slice(-40);
     this.feedVersion++;
@@ -344,6 +361,8 @@ export class ClientStore {
       case 'room_state': {
         const prevPhase = this.room?.phase;
         this.room = m;
+        // 나가기로 지운 토큰을 새 룸 입장 시 다시 저장 (재접속 복구용)
+        if (this.playerToken && this.storage && this.storage.getItem(LS_TOKEN) !== this.playerToken) this.storage.setItem(LS_TOKEN, this.playerToken);
         this.spectating = !m.players.some((p) => p.sessionId === this.sessionId);
         if (m.phase === 'LOBBY' || m.phase === 'COUNTDOWN') this.game = null;
         if (this.game) {
@@ -380,14 +399,19 @@ export class ClientStore {
         void p;
         return;
       }
-      case 'error':
-        this.toast(ERROR_TEXT[m.code] ?? m.message ?? m.code, 'error', 4000);
+      case 'error': {
+        if (m.code === 'NOT_IN_ROOM' && this.now() < this.ignoreNotInRoomUntil) return;
+        // QA m-10: 방 설정 오류 3종은 서버의 사람이 읽는 사유(message, §6.2)를 함께 보여준다
+        const base = ERROR_TEXT[m.code] ?? m.code;
+        const detailed = (m.code === 'BAD_ROOM_OPTIONS' || m.code === 'NOT_ENOUGH_PLAYERS' || m.code === 'MAP_NOT_FOUND') && m.message && m.message !== m.code;
+        this.toast(detailed ? `${base} — ${m.message}` : base, 'error', 5000);
         if (m.code === 'BAD_NICKNAME') {
           // 세션이 만들어지지 않았다 → 다시 hello 할 수 있게
           this.helloSent = false;
           this.queued = [];
         }
         return;
+      }
       case 'game_over':
         this.game?.apply(m);
         this.emit();
@@ -399,6 +423,11 @@ export class ClientStore {
         return;
       case 'pong':
         return;
+      case 'emote_broadcast': {
+        const t = this.now();
+        this.emotes = [...this.emotes.filter((e) => t - e.at < 4000 && e.playerId !== m.playerId), { playerId: m.playerId, code: m.code, at: t }];
+        return;
+      }
       default:
         this.game?.apply(m);
     }

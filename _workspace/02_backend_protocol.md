@@ -136,7 +136,7 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 - **RLE**: `[value, runLength, value, runLength, …]` 평탄 배열. tileId 오름차순. 디코드는 `shared`의 `rleDecode(rle, width*height)`.
 - **타일 좌표**: `match_config.topology == "square"`일 때 `tileId = row * width + col`. 이 변환은 클라이언트 렌더 모듈 한 곳에만 둘 것(구현 제약).
 - 지형 값: `0=DEEP 1=PLAIN 2=FERTILE 3=HILLS 4=DESERT 5=MOUNTAIN 6=SHALLOW`. 점령 가능 = `isClaimable`(0·6 제외).
-- 시야 전체 공개: 모든 게임 상태 메시지는 룸 전원(관전자 포함)에게 동일. 개인 메시지는 `welcome`, `cmd_ack`, `error`, `pong`, 그리고 입장·재접속 시 1회 부트스트랩(`room_state` + `match_config` + `map_init` + `snapshot_full`)뿐.
+- 시야 전체 공개: 모든 게임 상태 메시지는 룸 전원(관전자 포함)에게 동일. 개인 메시지는 `welcome`, `cmd_ack`, `error`, `pong`, 그리고 입장·재접속 시 1회 부트스트랩(`room_state` + `match_config` + `map_init` + `snapshot_full` + **GAME_OVER 룸이면 `game_over`** — 프론트 QA J-2)뿐.
 
 ---
 
@@ -161,9 +161,9 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 | 로비에서 소켓 끊김 | 즉시 퇴장 처리 | 결정 |
 | 인게임 소켓 끊김 | 자리 유지, `connected=false`. `DISCONNECT_GRACE_TICK = 450`(90초) 초과 시 `bot_takeover` | GDD 7.1 |
 | 재접속 | `hello.playerToken`으로 같은 세션 복구 → `welcome.resumed=true` → `room_state` → 부트스트랩(`match_config`·`map_init`·`snapshot_full` — **본인 `connected=true` 반영 후**) → 룸에 `player_reconnected`. **봇 인계 후 복귀해도 조종권을 돌려준다**. `players[].connected` 갱신 경로: `snapshot_full`, `player_reconnected`(→ true), `room_state.players[].status`. `PlayerDelta` 에는 없다(끊김은 `room_state` 로) | 토큰 방식·복귀 규칙 **임의 결정** |
-| 관전 | `lobby_spectate` (IN_GAME/GAME_OVER 룸). 탈락자는 같은 룸에서 그대로 수신(`ELIMINATED_SPECTATING`) | GDD 4.14 + 결정 |
+| 관전 | `lobby_spectate` (IN_GAME/GAME_OVER 룸). 탈락자는 같은 룸에서 그대로 수신(`ELIMINATED_SPECTATING`). **관전자 세션은 소켓이 끊기면 즉시 퇴장·폐기된다 → 관전자가 새로고침하면 `welcome.resumed:false` 로 로비에 돌아간다**(코드를 다시 입력해 관전. 플레이어 재접속과 다름 — QA m-2 명시) | GDD 4.14 + 결정 |
 | 진행 중 게임의 생존자 | 다른 룸 입장 불가(`ALREADY_IN_ROOM`) — 먼저 `lobby_leave` | 결정 |
-| 인게임 `lobby_leave` | 자리는 끊긴 상태로 남음(봇 인계 타이머 진행), 세션은 룸에서 분리 → 재접속 불가 | 결정 |
+| 인게임 `lobby_leave` | 자리는 끊긴 상태로 남음(봇 인계 타이머 진행), 세션은 룸에서 분리 → 재접속 불가. 클라이언트 "나가기"는 저장 토큰도 지운다(새로고침해도 그 판으로 돌아가지 않음). **룸이 종료 60초 뒤 정리된 다음의 `lobby_leave` 는 `error NOT_IN_ROOM`**(정리 통지 없음 — 클라이언트는 무시) | 결정 |
 | 계정·DB | 없음. 익명 닉네임 1~16자(제어문자 제거·trim) | 지정 |
 
 ---
@@ -287,9 +287,10 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ```json
 { "type": "welcome", "sessionId": "s_3f2a9c1b7e01", "playerToken": "q8...", "serverTick": 0, "protocolVersion": 1, "tickMs": 200, "resumed": false,
   "officialMaps": [{ "id": "official-m-01", "name": { "ko": "쌍둥이 만", "en": "Twin Bays" }, "sizeClass": "M",
-                     "players": { "min": 2, "recommendedMin": 8, "recommendedMax": 10, "max": 12 } }] }
+                     "players": { "min": 2, "recommendedMin": 8, "recommendedMax": 10, "max": 12 }, "checksum": "sha256:9f2c…" }] }
 ```
-**v4.1 `officialMaps`**: 공식 프리셋 맵 목록(파일의 메타만, id ASC). 별도 요청 메시지 없음. 지금은 공식 맵 파일이 없어 `[]`.
+**v4.1 `officialMaps`**: 공식 프리셋 맵 목록(파일의 메타만, id ASC). 별도 요청 메시지 없음.
+**`officialMaps[].checksum` (프론트 QA m-8, 필드 추가)**: 맵 파일의 `checksum`("sha256:…", terrain+spawns+bases — §7.1). 클라이언트는 번들한 미리보기 파일과 대조해 다르면 썸네일·생성 전 판 길이 추정을 숨긴다.
 ⚠ GDD의 `playerId` 대신 **`sessionId`**(§10-1). 게임 내 숫자 playerId는 `room_state.players[].playerId`에서 `sessionId`가 일치하는 항목으로 찾는다. `playerToken`은 재접속용으로 보관(localStorage 권장).
 
 ### room_state (룸) — 입장·퇴장·준비·카운트다운·게임 시작/종료·접속 변화·탈락·봇 인계 때
@@ -420,7 +421,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `bot_takeover` | `{ "type":"bot_takeover","tick":900,"playerId":2 }` | 끊긴 지 450 tick |
 | `player_reconnected` | `{ "type":"player_reconnected","tick":910,"playerId":2 }` | 끊긴 플레이어가 토큰으로 복귀 |
 | `emote_broadcast` | `{ "type":"emote_broadcast","tick":77,"playerId":1,"code":3 }` | 수신 즉시(현재 tick 표기) |
-| `game_over` | 아래 | 승리 판정 tick. **그 tick의 `cmd_ack`·이벤트·`snapshot_delta`(+`snapshot_full`) 뒤 마지막 메시지**(이후 종료 직후 남은 명령의 `NOT_IN_GAME` ack 와 `room_state(GAME_OVER)`) |
+| `game_over` | 아래 | 승리 판정 tick. **그 tick의 `cmd_ack`·이벤트·`snapshot_delta`(+`snapshot_full`) 뒤 마지막 메시지**(이후 종료 직후 남은 명령의 `NOT_IN_GAME` ack 와 `room_state(GAME_OVER)`). **프론트 QA J-2**: GAME_OVER 룸에 늦게 붙은 세션(관전 입장·토큰 재접속)은 개인 부트스트랩 `room_state → match_config → map_init → snapshot_full` **바로 뒤에 같은 `game_over`(원본 그대로)를 1회 더** 받는다 |
 
 ```json
 { "type": "game_over", "finalTick": 9600, "winnerId": 3, "reason": "timeout",
@@ -434,8 +435,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 | type | 예시 JSON | 시점 |
 |---|---|---|
-| `flag_issued` | `{"type":"flag_issued","tick":3,"flagId":1,"playerId":1,"slotIndex":0,"unit":2,"posture":0,"troops":100,"originTileId":2103,"anchorTileId":1743,"targetOwnerId":0,"etaTick":32}` | 발령 수락. `etaTick` = 현재 속도로 앵커까지 걸었을 때 도착 tick **추정**(ZOC·전투 무시) |
-| `flag_retargeted` | `{"type":"flag_retargeted","tick":40,"flagId":1,"anchorTileId":2500,"targetOwnerId":3,"posture":0,"resumeTick":55,"etaTick":88,"auto":false}` | 재지정 수락(`auto:false`, `resumeTick` = 경직 해제 tick) / 4.5 중립 자동 전환(`auto:true`, 앵커 그대로, `resumeTick = etaTick = tick`) |
+| `flag_issued` | `{"type":"flag_issued","tick":3,"flagId":1,"playerId":1,"slotIndex":0,"unit":2,"posture":0,"troops":100,"originTileId":2103,"anchorTileId":1743,"targetOwnerId":0,"etaTick":32,"engageEtaTick":27}` | 발령 수락. `etaTick` = 현재 속도로 앵커까지 걸었을 때 도착 tick **추정**(ZOC·전투 무시). **`engageEtaTick`(프론트 QA m-4, 필드 추가)** = 같은 경로에서 MARCHING 도착 판정(ATTACK: 거리 1 안 front / DEFEND: `defendArrived` / 앵커 도달)이 처음 서는 tick 추정 — 발령 시점 owners 기준, ZOC·전투·영토 변화 무시. 실측(M10 NORMAL 2500 tick, n=331) 실제 `flag_engaged` 대비 평균 오차 5.2 tick(etaTick 26.7) |
+| `flag_retargeted` | `{"type":"flag_retargeted","tick":40,"flagId":1,"anchorTileId":2500,"targetOwnerId":3,"posture":0,"resumeTick":55,"etaTick":88,"engageEtaTick":80,"auto":false}` | 재지정 수락(`auto:false`, `resumeTick` = 경직 해제 tick, `engageEtaTick` = `resumeTick` + 교전 개시 추정) / 4.5 중립 자동 전환(`auto:true`, 앵커 그대로, `resumeTick = etaTick = engageEtaTick = tick`) |
 | `flag_recalled` ⟵ **백엔드 추가** | `{"type":"flag_recalled","tick":41,"flagId":1,"returnTileId":2103}` | 회수 수락, IDLE 타임아웃(600 tick) 자동 회수 |
 | `flag_engaged` | `{"type":"flag_engaged","tick":10,"flagId":1,"posture":0,"frontTileCount":8}` / `{"type":"flag_engaged","tick":12,"flagId":2,"posture":1,"guardTileCount":34}` | MARCHING → ENGAGED. ATTACK 이면 `frontTileCount`만, DEFEND 이면 `guardTileCount`만 |
 | `flag_stalled` | `{"type":"flag_stalled","tick":70,"flagId":1,"tileId":1833}` | **v4.1 의미**: ENGAGED·공격 태세·비전투 깃발이 25 tick 연속 한 칸도 못 민(AP 0·타깃 없음·잠긴 기지) 시점 1회. `tileId`는 `targetTileId`(없으면 `null`). 되돌리기 상쇄는 더 이상 없다 |
@@ -710,6 +711,10 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 70. **m-6** 공개 룸 `lobby_start_now` → `error NOT_HOST`(새 코드 없이 기존 코드 재사용). **m-7** 재접속 시 `connected`/`botControlled` 를 부트스트랩 **전에** 바꾼다. **m-9** 게임 종료 tick 뒤 큐에 남은 사람 명령은 `Simulation.flushPending()` 으로 `NOT_IN_GAME` ack(봇 명령은 버림). **m-1** `hello.nickname` 형식 검사는 문자열 여부만 — 길이 위반은 전부 `BAD_NICKNAME`.
 71. **m-12** GDD 와 다른 세부: `botCount` 범위는 GDD `0..maxPlayers − 사람`, 서버는 `0..maxPlayers − 1` 을 받고 시작 시 `min(botCount, maxPlayers − H)` 로 클램프(로비 중 사람 수가 바뀌므로). 상수 이름: GDD `PUBLIC_AUTOSTART_MS` = 코드 `PUBLIC_LOBBY_AUTOSTART_MS`, GDD `PUBLIC_ROOM_MAP` = 코드 `PUBLIC_ROOM_SIZE`(+ `PUBLIC_ROOM_PLAYERS`).
 72. **프론트 2차 — `room_state.autoStartMs` 추가**(오케스트레이터 승인, 필드 추가만): 공개 대기실의 "자동 시작까지 n초" 표시용. 기존 필드·의미 불변. 타입 `S2C_RoomState.autoStartMs: number | null`, QA 스키마(`qa-schema.ts`) 반영, `rooms.test.ts` 테스트 1개 추가.
+73. **프론트 QA J-2 — GAME_OVER 부트스트랩에 `game_over` 재송신**: 룸이 마지막 `game_over` 를 보관하고, GAME_OVER 단계의 `spectate`·`onResume` 개인 부트스트랩 뒤에 보낸다(`room.ts sendGameBootstrap`). 메시지 shape 불변, 개인 메시지 1개 추가. `rooms.test.ts` 테스트.
+74. **프론트 QA m-4 — `flag_issued`/`flag_retargeted.engageEtaTick` 추가**(필드 추가만, `etaTick` 의미 불변): `rules.ts engageEtaTicks` — movement.ts MARCHING 도착 판정과 같은 조건을 경로 위에서 검사하는 표시용 추정.
+75. **프론트 QA m-8 — `welcome.officialMaps[].checksum` 추가**(필드 추가만): `presetInfo` 가 파일 checksum 을 싣는다.
+76. **문서화(QA m-2)**: 관전자 새로고침 → 로비 복귀(관전 세션은 끊김 즉시 폐기). 서버 동작 변경 없음.
 
 ---
 
@@ -793,6 +798,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 기타 | 공개 룸 `lobby_start_now` → `NOT_HOST` (m-6). 재접속 부트스트랩의 본인 `connected=true` (m-7). 봇 명령 ack 미배달 (m-10). 종료 후 남은 명령 `NOT_IN_GAME` ack (m-9). 65자 이상 닉네임도 `BAD_NICKNAME` (m-1) |
 | QA 스크립트 | `npm run qa:headless|qa:scenarios|qa:ws -w @civwar/server` (`qa-schema.ts` 는 모듈) |
 | 필드 추가 (프론트 2차) | `room_state.autoStartMs: number \| null` — 공개 룸 LOBBY 에서 자동 시작까지 남은 ms(수신 시각 기준), 그 외 null. §5·§10-72·§17 |
+| 프론트 QA 후속 | `flag_issued`/`flag_retargeted.engageEtaTick`, `welcome.officialMaps[].checksum` 필드 추가, GAME_OVER 부트스트랩 뒤 `game_over` 재송신 — §17 |
 
 ## 17. 프론트 2차 변경 요약 (2026-10-09, frontend-game-client-engineer — 오케스트레이터 지시)
 
@@ -801,3 +807,6 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 필드 추가 | `room_state.autoStartMs: number \| null` — 공개 룸 LOBBY 에서 자동 시작까지 남은 ms, 그 외 null (§5, §10-72) |
 | 제거·의미 변경 | 없음 |
 | 서버 코드 | `server/src/room/room.ts` (`autoStartAt` 기록·에코), `shared/src/protocol.ts` 타입, `server/scripts/qa-schema.ts`, `server/test/rooms.test.ts` |
+| 필드 추가 (프론트 QA) | `flag_issued.engageEtaTick`, `flag_retargeted.engageEtaTick` (§5, §10-74), `welcome.officialMaps[].checksum` (§5, §10-75) |
+| 개인 메시지 추가 (프론트 QA J-2) | GAME_OVER 룸 부트스트랩 뒤 `game_over` 재송신 (§2, §5, §10-73) |
+| 문서화 | 관전자 새로고침 → 로비 (§3, §10-76), 정리된 룸에 `lobby_leave` → `NOT_IN_ROOM` (§3) |

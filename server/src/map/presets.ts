@@ -125,7 +125,7 @@ export function validatePreset(raw: unknown, expectedId?: string): PresetMapFile
 }
 
 export function presetInfo(p: PresetMapFile): OfficialMapInfo {
-  return { id: p.id, name: { ko: p.name.ko, en: p.name.en }, sizeClass: p.sizeClass, players: { ...p.players } };
+  return { id: p.id, name: { ko: p.name.ko, en: p.name.en }, sizeClass: p.sizeClass, players: { ...p.players }, checksum: p.checksum };
 }
 
 /** N 인 게임이 쓸 스폰 인덱스 (2.8 f 부분집합 규칙) */

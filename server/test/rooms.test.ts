@@ -21,7 +21,7 @@ const catalog = MapCatalog.loadDir(FIXTURE_DIR);
 describe('공식 프리셋 맵 로더 (2.8 f)', () => {
   it('픽스처 로드 · welcome.officialMaps 메타', () => {
     expect(catalog.list()).toEqual([
-      { id: 'sample-m-01', name: { ko: '예시 보통 맵', en: 'Sample M' }, sizeClass: 'M', players: { min: 2, recommendedMin: 9, recommendedMax: 11, max: 12 } },
+      { id: 'sample-m-01', name: { ko: '예시 보통 맵', en: 'Sample M' }, sizeClass: 'M', players: { min: 2, recommendedMin: 9, recommendedMax: 11, max: 12 }, checksum: loadFixture().checksum },
     ]);
   });
   it('checksum 불일치 · id≠파일명 · 스키마 위반 → PresetFormatError (기동 실패)', () => {
@@ -236,6 +236,24 @@ describe('룸 흐름 — 비공개 방 설정·시작', () => {
     expect(lastOf(A.inbox, 'match_config')).toMatchObject({ width: MAP_SIZE_PRESETS.M.w, height: MAP_SIZE_PRESETS.M.h, mapSource: 'random' });
     expect(room.sim!.state.players.filter(Boolean)).toHaveLength(10);
   });
+
+  it('J-2: GAME_OVER 룸에 관전으로 붙으면 부트스트랩 뒤에 game_over 를 다시 받는다', () => {
+    const A = fakeSession(lobby, 'alice');
+    expect(lobby.createPrivate(A.s, { map: { kind: 'random', size: 'S' }, maxPlayers: 2, botCount: 1 })).toBeNull();
+    const room = lobby.roomOf(A.s)!;
+    room.startNow(A.s);
+    vi.advanceTimersByTime(3000);
+    for (let i = 0; i < 9700 && room.phase !== 'GAME_OVER'; i++) vi.advanceTimersByTime(200); // 정리(60초) 전에 멈춘다
+    expect(room.phase).toBe('GAME_OVER');
+    const original = lastOf(A.inbox, 'game_over')!;
+    expect(original).toBeTruthy();
+    const C = fakeSession(lobby, 'carol');
+    expect(lobby.spectate(C.s, room.code)).toBeNull();
+    const types = C.inbox.map((m) => m.type);
+    const i = types.indexOf('snapshot_full');
+    expect(types.slice(0, i + 2)).toEqual(['room_state', 'match_config', 'map_init', 'snapshot_full', 'game_over']);
+    expect(lastOf(C.inbox, 'game_over')).toEqual(original);
+  }, 60000);
 
   it('room_state.autoStartMs (프론트 2차 추가): 공개 LOBBY 에서만 남은 ms, 그 외 null', () => {
     const A = fakeSession(lobby, 'alice');

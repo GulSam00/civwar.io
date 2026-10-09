@@ -69,7 +69,8 @@ export class GameModel {
   tick = 0;
   gameOver: S2C_GameOver | null = null;
   /**
-   * 행군 도착 추정 tick (flag_issued / flag_retargeted.etaTick — 서버 "추정", ZOC·전투 무시).
+   * 교전 개시 추정 tick (flag_issued / flag_retargeted.engageEtaTick — 서버 MARCHING 도착 판정 기준 추정, ZOC·전투 무시.
+   * 구버전 서버면 etaTick(앵커 도착)으로 대체).
    * snapshot 에는 없는 표시 전용 값이라 이벤트로만 유지하고, 행군이 아니게 되면 지운다.
    */
   flagEta = new Map<number, number>();
@@ -173,12 +174,12 @@ export class GameModel {
           disengageUntilTick: null,
           breakaway: false,
         });
-        this.flagEta.set(e.flagId, e.etaTick);
+        this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
         break;
       case 'flag_retargeted': {
         const f = this.flags.get(e.flagId);
         if (f) Object.assign(f, { anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, posture: e.posture });
-        if (!e.auto) this.flagEta.set(e.flagId, e.etaTick);
+        if (!e.auto) this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
         break;
       }
       case 'flag_posture_changed': {

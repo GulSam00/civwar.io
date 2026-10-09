@@ -239,6 +239,8 @@ export interface OfficialMapInfo {
   name: { ko: string; en: string };
   sizeClass: MapSizeClass;
   players: { min: number; recommendedMin: number; recommendedMax: number; max: number };
+  /** 프론트 QA m-8 (필드 추가): 맵 파일 checksum ("sha256:…", terrain+spawns+bases). 클라이언트 번들 미리보기 데이터와 대조용 */
+  checksum: string;
 }
 
 /** v4.1 room_state.settings — 방 설정 에코 + 표시용 파생값 */
@@ -528,6 +530,8 @@ export interface S2C_FlagIssued {
   anchorTileId: number;
   targetOwnerId: number;
   etaTick: number;
+  /** 프론트 QA m-4 (필드 추가): 교전 개시(MARCHING → ENGAGED/IDLE 판정) 추정 tick. 현재 owners 기준, ZOC·전투 무시 */
+  engageEtaTick: number;
 }
 export interface S2C_FlagRetargeted {
   type: 'flag_retargeted';
@@ -538,6 +542,8 @@ export interface S2C_FlagRetargeted {
   posture: Posture;
   resumeTick: number;
   etaTick: number;
+  /** 프론트 QA m-4 (필드 추가): 교전 개시 추정 tick (auto:true 면 tick) */
+  engageEtaTick: number;
   auto: boolean;
 }
 export interface S2C_FlagRecalled {

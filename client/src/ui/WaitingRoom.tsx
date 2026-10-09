@@ -101,7 +101,7 @@ export function WaitingRoom({ store, room }: { store: ClientStore; room: S2C_Roo
               <dt>시작 인원</dt>
               <dd>{s.expectedPlayers}명</dd>
             </dl>
-            {s.map.kind === 'preset' && <MapThumb mapId={s.map.mapId} players={s.expectedPlayers} />}
+            {s.map.kind === 'preset' && <MapThumb mapId={s.map.mapId} players={s.expectedPlayers} checksum={store.officialMaps.find((x) => x.id === (s.map as { mapId: string }).mapId)?.checksum} />}
             {(outOfRec || pacing) && <p className={outOfRec || s.pacingNote === 'timeout_likely' ? 'warn' : 'muted small'}>{outOfRec ? `추천 인원(${rec[0]}~${rec[1]})을 벗어났습니다. ` : ''}{pacing}</p>}
             {store.isHost && room.phase === 'LOBBY' && <HostSettings store={store} room={room} humans={humans} />}
           </div>
@@ -126,24 +126,49 @@ export function WaitingRoom({ store, room }: { store: ClientStore; room: S2C_Roo
   );
 }
 
-/** 방장 간단 설정 (세부 UI 는 2차) */
+/**
+ * 숫자 입력 — 타이핑 중에는 보내지 않고 blur·Enter 에서 범위 안 값만 보낸다 (QA m-9: 키마다 lobby_update_settings → BAD_ROOM_OPTIONS 토스트).
+ * 서버 값이 바뀌면(다른 변경·거절 후 에코) 입력을 서버 값으로 되돌린다.
+ */
+function CommitNumber({ value, min, max, onCommit }: { value: number; min: number; max: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const v = Number(draft);
+    if (draft.trim() === '' || !Number.isInteger(v) || v < min || v > max) {
+      setDraft(String(value));
+      return;
+    }
+    if (v !== value) onCommit(v);
+  };
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') setDraft(String(value));
+      }}
+    />
+  );
+}
+
+/** 방장 간단 설정 */
 function HostSettings({ store, room, humans }: { store: ClientStore; room: S2C_RoomState; humans: number }) {
   const s = room.settings;
   return (
     <div className="host-settings">
       <label className="field inline">
         <span>최대 인원</span>
-        <input
-          type="number"
-          min={Math.max(2, humans)}
-          max={s.mapMaxPlayers}
-          value={s.maxPlayers}
-          onChange={(e) => store.updateSettings({ maxPlayers: Number(e.target.value) })}
-        />
+        <CommitNumber value={s.maxPlayers} min={Math.max(2, humans)} max={s.mapMaxPlayers} onCommit={(v) => store.updateSettings({ maxPlayers: v })} />
       </label>
       <label className="field inline">
         <span>봇</span>
-        <input type="number" min={0} max={s.maxPlayers - 1} value={s.botCount} onChange={(e) => store.updateSettings({ botCount: Number(e.target.value) })} />
+        <CommitNumber value={s.botCount} min={0} max={s.maxPlayers - 1} onCommit={(v) => store.updateSettings({ botCount: v })} />
       </label>
       <label className="field inline">
         <span>난이도</span>
@@ -153,6 +178,7 @@ function HostSettings({ store, room, humans }: { store: ClientStore; room: S2C_R
           <option value="HARD">어려움</option>
         </select>
       </label>
+      <p className="muted small">숫자는 입력 후 Enter 또는 다른 곳을 누르면 적용됩니다.</p>
     </div>
   );
 }

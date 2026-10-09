@@ -73,3 +73,25 @@ export function fmtClock(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/**
+ * 이모트 문구 (프로토콜 §4 emote: 코드 0..EMOTE_CODE_MAX(15) — 의미는 클라이언트 정의, 서버는 코드만 중계).
+ */
+export const EMOTE_TEXT = [
+  '안녕하세요',
+  '좋아요',
+  '고마워요',
+  '미안해요',
+  '동맹 어때요?',
+  '공격 멈춰요',
+  '도와주세요',
+  '여기!',
+  '조심하세요',
+  '잘했어요',
+  'ㅋㅋㅋ',
+  '아쉽다',
+  '잠깐만요',
+  '가자!',
+  '항복',
+  'GG',
+] as const;

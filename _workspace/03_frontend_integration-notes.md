@@ -71,10 +71,10 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 1. **flagCap 은 `playerDeltas` 수신 시 문서 §8 식으로 다시 계산**(delta 에 flagCap 이 없음). 테크는 `tech_purchased.newFlagCap`. full 과 불일치 0 확인.
 2. **troopCap(HUD) 은 §8 식을 클라이언트에서 계산**(서버 미전송). 표시 전용.
 3. **커서 예고의 "대상 n타일"은 front 근사**(원 안 · 앵커 소유자 · 내 땅 인접) — 서버 front 와 같은 정의지만 `targetOwnerId`·동맹 세부까지 재현하지 않음. 사거리 밖(>40)·물·동맹은 회색. 예고는 표시용이고 서버 거절을 대신하지 않는다 — 회색이어도 클릭하면 명령을 보내고, 서버 `cmd_ack` 거절을 토스트로 보여준다.
-4. **진척도 감소(되돌리기 대체) 시각 구분은 1차에 없음** — 대상 칸 채움·진척 바가 그대로 줄어든다(GDD 7.6 "후퇴는 플래시" → 2차).
-5. 공개 룸 대기실의 자동 시작 남은 시간은 서버가 주지 않으므로 "30초 후 자동 시작" 안내 문구만(카운트다운은 `countdownMs` 로 표시).
-6. 로비/대기실 중 소켓이 끊기면 서버가 즉시 퇴장시키므로(§3) 클라이언트도 룸 상태를 비운다. 인게임은 토큰 재접속으로 복구(새로고침 포함 — 확인함).
-7. `lobby_leave` 에는 서버 응답이 없어서 송신 즉시 로컬 룸 상태를 비운다.
+4. ~~진척도 감소 시각 구분 없음~~ → 2차에서 구현, QA 후속에서 판정 정정(같은 대상 칸에서 줄 때만 — `render/progressRule.ts`, §8).
+5. ~~자동 시작 남은 시간 없음~~ → 2차에서 서버 `room_state.autoStartMs` 추가로 해소.
+6. 로비/대기실 중 소켓이 끊기면 서버가 즉시 퇴장시키므로(§3) 클라이언트도 룸 상태를 비운다. 인게임 **플레이어**는 토큰 재접속으로 복구(새로고침 포함). **관전자는 새로고침하면 로비로 돌아간다**(관전 세션은 끊김 즉시 폐기 — 프로토콜 §3, 코드를 다시 입력).
+7. `lobby_leave` 에는 서버 응답이 없어서 송신 즉시 로컬 룸 상태를 비운다. 룸이 이미 정리됐으면 서버가 `NOT_IN_ROOM` 을 보내는데, 나가기 직후 5초 동안은 무시한다.
 
 ## 5. 검증
 
@@ -116,6 +116,32 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 - 브라우저: **패널이 숨겨져 스크린샷·rAF 불가** → 페이지에서 rAF 를 setTimeout 으로 대체하고 DOM·캔버스 픽셀로 확인(눈으로 본 것 아님). 썸네일 렌더, S + 얕은 물 40% 방 → 대기실 표시·예상 26분(서버와 동일) → 게임 캔버스·미니맵 렌더, HUD 골드 수입, 검병 발령(ETA 기록), Alt+클릭 출발 기지 → `accepted`, `flag_issued.originTileId == 수도`, 테크·외교 패널, 봇에 동맹 제안·피드, 색각 보조 픽셀 변화, 도움말 열기/Esc, 관전 따라가기 → 자유 카메라, 공개방 "28→25초 후 자동 시작", 모바일 375×812 narrow 레이아웃·가로 넘침 0·토큰 재접속. reconStats full 18회 불일치 0, JS 오류 0.
 
 ## 7. 남은 일
-- 2차 시각 요소(그라데이션·감소 플래시·패턴·LOD·배치)의 **스크린샷 확인**(통합 QA).
-- 모바일 명령(현재 보기 전용), 전투 무리 연결선, 다중 선택, 사거리 경계, 이모트.
-- 공식 맵 미리보기를 프로토콜로 받을지 결정, 공개 룸 "방장" 태그 정리.
+- 감소 플래시·방향 그라데이션 중간 상태·교전 링 등 **실제 장면 스크린샷 확인**(Phase 6 QA 에서도 장면을 못 만듦).
+- 모바일 명령(현재 보기 전용), 전투 무리 연결선, 다중 선택, 사거리 경계 표시.
+- 공개 룸 "방장" 태그 정리(서버 `isHost` 의미), 이벤트 피드가 800×500 에서 좌하단 맵을 덮는 배치 판단.
+
+## 8. Phase 6 통합 QA 후속 (04_qa_report_full.md §2)
+
+| ID | 처리 | 위치 |
+|---|---|---|
+| J-1 | HUD "나가기"(좁은 화면 포함). 진행 중 판의 생존자는 확인 대화상자("90초 뒤 봇이 대신 조종 · 다시 돌아올 수 없음"), 탈락자·관전자·종료 후는 바로 나감 → `lobby_leave` + **저장 토큰 삭제**(새로고침해도 그 판으로 안 돌아감, 다음 룸 입장 때 다시 저장) | `ui/GameScreen.tsx requestLeave/LeaveDialog`, `state/store.ts leaveRoom` |
+| J-2 | 서버: GAME_OVER 룸 개인 부트스트랩 뒤 `game_over` 재송신(§2·§5·§10-73). 클라이언트: `room.phase === 'GAME_OVER'` 이면 명령 금지, `game_over` 가 없어도 종료 오버레이(마지막 상태로 순위 표시, "결과를 받지 못해…" 문구) + "로비로" | `server/src/room/room.ts`, `input/controller.ts canCommand`, `GameOverOverlay` |
+| m-1 | 나가기 직후 5초 `NOT_IN_ROOM` 무시 | `store.ts` |
+| m-2 | 관전자 새로고침 → 로비: 문서화(§4-6, 프로토콜 §3·§10-76) | 문서 |
+| m-3 | 감소 판정 = 같은 `targetTileId` 에서 진척 하락만 (`isDecayTick`), 대상 바뀌면 표시값 즉시 리셋. `qa-decay-flash.ts` 가 이 함수를 그대로 쓰게 수정 | `render/progressRule.ts`, `render/renderer.ts` |
+| m-4 | 서버 `engageEtaTick` 추가(§10-74 — movement 도착 판정과 같은 조건으로 경로 위 추정). 클라이언트 ETA = `engageEtaTick`(없으면 `etaTick`), 문구 "교전 개시 예상". 실측 오차 평균 5.2 tick(기존 26.7) | `server/src/game/rules.ts engageEtaTicks`, `state/gameModel.ts` |
+| m-5 | 조사: 나 → "내가", 그 외 받침 판정(한글 종성·숫자 읽기, 영문은 "이(가)") | `state/feed.ts josa` |
+| m-6 | 내 제안 거절(토스트)·만료, 받은 제안 만료를 피드에 (제안 당사자는 적용 전 모델에서) | `state/feed.ts` |
+| m-7 | 썸네일 스폰 = 서버 `presetSpawnIndices` 규칙(spawnSets[N] → 앞 N). 방 만들기 패널은 시작 인원(방장 + 봇)으로 그림 | `render/mapPreview.ts previewSpawns`, `ui/Lobby.tsx` |
+| m-8 | 서버 `welcome.officialMaps[].checksum`(§10-75). 번들 파일 checksum 과 다르면 썸네일 숨김("서버 맵 버전이 다름")·생성 전 판 길이 추정 숨김 | `ui/officialMaps.ts loadOfficialMapChecked` |
+| m-9 | 방장 숫자 입력은 blur/Enter 에 범위 안 값만 송신, Esc·범위 밖은 서버 값으로 복귀 | `ui/WaitingRoom.tsx CommitNumber` |
+| m-10 | `BAD_ROOM_OPTIONS`/`NOT_ENOUGH_PLAYERS`/`MAP_NOT_FOUND` 토스트에 서버 `message` 를 붙임 | `store.ts` |
+| m-11 | 이 문서 §4-4·§4-5 갱신 | 문서 |
+| m-12 | **이모트 구현**(프로토콜 §4 `emote` 이미 정의): HUD "말풍선" 메뉴 16문구(코드 0..15 의미는 클라이언트 정의 — `ui/text.ts EMOTE_TEXT`), 수신 `emote_broadcast` → 수도 위 말풍선 4초 + 피드 | `ui/GameScreen.tsx EmoteMenu`, `render/renderer.ts drawEmotes` |
+
+
+### QA 후속 검증 (2026-10-09)
+- typecheck 통과, `npm test` **13 파일 / 161 통과**(+`client/test/qaFollowups.test.ts` 8, 서버 `rooms.test.ts` +1 J-2), smoke PASSED, build:client 성공, `qa:ws` 73/73(스키마 위반 0 — `engageEtaTick`·`checksum` 반영), `qa:headless 777 M 10 HARD` 스키마 위반 0·순서 위반 0·재구성 불일치 0·회계 0, `headless-check 75` full 14회 불일치 0.
+- `qa-e2e-full.ts`(1,925초): 예외 0, 전 store 재구성 불일치 0, ack 누락 0, 순서·종료 후 메시지 0. **ivan(GAME_OVER 후 관전) `gotGameOver:true`, `modelGameOver:true`**(J-2 해소). `NOT_IN_ROOM` 은 서버가 여전히 보내지만(관찰자 기록) 나가기 직후라 토스트로 뜨지 않음(carol2 토스트에 없음 — m-1). carol 새로고침 → 로비(m-2, 문서화된 동작).
+- `qa-decay-flash.ts`(렌더러 판정 함수 사용으로 수정): 4000 tick 오탐 0(이번 시드에서는 실제 같은 칸 감소도 0 — 판정 단위 테스트로 보완).
+- 브라우저(스크린샷 동작): 이모트 말풍선("testerqa: GG")·피드, HUD "나가기" → 확인 대화상자 → 나가기 → 로비·저장 토큰 삭제·토스트 없음 확인.

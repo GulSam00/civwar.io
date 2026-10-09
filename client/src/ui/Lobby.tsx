@@ -4,7 +4,7 @@ import type { ClientStore } from '../state/store.js';
 import { useStore } from './hooks.js';
 import { Help } from './Help.js';
 import { drawMapPreview } from '../render/mapPreview.js';
-import { loadOfficialMap } from './officialMaps.js';
+import { loadOfficialMapChecked } from './officialMaps.js';
 import { estimatePacing, landOfRandom, landOfTerrain, pacingText } from './pacing.js';
 
 type Panel = null | 'create' | 'join' | 'spectate';
@@ -108,25 +108,28 @@ type MapSel = { kind: 'random'; size: MapSizeClass } | { kind: 'preset'; mapId: 
 type WaterSel = { mode: 'BORDER_ONLY' } | { mode: 'SHALLOW_QUOTA'; pct: number };
 
 /** 공식 맵 미리보기 (지형·스폰·기지) — 데이터는 번들된 맵 파일 */
-export function MapThumb({ mapId, players }: { mapId: string; players: number }) {
+export function MapThumb({ mapId, players, checksum }: { mapId: string; players: number; checksum?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [missing, setMissing] = useState(false);
+  const [missing, setMissing] = useState<null | 'none' | 'mismatch'>(null);
   useEffect(() => {
     let alive = true;
-    void loadOfficialMap(mapId).then((m) => {
+    void loadOfficialMapChecked(mapId, checksum).then(({ map, mismatch }) => {
       if (!alive) return;
-      if (!m || !ref.current) return setMissing(true);
-      setMissing(false);
-      drawMapPreview(ref.current, m, players);
+      if (!map || !ref.current) {
+        if (ref.current) ref.current.getContext('2d')?.clearRect(0, 0, ref.current.width, ref.current.height);
+        return setMissing(mismatch ? 'mismatch' : 'none');
+      }
+      setMissing(null);
+      drawMapPreview(ref.current, map, players);
     });
     return () => {
       alive = false;
     };
-  }, [mapId, players]);
+  }, [mapId, players, checksum]);
   return (
     <div className="map-thumb">
       <canvas ref={ref} />
-      {missing && <span className="muted small">미리보기 없음</span>}
+      {missing && <span className="muted small">{missing === 'mismatch' ? '미리보기 없음 (서버 맵 버전이 다름)' : '미리보기 없음'}</span>}
     </div>
   );
 }
@@ -144,11 +147,12 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
   useEffect(() => {
     if (map.kind !== 'preset') return setPresetLand(null);
     let alive = true;
-    void loadOfficialMap(map.mapId).then((m) => alive && setPresetLand(m ? landOfTerrain(m.terrain, m.width, m.height) : null));
+    // 서버 checksum 과 다른 번들 파일이면 판 길이 추정도 하지 않는다 (방이 생기면 서버 pacingNote 사용)
+    void loadOfficialMapChecked(map.mapId, preset?.checksum).then(({ map: m }) => alive && setPresetLand(m ? landOfTerrain(m.terrain, m.width, m.height) : null));
     return () => {
       alive = false;
     };
-  }, [map]);
+  }, [map, preset?.checksum]);
 
   const mapMax = map.kind === 'random' ? MAP_SIZE_PRESETS[map.size].max : (preset?.players.max ?? 12);
   const rec = map.kind === 'random' ? MAP_SIZE_PRESETS[map.size].recommended : preset ? [preset.players.recommendedMin, preset.players.recommendedMax] : [2, 12];
@@ -203,7 +207,7 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
           )}
         </select>
       </label>
-      {map.kind === 'preset' && <MapThumb mapId={map.mapId} players={mp} />}
+      {map.kind === 'preset' && <MapThumb mapId={map.mapId} players={startPlayers} checksum={preset?.checksum} />}
       {map.kind === 'random' && (
         <div className="field">
           <span>물 구성</span>

@@ -9,7 +9,7 @@ import { GameInputController, Interaction } from '../input/controller.js';
 import { RangeCache, computePreview, type CursorPreview } from '../input/preview.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
-import { FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
+import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
 import { goldPerSecond } from './techInfo.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, TechPanel } from './panels.js';
 import { Help } from './Help.js';
@@ -111,6 +111,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
           originBase: ix.originBase,
           armed: ix.armedUnit !== null,
           colorblind: ix.colorblind,
+          emotes: store.emotes,
+          emoteText: (c) => EMOTE_TEXT[c] ?? `#${c}`,
           nicknameOf: (id) => store.nicknameOf(id),
         },
         now,
@@ -153,7 +155,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
       {ctl && !narrow && <DiplomacyPanel store={store} ctl={ctl} />}
       {ctl && !narrow && <IncomingProposals store={store} ctl={ctl} />}
       {ctl && <HelpLayer ctl={ctl} />}
-      {store.game?.gameOver && <GameOverOverlay store={store} game={store.game} />}
+      {store.game && (store.game.gameOver || store.room?.phase === 'GAME_OVER') && <GameOverOverlay store={store} game={store.game} />}
+      {ctl && <LeaveDialog store={store} ctl={ctl} />}
       {store.reconnecting && <div className="banner">연결이 끊겼습니다 — 다시 연결하는 중…</div>}
     </div>
   );
@@ -240,14 +243,95 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
           )}
           <HudBtn on={ctl.ix.colorblind} k="C" label="색각 보조" onClick={() => ctl.setColorblind(!ctl.ix.colorblind)} />
           <HudBtn on={ctl.ix.helpOpen} k="?" label="도움말" onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} />
+          {!spectating && <EmoteMenu store={store} />}
+          <button className="hud-btn leave-btn" onClick={() => requestLeave(store, ctl)}>
+            나가기
+          </button>
         </span>
       )}
       {narrow && (
-        <button className="btn btn-sm" onClick={() => ((ctl.ix.helpOpen = true), ctl.ix.bump())}>
-          ?
-        </button>
+        <span className="hud-buttons">
+          <button className="btn btn-sm" onClick={() => ((ctl.ix.helpOpen = true), ctl.ix.bump())}>
+            ?
+          </button>
+          <button className="btn btn-sm" onClick={() => requestLeave(store, ctl)}>
+            나가기
+          </button>
+        </span>
       )}
     </div>
+  );
+}
+
+/** 살아 있는 플레이어가 진행 중인 판을 떠날 때만 확인 — 탈락자·관전자·종료 후는 바로 나간다 (QA J-1) */
+function requestLeave(store: ClientStore, ctl: GameInputController): void {
+  const g = store.game;
+  const me = store.myPlayerId;
+  const aliveInGame = !!g && me !== null && store.room?.phase === 'IN_GAME' && !g.gameOver && (g.players.get(me)?.alive ?? false);
+  if (aliveInGame) {
+    ctl.ix.leaveConfirm = true;
+    ctl.ix.bump();
+  } else store.leaveRoom();
+}
+
+function LeaveDialog({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
+  usePolled(() => ctl.ix.version, 120);
+  if (!ctl.ix.leaveConfirm) return null;
+  const close = () => {
+    ctl.ix.leaveConfirm = false;
+    ctl.ix.bump();
+  };
+  return (
+    <div className="overlay" onClick={close}>
+      <div className="gameover-card leave-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h2>게임에서 나갈까요?</h2>
+        <p>
+          내 자리는 연결이 끊긴 상태로 남고, <b>90초 뒤 봇이 대신 조종</b>합니다. 나가면 이 판으로 <b>다시 돌아올 수 없습니다</b>.
+        </p>
+        <div className="actions">
+          <button className="btn" autoFocus onClick={close}>
+            계속하기
+          </button>
+          <button
+            className="btn btn-danger"
+            onClick={() => {
+              close();
+              store.leaveRoom();
+            }}
+          >
+            나가기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 이모트 (§4 emote) — 코드 0..15, 문구는 클라이언트 정의 */
+function EmoteMenu({ store }: { store: ClientStore }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="emote-wrap">
+      <button className={`hud-btn ${open ? 'on' : ''}`} onClick={() => setOpen(!open)}>
+        말풍선
+      </button>
+      {open && (
+        <div className="emote-menu">
+          {EMOTE_TEXT.map((t, code) => (
+            <button
+              key={code}
+              className="btn btn-sm"
+              onClick={() => {
+                store.sendEmote(code);
+                setOpen(false);
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -338,7 +422,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           {cd > 0 && <span className="muted"> (전환 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
         </div>
         <div className="muted">{status}</div>
-        {f.state === 'MARCHING' && eta !== undefined && <div>도착 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 <span className="muted small">(전투·대치 제외)</span></div>}
+        {f.state === 'MARCHING' && eta !== undefined && <div>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 <span className="muted small">(영토 변화·대치·전투 제외)</span></div>}
         {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div>진척도 {f.progressPct}%</div>}
       </div>
       {mine && (
@@ -357,10 +441,22 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
 }
 
 function GameOverOverlay({ store, game }: { store: ClientStore; game: GameModel }) {
-  const go = game.gameOver!;
+  usePolled(() => game.version, 300);
   const me = store.myPlayerId;
-  const won = go.winnerId !== null && go.winnerId === me;
   const [hidden, setHidden] = useState(false);
+  // QA J-2: 서버가 game_over 를 다시 보내기 전(구버전)이거나 못 받았으면 마지막 상태로 순위를 대신 보여준다
+  const go =
+    game.gameOver ?? {
+      type: 'game_over' as const,
+      finalTick: game.tick,
+      winnerId: null,
+      reason: 'timeout' as const,
+      standings: [...game.players.values()]
+        .sort((a, b) => Number(b.alive) - Number(a.alive) || b.tiles - a.tiles)
+        .map((p, i) => ({ rank: i + 1, playerId: p.id, tiles: p.tiles, troops: p.troops, goldEarned: 0, alive: p.alive })),
+    };
+  const partial = !game.gameOver;
+  const won = go.winnerId !== null && go.winnerId === me;
   if (hidden)
     return (
       <button className="btn btn-primary gameover-reopen" onClick={() => setHidden(false)}>
@@ -372,7 +468,7 @@ function GameOverOverlay({ store, game }: { store: ClientStore; game: GameModel 
       <div className="gameover-card">
         <h2>{won ? '승리!' : go.winnerId !== null ? `${store.nicknameOf(go.winnerId)} 승리` : '게임 종료'}</h2>
         <p className="muted">
-          {GAME_OVER_REASON[go.reason]} · {fmtClock(go.finalTick * game.config.tickMs)}
+          {partial ? '결과를 받지 못해 마지막 상태로 표시합니다' : GAME_OVER_REASON[go.reason]} · {fmtClock(go.finalTick * game.config.tickMs)}
         </p>
         <table className="standings">
           <thead>

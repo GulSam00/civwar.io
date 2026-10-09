@@ -9,10 +9,21 @@ const files = import.meta.glob('../../../server/maps/official/*.json');
 
 export interface OfficialMapFile extends MapPreviewData {
   id: string;
+  checksum: string;
   players: { min: number; recommendedMin: number; recommendedMax: number; max: number };
 }
 
 const cache = new Map<string, Promise<OfficialMapFile | null>>();
+
+/**
+ * 번들 파일을 돌려준다. serverChecksum(welcome.officialMaps[].checksum, QA m-8)이 주어졌는데 번들 파일과 다르면
+ * (서버가 다른 맵 세트·갱신된 파일로 배포됨) 옛 지형을 보여주지 않도록 null.
+ */
+export async function loadOfficialMapChecked(id: string, serverChecksum: string | undefined): Promise<{ map: OfficialMapFile | null; mismatch: boolean }> {
+  const map = await loadOfficialMap(id);
+  if (map && serverChecksum && map.checksum !== serverChecksum) return { map: null, mismatch: true };
+  return { map, mismatch: false };
+}
 
 export function loadOfficialMap(id: string): Promise<OfficialMapFile | null> {
   let p = cache.get(id);

@@ -9,6 +9,7 @@ import {
   ANY_HOSTILE,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENEMY_BASE,
+  FLAG_ENGAGE_RANGE,
   FLAG_SPEED_BASE_MILLI,
   FLAG_TILE_RATE_BASE,
   FRONT_RADIUS,
@@ -352,6 +353,26 @@ export function etaTicks(state: GameState, f: Readonly<Flag>, from: number, dest
     const nx = stepToward(state, f.ownerId, pos, dest);
     if (nx === pos) break;
     pos = nx;
+  }
+  return ticks;
+}
+
+/**
+ * 표시용 교전 개시 ETA (프론트 QA m-4, 필드 추가): from → dest 경로를 따라 걸으며 movement.ts 의 MARCHING 도착 판정
+ * (ATTACK = frontWithin(FLAG_ENGAGE_RANGE), DEFEND = defendArrived, 그 외 앵커 도달)이 처음 참이 되는 칸까지의 tick 수.
+ * 현재 owners 기준 추정 — 행군 중 영토 변화·ZOC·전투는 무시. 판정이 끝까지 안 서면 etaTicks 와 같다.
+ */
+export function engageEtaTicks(state: GameState, f: Readonly<Flag>, from: number, dest: number): number {
+  const probe = { ...f, posTileId: from } as Flag;
+  const arrived = () =>
+    probe.posTileId === dest ||
+    (probe.posture === POSTURE.ATTACK ? frontWithin(state, probe, FLAG_ENGAGE_RANGE) : defendArrived(state, probe));
+  let ticks = 0;
+  for (let guard = 0; !arrived() && guard < 4096; guard++) {
+    ticks += Math.ceil(1000 / speedMilliAt(state, f, probe.posTileId));
+    const nx = stepToward(state, f.ownerId, probe.posTileId, dest);
+    if (nx === probe.posTileId) break;
+    probe.posTileId = nx;
   }
   return ticks;
 }

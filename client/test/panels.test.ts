@@ -71,10 +71,10 @@ describe('깃발 ETA (표시 전용, 이벤트로만 유지)', () => {
     });
     m.apply({ type: 'map_init', terrain: [1, 4], spawns: [], bases: [] });
     m.apply({ type: 'snapshot_full', tick: 0, owners: [1, 1, 0, 3], players: [], flags: [], bases: [], alliances: [], allyProposals: [], allianceFreezeUntilTick: null, lockoutDissolveTick: null, thresholdPct: 60, ticksRemaining: 9600, endgameRushActive: false });
-    m.apply({ type: 'flag_issued', tick: 1, flagId: 1, playerId: 1, slotIndex: 0, unit: 1, posture: 0, troops: 50, originTileId: 0, anchorTileId: 3, targetOwnerId: 0, etaTick: 30 });
-    expect(m.flagEta.get(1)).toBe(30);
-    m.apply({ type: 'flag_retargeted', tick: 5, flagId: 1, anchorTileId: 2, targetOwnerId: 0, posture: 0, resumeTick: 20, etaTick: 44, auto: false });
-    expect(m.flagEta.get(1)).toBe(44);
+    m.apply({ type: 'flag_issued', tick: 1, flagId: 1, playerId: 1, slotIndex: 0, unit: 1, posture: 0, troops: 50, originTileId: 0, anchorTileId: 3, targetOwnerId: 0, etaTick: 30, engageEtaTick: 28 });
+    expect(m.flagEta.get(1)).toBe(28); // 교전 개시 추정(engageEtaTick) 우선
+    m.apply({ type: 'flag_retargeted', tick: 5, flagId: 1, anchorTileId: 2, targetOwnerId: 0, posture: 0, resumeTick: 20, etaTick: 44, engageEtaTick: 40, auto: false });
+    expect(m.flagEta.get(1)).toBe(40);
     m.apply({ type: 'flag_engaged', tick: 40, flagId: 1, posture: 0, frontTileCount: 2 });
     expect(m.flagEta.has(1)).toBe(false);
   });

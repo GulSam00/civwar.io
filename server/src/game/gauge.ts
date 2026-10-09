@@ -276,7 +276,7 @@ function neutralAutoSwitch(state: GameState, f: Flag, t: number, out: Outbox): b
   f.targetOwnerId = pick;
   f.targetTileId = null;
   f.progressMilli = 0;
-  out.broadcast.push({ type: 'flag_retargeted', tick: t, flagId: f.id, anchorTileId: f.anchorTileId, targetOwnerId: pick, posture: f.posture, resumeTick: t, etaTick: t, auto: true });
+  out.broadcast.push({ type: 'flag_retargeted', tick: t, flagId: f.id, anchorTileId: f.anchorTileId, targetOwnerId: pick, posture: f.posture, resumeTick: t, etaTick: t, engageEtaTick: t, auto: true });
   return true;
 }
 

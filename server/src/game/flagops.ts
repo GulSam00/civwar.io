@@ -24,7 +24,7 @@ import {
 } from '@civwar/shared';
 import { flagCap } from './economy.js';
 import type { Outbox } from './outbox.js';
-import { etaTicks, minDistFromTerritory, mobilityTier, recallTarget, stepToward } from './rules.js';
+import { engageEtaTicks, etaTicks, minDistFromTerritory, mobilityTier, recallTarget, stepToward } from './rules.js';
 import { isAlly, makeFlag, type Flag, type GameState } from './state.js';
 
 export type CmdResult = { reason: CmdRejectReason } | { flagId: number; posture: Posture };
@@ -169,6 +169,7 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
     anchorTileId: anchor,
     targetOwnerId,
     etaTick: t + etaTicks(state, f, origin, anchor),
+    engageEtaTick: t + engageEtaTicks(state, f, origin, anchor),
   });
   return { flagId: f.id, posture };
 }
@@ -227,6 +228,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
     posture: f.posture,
     resumeTick: f.lockUntilTick,
     etaTick: f.lockUntilTick + etaTicks(state, f, f.posTileId, anchor),
+    engageEtaTick: f.lockUntilTick + engageEtaTicks(state, f, f.posTileId, anchor),
     auto: false,
   });
   if (postureChanged) {

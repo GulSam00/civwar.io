@@ -51,6 +51,8 @@ export class Room {
   private countdownEndsAt: number | null = null;
   /** 공개 룸 자동 시작 예정 시각 (Date.now 기준). 비공개 룸은 null — room_state.autoStartMs (프론트 2차 추가) */
   private autoStartAt: number | null = null;
+  /** 프론트 QA J-2: 끝난 판의 game_over — GAME_OVER 룸에 늦게 붙은 세션(관전·재접속)의 개인 부트스트랩 뒤에 다시 보낸다 */
+  private lastGameOver: ServerMessage | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private loopStart = 0;
@@ -347,6 +349,8 @@ export class Room {
     session.send(buildMatchConfig(st));
     session.send(buildMapInit(st));
     session.send(buildSnapshotFull(st));
+    // J-2: 부트스트랩 순서 = room_state → match_config → map_init → snapshot_full → (GAME_OVER 룸이면) game_over
+    if (this.phase === 'GAME_OVER' && this.lastGameOver) session.send(this.lastGameOver);
   }
 
   private beginGame(): void {
@@ -384,6 +388,8 @@ export class Room {
     for (const m of this.members.values()) if (m.session) m.session.cmdCount = 0;
     const out = this.sim.step();
     this.deliver(out);
+    const go = out.broadcast.find((m) => m.type === 'game_over');
+    if (go) this.lastGameOver = go;
     const needRoomState = out.broadcast.some((m) => m.type === 'player_eliminated' || m.type === 'bot_takeover');
     if (this.sim.finished) {
       // QA m-9: 종료 뒤 큐에 남은 사람 명령에도 ack 1회 (NOT_IN_GAME)

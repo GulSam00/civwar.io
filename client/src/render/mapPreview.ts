@@ -13,6 +13,15 @@ export interface MapPreviewData {
   terrain: number[]; // RLE
   spawns: number[];
   bases: number[];
+  /** 프리셋 2.8 f: N 인 게임의 스폰 인덱스 부분집합 (없으면 spawns 앞 N 개) */
+  spawnSets?: Record<string, number[]>;
+}
+
+/** 서버 presetSpawnIndices 와 같은 규칙: spawnSets[N] → 없으면 0..N-1 (QA m-7) */
+export function previewSpawns(m: MapPreviewData, n: number): number[] {
+  const set = m.spawnSets?.[String(n)];
+  const idx = set ?? Array.from({ length: Math.min(n, m.spawns.length) }, (_, i) => i);
+  return idx.map((i) => m.spawns[i]).filter((t) => t !== undefined);
 }
 
 export function drawMapPreview(canvas: HTMLCanvasElement, m: MapPreviewData, spawnCount: number): void {
@@ -34,7 +43,8 @@ export function drawMapPreview(canvas: HTMLCanvasElement, m: MapPreviewData, spa
   const ox = (w - topo.worldWidth * k) / 2;
   const oy = (h - topo.worldHeight * k) / 2;
   layer.drawScaled(ctx, ox, oy, topo.worldWidth * k, topo.worldHeight * k);
-  const spawnSet = new Set(m.spawns.slice(0, spawnCount));
+  const used = previewSpawns(m, spawnCount);
+  const spawnSet = new Set(used);
   for (const b of m.bases) {
     if (spawnSet.has(b)) continue;
     const c = topo.tileCenter(b);
@@ -43,7 +53,7 @@ export function drawMapPreview(canvas: HTMLCanvasElement, m: MapPreviewData, spa
     ctx.fillRect(ox + c.x * k - 2.5, oy + c.y * k - 2.5, 5, 5);
     ctx.strokeRect(ox + c.x * k - 2.5, oy + c.y * k - 2.5, 5, 5);
   }
-  m.spawns.slice(0, spawnCount).forEach((s, i) => {
+  used.forEach((s, i) => {
     const c = topo.tileCenter(s);
     ctx.fillStyle = PLAYER_HEX[i + 1] ?? '#fff';
     ctx.strokeStyle = '#111';
