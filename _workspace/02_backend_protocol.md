@@ -29,7 +29,7 @@
 | 기지 체력 전투·함락 (4.12), 탈락 시 깃발·동맹 소멸 (4.14) | ✅ 2차 |
 | 동맹 (6.2): 제안·수락·상호 제안·파기·백스탭 쿨다운·cutoff·Lockout | ✅ 2차 |
 | 병력 회계 불변식 (4.8) — 서버 장부 `state.ledger` + 매 tick 테스트 | ✅ 2차 |
-| 봇 AI (8장) | ⛔ 3차-2 (아무것도 안 하는 `IdleBot`, 난이도 레버는 `decide(…, params)`로 전달됨) |
+| 봇 AI (8장 + 8.6/8.6.0 + v4.1 요격, 2.8 g 난이도) — `server/src/game/bot.ts` `CivBot`, 룸·로비 기본 두뇌 | ✅ 3차-2 (§11) |
 
 **`NOT_IMPLEMENTED` 거절은 2차에서 소멸했다**(타입에는 호환용으로 남김, 서버는 송신하지 않음).
 
@@ -85,6 +85,7 @@ civwar.io/
     game/gauge.ts         # 5·6·7(게이지·기지)·7c(v4.1 진척도 감소)·9(calmTicks)·10(종료 판정)
     game/alliance.ts      # 2차: 동맹 명령·3단계 외교 타이머·Lockout
     game/tick.ts          # 14단계 함수 + Simulation
+    game/bot.ts           # 3차-2: 봇 AI CivBot / decideBot (무상태·결정론, 일반 C2S_GameCommand 만 반환)
     game/snapshot.ts      # match_config / map_init / snapshot_full / DeltaTracker
   server/test/*.test.ts   # vitest
   server/scripts/smoke.ts # 실제 WS 스모크
@@ -92,6 +93,7 @@ civwar.io/
   server/scripts/mapstats.ts
   server/scripts/export-map.ts  # v4.1: 생성기 → 프리셋 JSON (공식 맵 후보 대량 생성)
   server/scripts/expand8.ts     # v4.1: 8인 5분 확장 체크 (탐욕 확장 봇)
+  server/scripts/selfplay.ts    # 3차-2: 봇 자가대전 (실시간 대기 없음) — 종료 시각·사유·1위 점유율·APM·거절률·tick ms
   server/maps/official/         # v4.1: 공식 프리셋 맵 (<id>.json). 지금은 비어 있음(.gitkeep)
   server/maps/candidates/       # export-map.ts 기본 출력 (gitignore)
   server/test/fixtures/maps/sample-m-01.json  # 로더 테스트용 예시 (export-map --size M --seed 20261009)
@@ -101,7 +103,7 @@ civwar.io/
 
 ```
 npm install
-npm test                 # vitest 전체 (7 파일 / 110 tests)
+npm test                 # vitest 전체 (8 파일 / 116 tests)
 npm run typecheck        # shared + server tsc --noEmit
 npm run start:server     # ws://localhost:8080  (PORT 환경변수로 변경)
 npm run dev:server       # tsx watch
@@ -119,6 +121,9 @@ npx tsx server/scripts/export-map.ts --size S --seed 1000 --count 50          # 
    출력 한 줄 요약: seed / 실제 사용 seed / 육지 / 기지 / 스폰 최소 간격 / 앞 2개 스폰 간격
 채택: 파일을 server/maps/official/<id>.json 으로 옮기고 파일 안 id 를 파일명과 같게(checksum 은 terrain+spawns+bases 만 덮으므로 id·name 수정 무방)
 npx tsx server/scripts/expand8.ts [seed] [default|S|M|L]                       # 8인 5분 확장 체크
+npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NORMAL | HARD1:NORMAL9 | NORMAL1:EASY9 ...]
+   # = npx tsx server/scripts/selfplay.ts ...  (난이도 혼합은 판마다 좌석 회전)
+   # 진단 전용: CIVWAR_BOT_RESERVE=<permille> CIVWAR_BOT_MINDEF=<permille> 로 난이도 레버 덮어쓰기, CIVWAR_SELFPLAY_LEDGER=1 매 tick 회계 검사
 ```
 
 ---
@@ -511,7 +516,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 8 기지 체력 회복 tileId ASC | `stage8_baseRegen` | ✅ |
 | 9 파생 상태 | `gauge.ts stage9_derived` | ✅ calmTicks — v4.1 `threatened`(A-43: inCombat ∨ 관할 원 안 칸을 `targetTileId`로 둔 적 ENGAGED 공격 깃발) 사용. `GARRISON_ESCALATE_MAX = 1` 이라 규칙 영향 없음 |
 | 10 깃발 종료 판정 | `gauge.ts stage10_flagEnd` | ✅ front/guard 소멸 → IDLE, 중립 자동 전환, 소진, IDLE 타임아웃 |
-| 11 봇 — **v4.1: 봇별 `t % bot.decisionInterval == 0`**(EASY 30 / NORMAL 15 / HARD 10), playerId ASC | `stage11_bots` | ✅ 호출 구조, `IdleBot` |
+| 11 봇 — **v4.1: 봇별 `t % bot.decisionInterval == 0`**(EASY 30 / NORMAL 15 / HARD 10), playerId ASC | `stage11_bots` | ✅ 3차-2 `CivBot` (`bot.ts`, §11) |
 | 12 탈락 | `stage12_elimination` | ✅ |
 | 13 승리 | `stage13_victory` | ✅ |
 | 14 브로드캐스트 | `stage14_broadcast` | ✅ |
@@ -538,6 +543,37 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ---
 
 ## 9. 테스트·스모크 결과
+
+### 3차-2 봇 (2026-10-09, GDD v4.1 8장)
+- `npm run typecheck` 통과. `npm test`: **8 파일 / 116 테스트 통과**. `npm run smoke`: `SMOKE PASSED` (룸 기본 두뇌가 이제 `CivBot` — 봇 자리가 실제로 발령·테크·동맹 응답을 한다).
+- 신규 `server/test/bot.test.ts` (6): ① 10인 NORMAL 5분 — **거절 명령 비율 < 2%**(실측 0), 매 tick `ledgerImbalance == 0`, 평균 타일 > 80 ② **결정론** — 혼합 난이도 900 tick 상태 해시 동일, `decideBot` 같은 입력 → 같은 명령 ③ 난이도 — 결정 주기 30/15/10 호출 tick, 예비 비율에 따른 발령 시점·크기 (EASY < HARD) ④ EASY 공격 깃발 전부 검병, NORMAL 은 기병 사용 ⑤ **요격** — 내 땅을 미는 적 공격 깃발에 거리 1 인 내 땅 칸으로 방어 깃발 (≥ 적 × 1.25 × v 비) → 실제 명령 경로에서 `accepted, posture DEFEND` ⑥ 외교 수락/거절, 먼저 제안 안 함.
+- 자가대전 (`selfplay.ts`, M 100×60, 10인, 전원 NORMAL, 시드 1000~1009, 실시간 대기 없음):
+
+| 시드 | 종료 | 사유 | 1위 점유율 % @5/10/15/20/25/30분/종료 |
+|---|---|---|---|
+| 1000 | 32.0분 | timeout | 4.8 / 9.4 / 14.6 / 18.2 / 23.1 / 30.5 / 35.9 |
+| 1001 | **31.3분** | **threshold** | 4.7 / 10.0 / 16.9 / 25.0 / 33.3 / 39.3 / 45.0 |
+| 1002 | 32.0 | timeout | 4.9 / 9.4 / 17.2 / 20.5 / 26.5 / 28.9 / 32.0 |
+| 1003 | 32.0 | timeout | 4.8 / 9.2 / 13.5 / 17.6 / 21.2 / 29.8 / 32.8 |
+| 1004 | 32.0 | timeout | 4.9 / 11.0 / 17.0 / 25.8 / 28.2 / 31.3 / 32.7 |
+| 1005 | 32.0 | timeout | 4.7 / 10.9 / 15.1 / 20.2 / 24.6 / 28.3 / 28.1 |
+| 1006 | 32.0 | timeout | 4.5 / 10.0 / 11.2 / 15.3 / 17.8 / 22.9 / 27.5 |
+| 1007 | 32.0 | timeout | 4.4 / 9.7 / 13.6 / 19.6 / 22.4 / 21.5 / 24.2 |
+| 1008 | 32.0 | timeout | 5.4 / 11.0 / 15.8 / 17.9 / 21.7 / 25.9 / 26.8 |
+| 1009 | 32.0 | timeout | 4.5 / 10.3 / 14.6 / 19.1 / 28.9 / 28.1 / 31.7 |
+| **요약** | **평균 31.9 / 최소 31.3 / 최대 32.0** | timeout 9, threshold 1 | 평균 4.8 / 10.1 / 14.9 / 19.9 / 24.8 / 28.7 / 31.7 |
+
+  봇 APM (수락 명령 / 분 / 봇) 평균 **7.8**, 거절률 0%. 진단 (레버 덮어쓰기 reserve 0·minDef 0, 같은 시드): 1위 점유율 평균 6.9 / 12.9 / 19.6 / 24.6 / 30.5 / 35.8 — 여전히 대부분 timeout (실행 조건에 따라 0~4/10 threshold, 최소 25.9분).
+- 난이도 대결 (각 10판, 좌석 회전, 승자 = threshold 승자 또는 timeout 시 1위):
+
+| 대결 | 강한 쪽 승률 | 최종 점유율 평균 (강 / 약) |
+|---|---|---|
+| HARD 1 vs NORMAL 9 | 30% (무차이 기대 10%) | 12.7% / 8.3% |
+| NORMAL 1 vs EASY 9 | 50% (기대 10%) | 21.9% / 6.5% |
+| HARD 1 vs EASY 9 | 70% | 29.0% / 6.0% |
+
+- 성능 (단독 실행, 결정 tick 이 겹치는 최악 포함): M 10인 tick 평균 **0.27~0.31 ms**, 최대 21.6 ms (거리장 신규 생성 tick), 봇 몫 평균 0.02 ms/tick·최대 6.4 ms/tick. **L 108×66 12인 전원 봇**: tick 평균 **0.41 ms**, 최대 21 ms, 봇 몫 평균 0.03 ms·최대 7.1 ms (12 봇이 같은 tick 에 결정). 목표 평균 < 5 ms 충족.
+- 버그 수정 (규칙 무관): `combat.ts trackCombatEvents` 가 여러 전투 기록을 합칠 때 `routed` 를 중복 누적 → 긴 다자 전투에서 배열 폭증·`Maximum call stack size exceeded` (자가대전에서 발견). 합집합으로 수정. `combat_ended.routedFlagIds` 에 중복이 더는 없다 (shape 불변).
 
 ### 3차-1 (2026-10-09, GDD v4.1)
 - `npm run typecheck` 통과. `npm test`: **7 파일 / 110 테스트 통과**.
@@ -627,16 +663,53 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 44. **봇 난이도 저장 위치**: `PlayerState.botDifficulty` + `PlayerState.bot`(`BOT_DIFFICULTY[난이도]`) — 사람 자리에도 방 난이도를 넣어 `bot_takeover` 가 그대로 쓴다(2.8 g). `BotBrain.decide(state, playerId, t, params)` 4번째 인자로 전달. 값은 permille 정수(`reserveRatioPermille 450/300/200`, `minDefenseRatioPermille 100/250/300`), `fixedUnit` = EASY `1`(SWORD) / 그 외 `null`.
 45. `MIN_PLAYERS` 상수 8 → 2 (`ROOM_MAX_PLAYERS_RANGE[0]`). `MAP_SIZE`(8~12인 표)는 "인원별 기본 크기"로 남겨 테스트·스크립트만 쓴다.
 
+### 3차-2 (봇, GDD 8장)에서 정한 것
+
+46. **방어 = v4.1 요격만**: 8.1 위협 (`threatMilli` = 내 땅을 타깃으로 민 적 ENGAGED 공격 깃발의 `progressMilli + min(floor(initial×15/tileCost), maxProgress) × 25`, + 최근 25 tick 피해 기지) 으로 hotspot 을 고르고, 8.2(1) 의 "h 에 창병 발령" 대신 **위협 깃발에 거리 1 (없으면 2) 인 내 땅 칸**을 앵커로 방어 발령 (8.6 요격). 필요 병력 `ceil(적 병력 × 1.25 × v적 / v내)`, 발령 병력 = max(필요, 풀 × 40%). 병종: 출발지→앵커 거리 > 12 이고 감당되면 기병 (8.6 "가장 빠른 병종"), 아니면 창병 (8.2 "방어는 창병"). EASY 는 창병만. 결정당 방어 행동 1회.
+47. **기존 주둔 깃발 재지정 우선** (8.6 표 "또는 기존 주둔 깃발 재지정"): 거리 ≤ 12 에 충분히 강한 비전투 방어 깃발이 있으면 새로 내지 않고 그 깃발을 요격 칸으로 옮긴다. 새 요격 발령은 방어 깃발 수 < 상한 (51) 일 때만, 아니면 8.2 선점 (threat ≥ 3000 × 1.6) — 선점 대상은 **ENGAGED 공격 깃발 중 front 최소** (행군 중 깃발은 front 가 없어 제외).
+48. hotspot "같은 구간 중복 방지" = 거리 ≤ 6 에 그 위협 깃발 실효력 이상인 내 방어 깃발이 있을 때만 "덮였다" 로 본다.
+49. **kEst = 실효 전투력 비**: 깃발 실효력 = 병력 × `flagValue` (4.15 d — 편 손실이 1/v 비례이므로 버티는 시간 ∝ 병력×v). 반격 (×1.2)·차단 당하기 (×0.5)·후퇴 (×0.8)·요격 (×1.25)·회피 (×0.9) 모두 이 값으로 비교.
+50. **후퇴** 잔여 추정: 이탈 15 tick × (L = S×1.5%/n) × 내 몫 (v×0.5 역수 배분). 잔여 ≥ 120 일 때만 회수.
+51. **방어 깃발 상한 = max(최소 방어선, floor(슬롯 × 0.5))** — GDD 에 없음. 8.6.0 굳히기 (정체·병력 < 40% → DEFEND) 는 앵커 거리 ≤ 7 에 적 플레이어 땅이 있고 상한 미만일 때만, 아니면 8.2 정체 규칙 (점수 ×1.3 이상 앵커로 갈아타기, 없으면 회수). 상한 없이 돌리면 슬롯의 60% 가 영구 주둔으로 묶여 공격이 멈췄다.
+52. **최소 방어선** (8.2 3) "인접 적 수 최대 국경 구간" = 적 플레이어 땅과 맞닿은 내 칸 중 거리 ≤ 2 적 칸 수 최대 (동률 tileId 최소), 기존 방어 관할 원 밖. 병력 = 풀 × 40%, 상한 풀 − 예비.
+53. **주둔 해제**: `engagedSinceTick` 이 없어 `calmTicks` (주둔 ∧ 비위협 연속 tick) ≥ 900 으로 판정. 제자리 반격 (위협 0, 병력 ≥ 70%, 쿨타임 없음) 은 front (ANY_HOSTILE) 가 있고 반격 후에도 최소 방어선이 유지될 때만.
+54. **앵커 중복 방지**: 같은 소유자를 노리는 내 공격 앵커 (계획 포함) 와 거리 ≤ 6 인 국경 칸은 후보에서 뺀다 (GDD 식은 같은 소유자 두 깃발이 같은 앵커를 고름). `tileCost` 비교는 검병 기준. 재지정 점수의 `march` 는 기지가 아닌 **깃발 현재 위치**에서 잰다 (발령은 originFor = 최근접 기지).
+55. **경로 위험 (8.6) 은 근사**: 거리장 경로를 만들지 않고 앵커 거리 ≤ 2 의 적 깃발 실효력 합 × 0.9 와 비교. **상륙 후보** (기동 T2+): 내 해안에서 얕은 물만 12칸 BFS 로 닿는, 내 땅과 비인접·적 깃발 거리 > 2 인 육지 — 점수 ×0.8. **차단 쓰기**: 내 땅을 노리는 적 행군 깃발과 그 앵커 사이 맨해튼 최단 경로 위 (깃발에서 2~6칸) 내 언덕·산 칸, 빈 슬롯 ≥ 2, 창병 = max(40, 요격 필요 병력). 결정당 1회.
+56. **추격**: 기병 공격 깃발 거리 ≤ 6 에 이탈 대기 적 깃발이 있고 그 칸이 적·중립 육지면 그 칸으로 재지정.
+57. **공격 깃발 최소 병력 = 3 × FLAG_MIN_TROOPS** (cap − 예비가 작은 소국은 2× 까지): GDD 식 `clamp(풀×45%, 40, …)` 은 40 근처 깃발을 반복 발령 → 몇 AP 쓰고 소진 (잔여 전액 소멸) → 소국이 영원히 못 자라는 함정이 있었다 (실측 10분에 소진 802회).
+58. **소진 직전 회수**: ENGAGED 공격 깃발 병력 < 40 + 쌓인 예산 + 누적률 × 2 tick 이고, 그 경계 × 15% < 20 (회수 손실이 소진 손실 상한의 절반 미만) 일 때만 회수. 큰 깃발은 그냥 소진시키는 편이 손실·슬롯 점유가 적다 (측정).
+59. **슬롯 재활용**: 슬롯이 꽉 찼고 새 깃발 예상 병력 (풀 × 35%, 풀 − 예비 이내) ≥ 2 × 최소 공격 병력이면, 병력 × 4 ≤ 그 값인 가장 약한 비전투 깃발 (공격, 또는 위협 없는 방어) 1개를 회수.
+60. **테크**: `botIndex = playerId − 1`. 수비형 `[군사T1, 기동T2, …]` 처럼 선행 단계가 빠진 항목은 선행부터 산다 (TECH_ORDER 거절 방지). 결정당 1개, 못 사면 기다린다 (건너뛰지 않음). 목록 6개 소진 후엔 (단계, 축) 오름차순.
+61. **외교**: 8.5 그대로 — 제안 수신 시 제안자 타일 ≥ 내 타일 × 1.2 ∧ 내 동맹 < 2 → 수락, 아니면 거절. 먼저 제안 안 함. 파기 = 내 타일 ≥ 동맹 × 2 ∧ t > 7500 ∧ 최소 유지 경과.
+62. **기지 위협 가중** `(BASE_HP_MAX_MILLI − hp) × 3` — GDD 식의 `/1000` 은 hpMilli 단위와 맞지 않아 (최대 45, 트리거 3000 대비 무의미) 뺐다.
+63. **명령 적용 시점 보정**: 봇 명령은 다음 tick 1단계에 적용되므로 경직 (`lockUntilTick`)·태세 쿨타임을 `t+1` 기준으로 본다. `clientSeq = t × 64 + 순번` (무상태·결정론). 한 결정에서 같은 깃발에 명령 2개를 내지 않는다.
+64. **룸·로비 기본 두뇌 `IdleBot` → `CivBot`**. `IdleBot` 은 테스트용으로 남김.
+
 ---
 
-## 11. 3차(봇) 인계
+## 11. 봇 (3차-2 완료 — 중간 보고)
 
-- 봇은 `BotBrain.decide(state, playerId, t, params)`에서 **일반 `C2S_GameCommand`** 를 돌려주면 된다(다음 tick 1단계, 인간과 같은 검증). `params` = 그 봇의 난이도 레버(`decisionInterval`·`reserveRatioPermille`·`minDefenseRatioPermille`·`fixedUnit`) — 결정 주기 필터는 `stage11_bots`가 이미 한다. 읽기 전용 헬퍼: `rules.ts`(`frontFirst`, `frontCount`, `tileCost`, `guardContains`, `guardCount`, `threatened`, `availAP`, `minDistFromTerritory`, `recallTarget`), `gauge.ts`(`holdProgress`), `combat.ts`(`flagValue`, `combatEligible`, `hostile`), `economy.ts`(`flagCap`, `techCost`), `state.isAlly`. ~~`defRefCost`~~ 삭제.
-- **v4.1 8.6.0**: "되돌리기 유지" 분기는 만들 필요 없음 — 위협 시 항상 요격(인접 배치). 전역 `BOT_DECISION_INTERVAL`/`BOT_RESERVE_RATIO_PERMILLE`/`BOT_MIN_DEFENSE_RATIO_PERMILLE` 은 삭제됐으니 `params` 를 쓸 것. 나머지 `BOT_*` 상수는 전역 그대로.
-- 테스트 시나리오 참고: `server/scripts/expand8.ts` 의 `Greedy` 가 `BotBrain` 구현 예.
-- 8.6.0 규칙(태세·차단·후퇴)이 필요로 하는 상태는 전부 깃발 필드에 있다: `inCombat`, `blocked`, `disengageUntilTick`, `breakaway`, `routed`, `postureCooldownUntilTick`, `stalled`.
-- 주의: `etaTicks`/`stepToward`/`getField`는 거리장 캐시(`state.fields`)를 채운다(결과 불변·결정론 무관). 봇에서 써도 되지만 Phase A 코드에선 쓰지 말 것.
-- 공격 깃발은 앵커 점령 후에도 front(앵커 반경 6) 가 빌 때까지 계속 민다(§10-19) — 앵커 깊이 제약 없음.
+**구현 위치**: `server/src/game/bot.ts` — `CivBot: BotBrain`, `decideBot(state, playerId, t, params)`. 룸 (`room.ts`)·로비 (`lobby.ts`) 기본 두뇌. 무상태 (봇 메모리 없음 → 여러 룸 공유 가능)·결정론 (Math.random·부동소수 누적 없음, 순회 ASC). 일반 `C2S_GameCommand` 만 반환 → 다음 tick 1단계에서 사람과 같은 검증. 거리장 (`getField`/`stepToward`/`etaTicks`) 미사용.
+
+**결정 순서** (봇별 `t % params.decisionInterval == 0`, playerId ASC — 11단계):
+1. 외교 응답·파기 (8.5)
+2. 테크 1개 (8.5 빌드 4종, botIndex % 4)
+3. 방어 (8.1 위협 → v4.1 요격: 주둔 재지정 > 새 요격 발령 > 공격 깃발 선점) — 결정당 1회 (§10-46~48)
+4. 깃발 정비 flagId ASC (8.2 2 + 8.6.0): 후퇴 → 기병 추격 → 차단 당하기 (약하면 ATTACK, 아니면 우회/회수) → IDLE 재지정/회수 → 공격 깃발 (제자리 반격 복귀·소진 직전 회수·굳히기/정체·front < 2 재지정) → 방어 깃발 (주둔 반격 재지정·3분 무위협 회수·제자리 반격)
+5. 차단 쓰기 (8.6.0 2) — 결정당 1회
+6. 슬롯 재활용 (§10-59)
+7. 빈 슬롯 채우기 (8.2 3): 최소 방어선 → bestAnchor (8.3, 중립 ×1.6 bias, 상륙 ×0.8, 회피) → chooseUnit (8.4, EASY = 검 고정) → 병력 clamp
+
+**난이도 레버 (2.8 g, 로직 동일)**: `decisionInterval` 30/15/10, `reserveRatioPermille` 450/300/200, `minDefenseRatioPermille` 100/250/300, `fixedUnit` SWORD/null/null.
+
+**테스트·측정**: §9 "3차-2". **프로토콜 변경 없음** (메시지·필드 동일). 프론트 영향: 봇 자리가 이제 실제로 깃발·테크·동맹 응답 이벤트를 만든다 — 기존 이벤트 처리 그대로.
+
+**페이싱 관찰 (상수 불변, 원인 분석)** — 자가대전 10판 중 9판이 32분 하드 타임아웃, 1위 점유율 30분 평균 28.7% (GDD: 29.4분에 임계 45% 도달 기대):
+1. **로지스틱 이용률**: 5.2 모델은 `u = 0.7` (풀/상한 평균 0.30) 을 가정하지만 봇 예비 `BOT_RESERVE_RATIO = 0.30` 자체가 풀의 하한이라 평균 풀/상한은 실측 **0.43~0.49**. 재생이 모델보다 20~25% 적다. reserve 를 0 으로 덮어쓰면 5분 1위 점유율 4.8 → 6.9%.
+2. **슬롯 병목**: 중반 (15~20분) 결정 시점의 약 73% 가 "슬롯 꽉 참 + 풀 여유" 상태. 슬롯 시간의 약 40% 가 방어 주둔 (최소 방어선 25% 가 슬롯 4~5개에서 올림으로 1~2개), 공격 깃발은 행군 23%·귀환 13%·실제 교전 7%. 5.1 의 "깃발 메커니즘은 병목이 아니다 (처리량 3.4배)" 가 봇 실측에선 성립하지 않는다 — 행군 거리 (기지 커버율) 와 주둔 점유가 모델보다 크다. 중반 풀이 2,000~4,600 까지 쌓여 재생이 0 에 가깝다.
+3. **효율 손실**: 장부 기준 노출 소모 ~10%, 깃발 전투 ~17%, 변환 (기병 1.15) 4~12%, 회수 3% — 5.1 의 1단계 효율 0.734 보다 낮다.
+4. **대칭 봇은 스노볼이 약하다**: 1위가 45% 에 닿으려면 다른 봇의 붕괴가 필요하나 NORMAL 끼리는 균형. 레버 진단 (reserve 0·minDef 0) 에서도 30분 1위 평균 35.8%.
+5. **난이도**: 중반이 슬롯 병목이라 reserve 레버가 거의 안 먹고, minDef 25%/30% 는 슬롯 4~5개에서 같은 개수로 올림 → **HARD ≈ NORMAL** (HARD 1 vs NORMAL 9 승률 30%). B-19 목표 (사람 승률 HARD ≤ 15%) 를 4 레버만으로 만들기 어렵다.
 
 ## 12. 2차 프로토콜 변경 요약 (프론트 영향)
 
@@ -659,6 +732,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 4. 3.2 cap 클램프가 회수 환급을 자를 수 있음(§10-23).
 5. 동맹 거절 코드·이벤트 페이로드 미정의(§10-28), `isAlly` vs `isAllyOrBreaking` 혼용(§10-16), `LOCKED` 용도 미정의(§10-17).
 6. 1차 §10-5 (본문 구값 37/42분) 미해결 유지.
+7. **(봇, 3차-2)** 8.1 기지 위협 식 `/1000` 단위 오류 (§10-62). 8.2 "방어는 항상 창병" vs 8.6 요격 "가장 빠른 병종 (기병 우선)" 충돌 (§10-46). 8.2 정체 (갈아타기/회수) vs 8.6.0 굳히기 (→ DEFEND) 충돌 — 8.6.0 우선 + 방어 상한 (§10-51). `engagedSinceTick` 미정의 (§10-53). 같은 소유자 다중 깃발이 같은 앵커를 고르는 문제 (§10-54). 수비형 빌드의 `기동T2` 선행 누락 (§10-60). 공격 깃발 하한 40 의 소진 함정 (§10-57). 8.6.0 차단 쓰기의 "적 재배치 경로" 정의 없음 (§10-55 근사).
+8. **(봇 페이싱)** 5.2 `u = 0.7` 가정과 `BOT_RESERVE_RATIO 0.30` 의 모순, 5.1 "깃발 메커니즘 비병목" 가정이 봇 실측과 다름, 2.8 g 레버만으로 HARD/NORMAL 차등이 작음 — §11 페이싱 관찰. **자가대전 9/10 판 하드 타임아웃**. 게임 상수는 바꾸지 않았다 (game-designer 판단 필요).
 
 ## 14. 3차-1 프로토콜 변경 요약 (GDD v4.1 — 프론트 영향, **제거 포함**)
 
@@ -671,3 +746,11 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `error.code` 추가 | `BAD_ROOM_OPTIONS`, `MAP_NOT_FOUND`, `NOT_ENOUGH_PLAYERS` |
 | 상수 추가 | `PROGRESS_DECAY_MILLI_PER_TICK`, `PROGRESS_HOLD_RANGE`, `MAP_SIZE_PRESETS`, `BOT_DIFFICULTY`, `BOT_DIFFICULTY_DEFAULT`, `ROOM_MAX_PLAYERS_RANGE`, `PUBLIC_ROOM_PLAYERS`, `PUBLIC_ROOM_SIZE` |
 | 불변 | 깃발 명령·전투·동맹 메시지, `snapshot_full`/`snapshot_delta` shape, `map_init` shape(격자 크기만 프리셋 따라 72×42 / 100×60 / 108×66 / 파일) |
+
+## 15. 3차-2 변경 요약 (프론트 영향)
+
+| 구분 | 내용 |
+|---|---|
+| 메시지·필드 | **변경 없음** |
+| 동작 | 봇 자리 (처음부터 봇 + `bot_takeover`) 가 실제로 명령을 낸다 — `flag_issued`/`flag_retargeted`/`flag_recalled`/`flag_posture_changed`/`tech_purchased`/`ally_proposal_closed` (봇 거절)/`ally_formed` (봇 수락)/`ally_break_started` 가 봇 발로도 나온다 |
+| 수정 | `combat_ended.routedFlagIds` 중복 제거 (원래 의미대로) |

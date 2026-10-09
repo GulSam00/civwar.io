@@ -23,7 +23,8 @@ import { applyRoomOptions, mapLimits, plannedPlayers, settingsEcho, type RoomSet
 import type { Outbox } from '../game/outbox.js';
 import { buildMapInit, buildMatchConfig, buildSnapshotFull } from '../game/snapshot.js';
 import { createGameState } from '../game/state.js';
-import { IdleBot, Simulation, type BotBrain } from '../game/tick.js';
+import { CivBot } from '../game/bot.js';
+import { Simulation, type BotBrain } from '../game/tick.js';
 import type { Session } from './session.js';
 
 export interface Member {
@@ -61,7 +62,7 @@ export class Room {
     public settings: RoomSettings,
     private readonly catalog: MapCatalog,
     private readonly hooks: RoomHooks,
-    private readonly brain: BotBrain = IdleBot,
+    private readonly brain: BotBrain = CivBot,
   ) {
     if (isPublic) this.later(PUBLIC_LOBBY_AUTOSTART_MS, () => this.phase === 'LOBBY' && this.startCountdown());
   }

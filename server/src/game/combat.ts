@@ -278,10 +278,13 @@ function trackCombatEvents(state: GameState, plan: FlagCombatPlan, routedNow: nu
     const matched = state.combats.filter((r) => g.flagIds.some((id) => r.flagIds.has(id)));
     for (const r of matched) seen.add(r);
     const rec = { key: g.key, flagIds: new Set<number>(), routed: [] as number[] };
+    // 3차-2 수정: 여러 기록이 합쳐질 때 routed 를 중복 없이 합친다 (중복 누적 → 배열 폭증 → spread 스택 초과)
+    const routedUnion = new Set<number>();
     for (const r of matched) {
       for (const id of r.flagIds) rec.flagIds.add(id);
-      rec.routed.push(...r.routed);
+      for (const id of r.routed) routedUnion.add(id);
     }
+    rec.routed.push(...routedUnion);
     const joined = matched.length === 0 || g.flagIds.some((id) => !rec.flagIds.has(id));
     for (const id of g.flagIds) rec.flagIds.add(id);
     if (joined) {
@@ -293,7 +296,7 @@ function trackCombatEvents(state: GameState, plan: FlagCombatPlan, routedNow: nu
         sides: g.sides.map((s) => ({ sideKey: s.key, ownerIds: s.ownerIds.slice(), troops: Math.floor(s.troopsMilli / 1000), power: s.power })),
       });
     }
-    for (const id of g.flagIds) if (routedSet.has(id)) rec.routed.push(id);
+    for (const id of g.flagIds) if (routedSet.has(id) && !routedUnion.has(id)) rec.routed.push(id);
     const survivorSides = new Set<number>();
     for (const id of g.flagIds) if (alive.has(id) && !routedSet.has(id) && !brokeAway.has(id)) survivorSides.add(plan.sideOf.get(id)!);
     if (survivorSides.size <= 1) {

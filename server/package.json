@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "selfplay": "tsx scripts/selfplay.ts"
   },
   "dependencies": {
     "@civwar/shared": "*",

@@ -3,7 +3,8 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { ROOM_CODE_LENGTH, type ErrorCode } from '@civwar/shared';
-import { IdleBot, type BotBrain } from '../game/tick.js';
+import { CivBot } from '../game/bot.js';
+import type { BotBrain } from '../game/tick.js';
 import { MapCatalog } from '../map/presets.js';
 import { Room } from './room.js';
 import { Session } from './session.js';
@@ -80,7 +81,7 @@ export class LobbyManager {
         },
         nextSeed: () => this.nextSeed(),
       },
-      this.opts.brain ?? IdleBot,
+      this.opts.brain ?? CivBot,
     );
     this.rooms.set(id, room);
     this.roomsByCode.set(room.code, room);
