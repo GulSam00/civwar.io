@@ -17,6 +17,8 @@ export class Session {
   spectator = false;
   cmdCount = 0; // 현재 tick 에 받은 cmd 수 (rate limit)
   lastEmoteAt = 0;
+  /** 방 찾기 목록 요청 rate limit (1초 1회) */
+  lastListAt = 0;
 
   constructor(
     readonly id: string,

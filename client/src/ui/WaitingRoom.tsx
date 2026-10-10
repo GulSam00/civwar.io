@@ -52,7 +52,7 @@ export function WaitingRoom({ store, room }: { store: ClientStore; room: S2C_Roo
           <div className="countdown">{Math.ceil(countdown / 1000)}초 후 시작</div>
         ) : room.isPublic && autoStart !== null ? (
           <div className="autostart">
-            <b>{Math.ceil(autoStart / 1000)}초</b> 후 자동 시작 <span className="muted">— {PUBLIC_ROOM_PLAYERS}명이 모이면 바로, 빈자리는 봇으로 채웁니다</span>
+            <b>{Math.ceil(autoStart / 1000)}초</b> 후 자동 시작 <span className="muted">— {PUBLIC_ROOM_PLAYERS}명이 모이면 바로, 빈자리는 봇으로 채웁니다{store.isHost ? ' · 방장은 지금 바로 시작할 수 있습니다' : ''}</span>
             <div className="autostart-bar">
               <div style={{ width: `${(100 * autoStart) / PUBLIC_LOBBY_AUTOSTART_MS}%` }} />
             </div>
@@ -103,7 +103,7 @@ export function WaitingRoom({ store, room }: { store: ClientStore; room: S2C_Roo
             </dl>
             {s.map.kind === 'preset' && <MapThumb mapId={s.map.mapId} players={s.expectedPlayers} checksum={store.officialMaps.find((x) => x.id === (s.map as { mapId: string }).mapId)?.checksum} />}
             {(outOfRec || pacing) && <p className={outOfRec || s.pacingNote === 'timeout_likely' ? 'warn' : 'muted small'}>{outOfRec ? `추천 인원(${rec[0]}~${rec[1]})을 벗어났습니다. ` : ''}{pacing}</p>}
-            {store.isHost && room.phase === 'LOBBY' && <HostSettings store={store} room={room} humans={humans} />}
+            {store.isHost && !room.isPublic && room.phase === 'LOBBY' && <HostSettings store={store} room={room} humans={humans} />}
           </div>
         </div>
         <div className="actions">

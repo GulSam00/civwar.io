@@ -28,6 +28,8 @@ export interface RenderView {
   armed: boolean;
   /** 색각 보조: 영토 패턴 + 깃발 플레이어 번호 */
   colorblind: boolean;
+  /** 모든 깃발의 이동 방향 화살표 (V 로 끄고 켬) */
+  showDirections: boolean;
   /** 최근 이모트 (수도 위 말풍선) */
   emotes: readonly { playerId: number; code: number; at: number }[];
   emoteText(code: number): string;
@@ -459,6 +461,7 @@ export class GameRenderer {
       ctx.stroke();
       ctx.restore();
     }
+    if (view.showDirections) this.drawDirections(ctx, model, topo, view, lod, baseR);
     const order = [...model.flags.values()].sort((a, b) => rank(a, view) - rank(b, view) || a.id - b.id);
     for (const f of order) {
       const w = this.flagWorld.get(f.id)!;
@@ -470,6 +473,66 @@ export class GameRenderer {
       screens.push({ id: f.id, x: p.x, y: p.y, r });
     }
     this.flagScreens = screens;
+  }
+
+  /**
+   * 이동 방향 (플레이테스트 후속): 모든 깃발(적 포함)에 짧은 화살표 — 행군 = 앵커 쪽, 귀환 = 귀환지 쪽(flag_recalled/routed.returnTileId),
+   * 공격 교전 = 대상 칸 쪽. 소유자 어두운 색 + 흰 외곽(배경·색각 보조와 무관하게 모양으로 읽힘). LOD 에선 더 짧고 옅게.
+   * 프로토콜에 이미 있는 값만 쓴다 (anchorTileId / targetTileId / returnTileId).
+   */
+  private drawDirections(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView, lod: boolean, r: number): void {
+    const cam = this.camera;
+    ctx.save();
+    for (const f of model.flags.values()) {
+      let dest: number | null = null;
+      if (f.state === 'MARCHING') dest = f.anchorTileId;
+      else if (f.state === 'RETURNING') dest = model.flagReturn.get(f.id) ?? null;
+      else if (f.state === 'ENGAGED' && f.posture === POSTURE.ATTACK) dest = f.targetTileId;
+      if (dest === null) continue;
+      const w = this.flagWorld.get(f.id);
+      if (!w) continue;
+      const p = worldToScreen(cam, w.x, w.y);
+      if (p.x < -60 || p.y < -60 || p.x > cam.viewW + 60 || p.y > cam.viewH + 60) continue;
+      const dc = topo.tileCenter(dest);
+      const q = worldToScreen(cam, dc.x, dc.y);
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      const start = r * 1.25 + 3;
+      if (dist < 2) continue;
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const mine = f.ownerId === view.me;
+      // 목적지가 바로 옆(교전 대상 칸 등)이어도 방향은 보이게 최소 길이를 둔다
+      const len = Math.max(lod && !mine ? 6 : 9, Math.min(dist - start, lod && !mine ? 14 : 30));
+      const x0 = p.x + ux * start;
+      const y0 = p.y + uy * start;
+      const x1 = x0 + ux * len;
+      const y1 = y0 + uy * len;
+      const head = lod && !mine ? 4 : 6;
+      const path = () => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - ux * head - uy * head * 0.7, y1 - uy * head + ux * head * 0.7);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - ux * head + uy * head * 0.7, y1 - uy * head - ux * head * 0.7);
+      };
+      ctx.globalAlpha = f.routed ? 0.35 : lod && !mine ? 0.45 : 0.75;
+      ctx.lineCap = 'round';
+      path();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      path();
+      ctx.strokeStyle = f.routed ? '#666' : playerDark(f.ownerId);
+      ctx.lineWidth = 1.8;
+      if (f.state === 'RETURNING') ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
   }
 
   private drawFlag(ctx: CanvasRenderingContext2D, model: GameModel, f: FlagSnapshot, x: number, y: number, r: number, view: RenderView, now: number, detail: boolean): void {

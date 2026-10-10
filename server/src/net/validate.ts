@@ -54,6 +54,12 @@ export function parseClientMessage(raw: string): ParseResult {
       if (type === 'lobby_create_private' && m.targetPlayers !== undefined) pick.targetPlayers = m.targetPlayers;
       return { ok: true, msg: pick as unknown as ClientMessage };
     }
+    case 'lobby_list_rooms':
+      return { ok: true, msg: { type } as ClientMessage };
+    case 'lobby_join_listed':
+      if (typeof m.roomId !== 'string' || !/^r[0-9]{1,9}$/.test(m.roomId)) return bad('roomId invalid');
+      if (m.spectate !== undefined && !isBool(m.spectate)) return bad('spectate must be bool');
+      return { ok: true, msg: { type, roomId: m.roomId, spectate: m.spectate === true } };
     case 'lobby_join_private':
     case 'lobby_spectate':
       if (!isStr(m.roomCode, ROOM_CODE_LENGTH) || (m.roomCode as string).length !== ROOM_CODE_LENGTH) return bad('roomCode invalid');

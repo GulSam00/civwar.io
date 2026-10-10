@@ -120,6 +120,12 @@ function route(lobby: LobbyManager, s: Session, msg: ClientMessage, error: (c: E
       return fail(lobby.joinPrivate(s, msg.roomCode));
     case 'lobby_spectate':
       return fail(lobby.spectate(s, msg.roomCode));
+    case 'lobby_list_rooms': {
+      const list = lobby.listRooms(s);
+      return typeof list === 'string' ? fail(list) : s.send(list);
+    }
+    case 'lobby_join_listed':
+      return fail(lobby.joinListed(s, msg.roomId, msg.spectate));
     case 'lobby_leave':
       if (!room) return error('NOT_IN_ROOM', 'not in a room');
       return room.leave(s);

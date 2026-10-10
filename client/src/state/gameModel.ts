@@ -74,6 +74,8 @@ export class GameModel {
    * snapshot 에는 없는 표시 전용 값이라 이벤트로만 유지하고, 행군이 아니게 되면 지운다.
    */
   flagEta = new Map<number, number>();
+  /** 귀환 목적지 (flag_recalled / flag_routed.returnTileId — 표시 전용, 이동 방향 화살표) */
+  flagReturn = new Map<number, number>();
 
   /** snapshot_full 을 1회 이상 받았는가 — 그 전에는 delta 를 적용하지 않는다 */
   ready = false;
@@ -111,6 +113,7 @@ export class GameModel {
     this.players = new Map(f.players.map((p) => [p.id, { ...p, tech: [...p.tech] as PlayerSnapshot['tech'] }]));
     this.flags = new Map(f.flags.map((x) => [x.id, { ...x }]));
     for (const id of [...this.flagEta.keys()]) if (this.flags.get(id)?.state !== 'MARCHING') this.flagEta.delete(id);
+    for (const id of [...this.flagReturn.keys()]) if (this.flags.get(id)?.state !== 'RETURNING') this.flagReturn.delete(id);
     this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b }]));
     this.alliances = new Map(f.alliances.map((a) => [allianceKey(a.a, a.b), { ...a }]));
     this.proposals = new Map(f.allyProposals.map((p) => [p.proposalId, { ...p }]));
@@ -194,6 +197,12 @@ export class GameModel {
         break;
       }
       case 'flag_routed':
+        this.flagReturn.set(e.flagId, e.returnTileId);
+        {
+          const f = this.flags.get(e.flagId);
+          if (f) f.disengageUntilTick = null;
+        }
+        break;
       case 'flag_disengaged': {
         // §5: 패주 시 disengageUntilTick = null (m-8), 이탈 완료·무리 소멸도 null
         const f = this.flags.get(e.flagId);
@@ -203,6 +212,7 @@ export class GameModel {
       case 'flag_ended':
         this.flags.delete(e.flagId);
         this.flagEta.delete(e.flagId);
+        this.flagReturn.delete(e.flagId);
         break;
       case 'tech_purchased': {
         const p = this.players.get(e.playerId);
@@ -254,9 +264,12 @@ export class GameModel {
         this.lockoutDissolveTick = e.phase === 'countdown' ? e.forceDissolveTick : null;
         if (e.phase === 'dissolved') this.allianceFreezeUntilTick = e.freezeUntilTick;
         break;
+      case 'flag_recalled':
+        this.flagReturn.set(e.flagId, e.returnTileId);
+        this.flagEta.delete(e.flagId);
+        break;
       case 'flag_engaged':
       case 'flag_idle':
-      case 'flag_recalled':
         this.flagEta.delete(e.flagId);
         break;
       case 'flag_stalled':
@@ -318,6 +331,7 @@ export class GameModel {
     for (const id of d.flagsGone) {
       this.flags.delete(id);
       this.flagEta.delete(id);
+      this.flagReturn.delete(id);
     }
     if (d.thresholdPct !== undefined) this.thresholdPct = d.thresholdPct;
     for (const [id, posture, bits, cd] of d.flagFlags) {

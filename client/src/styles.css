@@ -161,9 +161,14 @@ kbd {
 }
 .secondary-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: 4px 6px;
   margin-top: 12px;
+}
+.secondary-row .btn-link {
+  white-space: nowrap;
+  padding: 6px 8px;
 }
 .panel {
   margin-top: 14px;
@@ -978,4 +983,41 @@ kbd {
   border-radius: var(--radius);
   padding: 6px;
   z-index: 5;
+}
+
+/* 방 찾기 */
+.browse-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.browse-head .btn {
+  margin-left: auto;
+}
+.room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.room-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.room-main {
+  flex: 1;
+  min-width: 0;
+}
+.room-status {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.room-status.open {
+  color: #7bd88f;
 }

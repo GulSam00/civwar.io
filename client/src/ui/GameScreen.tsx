@@ -62,6 +62,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
     const ix = new Interaction();
     try {
       ix.colorblind = localStorage.getItem('civwar.colorblind') === '1';
+      ix.showDirections = localStorage.getItem('civwar.directions') !== '0';
     } catch {
       /* 무시 */
     }
@@ -111,6 +112,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
           originBase: ix.originBase,
           armed: ix.armedUnit !== null,
           colorblind: ix.colorblind,
+          showDirections: ix.showDirections,
           emotes: store.emotes,
           emoteText: (c) => EMOTE_TEXT[c] ?? `#${c}`,
           nicknameOf: (id) => store.nicknameOf(id),
@@ -242,6 +244,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
             </>
           )}
           <HudBtn on={ctl.ix.colorblind} k="C" label="색각 보조" onClick={() => ctl.setColorblind(!ctl.ix.colorblind)} />
+          <HudBtn on={ctl.ix.showDirections} k="V" label="이동 방향" onClick={() => ctl.toggleDirections()} />
           <HudBtn on={ctl.ix.helpOpen} k="?" label="도움말" onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} />
           {!spectating && <EmoteMenu store={store} />}
           <button className="hud-btn leave-btn" onClick={() => requestLeave(store, ctl)}>

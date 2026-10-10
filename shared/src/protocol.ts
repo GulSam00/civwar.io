@@ -127,6 +127,16 @@ export interface C2S_LobbySpectate {
   type: 'lobby_spectate';
   roomCode: string;
 }
+/** 플레이테스트 후속 (필드·메시지 추가): 방 찾기 — 공개 방 목록 요청 → room_list. 세션당 1초 1회 (초과 = error RATE_LIMITED) */
+export interface C2S_LobbyListRooms {
+  type: 'lobby_list_rooms';
+}
+/** 플레이테스트 후속: 목록의 roomId 로 입장(spectate=false, 대기 중 공개 방) 또는 관전(spectate=true, 진행·종료 공개 방). 비공개 방은 ROOM_NOT_FOUND */
+export interface C2S_LobbyJoinListed {
+  type: 'lobby_join_listed';
+  roomId: string;
+  spectate: boolean;
+}
 export interface C2S_LobbyLeave {
   type: 'lobby_leave';
 }
@@ -211,6 +221,8 @@ export type ClientMessage =
   | C2S_LobbyUpdateSettings
   | C2S_LobbyJoinPrivate
   | C2S_LobbySpectate
+  | C2S_LobbyListRooms
+  | C2S_LobbyJoinListed
   | C2S_LobbyLeave
   | C2S_LobbySetReady
   | C2S_LobbyStartNow
@@ -283,6 +295,39 @@ export interface S2C_RoomState {
   countdownMs: number | null; // COUNTDOWN 일 때 남은 ms
   /** 프론트 2차 추가: 공개 룸 LOBBY 일 때 자동 시작까지 남은 ms (그 외 null). 수신 시각 기준 — 클라이언트가 로컬로 줄인다 */
   autoStartMs: number | null;
+}
+
+/** 방 찾기 목록 항목 — 공개 방만 (비공개 방은 코드로만). 방 코드는 싣지 않는다 */
+export interface RoomListing {
+  /** 서버 룸 핸들 (lobby_join_listed 에 그대로) */
+  roomId: string;
+  phase: RoomPhase;
+  map: MapChoice;
+  /** preset 이면 공식 맵 이름, random 이면 null */
+  mapName: { ko: string; en: string } | null;
+  width: number;
+  height: number;
+  /** 사람 수 (인게임: 사람 자리 — 끊긴 자리 포함) */
+  humans: number;
+  /** 봇 수 (LOBBY: 지금 시작하면 채울 봇 수) */
+  bots: number;
+  maxPlayers: number;
+  spectatorCount: number;
+  /** LOBBY/COUNTDOWN: 룸 생성 후 경과 ms, IN_GAME/GAME_OVER: 게임 경과 ms (tick × TICK_MS) */
+  elapsedMs: number;
+  /** 공개 LOBBY 의 자동 시작까지 남은 ms (room_state.autoStartMs 와 같은 값), 그 외 null */
+  autoStartMs: number | null;
+  /** 지금 lobby_join_listed(spectate=false) 로 들어갈 수 있는가 (LOBBY ∧ 빈자리) */
+  joinable: boolean;
+  /** 지금 관전 가능한가 (IN_GAME ∨ GAME_OVER) */
+  spectatable: boolean;
+}
+export interface S2C_RoomList {
+  type: 'room_list';
+  /** 목록 생성 시각 (서버 Date.now) */
+  serverTime: number;
+  /** 정렬: 입장 가능 → 대기 중(가득) → 진행 중(경과 짧은 순) → 종료. 최대 50 */
+  rooms: RoomListing[];
 }
 
 export interface S2C_MatchConfig {
@@ -741,7 +786,9 @@ export type ServerMessage =
   | S2C_AllyFormed
   | S2C_AllyBreakStarted
   | S2C_AllyBroken
-  | S2C_AllianceLockout;
+  | S2C_AllianceLockout
+  // 플레이테스트 후속
+  | S2C_RoomList;
 
 /**
  * GDD 7.3 예약 이름 목록 — 2차부터 전부 실제 송신(위 S2C_* 타입 참조). 호환용으로 유지.

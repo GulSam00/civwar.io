@@ -13,6 +13,7 @@ import {
   type Posture,
   type TechAxis,
   type RoomOptions,
+  type S2C_RoomList,
   type S2C_RoomState,
   type ServerMessage,
   type Unit,
@@ -178,6 +179,19 @@ export class ClientStore {
     else if (this.conn !== 'connecting') this.start();
   }
 
+  // ── 방 찾기 (lobby_list_rooms → room_list, 서버 1초 1회 제한) ──
+  roomList: S2C_RoomList | null = null;
+  roomListAt = 0;
+  listRooms(): void {
+    if (this.now() - this.lastListReq < 1100) return; // 서버 RATE_LIMITED 회피
+    this.lastListReq = this.now();
+    this.lobby({ type: 'lobby_list_rooms' });
+  }
+  private lastListReq = 0;
+  joinListed(roomId: string, spectate: boolean): void {
+    this.lobby({ type: 'lobby_join_listed', roomId, spectate });
+  }
+
   quickStart(): void {
     this.lobby({ type: 'lobby_join_public' });
   }
@@ -291,7 +305,8 @@ export class ClientStore {
 
   get isHost(): boolean {
     const me = this.myPlayerId;
-    return me !== null && this.room?.hostId === me && !this.room.isPublic;
+    // 플레이테스트 후속: 공개 방도 방장(첫 입장자)이 바로 시작할 수 있다 (설정 변경은 비공개 방만)
+    return me !== null && this.room?.hostId === me;
   }
 
   nicknameOf(playerId: number): string {
@@ -401,6 +416,7 @@ export class ClientStore {
       }
       case 'error': {
         if (m.code === 'NOT_IN_ROOM' && this.now() < this.ignoreNotInRoomUntil) return;
+        if (m.code === 'RATE_LIMITED') return; // 방 찾기 새로고침 연타 — 조용히 무시
         // QA m-10: 방 설정 오류 3종은 서버의 사람이 읽는 사유(message, §6.2)를 함께 보여준다
         const base = ERROR_TEXT[m.code] ?? m.code;
         const detailed = (m.code === 'BAD_ROOM_OPTIONS' || m.code === 'NOT_ENOUGH_PLAYERS' || m.code === 'MAP_NOT_FOUND') && m.message && m.message !== m.code;
@@ -422,6 +438,11 @@ export class ClientStore {
         this.emit();
         return;
       case 'pong':
+        return;
+      case 'room_list':
+        this.roomList = m;
+        this.roomListAt = this.now();
+        this.emit();
         return;
       case 'emote_broadcast': {
         const t = this.now();

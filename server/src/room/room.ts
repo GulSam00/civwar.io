@@ -4,6 +4,7 @@
  */
 import {
   EMOTE_CODE_MAX,
+  MAP_SIZE_PRESETS,
   LOBBY_COUNTDOWN_MS,
   MAX_COMMANDS_PER_TICK,
   PUBLIC_LOBBY_AUTOSTART_MS,
@@ -12,6 +13,7 @@ import {
   type C2S_GameCommand,
   type ErrorCode,
   type MemberStatus,
+  type RoomListing,
   type RoomMember,
   type RoomPhase,
   type S2C_RoomState,
@@ -51,6 +53,7 @@ export class Room {
   private countdownEndsAt: number | null = null;
   /** 공개 룸 자동 시작 예정 시각 (Date.now 기준). 비공개 룸은 null — room_state.autoStartMs (프론트 2차 추가) */
   private autoStartAt: number | null = null;
+  private readonly createdAt = Date.now();
   /** 프론트 QA J-2: 끝난 판의 game_over — GAME_OVER 룸에 늦게 붙은 세션(관전·재접속)의 개인 부트스트랩 뒤에 다시 보낸다 */
   private lastGameOver: ServerMessage | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -284,8 +287,8 @@ export class Room {
   startNow(session: Session): ErrorCode | null {
     const m = this.memberOf(session);
     if (!m) return 'NOT_IN_ROOM';
-    // QA m-6: 공개 방은 방장 권한이 없다 (정원 도달 또는 30초 자동 시작만 — GDD 2.8 h)
-    if (this.isPublic || m.playerId !== this.hostId) return 'NOT_HOST';
+    // 플레이테스트 후속 (사용자 결정 2026-10-10, QA m-6 번복): 공개 방도 방장(첫 입장자·승계)이 바로 시작할 수 있다. 3초 카운트다운은 그대로
+    if (m.playerId !== this.hostId) return 'NOT_HOST';
     if (this.phase !== 'LOBBY') return 'NOT_LOBBY';
     return this.startCountdown();
   }
@@ -421,6 +424,36 @@ export class Room {
     if (now - session.lastEmoteAt < 1000) return;
     session.lastEmoteAt = now;
     this.broadcast({ type: 'emote_broadcast', tick: this.sim.state.tick, playerId: m.playerId, code });
+  }
+
+  get isDisposed(): boolean {
+    return this.disposed;
+  }
+
+  /** 방 찾기 목록 항목 (공개 방만 호출) */
+  listing(now = Date.now()): RoomListing {
+    const humans = [...this.members.values()].filter((m) => !m.isBot).length;
+    const lobbyLike = this.phase === 'LOBBY' || this.phase === 'COUNTDOWN';
+    const bots = lobbyLike ? (this.phase === 'LOBBY' ? Math.max(0, this.settings.maxPlayers - humans) : [...this.members.values()].filter((m) => m.isBot).length) : [...this.members.values()].filter((m) => m.isBot).length;
+    const preset = this.settings.map.kind === 'preset' ? this.catalog.get(this.settings.map.mapId) : undefined;
+    const size = this.sim ? { w: this.sim.state.map.width, h: this.sim.state.map.height } : this.settings.map.kind === 'random' ? MAP_SIZE_PRESETS[this.settings.map.size] : { w: preset?.width ?? 0, h: preset?.height ?? 0 };
+    const echo = this.roomState().settings.map;
+    return {
+      roomId: this.id,
+      phase: this.phase,
+      map: echo,
+      mapName: preset ? { ko: preset.name.ko, en: preset.name.en } : null,
+      width: size.w,
+      height: size.h,
+      humans,
+      bots,
+      maxPlayers: this.settings.maxPlayers,
+      spectatorCount: this.spectators.size,
+      elapsedMs: lobbyLike ? Math.max(0, now - this.createdAt) : this.currentTick * TICK_MS,
+      autoStartMs: this.isPublic && this.phase === 'LOBBY' && this.autoStartAt !== null ? Math.max(0, this.autoStartAt - now) : null,
+      joinable: this.phase === 'LOBBY' && this.hasFreeSlot,
+      spectatable: this.phase === 'IN_GAME' || this.phase === 'GAME_OVER',
+    };
   }
 
   get currentTick(): number {

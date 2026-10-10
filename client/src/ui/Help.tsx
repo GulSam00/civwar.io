@@ -157,7 +157,7 @@ export function Help({ onClose }: { onClose: () => void }) {
           <h3>조작 요약</h3>
           <p className="keys">
             <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 병종 · 클릭 발령(<kbd>Shift</kbd> 유지) · <kbd>Q</kbd>/<kbd>E</kbd> 비율 · 깃발 클릭 선택 · 우클릭 재지정 · <kbd>F</kbd> 태세 ·{' '}
-            <kbd>R</kbd> 회수 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크 · <kbd>P</kbd> 외교 · <kbd>C</kbd> 색각 보조 · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
+            <kbd>R</kbd> 회수 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크 · <kbd>P</kbd> 외교 · <kbd>C</kbd> 색각 보조 · <kbd>V</kbd> 이동 방향 화살표 · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
           </p>
         </section>
       </article>

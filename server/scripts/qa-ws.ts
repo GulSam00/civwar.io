@@ -153,6 +153,25 @@ async function main() {
       check('공개 룸 settings: M/10/NORMAL, botCount=정원−사람, pacing guaranteed', prs?.isPublic && prs.settings.maxPlayers === 10 && prs.settings.botCount === 9 && prs.settings.pacingNote === 'guaranteed' && prs.settings.expectedPlayers === 10, JSON.stringify(prs?.settings));
       e = await p.err({ type: 'lobby_update_settings', botCount: 1 });
       check('공개 룸 update → BAD_ROOM_OPTIONS', e?.code === 'BAD_ROOM_OPTIONS', JSON.stringify(e));
+      // 플레이테스트 후속: 공개 방 방장 시작 허용(비방장 NOT_HOST) · 방 찾기
+      const { c: p2 } = await hello(port, 'pub2');
+      await p2.req({ type: 'lobby_join_public' }, (m) => m.type === 'room_state');
+      e = await p2.err({ type: 'lobby_start_now' });
+      check('공개 룸 비방장 start_now → NOT_HOST', e?.code === 'NOT_HOST', JSON.stringify(e));
+      const { c: br } = await hello(port, 'browser');
+      const rl = await br.req({ type: 'lobby_list_rooms' }, (m) => m.type === 'room_list');
+      const mine = rl?.rooms?.find((r: any) => r.roomId === prs.roomId);
+      check('room_list: 공개 대기 방 포함(humans 2, joinable), 비공개 방·방 코드 없음', !!mine && mine.humans === 2 && mine.joinable && !JSON.stringify(rl).includes(prs.roomCode) && rl.rooms.every((r: any) => r.roomId !== rs.roomId), JSON.stringify(rl?.rooms));
+      e = await br.err({ type: 'lobby_list_rooms' });
+      check('room_list 1초 이내 재요청 → RATE_LIMITED', e?.code === 'RATE_LIMITED', JSON.stringify(e));
+      e = await br.err({ type: 'lobby_join_listed', roomId: 'x1', spectate: false });
+      check('lobby_join_listed 형식 오류 → BAD_MESSAGE', e?.code === 'BAD_MESSAGE', JSON.stringify(e));
+      const k1 = p.mark();
+      p.send({ type: 'lobby_start_now' });
+      const pcd = await p.wait((m) => m.type === 'room_state' && m.phase === 'COUNTDOWN', k1);
+      check('공개 룸 방장 start_now → COUNTDOWN (3초)', !!pcd && typeof pcd.countdownMs === 'number', JSON.stringify(pcd?.phase));
+      p2.ws.close();
+      br.ws.close();
       p.send({ type: 'lobby_leave' });
       await sleep(100);
       p.ws.close();

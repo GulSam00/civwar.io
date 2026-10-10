@@ -9,7 +9,7 @@
  *   F          선택 깃발 태세 전환      R  선택 깃발 회수      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
  *   Alt+클릭 내 기지 / B(기지 위에서) = 발령 출발 기지 지정 (다시 하면 자동)
- *   T 테크 · P 외교 · C 색각 보조 · ? 도움말 (React 패널 — Interaction 플래그)
+ *   T 테크 · P 외교 · C 색각 보조 · V 이동 방향 화살표 · ? 도움말 (React 패널 — Interaction 플래그)
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
  *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
@@ -32,6 +32,8 @@ export class Interaction {
   panel: 'tech' | 'ally' | null = null;
   helpOpen = false;
   colorblind = false;
+  /** 모든 깃발 이동 방향 화살표 (V) */
+  showDirections = true;
   /** 나가기 확인 대화상자 */
   leaveConfirm = false;
   /** React 패널이 다시 그릴지 판단 */
@@ -332,6 +334,16 @@ export class GameInputController {
     this.ix.bump();
   }
 
+  toggleDirections(): void {
+    this.ix.showDirections = !this.ix.showDirections;
+    try {
+      localStorage.setItem('civwar.directions', this.ix.showDirections ? '1' : '0');
+    } catch {
+      /* 무시 */
+    }
+    this.ix.bump();
+  }
+
   setColorblind(on: boolean): void {
     this.ix.colorblind = on;
     try {
@@ -419,6 +431,8 @@ export class GameInputController {
       case 'b':
         if (this.ix.armedUnit !== null) this.toggleOriginAt(this.ix.hoverTile);
         return;
+      case 'v':
+        return this.toggleDirections();
       case 't':
         this.ix.panel = this.ix.panel === 'tech' ? null : 'tech';
         this.ix.bump();

@@ -5,9 +5,10 @@ import { useStore } from './hooks.js';
 import { Help } from './Help.js';
 import { drawMapPreview } from '../render/mapPreview.js';
 import { loadOfficialMapChecked } from './officialMaps.js';
+import { fmtClock } from './text.js';
 import { estimatePacing, landOfRandom, landOfTerrain, pacingText } from './pacing.js';
 
-type Panel = null | 'create' | 'join' | 'spectate';
+type Panel = null | 'create' | 'join' | 'spectate' | 'browse';
 
 /** 첫 화면: 닉네임 → 빠른 시작(큰 버튼). 방 만들기·코드 입장·관전은 보조 */
 export function Lobby({ store }: { store: ClientStore }) {
@@ -59,6 +60,9 @@ export function Lobby({ store }: { store: ClientStore }) {
           빠른 시작
         </button>
         <div className="secondary-row">
+          <button className="btn btn-link" disabled={!nickOk} onClick={() => openPanel('browse')}>
+            방 찾기
+          </button>
           <button className="btn btn-link" disabled={!nickOk} onClick={() => openPanel('create')}>
             방 만들기
           </button>
@@ -85,6 +89,7 @@ export function Lobby({ store }: { store: ClientStore }) {
           </div>
         )}
         {panel === 'create' && <CreateRoomPanel store={store} />}
+        {panel === 'browse' && <RoomBrowser store={store} />}
         <ConnectionLine store={store} />
       </div>
       <p className="hint">
@@ -251,6 +256,79 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
       <button className="btn btn-primary" onClick={submit}>
         방 만들기
       </button>
+    </div>
+  );
+}
+
+const SIZE_NAME: Record<string, string> = { S: '작음', M: '보통', L: '큼' };
+
+/**
+ * 방 찾기 (플레이테스트 후속): 공개 방만 — 대기 중이면 입장, 진행 중이면 관전. 비공개 방은 코드로만.
+ * 열려 있는 동안 5초마다 새로고침(서버 1초 1회 제한), 경과 시간은 수신 시각 기준으로 로컬 증가.
+ */
+export function RoomBrowser({ store }: { store: ClientStore }) {
+  useStore(store);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    store.listRooms();
+    const id = setInterval(() => store.listRooms(), 5000);
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      clearInterval(id);
+      clearInterval(tick);
+    };
+  }, [store]);
+  const list = store.roomList;
+  const age = list ? Math.max(0, now - store.roomListAt) : 0;
+  return (
+    <div className="panel browse-panel">
+      <div className="browse-head">
+        <b>공개 방</b>
+        <span className="muted small">{list ? `${list.rooms.length}개` : '불러오는 중…'}</span>
+        <button className="btn btn-sm" onClick={() => store.listRooms()}>
+          새로고침
+        </button>
+      </div>
+      {list && list.rooms.length === 0 && <p className="muted small">열린 공개 방이 없습니다. 빠른 시작으로 새 방을 만들 수 있습니다.</p>}
+      <ul className="room-list">
+        {list?.rooms.map((r) => {
+          const mapText = r.mapName ? r.mapName.ko : r.map.kind === 'random' ? `무작위 · ${SIZE_NAME[r.map.size] ?? r.map.size}` : r.map.mapId;
+          const live = r.phase === 'IN_GAME' ? r.elapsedMs + age : r.elapsedMs;
+          const status =
+            r.phase === 'LOBBY'
+              ? r.autoStartMs !== null
+                ? `대기 중 · ${Math.max(0, Math.ceil((r.autoStartMs - age) / 1000))}초 후 시작`
+                : '대기 중'
+              : r.phase === 'COUNTDOWN'
+                ? '곧 시작'
+                : r.phase === 'IN_GAME'
+                  ? `진행 ${fmtClock(live)}`
+                  : '종료';
+          return (
+            <li key={r.roomId}>
+              <div className="room-main">
+                <b>{mapText}</b> <span className="muted small">{r.width}×{r.height}</span>
+                <div className="muted small">
+                  사람 {r.humans} · 봇 {r.bots} / 최대 {r.maxPlayers}
+                  {r.spectatorCount > 0 ? ` · 관전 ${r.spectatorCount}` : ''}
+                </div>
+              </div>
+              <span className={`room-status ${r.phase === 'LOBBY' ? 'open' : ''}`}>{status}</span>
+              {r.joinable && (
+                <button className="btn btn-sm btn-primary" onClick={() => store.joinListed(r.roomId, false)}>
+                  입장
+                </button>
+              )}
+              {r.spectatable && (
+                <button className="btn btn-sm" onClick={() => store.joinListed(r.roomId, true)}>
+                  관전
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="muted small">비공개 방은 목록에 나오지 않습니다 — 방 코드로 입장하세요.</p>
     </div>
   );
 }

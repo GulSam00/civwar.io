@@ -1,6 +1,7 @@
 /**
  * 로비 매니저 — 세션·룸 인덱스, 공개 대기열, 방 코드.
  */
+import type { RoomListing, S2C_RoomList } from '@civwar/shared';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ROOM_CODE_LENGTH, type ErrorCode } from '@civwar/shared';
 import { CivBot } from '../game/bot.js';
@@ -18,6 +19,10 @@ export interface LobbyOptions {
   /** 공식 프리셋 맵 카탈로그. 없으면 server/maps/official 을 로드 (형식·checksum 오류 시 예외 = 기동 실패) */
   catalog?: MapCatalog;
 }
+
+/** 방 찾기 목록 요청 최소 간격·최대 항목 수 (백엔드 결정) */
+export const ROOM_LIST_MIN_INTERVAL_MS = 1000;
+export const ROOM_LIST_MAX = 50;
 
 export class LobbyManager {
   readonly sessionsById = new Map<string, Session>();
@@ -135,6 +140,26 @@ export class LobbyManager {
     if (room.phase !== 'IN_GAME' && room.phase !== 'GAME_OVER') return 'NOT_LOBBY';
     this.leaveCurrent(s);
     return room.spectate(s);
+  }
+
+  /** 방 찾기 (플레이테스트 후속): 공개 방만, 세션당 1초 1회 */
+  listRooms(s: Session, now = Date.now()): S2C_RoomList | ErrorCode {
+    if (now - s.lastListAt < ROOM_LIST_MIN_INTERVAL_MS) return 'RATE_LIMITED';
+    s.lastListAt = now;
+    const order = (l: RoomListing) => (l.joinable ? 0 : l.phase === 'LOBBY' || l.phase === 'COUNTDOWN' ? 1 : l.phase === 'IN_GAME' ? 2 : 3);
+    const rooms = [...this.rooms.values()]
+      .filter((r) => r.isPublic && !r.isDisposed)
+      .map((r) => r.listing(now))
+      .sort((a, b) => order(a) - order(b) || (order(a) === 2 ? a.elapsedMs - b.elapsedMs : b.elapsedMs - a.elapsedMs) || (a.roomId < b.roomId ? -1 : 1))
+      .slice(0, ROOM_LIST_MAX);
+    return { type: 'room_list', serverTime: now, rooms };
+  }
+
+  /** 목록 항목으로 입장/관전 — 비공개 방은 목록에 없으므로 ROOM_NOT_FOUND (코드로만 입장) */
+  joinListed(s: Session, roomId: string, spectate: boolean): ErrorCode | null {
+    const room = this.rooms.get(roomId);
+    if (!room || !room.isPublic || room.isDisposed) return 'ROOM_NOT_FOUND';
+    return spectate ? this.spectate(s, room.code) : this.joinPrivate(s, room.code);
   }
 
   /** 살아 있는 플레이어로 진행 중인 게임에 속해 있으면 다른 룸으로 못 간다 (lobby_leave 먼저) */

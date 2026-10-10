@@ -102,6 +102,14 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     players: arr(obj({ playerId: range(1, 12), sessionId: 'str|null', nickname: 'str', isBot: 'bool', isHost: 'bool', ready: 'bool', status: ['enum', 'LOBBY_WAITING', 'PLAYING', 'ELIMINATED_SPECTATING', 'DISCONNECTED'] })),
     spectatorCount: 'int', countdownMs: 'int|null', autoStartMs: 'int|null',
   },
+  room_list: {
+    serverTime: 'int',
+    rooms: arr(obj({
+      roomId: 'str', phase: ['enum', 'LOBBY', 'COUNTDOWN', 'IN_GAME', 'GAME_OVER'], map: mapChoice,
+      mapName: (v, p, e) => { if (v !== null && (typeof v !== 'object' || typeof (v as any).ko !== 'string')) e.push(`${p}: {ko,en}|null`); },
+      width: 'int', height: 'int', humans: 'int', bots: 'int', maxPlayers: range(2, 12), spectatorCount: 'int', elapsedMs: 'int', autoStartMs: 'int|null', joinable: 'bool', spectatable: 'bool',
+    })),
+  },
   match_config: {
     seed: 'int', topology: ['enum', 'square'], width: 'int', height: 'int', totalLandTiles: 'int', tickMs: 'int', hardTimeoutTick: 'int',
     endgameRush: obj({ tick: 'int', costMultPermille: 'int' }),

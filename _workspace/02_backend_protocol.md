@@ -154,7 +154,7 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 | playerId 배정 | **룸 입장 시** 비어 있는 가장 작은 번호. **v4.1: 비공개 방은 카운트다운 시작 때 사람을 기존 번호 순서대로 1..H 로 다시 매기고**(빈 번호 제거) 봇을 H+1..N 에 붙인다(`"BOT n"`). 공개 룸은 1..10 빈 번호를 봇으로 채운다 | 백엔드 결정 |
 | 스폰 | `spawn[k]` → `playerId k+1`. 무작위 = 생성기 배치 순서, 프리셋 = `spawnSets[N]` 또는 `spawns[0..N-1]` | 백엔드 결정 / GDD 2.8 f |
 | 방장 | 첫 입장자. 퇴장 시 남은 인간 중 playerId 최소 | GDD 7.2 |
-| 카운트다운 시작 조건 (v4.1) | **비공개: 방장 `lobby_start_now` 만.** 공개: 정원(10) 도달 또는 첫 입장 후 30초(`PUBLIC_LOBBY_AUTOSTART_MS`). **공개 룸의 `lobby_start_now` → `error NOT_HOST`**(공개 룸에는 방장 권한이 없다 — QA m-6). **`ready` 는 표시용**(자동 시작 조건 아님 — v4.0 의 "인간 전원 ready"·비공개 "정원 도달" 자동 시작 폐지) | GDD 2.8 h |
+| 카운트다운 시작 조건 (v4.1) | **비공개: 방장 `lobby_start_now` 만.** 공개: 정원(10) 도달 또는 첫 입장 후 30초(`PUBLIC_LOBBY_AUTOSTART_MS`) **또는 방장(첫 입장자, 퇴장 시 승계)의 `lobby_start_now`**(플레이테스트 후속 2026-10-10 — QA m-6 의 "공개 룸 NOT_HOST" 번복. 비방장은 `NOT_HOST`, 3초 카운트다운 동일). 공개 룸 설정 변경(`lobby_update_settings`)은 여전히 `BAD_ROOM_OPTIONS`. **`ready` 는 표시용**(자동 시작 조건 아님 — v4.0 의 "인간 전원 ready"·비공개 "정원 도달" 자동 시작 폐지) | GDD 2.8 h |
 | 카운트다운 | `LOBBY_COUNTDOWN_MS = 3000`. 이 동안 신규 입장 불가(`ROOM_IN_PROGRESS`). 퇴장 시 그 자리는 봇. **맵은 카운트다운 종료 시점(인원 확정 후)에 생성** | 사용자 승인 (GDD 2.8 h, c) |
 | 공개 룸 | 무작위·보통(M)·기본 물·10인·NORMAL 봇 충원. 옵션 받지 않음(`lobby_update_settings` → `BAD_ROOM_OPTIONS`) | 사용자 승인 (GDD 2.8 h) |
 | 방 코드 | 6자, `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`. 대소문자 무시. 공개 룸도 코드를 가진다(관전용) | GDD 7.2 + 결정 |
@@ -207,6 +207,15 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 ```
 `lobby_create_private`와 같은 필드의 **부분집합**(생략 = 현재값 유지). 검증 규칙 동일 + `maxPlayers < 현재 사람 수` → `BAD_ROOM_OPTIONS`. `botCount` 생략인데 새 `maxPlayers − 1`보다 크면 낮춘다.
 오류: `NOT_IN_ROOM` / `NOT_HOST` / `NOT_LOBBY` / 공개 룸 → `BAD_ROOM_OPTIONS` / `MAP_NOT_FOUND`. 성공 → 룸 전원에 `room_state`.
+
+### lobby_list_rooms / lobby_join_listed (플레이테스트 후속 2026-10-10 — 메시지 추가)
+```json
+{ "type": "lobby_list_rooms" }
+{ "type": "lobby_join_listed", "roomId": "r12", "spectate": false }
+```
+- `lobby_list_rooms` → 개인 `room_list`(§5). hello 이후 언제나(룸 안에서도) 가능. **세션당 1초 1회**(`ROOM_LIST_MIN_INTERVAL_MS`), 초과 → `error RATE_LIMITED`(코드 사용 시작).
+- 목록은 **공개 룸만**(대기·카운트다운·진행·종료). 비공개 룸은 절대 싣지 않는다(코드로만 입장). 방 코드도 싣지 않는다 — 핸들은 `roomId`.
+- `lobby_join_listed`: `roomId` 형식 `^r[0-9]{1,9}$`, `spectate` bool(생략 = false). 형식 위반 → `error BAD_MESSAGE`. 비공개·없는·정리된 룸 → `ROOM_NOT_FOUND`. `spectate:false` = `lobby_join_private` 와 같은 검증(`ROOM_IN_PROGRESS`·`ROOM_FULL`·`ALREADY_IN_ROOM`), `spectate:true` = `lobby_spectate` 와 같은 검증(`NOT_LOBBY` 등). 성공 응답도 각각과 같다(`room_state` / 부트스트랩).
 
 ### lobby_join_private / lobby_spectate
 ```json
@@ -391,6 +400,24 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
     `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32`.
   - 새 깃발은 `flag_issued` 이벤트 + 같은 tick 델타의 `flagMoves`/`flagStats`/`flagFlags`(첫 등장)로 알 수 있다. 사라진 깃발은 `flagsGone` + `flag_ended`.
 
+### room_list (개인 — 플레이테스트 후속)
+```json
+{ "type": "room_list", "serverTime": 1760000000000, "rooms": [
+  { "roomId": "r12", "phase": "LOBBY", "map": { "kind": "random", "size": "M", "water": { "waterMode": "BORDER_ONLY", "shallowPermille": 1000 } },
+    "mapName": null, "width": 100, "height": 60, "humans": 2, "bots": 8, "maxPlayers": 10, "spectatorCount": 0,
+    "elapsedMs": 4200, "autoStartMs": 25800, "joinable": true, "spectatable": false },
+  { "roomId": "r9", "phase": "IN_GAME", "map": { "kind": "preset", "mapId": "official-m-01" }, "mapName": { "ko": "보통 맵 1", "en": "Medium 1" },
+    "width": 100, "height": 60, "humans": 1, "bots": 9, "maxPlayers": 10, "spectatorCount": 3, "elapsedMs": 412000, "autoStartMs": null, "joinable": false, "spectatable": true } ] }
+```
+| 필드 | 의미 |
+|---|---|
+| `map` | `room_state.settings.map` 과 같은 에코 |
+| `humans` / `bots` | 사람 자리 수(인게임은 끊긴 자리 포함) / LOBBY: 지금 시작하면 채울 봇 수(`maxPlayers − 사람`), 그 외 실제 봇 자리 수 |
+| `elapsedMs` | LOBBY·COUNTDOWN: 룸 생성 후 경과, IN_GAME·GAME_OVER: `tick × TICK_MS` |
+| `autoStartMs` | `room_state.autoStartMs` 와 같은 값 |
+| `joinable` / `spectatable` | `LOBBY ∧ 빈자리` / `IN_GAME ∨ GAME_OVER` |
+정렬 = 입장 가능 → 대기(가득·카운트다운) → 진행 중(경과 짧은 순) → 종료, 최대 50개(`ROOM_LIST_MAX`). 구독·자동 갱신 없음 — 클라이언트가 다시 요청한다(로비 UI 는 열려 있는 동안 5초마다).
+
 ### cmd_ack (개인)
 ```json
 { "type": "cmd_ack", "clientSeq": 12, "accepted": false, "reason": "INSUFFICIENT" }
@@ -478,7 +505,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 ### 6.2 `error.code`
 
-`BAD_MESSAGE` `BAD_VERSION` `NOT_HELLO` `ALREADY_HELLO` `BAD_NICKNAME` `BAD_TARGET_PLAYERS`(예약, 미사용) `ROOM_NOT_FOUND` `ROOM_FULL` `ROOM_IN_PROGRESS` `ALREADY_IN_ROOM` `NOT_IN_ROOM` `NOT_HOST` `NOT_LOBBY` `RATE_LIMITED`(예약). 전부 백엔드 정의(GDD는 `{code,message}` shape만 규정).
+`BAD_MESSAGE` `BAD_VERSION` `NOT_HELLO` `ALREADY_HELLO` `BAD_NICKNAME` `BAD_TARGET_PLAYERS`(예약, 미사용) `ROOM_NOT_FOUND` `ROOM_FULL` `ROOM_IN_PROGRESS` `ALREADY_IN_ROOM` `NOT_IN_ROOM` `NOT_HOST` `NOT_LOBBY` `RATE_LIMITED`(플레이테스트 후속부터 `lobby_list_rooms` 1초 제한에 사용). 전부 백엔드 정의(GDD는 `{code,message}` shape만 규정).
 **v4.1 추가 (GDD 7.2a)**: `BAD_ROOM_OPTIONS`(방 설정 타입·범위 위반, 맵 최대 초과, 사람 수 미만, 공개 룸 설정 변경), `MAP_NOT_FOUND`(공식 맵 목록에 없는 mapId), `NOT_ENOUGH_PLAYERS`(시작 인원 < 2). 이 세 코드의 `message`는 사람이 읽는 사유 문자열이다(코드 문자열과 다를 수 있음).
 
 ---
@@ -715,6 +742,9 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 74. **프론트 QA m-4 — `flag_issued`/`flag_retargeted.engageEtaTick` 추가**(필드 추가만, `etaTick` 의미 불변): `rules.ts engageEtaTicks` — movement.ts MARCHING 도착 판정과 같은 조건을 경로 위에서 검사하는 표시용 추정.
 75. **프론트 QA m-8 — `welcome.officialMaps[].checksum` 추가**(필드 추가만): `presetInfo` 가 파일 checksum 을 싣는다.
 76. **문서화(QA m-2)**: 관전자 새로고침 → 로비 복귀(관전 세션은 끊김 즉시 폐기). 서버 동작 변경 없음.
+77. **플레이테스트 — 공개 룸 방장 즉시 시작**(사용자 결정 2026-10-10, QA m-6 번복): `room.ts startNow` 가 `isPublic` 을 보지 않는다. 방장 = 첫 입장자(퇴장 시 남은 사람 중 playerId 최소). 공개 룸 설정 변경 금지는 유지. `rooms.test.ts`·`qa-ws.ts` 갱신.
+78. **플레이테스트 — 방 찾기**: C2S `lobby_list_rooms`·`lobby_join_listed`, S2C `room_list` 추가(§4·§5). 공개 룸만·코드 비노출·`roomId` 핸들·세션당 1초 1회(`RATE_LIMITED`)·최대 50개는 백엔드 결정. `lobby.ts listRooms/joinListed`, `room.ts listing`.
+79. **플레이테스트 — 모든 깃발 이동 방향 표시**는 프로토콜 변경 없이 기존 값(`anchorTileId`·`targetTileId`·`flag_recalled/flag_routed.returnTileId`)만 사용. 늦게 입장한 클라이언트는 이미 귀환 중인 깃발의 귀환지를 모른다(스냅샷에 없음 — 그 깃발은 화살표 생략).
 
 ---
 
@@ -799,6 +829,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | QA 스크립트 | `npm run qa:headless|qa:scenarios|qa:ws -w @civwar/server` (`qa-schema.ts` 는 모듈) |
 | 필드 추가 (프론트 2차) | `room_state.autoStartMs: number \| null` — 공개 룸 LOBBY 에서 자동 시작까지 남은 ms(수신 시각 기준), 그 외 null. §5·§10-72·§17 |
 | 프론트 QA 후속 | `flag_issued`/`flag_retargeted.engageEtaTick`, `welcome.officialMaps[].checksum` 필드 추가, GAME_OVER 부트스트랩 뒤 `game_over` 재송신 — §17 |
+| 플레이테스트 후속 | 공개 룸 방장 `lobby_start_now` 허용(의미 변경 — 이전 `NOT_HOST`), `lobby_list_rooms`/`lobby_join_listed`/`room_list` 추가, `RATE_LIMITED` 사용 시작 — §3·§4·§5·§10-77~79 |
 
 ## 17. 프론트 2차 변경 요약 (2026-10-09, frontend-game-client-engineer — 오케스트레이터 지시)
 
@@ -810,3 +841,4 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 필드 추가 (프론트 QA) | `flag_issued.engageEtaTick`, `flag_retargeted.engageEtaTick` (§5, §10-74), `welcome.officialMaps[].checksum` (§5, §10-75) |
 | 개인 메시지 추가 (프론트 QA J-2) | GAME_OVER 룸 부트스트랩 뒤 `game_over` 재송신 (§2, §5, §10-73) |
 | 문서화 | 관전자 새로고침 → 로비 (§3, §10-76), 정리된 룸에 `lobby_leave` → `NOT_IN_ROOM` (§3) |
+| 플레이테스트 후속 (2026-10-10) | 공개 룸 방장 즉시 시작(§3, §10-77 — 공개 룸 `lobby_start_now` 가 방장이면 수락으로 **의미 변경**), 방 찾기 메시지 3종(§4·§5, §10-78), 이동 방향 표시는 프로토콜 변경 없음(§10-79) |

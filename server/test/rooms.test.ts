@@ -255,6 +255,50 @@ describe('룸 흐름 — 비공개 방 설정·시작', () => {
     expect(lastOf(C.inbox, 'game_over')).toEqual(original);
   }, 60000);
 
+  it('플레이테스트: 공개 방도 방장(첫 입장자)이 바로 시작 — 방장 아니면 NOT_HOST, 3초 카운트다운 유지', () => {
+    const A = fakeSession(lobby, 'alice');
+    const B = fakeSession(lobby, 'bob');
+    expect(lobby.joinPublic(A.s)).toBeNull();
+    expect(lobby.joinPublic(B.s)).toBeNull();
+    const room = lobby.roomOf(A.s)!;
+    expect(room.isPublic).toBe(true);
+    expect(room.startNow(B.s)).toBe('NOT_HOST');
+    expect(room.startNow(A.s)).toBeNull();
+    expect(room.phase).toBe('COUNTDOWN');
+    vi.advanceTimersByTime(3000);
+    expect(room.phase).toBe('IN_GAME');
+    expect(room.sim!.state.players.filter(Boolean)).toHaveLength(10);
+  });
+
+  it('플레이테스트: 방 찾기 — 공개 방만(대기·진행), 비공개 제외, 1초 rate limit, roomId 로 입장·관전', () => {
+    const A = fakeSession(lobby, 'alice');
+    const P = fakeSession(lobby, 'priv');
+    const Q = fakeSession(lobby, 'q');
+    expect(lobby.joinPublic(A.s)).toBeNull();
+    expect(lobby.createPrivate(P.s, {})).toBeNull();
+    const pub = lobby.roomOf(A.s)!;
+    let list = lobby.listRooms(Q.s, 1_000_000);
+    expect(typeof list).not.toBe('string');
+    if (typeof list === 'string') return;
+    expect(list.rooms.map((r) => r.roomId)).toEqual([pub.id]);
+    expect(list.rooms[0]).toMatchObject({ phase: 'LOBBY', humans: 1, bots: 9, maxPlayers: 10, joinable: true, spectatable: false, width: 100, height: 60, mapName: null });
+    expect(JSON.stringify(list)).not.toContain(pub.code); // 방 코드는 싣지 않는다
+    expect(lobby.listRooms(Q.s, 1_000_500)).toBe('RATE_LIMITED');
+    expect(lobby.joinListed(Q.s, lobby.roomOf(P.s)!.id, false)).toBe('ROOM_NOT_FOUND'); // 비공개
+    expect(lobby.joinListed(Q.s, pub.id, true)).toBe('NOT_LOBBY'); // 대기 중 방은 관전 불가
+    expect(lobby.joinListed(Q.s, pub.id, false)).toBeNull();
+    expect(lobby.roomOf(Q.s)).toBe(pub);
+    pub.startNow(A.s);
+    vi.advanceTimersByTime(3000 + 10 * 200);
+    const R = fakeSession(lobby, 'r');
+    list = lobby.listRooms(R.s, 2_000_000);
+    if (typeof list === 'string') throw new Error(list);
+    expect(list.rooms[0]).toMatchObject({ phase: 'IN_GAME', humans: 2, bots: 8, joinable: false, spectatable: true });
+    expect(list.rooms[0].elapsedMs).toBeGreaterThan(0);
+    expect(lobby.joinListed(R.s, pub.id, true)).toBeNull();
+    expect(lastOf(R.inbox, 'snapshot_full')).toBeTruthy();
+  });
+
   it('room_state.autoStartMs (프론트 2차 추가): 공개 LOBBY 에서만 남은 ms, 그 외 null', () => {
     const A = fakeSession(lobby, 'alice');
     expect(lobby.joinPublic(A.s)).toBeNull();

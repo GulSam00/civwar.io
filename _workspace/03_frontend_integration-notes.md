@@ -145,3 +145,15 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 - `qa-e2e-full.ts`(1,925초): 예외 0, 전 store 재구성 불일치 0, ack 누락 0, 순서·종료 후 메시지 0. **ivan(GAME_OVER 후 관전) `gotGameOver:true`, `modelGameOver:true`**(J-2 해소). `NOT_IN_ROOM` 은 서버가 여전히 보내지만(관찰자 기록) 나가기 직후라 토스트로 뜨지 않음(carol2 토스트에 없음 — m-1). carol 새로고침 → 로비(m-2, 문서화된 동작).
 - `qa-decay-flash.ts`(렌더러 판정 함수 사용으로 수정): 4000 tick 오탐 0(이번 시드에서는 실제 같은 칸 감소도 0 — 판정 단위 테스트로 보완).
 - 브라우저(스크린샷 동작): 이모트 말풍선("testerqa: GG")·피드, HUD "나가기" → 확인 대화상자 → 나가기 → 로비·저장 토큰 삭제·토스트 없음 확인.
+
+## 9. 플레이테스트 후속 (2026-10-10)
+
+| 항목 | 처리 | 위치 |
+|---|---|---|
+| 공개 방 방장 즉시 시작 | 서버: 공개 룸도 방장(첫 입장자·승계)의 `lobby_start_now` 수락(3초 카운트다운 동일, 비방장 `NOT_HOST`, 설정 변경은 여전히 금지 — QA m-6 번복, 프로토콜 §3·§10-77). 클라이언트: `isHost` 가 공개 방에서도 참 → 대기실에 "게임 시작" 버튼, 자동 시작 안내에 "방장은 지금 바로 시작할 수 있습니다". 방장 설정 패널은 비공개 방만 | `server/src/room/room.ts`, `state/store.ts`, `ui/WaitingRoom.tsx` |
+| 방 찾기 | 서버: `lobby_list_rooms` → `room_list`(공개 방만, 코드 비노출, `roomId` 핸들, 세션당 1초 1회 `RATE_LIMITED`, 최대 50), `lobby_join_listed {roomId, spectate}`(프로토콜 §4·§5·§10-78). 클라이언트: 로비 「방 찾기」 패널 — 맵 이름/크기, 사람·봇/최대, 관전자 수, 상태(대기 n초 후 시작 / 곧 시작 / 진행 m:ss / 종료), 입장·관전 버튼, 새로고침 + 열려 있는 동안 5초 자동 갱신, 진행 시간은 수신 시각 기준 로컬 증가. 연타는 클라이언트가 1.1초로 막고 `RATE_LIMITED` 는 토스트 없이 무시 | `server/src/room/lobby.ts`, `net/{validate,server}.ts`, `ui/Lobby.tsx RoomBrowser` |
+| 모든 깃발 이동 방향 | 적 포함 모든 깃발에 짧은 화살표: 행군 → 앵커, 귀환 → 귀환지(`flag_recalled`/`flag_routed.returnTileId` 를 모델 `flagReturn` 에 보관, 점선), 공격 교전 → 대상 칸. 소유자 어두운 색 + 흰 외곽(색각 보조와 무관하게 모양으로 읽힘), LOD 에선 남의 깃발 화살표를 더 짧고 옅게. `V`/HUD 버튼으로 끄고 켬(저장). 프로토콜 변경 없음(§10-79) — 늦게 입장하면 이미 귀환 중인 깃발은 귀환지를 몰라 화살표 생략 | `render/renderer.ts drawDirections`, `state/gameModel.ts`, `input/controller.ts` |
+
+### 검증
+- typecheck 통과, `npm test` **14 파일 / 166 통과**(서버 `rooms.test.ts` +2: 공개 방 방장 시작·방 찾기 / 클라이언트 `playtest.test.ts` 3), smoke PASSED, build:client 성공, `qa:ws` **78/78**(+5: 공개 비방장 `NOT_HOST`, `room_list` 공개만·코드 없음, 1초 내 재요청 `RATE_LIMITED`, `lobby_join_listed` 형식 오류 `BAD_MESSAGE`, 공개 방장 start → COUNTDOWN; 스키마 위반 0 — `qa-schema.ts` 에 `room_list` 추가), `headless-check 75` full 14회 불일치 0.
+- 브라우저(8080·5173 은 다른 프로세스가 쓰고 있어 서버 8090 + Vite 5180 으로 별도 기동): 공개 방 방장 즉시 시작 → IN_GAME, 로비 「방 찾기」에 대기 방(입장)·진행 방(관전 0:11) 2개 표시 → 관전 입장, 따라가기 상태에서 행군 깃발(내 깃발·BOT 10·BOT 8·BOT 4)의 방향 화살표 스크린샷 확인. 로비 보조 링크 4개가 800px 에서 줄바꿈되던 것을 CSS 로 수정.
