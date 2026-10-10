@@ -1,9 +1,87 @@
 # civwar.io 게임 디자인 문서 (GDD)
 
-- 버전: **v4.1 (승인 — 2026-10-09)** — 게이지 되돌리기 폐지·진척도 자동 감소, 맵·방 설정 신설 / 직전 승인본 v4.0 (2026-10-08)
-- 작성일: 2026-10-05 (v3.1: 2026-08-12, v3.0: 2026-08-11, v2.1/v2.0: 2026-08-05, v1.0: 2026-08-04)
+- 버전: **v4.2 (승인 대기)** — 행군 중 자동 공격(쟁기 규칙)·고립 영토 허용, 로비 방장 즉시 시작·방 찾기 목록, 전 깃발 진행 방향 표시 / 직전 승인본 **v4.1 (2026-10-09)** — 게이지 되돌리기 폐지·진척도 자동 감소, 맵·방 설정 신설
+- 작성일: 2026-10-05 (v4.2: 2026-10-10, v4.1: 2026-10-08, v3.1: 2026-08-12, v3.0: 2026-08-11, v2.1/v2.0: 2026-08-05, v1.0: 2026-08-04)
 - 전제 입력: `_workspace/00_input/design-decisions.md` — 「GDD v3.0 개정 결정」 A~F 항 + 「미결정 [A] 5건 사용자 확정」 + **「v4.0 해안·깃발 전투」 D-1~D-6 확정 (2026-10-05)**
 - 다음 소비자: `multiplayer-backend-engineer` (7장이 프로토콜 설계 1차 입력)
+
+---
+
+## v4.1 → v4.2 변경 요약 (승인 대기 — 2026-10-10)
+
+원천: `design-decisions.md` 「첫 플레이테스트 피드백 반영 결정 (2026-10-10)」 1~5항. **사용자 확정 상수는 하나도 바꾸지 않았고 새 수치 상수도 없다.** 새 결정은 전부 `[A]` A-51~A-58(문서 끝 「[A] v4.2」), 관측 항목은 [B] B-20~B-22.
+
+**해결하려는 문제 (사용자 관찰)**: "먼 목표를 찍으면 행군하는 동안 아무 공격도 하지 않고 병력만 소모된다." v4.1에서는 (i) 앵커 원(반경 6)이 내 땅에서 7칸 넘게 떨어지면 `front`가 비어 행군 → 도착 → IDLE이 되고, (ii) 그 사이 적·중립 땅 위에서 노출 소모(tick당 0.05%)만 붙었다. 봇 자가대전 실측도 같은 병목을 보인다 — 공격 깃발 시간의 **행군 23% · 실제 교전 7%**(`02_backend_protocol.md` §11).
+
+### 핵심 규칙 — 행군 중 자동 공격 ("쟁기" 규칙, 4.4a 신설)
+
+```
+// 사용자 확정: 공격 태세 깃발은 행군 중 깃발 옆 칸 전부를 자동 공격. 내 땅과 맞닿지 않아도 된다(고립 영토 허용).
+//            먹을 칸이 있으면 멈춰서 점령, 없어지면 다시 이동. 방어 태세는 이동만.
+marchFront(f) = { t ∈ neighbors(f.posTileId) : isClaimable(t) and tile[t].owner != f.ownerId
+                                               and not isAlly(f.ownerId, tile[t].owner) }   // 중립 포함 [A-51]
+4단계, MARCHING 깃발:  ① 도착(ENGAGED) 판정 → ② ATTACK 이고 marchFront ≠ ∅ 이면 정지(halted = true)
+                       → ③ 아니면 기존대로 한 걸음 → 새 칸에서 ①② 다시 → 앵커 칸이면 IDLE
+5~7단계: halted 깃발은 ENGAGED·ATTACK 깃발과 똑같이 AP 누적·밀기·점령 (selectMarchTarget, [A-52])
+```
+
+### 절별 변경
+
+| 절 | 변경 |
+|---|---|
+| 2.8 (h) | 로비: **공개 방도 방장(첫 입장자)이 즉시 시작 가능**(3초 카운트다운 유지), **방 찾기 목록** = 대기 중 공개 방(입장) + 진행 중 공개 방(관전). 비공개 방은 목록에 없음 |
+| 4.1 | 주석: `front`는 ENGAGED 전용. 행군 중 대상 집합은 `marchFront`(4.4a) — 앵커 원·내 땅 인접·`targetMatch`를 쓰지 않는다 |
+| 4.2 | 깃발 필드 `halted` 신설 (파생값, 4단계가 매 tick 다시 씀) |
+| 4.4 (d) | `threatened`: "적 ENGAGED 공격 깃발" → "적 **밀고 있는**(`pushing`) 공격 깃발" — 정지 점령 중인 행군 깃발 포함 |
+| **4.4a (신설)** | 행군 중 자동 공격 전문 — 정의, 4단계 의사코드(4.4 루프 대체), 5·6·7·10단계 확장, 상호작용 표, 쟁기 기하, 고립 영토 파급 점검 |
+| 4.5 | `targetOwnerId`는 행군 중 점령에 쓰이지 않으며 바뀌지도 않는다(앵커 고정 그대로) |
+| 4.6 (a)(d) | AP 누적·밀기 대상 = `pushing(f)`. 타깃 선택은 `halted`면 `selectMarchTarget`, 아니면 기존 `selectTarget` |
+| 4.7 (e)(f) | 감소 표에 "halted" 행 추가(미는 동안 감소 없음), `updateStall` 대상에 halted 포함 |
+| 4.8 | 회계 경로 추가 없음 — halted 지출은 ① 공격 지출과 같은 행 |
+| 4.10 | 레이스 그대로. halted 깃발도 같은 레이스에 참가 |
+| 4.11 (b) | halted 깃발도 병력 < 40이면 `exhausted` 소멸 |
+| 5.4 v4.2 (신설) | 페이싱 추정 — 설계 모델 표준 29.35 → **≈ 28.8~29.0분**, 실질 하한(×1.6 폭주) 25.79 → **≈ 25.3~25.5분**, 최악 −0.4~−0.65분. 봇 실측(32분 타임아웃 쪽)은 짧아지지만 단독으로는 해소 안 됨 |
+| 7.2 / 7.3 | **추가만**: flag `halted` 필드·델타 비트, `lobby_list_rooms` / `room_list`, `lobby_start_now` 공개 방 허용. `etaTick` 의미 주석(정지 시간 제외) |
+| 7.4 | 4단계 순서 재정의(도착 → 정지 → 이동 → 도착 → 정지), 4b `halted` 해제, 5·6·7·9·10 대상 확장 |
+| 8.7 (신설) | 봇 영향 개요 — 필수 변경은 `threatened` 하나, 나머지는 관측 후 |
+
+### 백엔드 체크리스트 (v4.1 구현 → v4.2)
+
+| # | 대상 | 할 일 |
+|---|---|---|
+| 1 | `Flag` 타입·직렬화 | `halted: boolean` 추가(초기 false). `snapshot_full.flags[]`에 `halted`, 깃발 델타에 `halted` 비트(변경 시) — **추가만** |
+| 2 | `game/rules.ts` | `marchMatch`·`marchFront(f)`(이웃 순회, `claimable` + 비소유·비동맹, **중립 포함**)·`raidEligible(f)`·`pushing(f)`·`selectMarchTargetRO(f)`(4.4a c) 신설. `threatened()`의 `g.state === 'ENGAGED'` → `pushing(g)` |
+| 3 | `game/movement.ts stage4_moveFlags` | 4.4a (b) 의사코드로 교체: MARCHING 깃발은 ① `arriveEngage` ② halt(이동 전, `nextTileId`는 `stepToward`로 갱신만) ③ 기존 이동·ZOC ④ `arriveEngage` → halt(`moveProgMilli = 0`) → `arriveIdle`. **IDLE(앵커 칸) 판정은 halt 뒤**. inCombat·ENGAGED·IDLE·RETURNING은 `halted = false` |
+| 4 | 4b (`combat.ts`) | 이번 tick `inCombat = true`가 된 깃발은 `halted = false` |
+| 5 | `gauge.ts stage5` | 누적 조건 `state === 'ENGAGED' && !inCombat` → `pushing(f)` 계열(`(ENGAGED or halted) && !inCombat`). halt 해제 시 예산 **리셋 없음**(이동 중엔 누적이 안 되므로 v4.1 "행군 중 누적 금지" 유지) |
+| 6 | `gauge.ts stage6` | 대상 `ENGAGED && ATTACK && !inCombat` → `pushing(f)`. `X = f.halted ? selectMarchTargetRO(f) : selectTargetRO(f)`. 기지 칸이면 `baseHits` 그대로 |
+| 7 | `gauge.ts stage7` | Phase B가 타깃 유효성을 `targetMatch`/앵커 디스크로 재검사한다면 halted push 는 `marchFront` 소속으로 검사. `updateStall` 호출 대상에 halted 포함(민 깃발 net = adv, 못 민 깃발 net = 0) |
+| 8 | `gauge.ts stage10` | `f.halted && f.troops < FLAG_MIN_TROOPS` → `exhausted`(환불 0). front 소멸 IDLE 분기는 ENGAGED 전용 그대로 |
+| 9 | 로비 | 공개 방 `lobby_start_now` 방장 허용(QA m-6 차단 해제). `lobby_list_rooms` → `room_list`(7.2/7.3), 비공개 방 제외 |
+| 10 | 테스트 | 결정론(같은 시드 해시) / 사각 직선 경로 쟁기 폭 3 / 동맹 칸 비대상·중립 대상·제3자 대상 / 물 위 해안 점령 / 방어 태세는 정지 안 함 / breakaway 깃발은 한 칸 이동 전 정지 안 함 / 전투 우선(정지·예산 정지·진척 유지) / 이동 중 예산 누적 0 / halted 소진 40 / 앵커 칸에서 이웃 있으면 IDLE 대신 정지 / `threatened`가 halted 적을 잡음 / 회계 `ledgerImbalance == 0` |
+| 11 | 측정 | 자가대전 10판 재실행 → 5.4 v4.2 표 갱신용: 종료 시각·사유, 공격 깃발 시간 비율(행군·정지 점령·교전·귀환), 노출 소모 장부, 고립 타일 비율(B-21), 제3자 정지 비율(B-20) |
+
+### 프론트 체크리스트
+
+| # | 할 일 |
+|---|---|
+| 1 | **모든 깃발(적 포함)의 진행 방향 표시**(결정 5항): `posTileId → anchorTileId` 화살표/점선. 데이터는 이미 전원에게 온다 — 프로토콜 변경 없음 [A-58] |
+| 2 | `halted` 표시: 행군 깃발이 멈춰 점령 중임을 아이콘/상태 문구로("진군 중 점령"). 타깃 칸 게이지는 기존 `flagTargets`·`flagProgress`로 그린다 |
+| 3 | 고립 영토 렌더: 칸 단위 국경선이면 추가 작업 없음 — 섬처럼 떨어진 내 땅이 정상 표시되는지만 확인 |
+| 4 | ETA 문구: `etaTick`은 **정지 점령 시간을 뺀 이동 시간**. 공격 태세 깃발은 "이동 ETA(정지 제외)"로 표기 |
+| 5 | 발령 미리보기 경고: 공격 태세 경로가 제3자 국경을 따라가면 "경로 옆 모든 적·중립 칸을 공격합니다" 안내(도움말 + 툴팁) |
+| 6 | 로비: 공개 방 방장 "바로 시작" 버튼, **방 찾기** 목록(대기 중 = 입장, 진행 중 = 관전) |
+
+### 페이싱 결론 (5.4 v4.2)
+
+| 지표 | v4.1 | **v4.2 추정** | 목표 대역 |
+|---|---|---|---|
+| 표준 (설계 모델) | 29.35분 | **≈ 28.8~29.0분** | 25~32 (표준 30) |
+| 실질 하한 (×1.6 폭주) | 25.79분 | **≈ 25.3~25.5분** — 26분 구조 바닥을 약간 깬다(대역 25분 안) | ≥ 25 |
+| 최악 W2 + 수비 군사 T3 | 31.21분 | **≈ 30.6~30.8분** | ≤ 32 |
+| 봇 자가대전 실측 | 31.9분 (9/10 타임아웃) | **짧아지지만 여전히 30.5~32분 쪽** — 슬롯 병목·예비 비율이 주원인 | — |
+
+**레버 변경 없음.** 하한 쪽 위험은 관측(B-22) 후 제안 레버로만 대응(5.4 v4.2).
 
 ---
 
@@ -829,6 +907,8 @@ generateMap(seed, W, H, N, cfg: MapGenConfig)       // W×H = 크기 프리셋, 
 | 공개 방 자동 시작 | 첫 입장 후 **30초** (`PUBLIC_AUTOSTART_MS = 30000`) 또는 정원 도달 |
 | 공개 방 정원·충원 | **10인**, 시작 시 빈자리를 `NORMAL` 봇으로 충원. 맵 = 무작위 보통·기본 물 (= 페이싱 보증 설정) |
 | 비공개 방 | 방장이 (a) 항목을 정한다. 시작 = 방장 `lobby_start_now`. 봇은 **`botCount`만큼만** 넣는다(빈자리 자동 충원 없음) |
+| **공개 방 방장 즉시 시작** ⟵ v4.2 (사용자 확정 2026-10-10) | 공개 방도 **방장(첫 입장자, 방장 이탈 시 다음 입장 순)**이 30초를 기다리지 않고 `lobby_start_now`로 시작할 수 있다(QA m-6의 차단을 해제). 3초 카운트다운 유지. 빈자리는 기존대로 `NORMAL` 봇 충원 → 페이싱 보증 설정 그대로 |
+| **방 찾기 목록** ⟵ v4.2 (사용자 확정) | 로비에 **대기 중인 공개 방(입장)** + **진행 중인 공개 방(관전)**을 보인다. 비공개 방은 상태와 무관하게 목록에 없고 코드로만 들어간다. 메시지는 7.2 `lobby_list_rooms` / 7.3 `room_list` |
 
 ## 3. 자원·성장 모델
 
@@ -982,6 +1062,8 @@ guard(f) = { t :  tile[t].owner == f.ownerId
                   AND distance(t, f.anchorTileId) <= FRONT_RADIUS }
 ```
 
+> **v4.2**: `front(f)`는 **ENGAGED 공격 깃발 전용**으로 남는다(앵커 원·내 땅 인접·`targetMatch` 불변). 행군 중 정지 점령은 별도 집합 `marchFront(f)`(4.4a — 깃발 현재 칸의 이웃, 내 땅 인접 불요, 비동맹 전원·중립)를 쓴다. 두 집합은 섞지 않는다 `[A-53]`.
+
 > **v4.1**: `guard(f)`는 되돌리기 대상이 아니게 됐지만 **함수는 유지**한다 — A-29 방어 도착 판정, `guard_lost` IDLE(4.11b), `threatened`(4.4d, 재정의), 봇 `guardN`(8.3)이 쓴다(4.7 a).
 
 > **v4.0 2단계 2차 — 태세가 게이지 역할을 정한다(사용자 확정).** ATTACK 깃발은 `front`의 타일 게이지를 밀고(4.6), DEFEND 깃발은 `guard` 안 내 타일에 걸린 **적 게이지**를 되돌린다(4.7). 앵커 위치는 **기본 태세**(4.3)와 디스크 중심만 정한다.
@@ -1062,8 +1144,11 @@ flag {
   disengageUntilTick : uint32|null   // ⟵ v4.0 2차. 전투 중 재지정·회수 → 이탈 대기 종료 tick (4.15 g). 대기 중 이동 불가·실효값 ×0.5
   breakaway     : bool       // ⟵ v4.0 2차. 이탈 대기를 마친 깃발. posTileId 가 바뀔 때까지 교전 대상 아님 (4.15 g)
   blocked       : bool       // ⟵ v4.0 2차. 표시용 파생값 — 이동 명령이 있는데 ZOC(적 방어 태세 인접)로 정지 중 = 대치 (4.4, 4.15 h)
+  halted        : bool       // ⟵ v4.2. 파생값(4단계가 매 tick 다시 씀) — MARCHING·ATTACK 깃발이 옆 칸을 점령하려고 멈춘 상태 (4.4a). 규칙에 쓰인다(5·6·7·10단계)
 }
 ```
+
+> **v4.2 주석 — 정지 점령은 상태가 아니라 플래그다** `[A-54]`. 행군 중 정지 점령을 ENGAGED로 표현하면 10단계가 앵커 원 `front(f)`(먼 앵커면 빈 집합)를 보고 즉시 IDLE로 보내고, `isGarrison`·`flag_engaged` 의미도 흐려진다. 그래서 **state = MARCHING 유지 + `halted = true`** 로 표현한다 — `inCombat`·`blocked`와 같은 "덧씌우는 일시정지" 패턴이다.
 
 > **v4.0 2단계 주석**: 상태 열거형은 늘리지 않는다. 전투는 **어느 상태에서나 덧씌워지는 일시정지**(`inCombat`)이고, 패주는 **RETURNING의 변종**(`routed`)이다. 그래서 4.4 이동·4.11b 종료 판정의 상태 분기가 그대로 살아 있고, 각 절에 "inCombat이면 건너뛴다" 한 줄씩만 추가된다. 교전 무리는 영속 객체가 아니라 4a에서 tick마다 다시 계산한다(4.15 b) — 서버가 보관할 "전투" 엔터티가 없다.
 
@@ -1401,8 +1486,10 @@ v3.0의 병력 유지비는 **하드 감쇠**였다. 주둔 깃발이 8.3분 뒤
 ```
 // tick 9단계(파생 상태)에서 갱신. Phase B 이후이므로 이번 tick의 진척도 결과를 본다
 threatened(f) = f.inCombat                                        // ⟵ v4.1 재정의 [A-43]
-             or ∃ g : hostile(f, g) and g.posture == ATTACK and g.state == ENGAGED
+             or ∃ g : hostile(f, g) and pushing(g)               // ⟵ v4.2: g.posture == ATTACK and g.state == ENGAGED → pushing(g)
                       and g.targetTileId ∈ guard(f)              // 내 관할 원 안 칸을 미는 적 공격 깃발이 있는가
+// pushing(g) = not g.inCombat and g.posture == ATTACK and (g.state == ENGAGED or g.halted)   (4.4a)
+// v4.2: 행군 중 정지 점령하는 적 깃발도 위협이다 — 빠뜨리면 무위협 누진(calmTicks)과 봇 요격이 쟁기를 못 본다
 if threatened(f) or f.state != ENGAGED:  f.calmTicks = 0
 else:                                    f.calmTicks += 1
 
@@ -1474,7 +1561,149 @@ buildDistanceField(f, f.anchorTileId)
 
 **회수와 기지** (v2.1 그대로): `FLAG_RECALL_REFUND = 0.85`. `recallTarget(f)`는 ① 출발 기지 → ② 남은 내 기지 중 최근접 → ③ 수도 폴백 순. 매 tick 재평가하고 값이 바뀔 때만 거리장 재생성. **기지를 빼앗겨도 교전 중인 깃발은 아무 영향 없이 계속 싸운다**(사용자 확정, v2.1).
 
+### 4.4a 행군 중 자동 공격 — "쟁기" 규칙 (v4.2 신규 — 사용자 확정 2026-10-10, 세부 `[A-51]~[A-56]`)
+
+**사용자 확정 (바꾸지 않는다)**:
+1. **공격 태세 깃발은 행군 중(MARCHING) 깃발 옆 칸 전부를 자동으로 공격한다.** 대상 = 깃발 현재 칸의 `neighbors` 중 `isClaimable`이고 적(적대·비동맹)·중립 소유인 칸. **내 땅과 맞닿지 않아도 된다 → 고립 영토(enclave) 허용.**
+2. **먹을 칸이 있으면 멈춰서 점령, 없어지면 다시 이동.** 게이지·AP·`tileCost`·레이스 등 기존 점령 규칙을 그대로 쓴다.
+3. **방어 태세 깃발은 이동만** 한다.
+
+#### (a) 정의
+
+```
+marchMatch(f, o)  = o != f.ownerId and not isAlly(f.ownerId, o)        // [A-51] NEUTRAL 포함, 적대 플레이어 전원.
+                                                                       //   targetOwnerId 와 무관. isAlly = ACTIVE·BREAKING (targetMatch 와 같은 술어)
+marchFront(f)     = { t ∈ neighbors(f.posTileId) : isClaimable(t) and marchMatch(f, tile[t].owner) }
+                                                                       //   토폴로지 이웃만 — distance·좌표 미사용
+raidEligible(f)   = f.state == MARCHING and f.posture == ATTACK
+                    and not f.routed and not f.inCombat                 //   패주·전투·이탈 대기(= inCombat) 제외
+                    and not f.breakaway                                 // [A-55] 이탈한 깃발은 한 칸 움직여야 정지 가능
+pushing(f)        = not f.inCombat and f.posture == ATTACK
+                    and ( f.state == ENGAGED or f.halted )              //   5·6·7·9·10단계가 쓰는 "밀고 있는 공격 깃발"
+```
+
+- `targetOwnerId`는 **바뀌지 않고 쓰이지도 않는다**(4.5 앵커 고정 그대로). 정지 점령은 "가는 길에 걸리는 것"이고, 앵커에 닿은 뒤 무엇을 미는지는 여전히 `targetOwnerId`가 정한다.
+- `RETURNING`(회수·패주·IDLE 타임아웃 귀환)은 대상이 아니다 — 사용자 원문 "행군 중"의 범위.
+
+#### (b) 4단계 이동 — 4.4의 매 tick 루프를 이 블록으로 대체
+
+```
+arriveEngage(f):                                   // 4.4 기존 도착 판정 중 ENGAGED 두 분기 (조건 불변)
+   if f.posture == ATTACK and front(f) ≠ ∅ and ∃ x ∈ front(f) : distance(x, f.posTileId) <= FLAG_ENGAGE_RANGE:
+        f.state = ENGAGED; emit flag_engaged; return true
+   if f.posture == DEFEND and defendArrived(f):
+        f.state = ENGAGED; emit flag_engaged; return true
+   return false
+arriveIdle(f):                                     // 4.4 기존 세 번째 분기 (조건 불변)
+   if f.posTileId == f.anchorTileId: f.state = IDLE; f.idleSinceTick = t; emit flag_idle(front_cleared); return true
+   return false
+tryHalt(f):
+   if raidEligible(f) and marchFront(f) ≠ ∅: f.halted = true; return true
+   return false
+
+for f in flags sorted by f.id ASC:
+   if t < f.lockUntilTick: continue
+   if f.inCombat or f.state == ENGAGED or f.state == IDLE:
+        f.halted = false; applyExposureAttrition(f); continue
+   if f.state == MARCHING:
+        // ① 현 위치에서 먼저 판정 — 직전 tick 7단계 소유권 변화(내가 먹은 칸)를 반영
+        if arriveEngage(f): f.halted = false; f.moveProgMilli = 0; applyExposureAttrition(f); continue
+        f.nextTileId = stepTarget(f)                // 경로 다음 칸 갱신(selectMarchTarget 의 1순위 키)
+        if tryHalt(f): f.moveProgMilli = 0; applyExposureAttrition(f); continue      // ② 먹을 칸 있으면 정지
+        if arriveIdle(f): f.halted = false; applyExposureAttrition(f); continue
+        f.halted = false
+   // ③ 기존 이동 그대로 — ZOC(대치) · moveProgMilli 전진 · 칸 진입 시 breakaway = false · while 루프의 앵커 도착 break
+   applyExposureAttrition(f)                        // 기존: 비우호 칸 위면 소모. 정지 중이든 이동 중이든 칸 소유자로만 판단
+   if f.state == MARCHING:
+        // ④ 새 칸에서 다시 — 우선순위 ENGAGED 도착 > 정지 > IDLE
+        if arriveEngage(f): f.moveProgMilli = 0
+        else if tryHalt(f): f.moveProgMilli = 0     // 새 칸에서 정지. 남은 이동 진행도는 버린다(정지는 정지)
+        else: arriveIdle(f)
+   if f.state == RETURNING: (기존 — recallTarget 재평가 + 도착 시 85% 환불)
+```
+
+**순서 근거**:
+- **ENGAGED 도착 > 정지**: 쟁기 회랑이 앵커 원에 닿으면 `front`가 생기므로 그 순간 기존 앵커 공격으로 넘어간다 — "가는 길 점령"과 "목표 공격"의 경계가 `front`의 정의 하나로 정해진다 `[A-53]`.
+- **정지 > IDLE**: 앵커 칸에 닿았는데 `front`가 비어도 옆에 먹을 칸이 있으면 IDLE 대신 먹는다. 먹은 칸이 내 땅 인접을 만들면 다음 tick ① 에서 ENGAGED로 넘어간다. 사용자 관찰("도착해도 아무것도 안 한다")의 마지막 구멍을 막는다.
+- **정지 판정은 이동보다 먼저**: 그래서 ZOC(대치)보다도 먼저다. 공격 태세 깃발은 거리 1의 적 방어 깃발과 어차피 4a 전투 간선이 생기므로(4.15 a) ZOC와 정지가 겹치는 경우는 전투가 덮는다.
+- 판정은 **타일 소유자만** 읽고 소유자는 7단계에서만 바뀌므로, 4단계 안의 flagId 처리 순서가 결과를 바꾸지 않는다(결정론).
+
+#### (c) 5·6·7·7c·9·10단계 — 대상만 넓힌다
+
+```
+5단계 AP 누적:   대상 = pushing(f)                      // 기존 ENGAGED·비전투 + halted
+                 이동 중(halted = false)인 MARCHING 은 누적하지 않는다 → v4.1 "행군 중 누적 금지" 유지
+                 halt 해제 시 spendBudgetMilli 리셋 없음 [A-54] — 상한 25 tick 분이 그대로 버스트를 막는다
+                 재지정·회수·태세 전환은 기존대로 0
+6단계 Phase A:   대상 = pushing(f).  X = f.halted ? selectMarchTarget(f) : selectTarget(f)
+                 advance·상한·기지 칸(baseHits)·adv == 0 은 push 아님 — 전부 기존 그대로
+7단계 Phase B:   그대로(레이스 4.10, 소유권 이전, 진척 0·targetTileId = null).  updateStall 대상 = pushing(f)
+                 Phase B 의 타깃 유효성 재검사가 있다면 halted push 는 "X ∈ marchFront(f)"로 검사
+7c 자동 감소:    그대로 — halted 인데 이번 tick 못 밀었으면(AP 0) 감소, 거리 1 적 깃발·inCombat 이면 유지
+9단계:           threatened(f) 의 적 조건 = pushing(g) (4.4 d)
+10단계 종료:     if f.halted and f.troops < FLAG_MIN_TROOPS(40): destroy; flag_ended(exhausted, refunded 0)
+                 (front 소멸 IDLE 분기는 ENGAGED 전용 그대로 — halted 는 4단계 ② 가 매 tick 다시 판정)
+4b 단계:         이번 tick inCombat = true 가 된 깃발은 halted = false  (전투 우선)
+
+selectMarchTarget(f):                                   // [A-52]
+   X = f.targetTileId
+   if X != null and X ∈ marchFront(f): return X         // sticky — 정지 중엔 posTileId 가 고정이라 안정적
+   return argmin over t ∈ marchFront(f) of
+          ( t == f.nextTileId ? 0 : 1,                  // 1) 경로 앞 칸 먼저 — 빨리 다시 걷게
+            distance(t, f.anchorTileId),                // 2) 앵커 쪽 칸
+            tileCost(f, t),                             // 3) 싼 칸
+            t )                                         // 4) tileId — 동률 없음
+   // 새 타깃 != 이전 타깃이면 progressMilli = 0 (selectTarget 과 같은 규칙, Phase B 가 판단)
+```
+
+**정지 → ENGAGED 전환 시 진척도**: 4단계 ①에서 ENGAGED가 되면 다음 Phase A는 `selectTarget`을 쓴다. 지금 미는 칸이 `front`의 sticky 조건(4.6 d)을 만족하면 진척도를 이어가고, 아니면 기존 규칙대로 0부터. 별도 규칙을 만들지 않는다.
+
+#### (d) 상호작용 표
+
+| 상황 | v4.2 결과 | 근거 |
+|---|---|---|
+| 전투(4a 간선 성립) | **전투 우선** — 정지 점령·이동·예산 누적 모두 멈춤, 진척도는 유지(`holdProgress`). 전투가 끝난 다음 tick ②에서 재판정 | D-1, A-22, 4.15 f |
+| ZOC(적 방어 태세 인접) | ②가 이동보다 먼저라 먹을 칸이 있으면 정지·점령(`blocked`는 서지 않음). 거리 1 적 방어 깃발과는 어차피 전투 | 4.15 h |
+| 이탈 대기 / breakaway | 대기 중은 inCombat → 정지 없음. 대기를 마친 breakaway 깃발은 **한 칸 움직인 뒤**부터 정지 가능 | [A-55] — 막지 않으면 "이탈 → 그 자리 정지 → breakaway가 안 풀려 전투 면제 상태로 점령" 악용 |
+| 패주(routed)·RETURNING | 대상 아님 | 사용자 원문 "행군 중" |
+| 방어 태세 행군 | 대상 아님 — 이동만 | 사용자 확정 3 |
+| 태세 전환 ATTACK→DEFEND (정지 중) | 기존 `applyPosture`: 진척 0. 다음 tick 4단계에서 `halted = false`, 이동 재개 | 4.3a |
+| 태세 전환 DEFEND→ATTACK (행군 중) | 다음 tick부터 정지 판정 | 4.3a 쿨타임 그대로 |
+| 재지정(`cmd_retarget`) | 기존대로 진척 0·예산 0·거리장 교체. 현 위치부터 새 경로로 판정 | 4.3 |
+| 물(얕은 물) 위 | 해안 이웃이 있으면 정지·점령 — `beach(f)`(4.15 i)의 일반화(소유자 조건 없음). 물 위 노출 소모·물 위 전투 계수 그대로 | 상륙 비용 보존 |
+| 동맹 땅 위 | 동맹 칸은 비대상. 동맹 땅 위에 서서 옆 적 칸을 먹을 수 있다 → 고립 영토 | 사용자 확정 1 |
+| 내 땅 안 적·중립 고립지 | 지나가며 먹는다 | [A-56] |
+| 제3자 국경을 따라가는 경로 | **제3자 칸도 먹는다**(경로는 거리장 그대로 — 국경 회피 없음) | [A-51] 사용자 원문 "옆 칸 전부". 대안은 [A] 표 |
+| 이웃이 기지 칸 | 기지 체력 피해(4.12) — 함락까지 정지 지속 | 기존 규칙 |
+| 같은 칸을 여러 깃발이 정지 점령 | 레이스(4.10) 그대로 | |
+| 앵커 칸에 서 있는 halted | `arriveIdle`보다 정지가 먼저 — 다 먹으면 ①에서 ENGAGED 또는 IDLE | (b) |
+
+#### (e) 쟁기 기하 — 무엇이 남는가
+
+사각 4-이웃 직선 경로에서 깃발이 경로 칸 `p_k`에 서면 이웃 중 새 칸은 전방 `p_{k+1}`과 좌·우 두 칸 → **걸음당 3칸, 폭 3 회랑**. 깃발은 앞 칸을 먹은 뒤에야 들어가므로 **항상 내 땅 위를 걷는다 → 노출 소모가 사라진다**(물·동맹 칸 제외). 육각(6-이웃)도 전진당 새 칸 3개로 같은 폭이 나온다 — 규칙은 `neighbors`만 쓰므로 토폴로지 교체에 무관하다.
+
+**수치 예 (중반, EB 11)**: 검병 1,200 / 적 평지 응집 0~1 칸 `c ≈ 12~14.5` → `availAP 18` → 칸당 ≈ 0.8 tick. 걸음당 3칸 점령 ≈ 2.4 tick + 평지 1칸 이동 8.3 tick ≈ **2.1초/걸음**, 병력 칸당 13~15 소모 → 1,200 병력 ≈ **80칸 = 깊이 ≈ 27칸 회랑**. 기지에서 멀어질수록 `supplyMult`(최대 ×1.6)가 꼬리를 깎는다. 회랑 옆 칸은 내 이웃 3개(앞·뒤·안쪽)라 상대가 되찾을 때 응집 계수 1.45가 붙는다 — 얇아 보여도 쉽게 끊기지 않는다.
+
+#### (f) 고립 영토 파급 점검 — 기존 규칙이 연결성을 가정한 곳
+
+| 시스템 | 연결성 가정? | v4.2 판정 |
+|---|---|---|
+| 점유율·병력 `√tiles`·골드 `goldWeight` | 아니오 (타일 수) | 그대로 — 고립 칸도 1칸 |
+| `supplyMult` (4.6 c) | 아니오 (최근접 **기지** 거리) | 그대로. 깊은 고립지 공략은 자연히 비싸다(최대 ×1.6) |
+| `front` 인접 조건 | "내 땅 이웃 아무거나" | 그대로 — 고립지도 `front` 근거. 쟁기가 앵커 원에 닿으면 기존 공격으로 이어지는 것이 이 성질이다 |
+| `guard` / 방어 깃발 | 원 안의 내 땅 | 그대로 |
+| 발령 사거리 `FRONT_MAX_RANGE` | 아무 소유 타일 | 그대로 — 고립지도 사거리 기준점 `[A-56]` |
+| 기지(함락·회수 목적지·보급 중심·체력) | 소유만 | 그대로 — 고립지 안 함락 기지도 정상 기지 `[A-56]` |
+| 탈락 `tiles == 0` (4.14) | 아니오 | 그대로 — 고립지 1칸으로도 생존. 탈락 지연 관측 B-21 |
+| 노출 소모 | 칸 소유자 | 고립지 위 깃발은 소모 없음 |
+| 4.13 캐스케이드 / 동맹 / 승리 판정 | 아니오 | 영향 없음 |
+| 클라이언트 렌더 | 칸 단위 | 영향 없음 (칸 단위 국경선) |
+
+> **v4.0에서도 고립은 이미 가능했다** — 상륙 교두보(4.15 i ⚠️ 미확인 항목)와 뒤를 끊긴 돌출부. 위 표로 그 미확인 항목도 함께 닫는다: 보급선 계수는 기지 거리 기반이라 고립을 따로 다룰 필요가 없다.
+
 ### 4.5 목표 소유자 고정과 중립 자동 전환 (v2.1 계승)
+
+> **v4.2**: 행군 중 정지 점령(4.4a)은 `targetOwnerId`를 읽지도 바꾸지도 않는다. 아래 규칙은 ENGAGED 깃발에만 적용된다.
 
 `targetOwnerId`는 ATTACK 자세에서 발령 시 고정된다. **단 하나의 예외**:
 
@@ -1505,6 +1734,8 @@ availAP(f) = floor( min(f.spendBudgetMilli, f.troopsMilli) / 1000 )
 ```
 
 `FLAG_SPEND_RATE = 0.015` → 깃발 하나가 전 병력을 태우는 데 **66.7 tick(13.3초)**. 예산 상한 25 tick분이 (a) 비싼 전선에서 대기하며 예산을 쌓아 터뜨리는 버스트와 (b) 행군 중 누적을 막는다. 재지정 시 0으로 리셋(4.4절).
+
+> **v4.2**: 누적 대상은 `pushing(f)` = ENGAGED·비전투 **또는 행군 중 정지 점령(`halted`)**(4.4a c). 걷고 있는 MARCHING은 여전히 누적하지 않는다. 정지가 풀려도 예산은 리셋하지 않는다 `[A-54]`.
 
 #### (b) 점령비용 `tileCost` — 밀도항 제거, 보급선 항 추가
 
@@ -1611,6 +1842,8 @@ selectTarget(f):
   if newTarget != f.targetTileId: f.progressMilli = 0
   return newTarget
 ```
+
+> **v4.2**: 위 `selectTarget`은 ENGAGED 깃발용이다. `halted` 행군 깃발은 `selectMarchTarget`(4.4a c — `marchFront` 안 sticky, 정렬 = 경로 앞 칸 → 앵커 거리 → `tileCost` → tileId)을 쓴다. 전진량·상한·소비AP 공식은 둘 다 위와 같다.
 
 **소비 예시 (중반 표준, 방어 없음)**: 검병 1,200 병력, 적 타일 `c = 16 × 1.25(응집) × 1.0514(지형) = 21.0`.
 `availAP = 18/tick` → `advance = floor(18000/21) = 857 milli/tick` → **1.17 tick(0.23초)마다 1타일**, 상한 2000에 안 걸림. 전 병력 소진 시 **총 57타일**, 소요 66.7 tick(13.3초).
@@ -1769,6 +2002,8 @@ if f.progressMilli > 0 and notPushing(f) and not holdProgress(f):
 | ENGAGED·ATTACK인데 타깃 없음(front 비어 IDLE 직전) | 감소 | |
 | `IDLE` | 감소 | |
 | `MARCHING` (진척도를 가진 채 걷는 경우 — 예: 대치 해제 후) | 감소 | 재지정·회수는 원래 즉시 0 |
+| `MARCHING` + `halted`, 이번 tick 밀었음 ⟵ v4.2 | **감소 없음** | ENGAGED 공격과 같다 (pushedSet 소속) |
+| `MARCHING` + `halted`, AP 0 등으로 못 밀었음 ⟵ v4.2 | 감소 (주변 적 없으면) | ENGAGED 공격과 같다. `updateStall`도 같이 돈다(4.4a c) |
 | `STALLED` | 감소 (주변 적 없으면) | v4.1에서 STALLED = 비전투 상태로 5초 이상 못 민 깃발 — (f) |
 | inCombat (전투 중) | **유지** | 사용자 예외. A-22(전투 중 진척 유지)와 일치 |
 | 대치(ZOC로 정지, `blocked`) | **유지** | 정지시킨 적 방어 태세 깃발이 거리 1 |
@@ -1814,6 +2049,8 @@ v4.0까지 STALLED는 주로 "되돌리기에 상쇄당해 0에 붙은 깃발"�
 **무한 교착이 구조적으로 불가능한 이유 (갱신)**: 비전투 정체는 진척도를 10초 안에 0으로 만들고, 전투 교착은 4.15(c) 손실(tick당 1.5%, 바닥 0.75%)이 양쪽 병력을 소모해 끝낸다. 대치(양쪽 방어 태세)는 병력 손실이 없지만 진척도도 없다 — 땅이 바뀌지 않는 정지 상태이며 주둔 유지비(골드)가 계속 나간다(4.4).
 
 ### 4.8 병력 회계 불변식
+
+> **v4.2**: 새 감소 경로 없음. 행군 중 정지 점령(4.4a)의 AP 지출은 ENGAGED 공격 지출과 **같은 행(① 공격 지출)**으로 계상한다. 대신 공격 깃발이 내 회랑 위를 걷게 되어 노출 소모 행이 줄어든다(5.4 v4.2).
 
 깃발이 자기 병력보다 많이 쓰지 않는다는 것을 v3.0에서 다시 증명한다. v2.1의 증명은 경매(낙찰/낙심 이중 지출) 때문에 복잡했지만, v3.0은 지출 경로가 하나뿐이라 자명해진다.
 
@@ -1908,6 +2145,7 @@ if f.progressMilli >= 1000:
 | **원 소유자** | 별도 추가 손실 없음(`DEFENDER_LOSS_RATIO` 폐기). 방어에 쓴 AP가 곧 손실이다 |
 | **같은 플레이어의 깃발끼리** | `selectTarget`이 깃발별로 독립이므로 같은 타일을 동시에 노릴 수 있다. 이 경우에도 레이스가 적용되어 하나만 먹고 다른 하나의 게이지가 날아간다 → **자기 깃발끼리 겹치지 않게 배치하는 것이 플레이어의 책임**이며 UI가 디스크 겹침을 경고한다 |
 | **동맹** | 동맹/파기 쿨다운 중인 상대 타일은 `front()` 정의에서 제외되므로 게이지 자체가 생기지 않는다 |
+| **행군 중 정지 점령** ⟵ v4.2 | `halted` 깃발의 push도 같은 순회(tileId ASC → flagId ASC)에 들어가 같은 레이스를 한다. ENGAGED 깃발과 halted 깃발 사이에 우선권 없음. 동맹 칸은 `marchFront`에서 빠지므로 동맹 규칙도 동일 |
 
 > **v2.1의 경매 규칙이 만들던 성질이 전부 보존된다.** "약한 셋이 강자의 같은 지점을 동시에 때리면 타일은 하나만 가져가고 나머지는 낭비"는 게이지 레이스로 그대로 재현된다. 달라진 것은 **강자가 추가로 병력을 잃지 않는다**는 점인데, 그 자리는 "강자가 그 세 구간에 각각 반격 깃발을 대야 한다"는 슬롯 압박이 대신한다(5.5절). 상수 3개(`LOSER_ATTRITION_RATIO`, `LOSER_TO_DEFENDER_RATIO`, `DEFENDER_LOSS_RATIO`)가 사라지고 규칙이 하나도 줄지 않았다.
 
@@ -1984,6 +2222,8 @@ for f in flags sorted by f.id ASC:
              f.state = IDLE; f.idleSinceTick = t; emit flag_idle(reason="guard_lost")
         else if f.troops < FLAG_MIN_TROOPS:
              destroy(f); emit flag_ended(reason="exhausted", refunded=0)
+   if f.state == MARCHING and f.halted and f.troops < FLAG_MIN_TROOPS:     // ⟵ v4.2 (4.4a c) — 정지 점령도 소진 규칙 동일
+        destroy(f); emit flag_ended(reason="exhausted", refunded=0)
    // v4.0 2단계: inCombat 깃발은 이 블록 전체(소진·IDLE 타임아웃)를 건너뛴다 — 전투는 0까지 간다 (4.15 f)
    // v4.0 2차: 이탈 대기 깃발도 inCombat 이므로 건너뛴다. 대치(blocked) 깃발은 전투가 아니므로 정상 판정 대상
    //           (단 blocked 는 이동 명령 중 = MARCHING/RETURNING 이라 IDLE 타임아웃과 무관). 전투 종료 = 무리 해체(4a) 또는 패주(4b)
@@ -2929,6 +3169,36 @@ k̄ = 1.237 (표준) / 1.467 (최악), m = 군사 테크 깃발 전투 배율 (A
 
 비교·재현용 스크립트: `pace30.py`(3단계 2차) + v4.1 패치(`lam`/`lamw` 교체, `ER × 0.99`).
 
+#### 5.4 v4.2 — 행군 중 자동 공격 페이싱 추정 (2026-10-10)
+
+**방향: 짧아진다.** 세 경로가 모두 "같은 병력·같은 슬롯으로 더 많이, 더 빨리 먹는다" 쪽이다.
+
+| 경로 | 크기 추정 | 근거 |
+|---|---|---|
+| ① 행군 시간 → 점령 시간 전환 | 봇 실측 공격 깃발 시간: 행군 23% · 실제 교전 7%. 행군 중 옆에 먹을 칸이 있는 몫을 20~40%로 보면 점령 시간 7% → 11~16% | 봇 앵커는 대부분 국경 근처라 내부 행군은 바뀌지 않는다. 바뀌는 것은 국경을 따라 걷는 구간·재지정 행군·먼 앵커 |
+| ② 노출 소모 제거 | 장부 기준 노출 소모 ≈ 10%(§11) 중 공격 깃발 몫 대부분 → 효율 +5~8% | 깃발이 자기 회랑 위를 걷는다(4.4a e) |
+| ③ 먼 앵커 IDLE 소멸 | 사람 플레이에서 큼, 봇은 작음 | 첫 플레이테스트 관찰 그 자체 |
+| (반대) 제3자 정지·교전 증가 | 효율 −0~3% (전투 손실 장부 17%가 오를 수 있음) | 점령 칸은 어쨌든 내 점유율 → 세션은 여전히 짧아지는 쪽 |
+
+**설계 모델(pace30 + v4.1 패치)에 넣는 방식**: 5.1 모델은 이미 "행군은 병목이 아니다"를 가정했으므로 ①③은 모델에 새 이득이 아니다(모델이 원래 가정한 상태로 현실을 끌어오는 효과). 모델에 들어가는 순증은 ②뿐 → gross 효율 ×1.05~1.08.
+
+| 시나리오 | v4.1 | **v4.2 (×1.05)** | **v4.2 (×1.08)** | 판정 |
+|---|---|---|---|---|
+| **표준** | 29.35분 | **29.0** | **28.8** | 대역 안, 표준 30분 근처 유지 |
+| 폭주 ×1.4 | 26.83 | 26.4 | 26.2 | |
+| **폭주 ×1.6 (실질 하한)** | 25.79 | **25.5** | **25.3** | 26분 구조 바닥을 0.3~0.5분 깬다. 대역 하한 25분은 지킴 |
+| 최악 W2 + 수비 군사 T3 | 31.21 | ≈ 30.8 | ≈ 30.6 | 하드 여유 1.2~1.4분으로 **늘어남** |
+
+**봇 실측 보정 (참고)**: 같은 스크립트에서 gross ×0.45가 봇 자가대전(30분 1위 28.6% vs 실측 28.7%, 32분 타임아웃)을 재현한다 — 봇은 설계 처리량의 절반 미만으로 돈다(슬롯 병목·예비 비율, §11). v4.2의 ①②로 봇 처리량이 +25~60% 늘면 ×0.56~0.72 → **여전히 대부분 32분 타임아웃, 종료 시 1위 점유율 31.7% → 37~44%**. ×0.81(+80%) 이상이어야 31분대 임계 종료가 나온다. 즉 **v4.2는 봇 타임아웃을 줄이지만 혼자서는 해소하지 못한다** — 봇 쪽 병목(슬롯 40% 주둔, 예비 30%)은 8장 별도 과제다.
+
+**폭주 위험 판단**: 낮음~중간. 쟁기는 (i) 병력을 더 빨리 태우고(깃발 수명 단축 = 슬롯 회전), (ii) 회랑이 얇아 수비 요격 대상이 명확하며(경로·방향이 전원에게 보인다 — 결정 5항), (iii) 깊이 들어갈수록 `supplyMult`가 최대 ×1.6로 깎는다. 하한을 깨는 것은 "약자가 무너지는" ×1.6 꼬리에서만이고 그때도 25분 위다.
+
+**레버 — 변경 없음, 제안만** (B-22에서 표준 < 27분 또는 실측 하한 < 25분이 관측될 때):
+1. 1순위(신규 상수, 사용자 확정 필요): `MARCH_CAPTURE_AP_PERMILLE` — 정지 점령 시 예산 누적 배율, 기본 1000(= 사용자 확정 "기존 규칙 그대로"). 700이면 ②만큼을 상쇄한다. 사용자 확정 규칙의 수치화라 기본값은 건드리지 않는다.
+2. 2순위: 5.8 기존 레버 순서 그대로(`ENEMY_BASE` 11 → 12는 v4.1에서 최악이 32분을 넘어 기각됐지만, v4.2에서 최악이 30.6~30.8분으로 내려오므로 재검토할 수는 있다 — 다만 같은 스크립트로 EB 12 + v4.2는 표준 29.8~30.0분 / 최악 ≈ 31.7~31.9분(여유 0.1~0.3분)이라 **여전히 권하지 않는다**).
+
+재현: `pace30.py` + v4.1 패치(`lam`/`lamw`, `ER × 0.99`) + `run(EB=11, fn=0.762, THS=16, THP=1.5, RUSH=28, HARD=32, mult=…)`. 최악 행은 v4.1 문서값에 같은 스크립트 `worst_u=20`의 mult 민감도(−0.42/−0.66분)를 더했다.
+
 #### 5.5 동맹의 근거 재정립 (F.4 필수 처리)
 
 **폐기된 명제**: *"`troopCap`이 타일당 12로 고정이므로 큰 제국은 타일당 방어력을 늘릴 수 없다. 큰 쪽은 1:1에서는 이기지만 여럿에게 둘러싸이면 진다."* (v2.1 3.2절)
@@ -3312,7 +3582,8 @@ CONNECTING → CONNECTED → IN_LOBBY → COUNTDOWN → IN_GAME → GAME_OVER �
 | `lobby_join_private` | `{ roomCode }` | 코드 검증, 정원/진행상태 확인 |
 | `lobby_leave` | `{}` | 룸에서 제거, 호스트면 승계 |
 | `lobby_set_ready` | `{ ready: bool }` | 준비 상태 갱신 → `room_state` 브로드캐스트 |
-| `lobby_start_now` | `{}` | 호스트 전용. 남은 자리를 봇으로 채우고 즉시 카운트다운 |
+| `lobby_start_now` | `{}` | 호스트 전용. 남은 자리를 봇으로 채우고 즉시 카운트다운. **v4.2: 공개 방에서도 방장 허용**(2.8 h) |
+| `lobby_list_rooms` ⟵ v4.2 | `{}` | 방 찾기 목록 요청. 응답 `room_list`(7.3). 요청 빈도는 rate limit(초당 1회)로 막고, 클라이언트는 로비 화면에 있는 동안 3~5초 주기로 다시 요청한다(서버 푸시 구독은 백엔드 재량) `[A-57]` |
 | **`cmd_flag_issue`** | `{ clientSeq, unit: 0..2, troops: int, anchorTileId, originBaseTileId?: uint32\|null }` | 4.3절 전체 검증 → **앵커 소유자로 자세 결정**, 출발 기지 결정, 슬롯 배정, 풀 차감, 거리장 생성. **반드시 `cmd_ack`**<br>**v3.0: 스키마는 v2.1과 동일하다.** 자세는 서버가 `tile[anchorTileId].owner == p.id`로 파생하므로 필드를 추가하지 않는다 |
 | **`cmd_flag_retarget`** | `{ clientSeq, flagId, anchorTileId }` | 4.4절 검증 → 앵커·목표·**자세** 교체, `lockUntilTick` 설정, `progressMilli = 0`, 거리장 재생성 |
 | `cmd_flag_recall` | `{ clientSeq, flagId }` | `state = RETURNING`. 도착 시 85% 환불 |
@@ -3401,6 +3672,9 @@ CONNECTING → CONNECTED → IN_LOBBY → COUNTDOWN → IN_GAME → GAME_OVER �
 | `flag_disengage_started` ⟵ v4.0 2차 | 룸 | `{ tick, flagId, untilTick }` — 전투 중 재지정·회수 수락 |
 | `flag_disengaged` ⟵ v4.0 2차 | 룸 | `{ tick, flagId, reason: "broke_away" \| "combat_over" }` |
 | 깃발 델타·`combat_started` 확장 ⟵ v4.0 2차 | 룸 | 깃발 델타에 `posture`·`blocked`·`disengaging`·`breakaway` 비트, `postureCooldownUntilTick`(변경 시만). `combat_started.sides[]`에 편 실효값 `power`(permille, 4.15 d) — 클라이언트가 교환비 k를 표시 |
+| 깃발 `halted` ⟵ v4.2 (**추가만**) | 룸 | `snapshot_full.flags[]`에 `halted: bool`, 깃발 델타에 `halted` 비트(바뀐 tick만). 별도 이벤트 없음 — 정지 점령의 타깃·게이지는 기존 `flagTargets`·`flagProgress`가 그대로 싣는다 (4.4a) |
+| `etaTick` 의미 ⟵ v4.2 (주석만) | — | `flag_issued`·`flag_retargeted`의 `etaTick`은 **정지 점령 시간을 뺀 이동 ETA**. 공격 태세는 실제 도착이 더 늦을 수 있다 |
+| `room_list` ⟵ v4.2 | 개인 | `lobby_list_rooms` 응답. `{ rooms: [{ roomId, roomCode: null, phase: "LOBBY"\|"PLAYING", players, maxPlayers, humans, mapLabel, autoStartMs?, elapsedTick? }] }` — **공개 방만**(비공개는 어떤 phase에서도 제외, `roomCode`는 항상 null). `LOBBY` = 입장(`lobby_join_public`에 `roomId` 지정 — 필드 추가만), `PLAYING` = 관전(`lobby_spectate`에 `roomId`). 정렬: LOBBY 먼저 → 인원 많은 순 → roomId `[A-57]` |
 | 거절 코드 추가 ⟵ v4.0 | 개인 | `ROUTED`(패주 깃발에 모든 명령) / `IN_COMBAT`(**v4.0 2차: 전투 중 태세 전환에만** — 재지정·회수는 이탈 대기로 수락) / `DISENGAGING`(이탈 대기 중 태세 전환) / `POSTURE_COOLDOWN` / `SAME_POSTURE` / `NO_FLAG` |
 | **`base_captured`** ⟵ v3.0 | 룸 | `{ tick, tileId, fromPlayerId, toPlayerId, newHpPct: 50 }` — 화면 연출 + 사운드 트리거. **세션당 10~25회 발생하는 주요 이벤트** |
 | `tech_purchased` | 룸 | `{ tick, playerId, axis, tier, cost, newFlagCap }` |
@@ -3440,14 +3714,17 @@ onTick(t):
                    ※ v4.0: inCombat 깃발은 이동하지 않는다(노출 소모만). routed 깃발은 노출 소모 없음
                    ※ v4.0 2차: ZOC — tick 시작 스냅숏 위치 기준, 적 방어 태세 인접 칸 → 인접 칸 이동 금지(4.4). posTileId 가 바뀐 깃발 breakaway = false
                    ※ v4.0 2차: cmd_set_posture 는 다른 명령과 같은 명령 처리 단계에서 즉시 적용 → 같은 tick 4a 간선 판정에 새 태세가 쓰인다
+                   ※ v4.2: MARCHING 깃발은 ① ENGAGED 도착 → ② 정지 점령(raidEligible + marchFront ≠ ∅ → halted) → 앵커 칸 IDLE
+                           → ③ 이동 → ④ 새 칸에서 ENGAGED 도착 > 정지 > IDLE. 그 외 상태는 halted = false   (4.4a b)
  4a. 깃발 전투 Phase A — ⟵ v4.0 2단계. 4단계 직후 위치·병력 스냅숏으로 교전 무리 탐색
                    (flagId ASC 시드 BFS), 무리별 L·편별 손실·깃발별 보정 손실 산출.
                    **게임 상태 쓰기 절대 금지** — 결과는 tick 로컬 combatLoss[] 에만   (4.15 c·d·e)
  4b. 깃발 전투 Phase B — flagId ASC. troopsMilli 차감(편 실효값 역수 배분, 4.15 d), inCombat 갱신, 0 도달 → 패주 전이,
      v4.0 2차: 이탈 대기 만료·취소 → breakaway, blocked 갱신(flag_blocked/unblocked). 4a 간선 = 적대·인접·한쪽 이상 공격 태세·breakaway 제외
                    (RETURNING + routed, progressMilli=0, spendBudgetMilli=0)           (4.15 f)
-  5. AP 예산 누적 — flagId 오름차순. ENGAGED 깃발만, **inCombat 깃발 제외**(v4.0). **이후 6·7단계 내내 동결**  (4.6a)
-  6. 전투 Phase A — 밀기 산출만 (v4.1: 방어 배분 삭제). **inCombat 깃발은 밀지 않는다**(D-1). adv == 0 은 push 가 아니다. **게임 상태 쓰기 절대 금지**  (4.7b)
+                   v4.2: 이번 tick inCombat 이 된 깃발은 halted = false (전투 우선)
+  5. AP 예산 누적 — flagId 오름차순. ENGAGED 깃발만(**v4.2: + halted 행군 깃발 = pushing(f)**), **inCombat 깃발 제외**(v4.0). **이후 6·7단계 내내 동결**  (4.6a)
+  6. 전투 Phase A — 밀기 산출만 (v4.1: 방어 배분 삭제). v4.2: 대상 pushing(f), halted 면 selectMarchTarget (4.4a c). **inCombat 깃발은 밀지 않는다**(D-1). adv == 0 은 push 가 아니다. **게임 상태 쓰기 절대 금지**  (4.7b)
   7. 전투 Phase B — 진척도/기지 체력 적용, 소유권 이전, 병력 차감. tileId 오름차순 (4.7b / 4.10 / 4.12)
  7c. 진척도 자동 감소 — ⟵ v4.1. flagId 오름차순. 이번 tick 안 민 깃발 중 holdProgress(4a 스냅숏, 거리 ≤ 1 적 깃발 / inCombat)가
                    아닌 것만 progressMilli −= PROGRESS_DECAY_MILLI_PER_TICK (0 클램프), 0 도달 시 flag_progress_lost(cause="decayed")   (4.7e)
@@ -3455,6 +3732,7 @@ onTick(t):
   9. 파생 상태   — tiles / goldWeight 는 7에서 증분 갱신 완료. 점유율 재계산
                    flagId 오름차순으로 f.calmTicks 갱신(무위협 누진)             (4.4d)
  10. 깃발 종료 판정 — 소진/전선 소멸/guard 소멸/중립 자동 전환/IDLE 타임아웃      (4.11b)
+                   v4.2: halted 깃발 병력 < 40 → exhausted. 9단계 threatened 의 적 조건 = pushing(g)
  11. 봇 AI      — t % 15 == 0 인 tick에만, botIndex 오름차순                     (8장)
  12. 탈락 판정                                                                    (4.14)
  13. 승리 판정                                                                    (6.1)
@@ -3762,6 +4040,17 @@ priority = TECH_PRIORITY[bot.botIndex % 4]
 
 ---
 
+### 8.7 v4.2 — 행군 중 자동 공격의 봇 영향 (개요)
+
+| # | 항목 | 필수? | 내용 |
+|---|---|---|---|
+| 1 | 위협 감지 | **필수** | 봇 요격·`guardN`·무위협 회수가 쓰는 위협 판정이 "적 ENGAGED 공격 깃발"만 보면 쟁기를 놓친다 → `pushing(g)`(4.4 d)로 교체. 규칙 함수 `threatened()`를 고치면 같이 따라온다 |
+| 2 | 요격 목표 | 권장 | 쟁기 깃발은 MARCHING이라 `targetTileId`가 매 정지마다 바뀐다. 요격 배치 칸 = 적 깃발 `posTileId`의 거리 1 내 땅(기존 "인접 배치" 규칙 그대로)이면 충분 — 타깃 칸 대신 깃발 위치를 쫓는다 |
+| 3 | 앵커 선택(8.3) | 선택 | 지금 봇은 국경 근처 앵커를 고른다 → 행동 변화 작음(5.4 v4.2 봇 보정). 다음 반복 후보: "먼 앵커 = 쟁기 노선" 평가 — 경로상 이웃 적·중립 칸 수 × 비용으로 점수화. **관측(B-20) 후 결정** |
+| 4 | 제3자 끌어들이기 | 선택 | 경로가 동맹 아닌 제3자 국경을 따라가면 정지해 그 칸을 먹는다. 봇은 1차에서 그대로 둔다(사람과 같은 규칙). 원치 않는 전쟁이 잦으면 공격 앵커를 "경로가 제3자와 맞닿지 않는 쪽" 우선으로 |
+| 5 | 결정론 | 불변 | 봇은 여전히 일반 명령만 낸다. 4.4a는 규칙 쪽 변경이라 봇 코드 결정론에 새 요소 없음 |
+| 6 | 난이도 | 관측 | 슬롯 회전이 빨라지면 reserve 레버가 다시 먹을 수 있다(§11 5항 "HARD ≈ NORMAL"의 원인이 슬롯 병목) → B-19와 함께 재측정 |
+
 ## 부록 A. 밸런스 상수 전체 표 (백엔드 단일 소스 — v3.0 전면 갱신)
 
 > 백엔드는 이 표를 `shared/constants.ts` 로 뽑고 `match_config` 로 클라이언트에 내려보낸다.
@@ -4014,6 +4303,22 @@ PUBLIC_ROOM_PLAYERS  = 10                   // 사용자 승인, 빈자리 NORMA
 PUBLIC_ROOM_MAP      = { kind: "random", size: "M", water: MAP_GEN_DEFAULT }
 ```
 
+#### v4.2 (A-51 ~ A-58) — 신규 수치 상수 없음
+
+```
+// ── 행군 중 자동 공격 (4.4a) — 새 상수 없음. 기존 상수를 그대로 쓴다 ──
+//   대상 범위 = neighbors(posTileId)        (거리 상수 없음 — 토폴로지 이웃)
+//   AP 누적 = FLAG_SPEND_RATE_PERMILLE, 상한 = FLAG_SPEND_BUDGET_CAP_TICKS       (4.6 a, 불변)
+//   전진량·상한 = tileCost / FLAG_MAX_PROGRESS                                  (4.6 d, 불변)
+//   소진 = FLAG_MIN_TROOPS (40)                                                   (4.11 b, 불변)
+// 제안만(미적용, 5.4 v4.2 레버 1순위 — 도입 시 사용자 확정 필요):
+//   MARCH_CAPTURE_AP_PERMILLE = 1000          // 정지 점령 중 예산 누적 배율. 1000 = 사용자 확정 "기존 규칙 그대로"
+// ── 로비 (2.8 h) ──
+LOBBY_LIST_RATE_LIMIT_MS = 1000             // [A-57] lobby_list_rooms 최소 간격 (백엔드 재량 값)
+```
+
+`match_config`: 추가 없음(클라이언트가 정지 점령을 예측하는 데 새 상수가 필요 없다 — `neighbors`·`tileCost`는 기존 데이터로 계산 가능).
+
 ### A.1 백엔드 구현 체크리스트 (v2.1 코드에서 이어갈 때)
 
 | # | 작업 | 절 |
@@ -4218,7 +4523,22 @@ F.5가 요구한 것은 "비용 분산이 충분한지 검산하고, 부족하�
 
 > **그대로 보고 (설계자 판단 아님, 사용자 인지 필요)**: 되돌리기 폐지로 **다(多)깃발 분산 공격에 대한 수비가 약해졌다**(4.7 d-2). 절대 우위는 없지만 수비 우위가 슬롯 대칭에 의존한다. 페이싱 영향은 ±0.1분(5.4 v4.1).
 
-### [B] 플레이테스트로 사후 조정 가능한 것 (17건 — v3.1에서 2건, v4.0에서 3건, v4.0 3단계 2차에서 3건 추가)
+### [A] v4.2 (행군 중 자동 공격 · 로비) — 사용자 확정 필요 (2026-10-10 신설, 8건)
+
+사용자 확정 규칙(행군 중 공격 태세 깃발이 옆 칸 전부 자동 공격, 멈춰서 점령 후 재이동, 고립 영토 허용, 방어 태세는 이동만)은 **전제**이고, 아래는 그 규칙을 서버가 결정론적으로 계산하도록 설계자가 채운 세부다.
+
+| # | 항목 | 기본안 | 근거·대안 |
+|---|---|---|---|
+| **A-51** | 행군 중 대상 소유자 | **동맹(ACTIVE·BREAKING) 제외 전원 + 중립.** `targetOwnerId` 무관·불변(4.5 앵커 고정은 ENGAGED 전용) | 사용자 원문 "옆 칸 전부"의 문자 그대로. **대안**: `{targetOwnerId, NEUTRAL}`만 — 경로 옆 제3자를 건드리지 않아 원치 않는 전쟁을 막지만, 사용자 문구와 어긋나고 "왜 저 칸은 안 먹지?"가 생긴다 |
+| **A-52** | 타깃 선택 순서·sticky | sticky = 현 타깃이 `marchFront` 안이면 유지. 새 타깃 = (경로 앞 칸 → 앵커 거리 → `tileCost` → tileId) 최소. 새 타깃이면 진척 0 | 정지 중엔 위치 고정이라 sticky가 안정적. 앞 칸 우선 = 빨리 다시 걷는다. 대안: `tileCost` 우선(같은 AP에 먹는 칸 수는 같아 효과 미미) |
+| **A-53** | 앵커 도착 후 | **기존 `front`로 돌아간다** — "옆 칸 전부"는 MARCHING 중에만. 회랑이 앵커 원에 닿으면 ENGAGED 판정이 정지보다 먼저 | 사용자 원문은 "이동 중"만. 앵커 원 UI·`targetOwnerId` 의미 보존. **대안**: ENGAGED도 `front ∪ marchFront` — 도착 후에도 주변을 쓸지만 앵커 원의 의미가 흐려지고 제3자 확전이 앵커 주변으로 번진다 |
+| **A-54** | 정지 상태 표현과 회계 | MARCHING 유지 + `halted` 플래그(ENGAGED 아님). 예산 누적·밀기·`updateStall`·자동 감소·소진(40)은 ENGAGED 공격과 동일. **노출 소모는 칸 소유자로만**(기존), **주둔 유지비 없음**(`isGarrison` = ENGAGED), 정지 해제 시 예산 리셋 없음, 이동 중 누적 없음 | ENGAGED로 표현하면 10단계가 먼 앵커의 빈 `front`를 보고 IDLE로 보낸다. 대안: 정지 해제 시 예산 0 리셋(재정지 첫 tick이 약간 느려짐 — 실익 없음) |
+| **A-55** | 우선순위 | **전투 > ENGAGED 도착 > 정지 점령 > IDLE(앵커 칸) > ZOC·이동.** 이탈 대기 중 정지 없음, breakaway 깃발은 한 칸 이동 후부터 정지 가능, 패주·RETURNING·방어 태세 제외 | breakaway 조건이 없으면 "이탈 → 제자리 정지 → 전투 면제로 점령" 악용 |
+| **A-56** | 내 땅 통과·고립 영토 | 출발 칸부터 같은 규칙(내 땅 안 적·중립 고립지도 먹는다). 고립 영토는 모든 시스템에서 **보통 땅과 동일**: 점유율·생산·`supplyMult`(기지 거리 기반)·발령 사거리 기준점·기지·탈락 판정 모두 그대로 | 4.4a (f) 점검표. 대안: 발령 사거리를 "기지와 연결된 땅"에서만 — 연결성 탐색(BFS)이 매 발령마다 필요하고 이득 작음 |
+| **A-57** | 로비 방 찾기 | `lobby_list_rooms` 요청 → `room_list` 응답(공개 방만, LOBBY = 입장 / PLAYING = 관전, LOBBY 먼저 → 인원 많은 순 → roomId), 요청 간격 ≥ 1초. 공개 방 방장 = 첫 입장자(이탈 시 다음 입장 순), `lobby_start_now` 허용 | 사용자 확정 1·2항의 프로토콜화. 대안: 서버 푸시 구독(로비 화면 진입 시 구독) — 백엔드 재량 |
+| **A-58** | 진행 방향 표시 | 모든 깃발(적 포함)에 `posTileId → anchorTileId` 직선 화살표. **프로토콜 변경 없음**(두 값은 이미 전원에게 온다). `halted`면 화살표 위에 "점령 중" 표지 | 사용자 확정 5항. 대안: `nextTileId`를 델타에 실어 실제 경로 첫 칸 방향 표시(깃발당 +4바이트/변경 시) — 물·산 우회 경로가 직선과 크게 다를 때만 의미 |
+
+### [B] 플레이테스트로 사후 조정 가능한 것 (20건 — v3.1에서 2건, v4.0에서 3건, v4.0 3단계 2차에서 3건, v4.2에서 3건 추가)
 
 **B-18. 수비 도달률 ψ (v4.1 신규).** 되돌리기 폐지 후 방어 병력 중 실제로 공격 깃발에 인접해 전투에 들어가는 비율. 5장 표준 가정 0.75.
 **관측 지표**: (1) 공격 깃발이 비교전 상태로 민 타일 / 전체 적 타일 점령 — 0.5 초과면 수비가 다깃발 분산 공격을 못 따라간다(4.7 d-2) (2) 표준 세션 < 27분 비율. 조치는 제안만(사용자 확정 상수 영역).
@@ -4295,6 +4615,15 @@ v3.0에서 방어 직무가 생겨 창병에 확실한 자리가 났고(4.11a), 
 5.7절 재검산에서 (1) 중위권 4번째 노드 여유가 351 → **43골드**로 줄었고, (2) 선두 5번째 노드가 36.8분에 들어와 `ENDGAME_RUSH_TICK`(37분)과 **0.2분** 차다. 둘 다 목표 대역 안이지만 모델 오차 여유가 거의 없다.
 **관측 지표**: **(1) 중위권(최종 순위 3~6위) 플레이어의 테크 노드 수 중앙값이 4인가** — 3으로 내려가면 선두 5 vs 중위 3이 되어 스노볼이 v3.0보다 커진다. **(2) 선두의 마지막 노드 구매 시각이 37분 이전인가** — 37분 이후 구매 비율이 40%를 넘으면 마지막 노드가 종반 러시에 못 쓰이고 사표가 된다.
 **지정 레버**: 1순위 `GARRISON_UPKEEP_PERMILLE` 90 → 70 (중위권 여유 +90골드, 선두 5번째 노드 −0.4분). 2순위 `GARRISON_UPKEEP_FREE_PERMILLE` 1000 → 1600(창병 2.67개 / 검병 1.6개 면제 — 중위권을 우선 구제하되 대형 웅크리기 압박은 유지). **`GOLD_RATE_PERMILLE`와 `BASE[tier]`는 건드리지 말 것** — 5.7절 전체와 3.4절 축 선택 밀도를 동시에 재계산해야 한다.
+
+**B-20. 쟁기의 제3자 끌어들이기 (v4.2 신규, A-51).** 경로 옆 제3자 칸을 먹으며 원치 않는 전쟁이 생기는가.
+**관측 지표**: (1) 정지 점령 칸 중 `targetOwnerId`가 아닌 플레이어 칸의 비율 — 30% 초과면 A-51 대안(`{targetOwnerId, NEUTRAL}`)을 사용자에게 다시 묻는다 (2) 정지 점령이 계기가 된 `combat_started` 비율 (3) 동맹 제안 수락률 변화.
+
+**B-21. 고립 영토의 수명과 탈락 지연 (v4.2 신규, A-56).** 고립 칸이 오래 살아남아 탈락·종반 정리를 늦추는가.
+**관측 지표**: (1) 매 분 전체 소유 칸 중 기지와 비연결인 칸 비율(측정 전용 BFS — 규칙에 쓰지 않음) (2) "타일 ≤ 10인 플레이어가 탈락까지 걸린 시간" 중앙값 — 3분 초과면 고립 잔당 처리 비용이 크다. 조치 후보(제안만): 비연결 칸에 노출 소모 같은 유지 비용을 매기는 규칙.
+
+**B-22. v4.2 페이싱 실측 (5.4 v4.2).** 설계 추정: 표준 28.8~29.0분, 폭주 꼬리 25.3~25.5분.
+**관측 지표**: (1) 봇 자가대전 10판 종료 시각·사유·공격 깃발 시간 비율(행군 / 정지 점령 / 교전 / 귀환) — 행군 23% → 15% 이하, 점령 7% → 11% 이상이면 추정과 일치 (2) 노출 소모 장부 비중 10% → 5% 이하 (3) 사람 판 표준 < 27분 또는 최단 < 25분. **지정 레버**: 1순위 `MARCH_CAPTURE_AP_PERMILLE` 1000 → 700(신규 상수, 사용자 확정 필요), 2순위 5.8 기존 순서.
 
 ### 이월된 저위험 항목 (2건)
 
