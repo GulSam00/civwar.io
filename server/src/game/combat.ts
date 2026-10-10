@@ -8,6 +8,7 @@ import {
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
   COMBAT_WATER_VS_LAND_PERMILLE,
   COMBAT_WATER_VS_WATER_PERMILLE,
+  DISENGAGE_TICKS,
   DISENGAGE_VALUE_PERMILLE,
   MIL_COMBAT_PERMILLE_BY_TIER,
   POSTURE,
@@ -73,8 +74,13 @@ export function hostile(state: Readonly<GameState>, a: number, b: number): boole
   return a !== b && !isAlly(state, a, b);
 }
 
+/** v4.2 [A-62]: 간선의 "공격 쪽" = RETURNING 이 아닌 공격 태세 깃발. 귀환 깃발은 지나가며 싸움을 걸지 않는다 */
+export function attackSide(f: Readonly<Flag>): boolean {
+  return f.posture === POSTURE.ATTACK && f.state !== 'RETURNING';
+}
+
 function engagedPair(state: Readonly<GameState>, f: Readonly<Flag>, g: Readonly<Flag>): boolean {
-  return hostile(state, f.ownerId, g.ownerId) && (f.posture === POSTURE.ATTACK || g.posture === POSTURE.ATTACK);
+  return hostile(state, f.ownerId, g.ownerId) && (attackSide(f) || attackSide(g));
 }
 
 /** 실효 전투값 v(f) (4.15 d·e·g) — permille, 단계마다 floor, 최소 1 */
@@ -228,6 +234,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     if (inGroup && !f.inCombat) f.combatSinceTick = t;
     if (!inGroup) f.combatSinceTick = null;
     f.inCombat = inGroup;
+    if (inGroup) f.halted = false; // v4.2 (4.4a c): 전투 우선
   }
   // 패주 (D-3)
   for (const f of state.flags) {
@@ -241,6 +248,12 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     beginReturn(state, f);
     routedNow.push(f.id);
     out.broadcast.push({ type: 'flag_routed', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
+  }
+  // v4.2 [A-62]: 전투에 붙잡힌 귀환(비패주) 깃발 → 자동 이탈 대기 (3초, 실효값 ×0.5 — 4.15 g 그대로)
+  for (const f of state.flags) {
+    if (!f.inCombat || f.state !== 'RETURNING' || f.routed || f.disengageUntilTick !== null || f.breakaway) continue;
+    f.disengageUntilTick = t + DISENGAGE_TICKS;
+    out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: true });
   }
   // 이탈 대기 (4.15 g)
   for (const f of state.flags) {

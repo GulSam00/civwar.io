@@ -53,6 +53,24 @@ export interface GameReport {
   msMax: number;
   botMsAvg: number;
   botMsMax: number;
+  /** v4.2: 공격 태세 깃발 시간 배분 (5 tick 표본, 비율 %) */
+  atkTime: Record<string, number>;
+  /** v4.2: 점령 칸 귀속 — 정지 점령(halted) / 앵커 점령(ENGAGED) / 기타 (tileChanges 직후 인접 깃발로 근사) */
+  capBy: Record<string, number>;
+  /** v4.2: 공격 발령 병종 수 [창, 검, 기] */
+  atkUnits: number[];
+  /** 평균 유지비 permille (생존자, 5 tick 표본) */
+  upkeepPmMean: number;
+  /** 플레이어당 테크 구매 수 @15분 / 종료 */
+  tech15: number;
+  techEnd: number;
+  /** 종료 시 고립지 칸 비율 % (내 기지·수도와 연결 안 된 칸 / 전체 소유 칸) */
+  enclavePct: number;
+  /** v4.2 기지 함락 수 (전체 / 그중 수도) */
+  baseCaps: number;
+  capitalCaps: number;
+  /** 병력 소멸 경로 비율 % (노출 / 전투 / 공격 지출) */
+  sinks: Record<string, number>;
 }
 
 function playGame(seed: number, k: number): GameReport {
@@ -95,6 +113,16 @@ function playGame(seed: number, k: number): GameReport {
   let defFlags = 0;
   let allFlags = 0;
   let gameOver: { finalTick: number; reason: string; winnerId: number | null } | null = null;
+  const atkTime: Record<string, number> = { walk: 0, halted: 0, anchor: 0, combat: 0, blocked: 0, returning: 0, idle: 0 };
+  const capBy: Record<string, number> = { halted: 0, anchor: 0, other: 0 };
+  const atkUnits = [0, 0, 0];
+  let upSum = 0;
+  let upN = 0;
+  let tech15 = 0;
+  let techBuys = 0;
+  let baseCaps = 0;
+  let capitalCaps = 0;
+  const capitals = new Set(state.players.filter(Boolean).map((p) => p.homeTileId));
   while (!sim.finished && state.tick < HARD_TIMEOUT_TICK + 10) {
     const t0 = performance.now();
     const out = sim.step();
@@ -113,7 +141,35 @@ function playGame(seed: number, k: number): GameReport {
       allFlags++;
       if (f.posture === 1) defFlags++;
     }
-    for (const m of out.broadcast) if (m.type === 'game_over') gameOver = { finalTick: m.finalTick, reason: m.reason, winnerId: m.winnerId };
+    for (const m of out.broadcast) {
+      if (m.type === 'game_over') gameOver = { finalTick: m.finalTick, reason: m.reason, winnerId: m.winnerId };
+      else if (m.type === 'flag_issued' && m.posture === 0) atkUnits[m.unit]++;
+      else if (m.type === 'tech_purchased') techBuys++;
+      else if (m.type === 'base_captured' && m.fromPlayerId !== 0) {
+        baseCaps++;
+        if (capitals.has(m.tileId)) capitalCaps++;
+      }
+      else if (m.type === 'snapshot_delta') {
+        for (const [t, o] of m.tileChanges) {
+          let k = 'other';
+          for (const f of state.flags) {
+            if (f.ownerId !== o || f.posture !== 0 || state.graph.distance(f.posTileId, t) !== 1) continue;
+            if (f.state === 'MARCHING' && f.halted) k = 'halted';
+            else if (f.state === 'ENGAGED' && k === 'other') k = 'anchor';
+          }
+          capBy[k]++;
+        }
+      }
+    }
+    if (state.tick === 15 * TICKS_PER_MIN) tech15 = techBuys / N;
+    if (state.tick % 5 === 0) {
+      for (const f of state.flags) {
+        if (f.posture !== 0 && f.state !== 'RETURNING') continue;
+        const k = f.state === 'RETURNING' ? 'returning' : f.inCombat ? 'combat' : f.state === 'IDLE' ? 'idle' : f.state === 'ENGAGED' ? 'anchor' : f.halted ? 'halted' : f.blocked ? 'blocked' : 'walk';
+        atkTime[k]++;
+      }
+      for (const p of state.players) if (p && p.alive) (upSum += p.upkeepPm), upN++;
+    }
     if (state.tick % (5 * TICKS_PER_MIN) === 0 || sim.finished) {
       let top = 0;
       for (const p of state.players) if (p) top = Math.max(top, p.tiles);
@@ -122,6 +178,22 @@ function playGame(seed: number, k: number): GameReport {
     if (checkLedger && ledgerImbalance(state) !== 0) throw new Error(`ledger imbalance seed ${seed} tick ${state.tick}`);
   }
   const ticks = state.tick;
+  // 고립지: 각 플레이어 소유 칸 중 (기지 또는 수도)에서 내 땅만 밟아 닿지 않는 칸
+  let encl = 0;
+  let ownAll = 0;
+  for (const p of state.players) {
+    if (!p || !p.alive) continue;
+    const seeds = [...p.baseTiles];
+    if (state.owners[p.homeTileId] === p.id) seeds.push(p.homeTileId);
+    const seen = new Set<number>(seeds);
+    const q = [...seeds];
+    for (let i = 0; i < q.length; i++) for (const n of state.graph.neighbors(q[i])) if (state.owners[n] === p.id && !seen.has(n)) (seen.add(n), q.push(n));
+    ownAll += p.tiles;
+    encl += p.tiles - seen.size;
+  }
+  const L = state.ledger;
+  const sinkTot = Math.max(1, L.exposure + L.combat + L.spentAP);
+  const atkTot = Math.max(1, Object.values(atkTime).reduce((a, b) => a + b, 0));
   const finalShares = state.players.filter(Boolean).map((p) => ({ id: p.id, diff: diffs[p.id - 1], aggr: p.bot.aggressionPermille ?? 500, sharePct: Math.round((p.tiles * 1000) / land) / 10, alive: p.alive }));
   const w = gameOver?.winnerId ?? null;
   return {
@@ -140,6 +212,16 @@ function playGame(seed: number, k: number): GameReport {
     msMax: Math.round(msMax * 10) / 10,
     botMsAvg: Math.round((botMs / ticks) * 100) / 100,
     botMsMax: Math.round(botMsMax * 10) / 10,
+    atkTime: Object.fromEntries(Object.entries(atkTime).map(([k, v]) => [k, Math.round((v * 1000) / atkTot) / 10])),
+    capBy,
+    atkUnits,
+    upkeepPmMean: Math.round(upSum / Math.max(1, upN)),
+    tech15,
+    techEnd: techBuys / N,
+    baseCaps,
+    capitalCaps,
+    enclavePct: Math.round((encl * 1000) / Math.max(1, ownAll)) / 10,
+    sinks: { exposure: Math.round((L.exposure * 1000) / sinkTot) / 10, combat: Math.round((L.combat * 1000) / sinkTot) / 10, spentAP: Math.round((L.spentAP * 1000) / sinkTot) / 10 },
   };
 }
 
@@ -172,6 +254,22 @@ for (const r of reports) for (const [k, v] of Object.entries(r.rejects)) rejAll[
 console.log(`rejects: ${JSON.stringify(rejAll)}`);
 console.log(`tick ms mean ${(reports.reduce((a, r) => a + r.msAvg, 0) / reports.length).toFixed(2)} max ${Math.max(...reports.map((r) => r.msMax))}; bot ms/tick mean ${(reports.reduce((a, r) => a + r.botMsAvg, 0) / reports.length).toFixed(2)} max ${Math.max(...reports.map((r) => r.botMsMax))}`);
 console.log(`defense-slot share (DEFEND flags / all flags, sampled every 15 ticks) mean ${(reports.reduce((a, r) => a + r.defSharePct, 0) / reports.length).toFixed(1)}%`);
+{
+  const avg = (f: (r: GameReport) => number) => (reports.reduce((a, r) => a + f(r), 0) / reports.length).toFixed(1);
+  const keys = Object.keys(reports[0].atkTime);
+  console.log(`v4.2 attack-flag time % (ATTACK + all RETURNING, 5-tick samples): ${keys.map((k) => `${k} ${avg((r) => r.atkTime[k])}`).join(', ')}`);
+  const cap = { halted: 0, anchor: 0, other: 0 } as Record<string, number>;
+  for (const r of reports) for (const k of Object.keys(cap)) cap[k] += r.capBy[k];
+  const capT = Math.max(1, cap.halted + cap.anchor + cap.other);
+  console.log(`v4.2 captures by: halted ${((cap.halted * 100) / capT).toFixed(1)}%, anchor-ENGAGED ${((cap.anchor * 100) / capT).toFixed(1)}%, other ${((cap.other * 100) / capT).toFixed(1)}%`);
+  const u = [0, 0, 0];
+  for (const r of reports) r.atkUnits.forEach((v, i) => (u[i] += v));
+  const uT = Math.max(1, u[0] + u[1] + u[2]);
+  console.log(`v4.2 attack issues by unit: spear ${((u[0] * 100) / uT).toFixed(1)}%, sword ${((u[1] * 100) / uT).toFixed(1)}%, cavalry ${((u[2] * 100) / uT).toFixed(1)}%`);
+  console.log(`v4.2 upkeepPm mean ${avg((r) => r.upkeepPmMean)}‰; tech buys/player @15m ${avg((r) => r.tech15)}, @end ${avg((r) => r.techEnd)}; enclave tiles at end ${avg((r) => r.enclavePct)}%`);
+  console.log(`v4.2 player-base captures/game ${avg((r) => r.baseCaps)} (capitals ${avg((r) => r.capitalCaps)}), eliminations/game ${avg((r) => r.finalShares.filter((x) => !x.alive).length)}`);
+  console.log(`v4.2 troop sinks %: exposure ${avg((r) => r.sinks.exposure)}, combat ${avg((r) => r.sinks.combat)}, spentAP ${avg((r) => r.sinks.spentAP)}`);
+}
 {
   const buckets = [
     { name: 'aggr 0-333', lo: 0, hi: 333 },

@@ -181,7 +181,7 @@ describe('GameModel — 단위', () => {
     m.apply({ type: 'flag_issued', tick: 26, flagId: 1, playerId: 1, slotIndex: 0, unit: 1, posture: 1, troops: 60, originTileId: 4, anchorTileId: 5, targetOwnerId: 254, etaTick: 30, engageEtaTick: 28 });
     m.apply({ type: 'flag_posture_changed', tick: 27, flagId: 1, posture: 0, cooldownUntilTick: 52, auto: false, targetOwnerId: 254 });
     expect(m.flags.get(1)!.posture).toBe(0);
-    m.apply({ type: 'flag_disengage_started', tick: 28, flagId: 1, untilTick: 43 });
+    m.apply({ type: 'flag_disengage_started', tick: 28, flagId: 1, untilTick: 43, auto: false });
     expect(m.flags.get(1)!.disengageUntilTick).toBe(43);
     m.apply({ type: 'flag_routed', tick: 30, flagId: 1, returnTileId: 4 });
     expect(m.flags.get(1)!.disengageUntilTick).toBeNull();

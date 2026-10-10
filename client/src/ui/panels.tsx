@@ -216,7 +216,9 @@ export function Scoreboard({ store, ctl, compact }: { store: ClientStore; ctl: G
   if (!g) return null;
   const me = store.myPlayerId;
   const viewer = store.viewerId;
-  const spectator = me === null || !g.players.get(me)?.alive;
+  // 종료 후 둘러보기(사용자 요청 2026-10-10): 플레이어·탈락자·관전자 모두 순위표로 영토 따라가기
+  const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
+  const spectator = over || me === null || !g.players.get(me)?.alive;
   const rows = [...g.players.values()].sort((a, b) => Number(b.alive) - Number(a.alive) || b.tiles - a.tiles);
   const shown = compact ? rows.slice(0, 4) : rows;
   const allyOf = (id: number) => me !== null && g.isAlly(me, id);

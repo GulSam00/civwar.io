@@ -273,8 +273,15 @@ export class ClientStore {
   retarget(flagId: number, anchorTileId: number): number {
     return this.command({ type: 'cmd_flag_retarget', flagId, anchorTileId });
   }
-  recall(flagId: number): number {
-    return this.command({ type: 'cmd_flag_recall', flagId });
+  /**
+   * 회수. baseTileId 가 있으면 그 내 기지로 귀환(GDD v4.2 7.2 `cmd_flag_recall{ clientSeq, flagId, baseTileId? }`, A-61).
+   * 서버가 이 필드를 아직 모르면 검증기가 버리고 기존 자동 귀환지로 회수한다 — 어느 쪽이든 회수는 된다.
+   * (shared 타입에 필드가 생기기 전이라 객체를 넓혀서 보낸다)
+   */
+  recall(flagId: number, baseTileId?: number): number {
+    const cmd: { type: 'cmd_flag_recall'; flagId: number; baseTileId?: number } = { type: 'cmd_flag_recall', flagId };
+    if (baseTileId !== undefined) cmd.baseTileId = baseTileId;
+    return this.command(cmd);
   }
   setPosture(flagId: number, posture: Posture): number {
     return this.command({ type: 'cmd_set_posture', flagId, posture });
@@ -292,6 +299,9 @@ export class ClientStore {
   followPlayerId: number | null = null;
   /** HUD·피드 기준 플레이어: 나, 관전이면 따라가는 플레이어 */
   get viewerId(): number | null {
+    // 종료 후 둘러보기: 순위표에서 고른 플레이어의 HUD 를 본다 (플레이어 본인 포함)
+    const over = !!this.game?.gameOver || this.room?.phase === 'GAME_OVER';
+    if (over && this.followPlayerId !== null) return this.followPlayerId;
     return this.myPlayerId ?? this.followPlayerId;
   }
   setFollow(id: number | null): void {

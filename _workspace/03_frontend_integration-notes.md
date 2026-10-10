@@ -157,3 +157,56 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 ### 검증
 - typecheck 통과, `npm test` **14 파일 / 166 통과**(서버 `rooms.test.ts` +2: 공개 방 방장 시작·방 찾기 / 클라이언트 `playtest.test.ts` 3), smoke PASSED, build:client 성공, `qa:ws` **78/78**(+5: 공개 비방장 `NOT_HOST`, `room_list` 공개만·코드 없음, 1초 내 재요청 `RATE_LIMITED`, `lobby_join_listed` 형식 오류 `BAD_MESSAGE`, 공개 방장 start → COUNTDOWN; 스키마 위반 0 — `qa-schema.ts` 에 `room_list` 추가), `headless-check 75` full 14회 불일치 0.
 - 브라우저(8080·5173 은 다른 프로세스가 쓰고 있어 서버 8090 + Vite 5180 으로 별도 기동): 공개 방 방장 즉시 시작 → IN_GAME, 로비 「방 찾기」에 대기 방(입장)·진행 방(관전 0:11) 2개 표시 → 관전 입장, 따라가기 상태에서 행군 깃발(내 깃발·BOT 10·BOT 8·BOT 4)의 방향 화살표 스크린샷 확인. 로비 보조 링크 4개가 800px 에서 줄바꿈되던 것을 CSS 로 수정.
+
+## 10. v4.2 출전 UI 개편 + 지형 툴팁 · 반투명 영토 · 하단 바 유지비 (2026-10-10)
+
+원천: design-decisions「GDD v4.2 2차 검토 결정」 깃발 출전 UI 변경, GDD v4.2 프론트 체크리스트 1·4·5, 코디네이터 추가 요청(유지비 표시, 지형 툴팁, 반투명 영토).
+
+### 입력 흐름 (`input/controller.ts` — `Interaction.issue` 상태기계)
+| 상태 | 동작 |
+|---|---|
+| 없음 + 지점 클릭 | 가장 가까운 내 기지(서버와 같은 가중 이동 거리, 동률 tileId 작은 쪽) 하이라이트 → `pick` (삼각 메뉴) |
+| 없음 + 내 기지 클릭 | `aim`: 기지 → 커서 경로 화살표가 따라옴. 기지 위에 깃발이 겹치면 일반 클릭 = 깃발 선택, **Alt+클릭 = 기지에서 출전** |
+| `aim` + 지점 클릭 | `pick` (그 기지 고정). 같은 기지 재클릭 = 취소, Alt+다른 내 기지 = 출발 기지 변경 |
+| `pick` | 창(위)·검(왼쪽 아래)·기(오른쪽 아래) DOM 라디얼 버튼 또는 `1/2/3` → `cmd_flag_issue{unit, troops(비율), anchorTileId, originBaseTileId = 하이라이트 기지}`. 캔버스 클릭(바깥)·우클릭·Esc = 취소 |
+| 내 깃발 선택 + 내 기지 클릭 | `cmd_flag_recall{flagId, baseTileId}` (A-61). 적·중립 기지 클릭 = `cmd_flag_retarget`(체크리스트 4). 다른 곳 클릭 = 선택 해제만. RETURNING 이면 보내지 않고 "귀환 중 — 취소할 수 없습니다" |
+| 유지 | 우클릭 재지정, F/R(R = 자동 귀환지, baseTileId 없음)/Tab/T/P/C/V/?/H/0, Q/E 비율 |
+| 폐기 | 병종 키 → 클릭 2액션, Shift 유지, `B`·Alt+클릭 출발 기지 지정(`originBase`) — 기지 클릭 흐름이 대신함 |
+
+기본 태세 예고: 클릭 지점이 내 땅 = 방어(푸른 경로·메뉴 + 보호 원 반경 6 유지), 적·중립 = 공격(붉은 경로 + 쟁기 회랑 음영), 물·동맹 = 회색(그래도 보내면 서버 ack 가 판정). 사거리 밖 판정은 기존 `computePreview` 그대로(커서 툴팁).
+
+### 진격 경로 미리보기 (`input/route.ts`)
+- 서버 `rules.ts buildField/stepToward` **그대로 복제**: 앵커에서 거꾸로 Dijkstra, 가중치 = 들어가는 칸 `TERRAIN_MOVE_PERMILLE`(얕은 물 = 기동 단계별 `SHALLOW_MOVE_PERMILLE_BY_TIER`, 최소값), 깊은 물 제외, 한 걸음 = 이웃 중 (거리, tileId) 최소. 경로는 소유권과 무관하므로 **같은 지형·기동 단계면 서버 경로와 칸 단위로 같다**.
+- 오차: 행군 중 기동 테크가 오르면 서버가 새 거리장으로 다시 걷는다 / 정지 점령(halted)·대치·전투는 경로가 아니라 시간을 바꾼다 / 서버가 이동 규칙을 바꾸면 이 파일도 바꿔야 한다.
+- 쟁기 회랑 = 경로 칸들의 이웃 중 점령 가능·비동맹·내 것이 아닌 칸(현재 소유 기준, `marchFront` 합집합). "경로 n칸 · 옆 칸 m개 공격" 표시. GDD 체크리스트의 `min(병력/c, 3×경로)` 예상 점령 칸 수는 `tileCost` 를 클라이언트가 재현하지 않아 **넣지 않았다**(회랑 칸 수만).
+- 거리장 캐시 키 = (앵커, 기동 단계, seed). 맵 200×120 에서도 커서가 칸을 바꿀 때 1회 계산.
+
+### 렌더 (`render/renderer.ts`)
+- 공격 원(붉은 반경 6) 제거 — `computePreview` 의 공격 `disk = []`, 방어 보호 원만 남김.
+- `drawRoute`(월드: 회랑 음영) + `drawRouteArrow`(화면: 기지 노란 맥동 링, 칸 중심 꺾은선 점선 + 화살촉, 도달 불가면 회색).
+- **반투명 영토**: `palette.OWNER_FILL_ALPHA = 0.42` — 1타일 1픽셀 레이어라 지형 색과 미리 섞는다. 소유 구분 보강으로 `drawOwnerBands`(경계선을 플레이어 색 굵게 긋고 그 영토 안으로 clip 한 안쪽 띠, 화면 ~5px, α 0.55) + 기존 어두운 경계선·내 영토 흰 경계. 색각 보조 무늬는 그대로 위에 겹친다(스크린샷 확인). 흰색(12번) 플레이어는 평원 위에서 채우기 대비가 약해 경계·띠에 의존 — 플레이테스트 확인 필요.
+
+### UI (`ui/GameScreen.tsx`)
+- 하단 바 = 병력 비율 슬라이더 + **골드 수지**: 순수입/초, 총수입, 깃발 유지비 −n/초(%) — 서버 `upkeepPm` 만으로 계산(`goldPerSecond`, 정확). "다음 깃발 유지비 창/검/기 −n/초" 미리보기는 `ui/upkeep.ts` 가 서버 식(`drainPm`)을 두 대상 규칙(종전 주둔만 / 변경 예정 패주 제외 전부)으로 계산해 **서버 `upkeepPm` 과 하나만 맞을 때 그 규칙을 기억**하고, `all` 규칙일 때만 보인다(구분 불가·불일치면 숨김). 백엔드가 유지비 식·필드를 바꾸면 `upkeep.ts` 만 고치면 된다.
+- 지형 정보 툴팁(`ui/terrainInfo.ts`): 맵 캔버스 위에서만(`ix.overMap` = 이벤트 대상이 캔버스), 커서 왼쪽 위. 지형 이름, 방어 ×(`COMBAT_TERRAIN_DEF_POSTURE_PERMILLE`), 이동 속도 ×(1000/이동 배율, 얕은 물은 내 기동 단계), 점령 비용 ×, 골드 ×, 소유자(색 점 + 이름 / 중립, (나)/(동맹)), 기지·수도 체력. 삼각 메뉴가 떠 있으면 숨김. 출전 안내 툴팁은 커서 오른쪽 아래(겹치지 않음).
+- 깃발 패널: RETURNING 이면 F/R 비활성 + "귀환 중 — 취소 불가"(체크리스트 5).
+- 도움말·로비 조작 문구 갱신.
+
+### 모델 (`state/gameModel.ts`) — shared 타입에 백엔드가 추가한 필드
+- `flag_issued` 시 `halted:false, returnBaseTileId:null`, `flagFlags` 비트 `FLAG_BIT.HALTED`, delta `flagReturnBase`. **이 시점 `02_backend_protocol.md` 에는 아직 없음** — shared/protocol.ts 주석을 근거로 했다. 문서 갱신 후 대조 필요.
+
+### 서버 의존 / 불일치 우려
+1. `cmd_flag_recall.baseTileId` — 클라이언트는 GDD 7.2 대로 보낸다. 서버 검증기가 모르면 필드를 버리고 자동 귀환지로 회수(호환).
+2. **리듀서 재구성 불일치(백엔드 작업 중 서버 기준)**: `gameModel.test` M 10인 2000 tick 에서 `progressPct 모델 0 / full 38` 1건 — delta `flagProgress` 는 "목록에 없으면 0" 규칙인데, v4.2 A-54(halt 해제 시 진척 리셋 없음)로 MARCHING·비halted 깃발이 진척을 들고 있으면 delta 에 안 실려 클라이언트가 0 으로 만든다. 서버 `snapshot.ts` delta 조건 또는 문서 규칙 정리 필요(백엔드/QA 판단).
+3. `qaFollowups` m-4(engage ETA 오차 표본 > 100) 실패 — v4.2 로 `flag_engaged` 가 앵커 칸 점령 때만 나와 표본이 86 으로 줄었다(서버 의미 변경). ETA 기준 재정의는 백엔드 `engageEtaTicks` 갱신 후 다시 본다.
+4. 유지비 규칙 변경(패주 제외 전 깃발 과금, 순수입 ≥ 0 상한) — 프로토콜 문서 미반영. 현재 표시는 `upkeepPm` 만 쓰므로 필드가 그대로면 자동으로 맞는다.
+
+### 검증
+- `npm run typecheck` 통과. 클라이언트 vitest 54 중 52 통과(+`issueFlow.test.ts` 10: 경로 복제·지점→하이라이트→삼각→발령·기지→화살표→지점→삼각→발령·취소 3종·Alt 기지·선택 깃발+기지 귀환/재지정/해제·RETURNING·탈락; +`hoverUpkeep.test.ts` 4: 지형 툴팁·반투명·유지비 규칙). 실패 2 는 위 2·3(서버 쪽). `build:client` 성공. `headless-check 75`(서버 8092): full 14회 불일치 0, ack 수락 24 / NO_SLOT 1.
+- 브라우저(내장, 1280×800, 서버 8092 + Vite 5182 — 8080/5173 사용 중): 지점 클릭 → 수도 하이라이트·붉은 경로·회랑·삼각 메뉴 → 기병 클릭 = `cmd_flag_issue{originBaseTileId: 수도}` 송신·MARCHING 확인, `2` 키 발령 확인, 수도 클릭 → 커서 따라오는 경로, 지형 툴팁, 반투명 영토·색각 보조. 스크린샷 `_workspace/screenshots/` 4장. 실제 지정 귀환(서버 수락)은 브라우저에서 확인 못 함(단위 테스트로 와이어 shape 만 확인).
+
+## 11. 종료 후 둘러보기 (2026-10-10)
+- 결과 오버레이 「맵 보기」 → 하단 가운데 알약(「게임 종료 · 승자」 + 「결과 보기」 + 「로비로」, `ui/GameScreen.tsx GameOverOverlay`). HUD 「나가기」도 그대로.
+- 맵: 팬·줌·미니맵·지형 툴팁·깃발 선택(정보만). 순위표는 종료 후 모든 사람(플레이어·탈락자·관전자)에게 따라가기 모드(`ui/panels.tsx Scoreboard`), 따라가는 플레이어의 HUD 를 보여 준다(`store.viewerId` — 종료 후에만 follow 우선).
+- 명령 차단: 기존 `canCommand()`(gameOver / room GAME_OVER) — 출전 메뉴·화살표·귀환·재지정·F/R·숫자키 모두 무동작, 하단 바·테크·외교·이모트 숨김. 테스트 `issueFlow.test.ts` 「게임 종료 후 둘러보기」.
+- 브라우저 확인은 진행 중 판에 `game_over` 를 store 에 주입해 했다(실제 종료 판 아님 — 서버가 계속 tick 을 보내 맵이 움직임). 스크린샷 `_workspace/screenshots/post-game-map-view.jpg`.

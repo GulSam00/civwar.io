@@ -58,6 +58,7 @@ export function removeFlag(state: GameState, f: Flag, t: number, reason: FlagEnd
 /** 4.3a applyPosture — 수동 전환·재지정·앵커 함락 재파생 공통 */
 export function applyPosture(state: GameState, f: Flag, posture: Posture, t: number): void {
   f.posture = posture;
+  f.halted = false; // v4.2: 다음 4단계 settle 이 새 태세로 다시 판정
   f.postureCooldownUntilTick = t + POSTURE_COOLDOWN_TICKS;
   f.progressMilli = 0;
   f.targetTileId = null;
@@ -76,10 +77,15 @@ function resetGauge(f: Flag): void {
   f.spendBudgetMilli = 0;
 }
 
-/** RETURNING 개시 (회수·IDLE 타임아웃·패주 공통) */
-export function beginReturn(state: GameState, f: Flag): void {
+/**
+ * RETURNING 개시 (회수·IDLE 타임아웃·패주 공통).
+ * baseTileId: v4.2 [A-61] 지정 귀환 기지 — 회수 명령은 값/null, IDLE 자동 회수는 null, 패주는 생략(기존 지정 유지).
+ */
+export function beginReturn(state: GameState, f: Flag, baseTileId?: number | null): void {
   f.state = 'RETURNING';
   f.idleSinceTick = null;
+  f.halted = false;
+  if (baseTileId !== undefined) f.returnBaseTileId = baseTileId;
   resetGauge(f);
   f.returnTileId = recallTarget(state, f);
   f.nextTileId = stepToward(state, f.ownerId, f.posTileId, f.returnTileId);
@@ -88,7 +94,7 @@ export function beginReturn(state: GameState, f: Flag): void {
 function startDisengageIfInCombat(f: Flag, t: number, out: Outbox): void {
   if (f.inCombat && f.disengageUntilTick === null) {
     f.disengageUntilTick = t + DISENGAGE_TICKS;
-    out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick });
+    out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: false });
   }
 }
 
@@ -193,7 +199,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   const f = flagById(state, msg.flagId);
   if (!f || f.ownerId !== playerId) return { reason: 'NO_FLAG' };
   if (f.routed) return { reason: 'ROUTED' };
-  if (f.state === 'RETURNING' && !f.inCombat) return { reason: 'RETURNING' };
+  if (f.state === 'RETURNING') return { reason: 'RETURNING' }; // v4.2 [A-62]: 귀환 취소 불가 — 전투 중이어도 거절 (QA I-2 수락 경로 폐기)
   // LOCKED: 재지정 경직 중 재재지정 금지. 단 이탈 대기 중엔 허용 (4.15 g "목적지만 바뀌고 타이머 유지")
   if (t < f.lockUntilTick && f.disengageUntilTick === null) return { reason: 'LOCKED' };
   const anchor = msg.anchorTileId;
@@ -214,6 +220,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   f.targetOwnerId = newOwner === playerId ? ANY_HOSTILE : newOwner;
   startDisengageIfInCombat(f, t, out);
   f.state = 'MARCHING';
+  f.halted = false;
   f.idleSinceTick = null;
   f.lockUntilTick = t + FLAG_RETARGET_LOCK_TICK;
   resetGauge(f);
@@ -239,13 +246,22 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
 
 // ───────────────────────── 회수 ─────────────────────────
 
+/**
+ * 회수 (4.4 v4.2). 검증 순서: NO_FLAG → ROUTED → RETURNING(전투 중이어도 거절 [A-62]) → baseTileId 지정 시 NOT_BASE / NOT_OWNED_BASE [A-61].
+ * 전투 중이면 이탈 대기 개시 후 RETURNING (기존과 같다).
+ */
 export function recallFlag(state: GameState, playerId: number, msg: C2S_CmdFlagRecall, t: number, out: Outbox): CmdResult {
   const f = flagById(state, msg.flagId);
   if (!f || f.ownerId !== playerId) return { reason: 'NO_FLAG' };
   if (f.routed) return { reason: 'ROUTED' };
-  if (f.state === 'RETURNING' && !f.inCombat) return { reason: 'RETURNING' };
+  if (f.state === 'RETURNING') return { reason: 'RETURNING' };
+  const base = msg.baseTileId ?? null;
+  if (base !== null) {
+    if (!validTile(state, base) || !state.map.isBase[base]) return { reason: 'NOT_BASE' };
+    if (state.owners[base] !== playerId) return { reason: 'NOT_OWNED_BASE' };
+  }
   startDisengageIfInCombat(f, t, out);
-  beginReturn(state, f);
+  beginReturn(state, f, base);
   out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
   return { flagId: f.id, posture: f.posture };
 }
@@ -256,6 +272,7 @@ export function setPosture(state: GameState, playerId: number, msg: C2S_CmdSetPo
   const f = flagById(state, msg.flagId);
   if (!f || f.ownerId !== playerId) return { reason: 'NO_FLAG' };
   if (f.routed) return { reason: 'ROUTED' };
+  if (f.state === 'RETURNING') return { reason: 'RETURNING' }; // v4.2 [A-62]
   if (f.disengageUntilTick !== null) return { reason: 'DISENGAGING' };
   if (f.inCombat) return { reason: 'IN_COMBAT' };
   if (msg.posture === f.posture) return { reason: 'SAME_POSTURE' };

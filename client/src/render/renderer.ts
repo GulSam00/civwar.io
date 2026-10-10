@@ -15,6 +15,7 @@ import { COLOR_ATTACK, COLOR_DEFEND, COLOR_DISABLED, playerColor, playerDark, ti
 import { ownerPattern } from './patterns.js';
 import { isDecayTick } from './progressRule.js';
 import type { CursorPreview } from '../input/preview.js';
+import type { RoutePreview } from '../input/route.js';
 import { UNIT_SHORT } from '../ui/text.js';
 
 export interface RenderView {
@@ -22,10 +23,12 @@ export interface RenderView {
   selectedFlagId: number | null;
   hoverTile: number;
   preview: CursorPreview | null;
-  /** 발령 출발 기지 (null = 자동) */
-  originBase: number | null;
-  /** 병종이 선택된 상태 — 내 기지를 강조(출발 기지 선택 가능) */
-  armed: boolean;
+  /** 출전 중 하이라이트된 출발 기지 (null = 출전 중 아님) */
+  issueBase: number | null;
+  /** 출전 진격 경로 미리보기 (기지 → 지점, 쟁기 회랑) */
+  route: RoutePreview | null;
+  /** 경로 색 = 기본 태세 예고 */
+  routeKind: 'attack' | 'defend' | 'blocked' | null;
   /** 색각 보조: 영토 패턴 + 깃발 플레이어 번호 */
   colorblind: boolean;
   /** 모든 깃발의 이동 방향 화살표 (V 로 끄고 켬) */
@@ -149,6 +152,7 @@ export class GameRenderer {
     ctx.translate(-cam.cx, -cam.cy);
     this.layer!.draw(ctx);
     if (view.colorblind) this.drawPatterns(ctx);
+    this.drawOwnerBands(ctx);
     ctx.lineWidth = Math.max(1.2 / cam.zoom, 0.06);
     for (const [owner, path] of this.borders) {
       ctx.strokeStyle = playerDark(owner);
@@ -161,6 +165,7 @@ export class GameRenderer {
     }
     this.drawGaugeTargets(ctx, model, topo, now);
     this.drawPreview(ctx, topo, view.preview);
+    this.drawRoute(ctx, topo, view);
     if (view.hoverTile >= 0) {
       ctx.beginPath();
       topo.tilePath(ctx, view.hoverTile, 0.04);
@@ -171,7 +176,7 @@ export class GameRenderer {
     ctx.restore();
 
     this.drawBases(ctx, model, topo, view);
-    this.drawOriginLine(ctx, topo, view);
+    this.drawRouteArrow(ctx, topo, view);
     this.drawFlags(ctx, model, topo, view, now);
     this.drawEmotes(ctx, model, topo, view);
   }
@@ -233,6 +238,30 @@ export class GameRenderer {
       this.bordersDirty = false;
       this.bordersBuiltAt = now;
     }
+  }
+
+  /**
+   * 영토 안쪽 테두리 띠 — 채우기가 반투명(OWNER_FILL_ALPHA)이라 소유 구분을 경계에서 보강한다.
+   * 경계선을 플레이어 색으로 굵게 긋고 그 플레이어 영토 안으로만 잘라(clip) 바깥 칸을 물들이지 않는다.
+   * 띠 폭은 화면 약 5px(타일의 최대 0.35칸).
+   */
+  private drawOwnerBands(ctx: CanvasRenderingContext2D): void {
+    const z = this.camera.zoom;
+    const w = Math.min(0.7, 10 / z);
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = w;
+    ctx.lineJoin = 'miter';
+    for (const [owner, border] of this.borders) {
+      const fill = this.fills.get(owner);
+      if (!fill) continue;
+      ctx.save();
+      ctx.clip(fill);
+      ctx.strokeStyle = playerColor(owner);
+      ctx.stroke(border);
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   private drawPatterns(ctx: CanvasRenderingContext2D): void {
@@ -323,18 +352,21 @@ export class GameRenderer {
 
   private drawPreview(ctx: CanvasRenderingContext2D, topo: TopologyView, p: CursorPreview | null): void {
     if (!p) return;
-    const key = `${p.tile}:${p.disk.length}`;
-    if (key !== this.previewPathKey) {
-      this.previewPath = topo.regionOutline(p.disk);
-      this.previewPathKey = key;
-    }
     const color = p.kind === 'attack' ? COLOR_ATTACK : p.kind === 'defend' ? COLOR_DEFEND : COLOR_DISABLED;
     ctx.save();
-    ctx.lineWidth = 2.5 / this.camera.zoom;
-    ctx.strokeStyle = color;
-    ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom]);
-    ctx.stroke(this.previewPath!);
-    ctx.setLineDash([]);
+    // v4.2: 공격 원 폐기 — 원은 방어 보호 원(guard)만 (disk 가 비어 있으면 생략)
+    if (p.disk.length) {
+      const key = `${p.tile}:${p.disk.length}`;
+      if (key !== this.previewPathKey) {
+        this.previewPath = topo.regionOutline(p.disk);
+        this.previewPathKey = key;
+      }
+      ctx.lineWidth = 2.5 / this.camera.zoom;
+      ctx.strokeStyle = color;
+      ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom]);
+      ctx.stroke(this.previewPath!);
+      ctx.setLineDash([]);
+    }
     ctx.beginPath();
     topo.tilePath(ctx, p.tile, 0.08);
     ctx.fillStyle = color;
@@ -343,24 +375,79 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  private drawOriginLine(ctx: CanvasRenderingContext2D, topo: TopologyView, view: RenderView): void {
-    if (view.originBase === null || !view.armed) return;
-    const o = topo.tileCenter(view.originBase);
-    const p = worldToScreen(this.camera, o.x, o.y);
+  /** 쟁기 회랑 음영 (월드 좌표, 공격 태세만) — 경로 칸 옆의 적·중립 칸 */
+  private drawRoute(ctx: CanvasRenderingContext2D, topo: TopologyView, view: RenderView): void {
+    const r = view.route;
+    if (!r || view.routeKind !== 'attack' || !r.corridor.length) return;
+    ctx.save();
+    ctx.fillStyle = COLOR_ATTACK;
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    for (const t of r.corridor) topo.tilePath(ctx, t, 0.06);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * 출전 기지 하이라이트 + 기지 → 지점 진격 경로 점선 화살표 (화면 좌표).
+   * 경로는 서버 이동 규칙과 같은 가중 경로(route.ts) — 칸 중심을 잇는 꺾은선, 끝에 화살촉.
+   */
+  private drawRouteArrow(ctx: CanvasRenderingContext2D, topo: TopologyView, view: RenderView): void {
+    if (view.issueBase === null) return;
+    const cam = this.camera;
+    const o = topo.tileCenter(view.issueBase);
+    const bp = worldToScreen(cam, o.x, o.y);
+    const s = Math.max(8, Math.min(22, cam.zoom * 0.8));
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 180);
     ctx.save();
     ctx.strokeStyle = '#ffd600';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, Math.max(10, this.camera.zoom * 0.7), 0, Math.PI * 2);
+    ctx.arc(bp.x, bp.y, s * 0.9 + 4 + pulse * 3, 0, Math.PI * 2);
     ctx.stroke();
-    if (view.preview) {
-      const a = topo.tileCenter(view.preview.tile);
-      const q = worldToScreen(this.camera, a.x, a.y);
-      ctx.setLineDash([4, 4]);
-      ctx.lineWidth = 1.5;
+    const r = view.route;
+    if (r && r.path.length > 1) {
+      const color = !r.reachable || view.routeKind === 'blocked' ? COLOR_DISABLED : view.routeKind === 'defend' ? COLOR_DEFEND : COLOR_ATTACK;
+      const pts = r.path.map((t) => {
+        const c = topo.tileCenter(t);
+        return worldToScreen(cam, c.x, c.y);
+      });
+      const line = () => {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      };
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      line();
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      line();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 5]);
+      ctx.lineDashOffset = -((performance.now() / 40) % 12);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 화살촉: 마지막 구간 방향 (짧으면 몇 칸 앞에서)
+      const end = pts[pts.length - 1];
+      const from = pts[Math.max(0, pts.length - 3)];
+      const dx = end.x - from.x;
+      const dy = end.y - from.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const h = 11;
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(q.x, q.y);
+      ctx.moveTo(end.x, end.y);
+      ctx.lineTo(end.x - ux * h - uy * h * 0.6, end.y - uy * h + ux * h * 0.6);
+      ctx.lineTo(end.x - ux * h + uy * h * 0.6, end.y - uy * h - ux * h * 0.6);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1.2;
       ctx.stroke();
     }
     ctx.restore();
@@ -376,8 +463,8 @@ export class GameRenderer {
       const p = worldToScreen(cam, c.x, c.y);
       if (p.x < -40 || p.y < -40 || p.x > cam.viewW + 40 || p.y > cam.viewH + 40) continue;
       const capital = model.capitalTiles.has(tile);
-      if (view.armed && view.me !== null && b.ownerId === view.me) {
-        // 출발 기지로 고를 수 있음 (Alt+클릭 / B)
+      if (view.issueBase !== null && view.me !== null && b.ownerId === view.me && tile !== view.issueBase) {
+        // 출전 중: 다른 내 기지(Alt+클릭으로 출발 기지 변경 가능)
         ctx.beginPath();
         ctx.arc(p.x, p.y, s * 0.95, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255,214,0,0.55)';

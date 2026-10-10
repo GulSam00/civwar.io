@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ENDGAME_RUSH_TICK, POSTURE, type Unit } from '@civwar/shared';
+import { ENDGAME_RUSH_TICK, POSTURE, TECH_AXIS, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -7,6 +7,9 @@ import type { TopologyView } from '../render/topology.js';
 import { clampCamera } from '../render/camera.js';
 import { GameInputController, Interaction } from '../input/controller.js';
 import { RangeCache, computePreview, type CursorPreview } from '../input/preview.js';
+import type { RoutePreview } from '../input/route.js';
+import { terrainInfo } from './terrainInfo.js';
+import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
@@ -53,6 +56,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
+  const radialRef = useRef<HTMLDivElement>(null);
+  const terrainRef = useRef<HTMLDivElement>(null);
   const [ctl, setCtl] = useState<GameInputController | null>(null);
   const narrow = useNarrow();
 
@@ -98,10 +103,15 @@ export function GameScreen({ store }: { store: ClientStore }) {
         }
       }
       let preview: CursorPreview | null = null;
-      const commanding = controller.canCommand() && (ix.armedUnit !== null || controller.myFlag(ix.selectedFlagId));
-      if (game && me !== null && renderer.topo && commanding && ix.hoverTile >= 0) {
-        preview = computePreview(game, renderer.topo, me, ix.hoverTile, range.get(game, renderer.topo, me));
+      const canCmd = controller.canCommand();
+      if (!canCmd && ix.issue) controller.cancelIssue();
+      // 예고 대상 칸: 삼각 메뉴 = 확정 지점, 기지→커서 화살표 = 커서, 내 깃발 선택 = 커서(우클릭 재지정)
+      const pv = ix.issue?.phase === 'pick' ? ix.issue.anchor : ix.issue?.phase === 'aim' || controller.myFlag(ix.selectedFlagId) ? ix.hoverTile : -1;
+      if (game && me !== null && renderer.topo && canCmd && pv >= 0) {
+        preview = computePreview(game, renderer.topo, me, pv, range.get(game, renderer.topo, me));
       }
+      const route = canCmd ? controller.currentRoute() : null;
+      const routeKind = ix.issue ? (ix.issue.phase === 'pick' ? ix.issue.posture : preview ? (preview.kind as 'attack' | 'defend' | 'blocked') : null) : null;
       renderer.frame(
         game,
         {
@@ -109,8 +119,9 @@ export function GameScreen({ store }: { store: ClientStore }) {
           selectedFlagId: ix.selectedFlagId,
           hoverTile: ix.hoverTile,
           preview,
-          originBase: ix.originBase,
-          armed: ix.armedUnit !== null,
+          issueBase: ix.issue?.base ?? null,
+          route,
+          routeKind,
           colorblind: ix.colorblind,
           showDirections: ix.showDirections,
           emotes: store.emotes,
@@ -120,7 +131,9 @@ export function GameScreen({ store }: { store: ClientStore }) {
         now,
       );
       if (miniRef.current) renderer.drawMinimap(miniRef.current, game, store.viewerId);
-      updateTooltip(tipRef.current, preview, ix, controller);
+      updateTooltip(tipRef.current, preview, ix, controller, route);
+      positionRadial(radialRef.current, controller);
+      updateTerrainTip(terrainRef.current, game, ix, store);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
@@ -147,6 +160,10 @@ export function GameScreen({ store }: { store: ClientStore }) {
     <div className={`game ${narrow ? 'narrow' : ''}`}>
       <canvas ref={canvasRef} className="game-canvas" />
       <div ref={tipRef} className="cursor-tip" />
+      <div ref={terrainRef} className="terrain-tip" aria-hidden="true" />
+      <div ref={radialRef} className="radial-anchor">
+        {ctl && <IssueRadial store={store} ctl={ctl} />}
+      </div>
       <canvas ref={miniRef} className="minimap" onPointerDown={onMini} onPointerMove={onMini} title="클릭해 이동" />
       {ctl && <Hud store={store} ctl={ctl} narrow={narrow} />}
       {ctl && <Scoreboard store={store} ctl={ctl} compact={narrow} />}
@@ -177,17 +194,115 @@ function HelpLayer({ ctl }: { ctl: GameInputController }) {
   );
 }
 
-function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: Interaction, ctl: GameInputController): void {
+/**
+ * 지형 정보 툴팁 — 맵 캔버스 위 칸에서만(HUD·패널 위 제외), 커서 왼쪽 위에 둔다(출전 안내 툴팁은 오른쪽 아래).
+ * 삼각 메뉴가 떠 있는 동안은 숨긴다(메뉴·경로를 가리지 않게).
+ */
+function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix: Interaction, store: ClientStore): void {
   if (!el) return;
+  const hide = () => {
+    if (el.style.display !== 'none') el.style.display = 'none';
+    el.dataset.key = '';
+  };
+  if (!game?.ready || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
+  const viewer = store.viewerId;
+  const tier = viewer !== null ? (game.players.get(viewer)?.tech[TECH_AXIS.MOBILITY] ?? 0) : 0;
+  const t = ix.hoverTile;
+  const b = game.bases.get(t);
+  const key = `${t}:${game.owners[t]}:${b ? Math.round(b.hpPct) : ''}:${tier}`;
+  if (el.dataset.key !== key) {
+    const info = terrainInfo(game, t, store.myPlayerId, tier, (id) => store.nicknameOf(id));
+    if (!info) return hide();
+    el.dataset.key = key;
+    el.replaceChildren();
+    const head = document.createElement('div');
+    head.className = 'tt-head';
+    const name = document.createElement('b');
+    name.textContent = info.terrain;
+    head.append(name);
+    if (info.base) {
+      const base = document.createElement('span');
+      base.className = 'tt-base';
+      base.textContent = info.base;
+      head.append(base);
+    }
+    const mods = document.createElement('div');
+    mods.className = 'tt-mods';
+    mods.textContent = info.mods.join(' · ');
+    const owner = document.createElement('div');
+    owner.className = 'tt-owner';
+    if (info.ownerId) {
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = playerColor(info.ownerId);
+      owner.append(dot);
+    }
+    owner.append(document.createTextNode(info.ownerName));
+    el.append(head, mods, owner);
+  }
+  el.style.display = 'block';
+  const parent = el.parentElement;
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  let x = ix.hoverX - 14 - w;
+  let y = ix.hoverY - 14 - h;
+  if (x < 4) x = ix.hoverX + 16; // 왼쪽 끝이면 오른쪽 위로
+  if (y < 64) y = ix.hoverY + 40; // 위쪽 HUD 와 겹치면 커서 아래로
+  if (parent) x = Math.min(x, parent.clientWidth - w - 4);
+  el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+
+/** 삼각 메뉴를 확정 지점 화면 위치로 (카메라 이동을 매 프레임 따라감) */
+function positionRadial(el: HTMLDivElement | null, ctl: GameInputController): void {
+  if (!el) return;
+  const p = ctl.pickScreenPos();
   if (!p) {
+    if (el.style.display !== 'none') el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
+}
+
+function routeText(route: RoutePreview | null, kind: string | undefined): string {
+  if (!route) return '';
+  if (!route.reachable) return ' · 갈 수 있는 경로 없음';
+  const steps = route.path.length - 1;
+  return kind === 'attack' ? ` · 경로 ${steps}칸 · 옆 칸 ${route.corridor.length}개 공격` : ` · 경로 ${steps}칸`;
+}
+
+function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: Interaction, ctl: GameInputController, route: RoutePreview | null): void {
+  if (!el) return;
+  let text: string | null = null;
+  let kind = p?.kind ?? 'info';
+  const g = ix.hoverTile;
+  if (ix.issue?.phase === 'pick') text = null; // 삼각 메뉴가 안내한다
+  else if (ix.issue?.phase === 'aim') {
+    if (g === ix.issue.base) {
+      text = '같은 기지 다시 클릭 = 취소';
+      kind = 'info';
+    } else if (p) text = `클릭 = 병종 선택 · ${p.label}${routeText(route, p.kind)}`;
+  } else if (ctl.canCommand() && g >= 0) {
+    const myFlag = ctl.myFlag(ix.selectedFlagId);
+    if (myFlag && ctl.isMyBase(g)) {
+      text = '클릭 = 이 기지로 귀환';
+      kind = 'defend';
+    } else if (myFlag && ctl.isBaseTile(g)) {
+      text = '클릭 = 이 기지로 재지정';
+      kind = 'attack';
+    } else if (myFlag && p && p.kind !== 'blocked') text = `우클릭 재지정 → ${p.label}`;
+    else if (myFlag && p) text = p.label;
+    else if (!myFlag && ix.selectedFlagId === null && ctl.isMyBase(g)) {
+      text = '클릭 = 이 기지에서 출전 (목적지를 고르세요)';
+      kind = 'info';
+    }
+  }
+  if (!text) {
     el.style.display = 'none';
     return;
   }
-  let text = p.label;
-  if (ix.armedUnit !== null && p.kind !== 'blocked') text = `${UNIT_NAME[ix.armedUnit]} ${ctl.troopsToSend(ix.armedUnit)}${ix.originBase !== null ? ' (지정 기지 출발)' : ''} · ${text}`;
-  else if (ix.armedUnit === null && p.kind !== 'blocked') text = `우클릭 재지정 → ${text}`;
   if (el.textContent !== text) el.textContent = text;
-  el.dataset.kind = p.kind;
+  el.dataset.kind = kind;
   el.style.display = 'block';
   // 화면 오른쪽·아래 끝에서는 커서 반대편으로 뒤집는다
   const parent = el.parentElement;
@@ -196,6 +311,33 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
   const x = flipX ? ix.hoverX - 12 - el.offsetWidth : ix.hoverX + 16;
   const y = flipY ? ix.hoverY - 12 - el.offsetHeight : ix.hoverY + 18;
   el.style.transform = `translate(${Math.max(4, x)}px, ${Math.max(4, y)}px)`;
+}
+
+/**
+ * 삼각(라디얼) 병종 메뉴 — 확정 지점 둘레에 창(위)·검(왼쪽 아래)·기(오른쪽 아래).
+ * 색 = 기본 태세 예고(내 땅 = 방어 푸름, 적·중립 = 공격 붉음, 불가 = 회색). 고르면 cmd_flag_issue.
+ */
+function IssueRadial({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
+  usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
+  const is = ctl.ix.issue;
+  if (!is || is.phase !== 'pick') return null;
+  const route = ctl.currentRoute();
+  const postureLabel = is.posture === 'defend' ? '방어 태세' : is.posture === 'attack' ? '공격 태세' : '지정 불가?';
+  return (
+    <div className={`radial radial-${is.posture}`} role="menu" aria-label={`병종 선택 · ${postureLabel}`} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => (e.preventDefault(), ctl.cancelIssue())}>
+      <div className="radial-center">
+        <b>{postureLabel}</b>
+        <small>{routeText(route, is.posture).replace(/^ · /, '') || ' '}</small>
+      </div>
+      {([0, 1, 2] as Unit[]).map((u) => (
+        <button key={u} role="menuitem" className={`radial-btn radial-u${u}`} onClick={() => ctl.chooseUnit(u)} title={`단축키 ${u + 1}`}>
+          <kbd>{u + 1}</kbd>
+          <span>{UNIT_NAME[u]}</span>
+          <small>{ctl.troopsToSend(u)}</small>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputController; narrow: boolean }) {
@@ -210,6 +352,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const flagsUsed = viewer !== null ? g.flagsOf(viewer).length : 0;
   const rushTick = (g.config.endgameRush?.tick as number | undefined) ?? ENDGAME_RUSH_TICK;
   const spectating = me === null || viewer !== me;
+  const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
   const income = p ? goldPerSecond(p.goldWeight, p.tech[1], p.upkeepPm, g.config.constants) : null;
   return (
     <div className="hud-top">
@@ -237,7 +380,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       {g.lockoutDissolveTick !== null && <span className="pill warn-pill">전원 동맹 — 강제 해제 {fmtClock((g.lockoutDissolveTick - g.tick) * g.config.tickMs)}</span>}
       {!narrow && (
         <span className="hud-buttons">
-          {!spectating && (
+          {!spectating && !over && (
             <>
               <HudBtn on={ctl.ix.panel === 'tech'} k="T" label="테크" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'tech' ? null : 'tech'), ctl.ix.bump())} />
               <HudBtn on={ctl.ix.panel === 'ally'} k="P" label="외교" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'ally' ? null : 'ally'), ctl.ix.bump())} />
@@ -246,7 +389,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
           <HudBtn on={ctl.ix.colorblind} k="C" label="색각 보조" onClick={() => ctl.setColorblind(!ctl.ix.colorblind)} />
           <HudBtn on={ctl.ix.showDirections} k="V" label="이동 방향" onClick={() => ctl.toggleDirections()} />
           <HudBtn on={ctl.ix.helpOpen} k="?" label="도움말" onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} />
-          {!spectating && <EmoteMenu store={store} />}
+          {!spectating && !over && <EmoteMenu store={store} />}
           <button className="hud-btn leave-btn" onClick={() => requestLeave(store, ctl)}>
             나가기
           </button>
@@ -355,37 +498,53 @@ function Stat({ label, value, warn }: { label: string; value: string; warn?: boo
   );
 }
 
+/**
+ * 하단 바 — 병력 비율 파라미터 + 골드 수지(사용자 요청 2026-10-10: 깃발 유지비로 초당 얼마가 나가는지, 순수입).
+ * 병종은 삼각 메뉴에서 고른다(v4.2 출전 UI). 유지비는 서버 upkeepPm 으로 계산(upkeep.ts), 다음 깃발 미리보기는
+ * 서버 값과 식이 맞을 때만 보인다.
+ */
 function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
   usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
+  const lastRule = useRef<UpkeepRule | null>(null);
   if (!ctl.canCommand()) return null;
   const ix = ctl.ix;
+  const g = store.game;
+  const me = store.myPlayerId;
+  const p = g && me !== null ? g.players.get(me) : undefined;
+  let gold: JSX.Element | null = null;
+  if (g && p && me !== null) {
+    const inc = goldPerSecond(p.goldWeight, p.tech[TECH_AXIS.ECONOMY], p.upkeepPm, g.config.constants);
+    const upkeep = Math.max(0, inc.gross - inc.net);
+    const rule = detectRule(g, me, p.upkeepPm);
+    if (rule) lastRule.current = rule;
+    const extra = ([0, 1, 2] as Unit[]).map((u) => nextFlagExtraPm(g, me, rule ?? lastRule.current, u));
+    const showExtra = extra.every((e) => e !== null);
+    gold = (
+      <div className="gold-flow" title="유지비 = 배치된 깃발 때문에 골드 수입에서 빠지는 몫 (서버 값)">
+        <span>
+          골드 순수입 <b className={inc.net <= 0 ? 'warn-text' : ''}>+{inc.net.toFixed(1)}/초</b>
+        </span>
+        <span className="muted small">
+          총 +{inc.gross.toFixed(1)} · 깃발 유지비 <b className={upkeep > 0 ? 'upkeep' : ''}>−{upkeep.toFixed(1)}/초</b>
+          {p.upkeepPm > 0 && ` (${(p.upkeepPm / 10).toFixed(0)}%)`}
+        </span>
+        {showExtra && (
+          <span className="muted small">
+            다음 깃발 유지비 {extra.map((e, u) => `${UNIT_NAME[u]} −${((inc.gross * e!) / 1000).toFixed(1)}`).join(' · ')}/초
+          </span>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="command-bar">
-      {([0, 1, 2] as Unit[]).map((u) => (
-        <button key={u} className={`unit-btn ${ix.armedUnit === u ? 'armed' : ''}`} onClick={() => ctl.armUnit(u)} title={`단축키 ${u + 1}`}>
-          <kbd>{u + 1}</kbd> {UNIT_NAME[u]} <small>{ctl.troopsToSend(u)}</small>
-        </button>
-      ))}
       <label className="ratio">
         <span>
-          보낼 비율 <b>{Math.round(ix.ratio * 100)}%</b> <kbd>Q</kbd>/<kbd>E</kbd>
+          보낼 병력 비율 <b>{Math.round(ix.ratio * 100)}%</b> <kbd>Q</kbd>/<kbd>E</kbd>
         </span>
         <input type="range" min={10} max={100} step={10} value={Math.round(ix.ratio * 100)} onChange={(e) => ctl.setRatio(Number(e.target.value) / 100)} />
       </label>
-      <span className="origin">
-        출발{' '}
-        {ix.originBase === null ? (
-          <b>자동</b>
-        ) : (
-          <>
-            <b>지정 기지</b>{' '}
-            <button className="btn-link small" onClick={() => ((ix.originBase = null), ix.bump())}>
-              해제
-            </button>
-          </>
-        )}
-      </span>
-      <span className="cmd-hint">{ix.armedUnit !== null ? '맵 클릭 = 발령 · Alt+클릭(B) 내 기지 = 출발 지정 · 우클릭/Esc 취소' : '병종 키를 누르고 맵을 클릭'}</span>
+      {gold}
     </div>
   );
 }
@@ -409,7 +568,8 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   ]
     .filter(Boolean)
     .join(' · ');
-  const postureBlocked = f.routed || f.inCombat || f.disengaging || cd > 0;
+  const returning = f.state === 'RETURNING'; // v4.2 A-62: 귀환 중엔 모든 명령 거절
+  const postureBlocked = returning || f.routed || f.inCombat || f.disengaging || cd > 0;
   return (
     <div className="flag-panel">
       <div className="flag-panel-head">
@@ -433,10 +593,10 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           <button className="btn" disabled={postureBlocked} onClick={() => ctl.togglePosture()} title="단축키 F">
             <kbd>F</kbd> {f.posture === POSTURE.ATTACK ? '방어로' : '공격으로'}
           </button>
-          <button className="btn" disabled={f.routed} onClick={() => ctl.recallSelected()} title="단축키 R">
+          <button className="btn" disabled={f.routed || returning} onClick={() => ctl.recallSelected()} title="단축키 R">
             <kbd>R</kbd> 회수
           </button>
-          <span className="muted small">우클릭 = 재지정</span>
+          <span className="muted small">{returning ? '귀환 중 — 취소 불가' : '우클릭 = 재지정 · 내 기지 클릭 = 그 기지로 귀환'}</span>
         </div>
       )}
     </div>
@@ -461,10 +621,19 @@ function GameOverOverlay({ store, game }: { store: ClientStore; game: GameModel 
   const partial = !game.gameOver;
   const won = go.winnerId !== null && go.winnerId === me;
   if (hidden)
+    // 종료 후 둘러보기: 맵은 자유 카메라·툴팁·순위표 따라가기, 명령은 canCommand 가 막는다
     return (
-      <button className="btn btn-primary gameover-reopen" onClick={() => setHidden(false)}>
-        결과 보기
-      </button>
+      <div className="gameover-pill" role="status">
+        <span>
+          게임 종료 · {go.winnerId !== null ? `${store.nicknameOf(go.winnerId)} 승리` : '승자 없음'}
+        </span>
+        <button className="btn btn-sm btn-primary" onClick={() => setHidden(false)}>
+          결과 보기
+        </button>
+        <button className="btn btn-sm" onClick={() => store.leaveRoom()}>
+          로비로
+        </button>
+      </div>
     );
   return (
     <div className="overlay">

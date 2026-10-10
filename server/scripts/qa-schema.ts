@@ -83,7 +83,7 @@ const flagSnap = obj({
   id: 'int', ownerId: range(1, 12), slotIndex: range(0, 6), unit: UNIT, posture: POSTURE, troops: 'int', posTileId: 'int', anchorTileId: 'int',
   targetOwnerId: (v, p, e) => { if (!isInt(v) || !((v as number) <= 12 || v === 254)) e.push(`${p}: 0..12|254 기대 ${v}`); },
   state: FLAG_STATE, targetTileId: 'int|null', progressPct: range(0, 99), stalled: 'bool', inCombat: 'bool', routed: 'bool', blocked: 'bool',
-  disengaging: 'bool', postureCooldownUntilTick: 'int', disengageUntilTick: 'int|null', breakaway: 'bool',
+  disengaging: 'bool', postureCooldownUntilTick: 'int', disengageUntilTick: 'int|null', breakaway: 'bool', halted: 'bool', returnBaseTileId: 'int|null',
 });
 
 export const DOC_SCHEMA: Record<string, Shape> = {
@@ -132,7 +132,8 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     playerDeltas: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: 'int' })),
     flagMoves: arr(tuple('int', 'int')), flagStats: arr(tuple('int', 'int', FLAG_STATE)), flagProgress: arr(tuple('int', range(0, 99))),
     flagTargets: arr(tuple('int', 'int|null')), baseHp: arr(tuple('int', range(0, 100))), flagsGone: arr('int'), 'thresholdPct?': 'num',
-    flagFlags: arr(tuple('int', POSTURE, range(0, 63), 'int')),
+    flagFlags: arr(tuple('int', POSTURE, range(0, 127), 'int')),
+    flagReturnBase: arr(tuple('int', 'int|null')),
   },
   cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE },
   error: { code: ['enum', ...DOC_ERROR], message: 'str' },
@@ -159,7 +160,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   flag_posture_changed: { tick: 'int', flagId: 'int', posture: POSTURE, cooldownUntilTick: 'int', auto: 'bool', targetOwnerId: 'int' },
   flag_blocked: { tick: 'int', flagId: 'int', byFlagIds: arr('int') },
   flag_unblocked: { tick: 'int', flagId: 'int' },
-  flag_disengage_started: { tick: 'int', flagId: 'int', untilTick: 'int' },
+  flag_disengage_started: { tick: 'int', flagId: 'int', untilTick: 'int', auto: 'bool' },
   flag_disengaged: { tick: 'int', flagId: 'int', reason: ['enum', 'broke_away', 'combat_over'] },
   base_captured: { tick: 'int', tileId: 'int', fromPlayerId: 'int', toPlayerId: 'int', newHpPct: 'int' },
   ally_proposed: { tick: 'int', proposalId: 'int', fromPlayerId: 'int', toPlayerId: 'int', expireTick: 'int' },

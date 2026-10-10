@@ -69,11 +69,11 @@ function loadFull(f: any): void {
   M.threshold = f.thresholdPct;
   M.rush = f.endgameRushActive;
 }
-const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16, STALLED: 32 };
+const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16, STALLED: 32, HALTED: 64 };
 function applyEvent(e: any): void {
   switch (e.type) {
     case 'flag_issued':
-      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false });
+      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
       break;
     case 'flag_retargeted': {
       const f = M.flags.get(e.flagId);
@@ -150,7 +150,7 @@ function applyDelta(d: any): void {
   for (const [id, pos] of d.flagMoves) { const f = M.flags.get(id); if (f) f.posTileId = pos; else recon.push(`t${d.tick} flagMoves 모르는 깃발 ${id}`); }
   for (const [id, tr, st] of d.flagStats) { const f = M.flags.get(id); if (f) Object.assign(f, { troops: tr, state: st }); else recon.push(`t${d.tick} flagStats 모르는 깃발 ${id}`); }
   const prog = new Map<number, number>(d.flagProgress);
-  for (const f of M.flags.values()) f.progressPct = prog.get(f.id) ?? 0; // 문서: ATTACK·ENGAGED 깃발 "전부" → 없으면 0 으로 본다
+  for (const f of M.flags.values()) f.progressPct = prog.get(f.id) ?? 0; // 문서 v4.2: progressPct > 0 깃발 전부 → 없으면 0 으로 본다
   for (const [id, tt] of d.flagTargets) { const f = M.flags.get(id); if (f) f.targetTileId = tt; }
   for (const [tile, hp] of d.baseHp) M.bases.set(tile, hp);
   for (const id of d.flagsGone) M.flags.delete(id);
@@ -158,7 +158,11 @@ function applyDelta(d: any): void {
   for (const [id, posture, bits, cd] of d.flagFlags) {
     const f = M.flags.get(id);
     if (!f) { recon.push(`t${d.tick} flagFlags 모르는 깃발 ${id}`); continue; }
-    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED) });
+    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED) });
+  }
+  for (const [id, rb] of d.flagReturnBase ?? []) {
+    const f = M.flags.get(id);
+    if (f) f.returnBaseTileId = rb;
   }
   if (M.freeze !== null && d.tick >= M.freeze) M.freeze = null;
 }

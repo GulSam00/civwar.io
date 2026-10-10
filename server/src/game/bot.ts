@@ -1,5 +1,5 @@
 /**
- * 봇 AI (GDD 8장 v3.0 + 8.6 / 8.6.0 v4.0 + v4.1 [A-43] 요격 전용 방어, 2.8 g 난이도 레버).
+ * 봇 AI (GDD 8장 v3.0 + 8.6 / 8.6.0 v4.0 + v4.1 [A-43] 요격 전용 방어, 2.8 g 난이도 레버, v4.2 8.7 깊은 앵커 [A-65]).
  *
  * - 11단계에서 decide() 가 일반 C2S_GameCommand 만 돌려준다(다음 tick 1단계, 사람과 같은 검증·거절 경로).
  *   게임 상태는 읽기만 한다. 거리장(getField/stepToward/etaTicks)은 쓰지 않는다(캐시 오염·비용 회피).
@@ -18,7 +18,12 @@ import {
   BOT_AVOID_RATIO_PERMILLE,
   BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE,
   BOT_MAX_DEFENSE_RATIO_PERMILLE,
+  BOT_BASE_ATTACK_RANGE,
+  BOT_BASE_ATTACK_WEIGHT_PERMILLE,
+  BOT_BASE_CAPITAL_PERMILLE,
   BOT_BASE_THREAT_W,
+  BOT_BASE_UNGUARDED_PERMILLE,
+  BOT_COMMIT_BASE_PERMILLE,
   BOT_BLOCK_ATTACK_RATIO_PERMILLE,
   BOT_COMMIT_ENEMY_PERMILLE,
   BOT_COMMIT_NEUTRAL_PERMILLE,
@@ -59,7 +64,7 @@ import {
 } from '@civwar/shared';
 import { flagValue } from './combat.js';
 import { flagCap, techCost, troopCap } from './economy.js';
-import { forEachFront, guardContains, maxProgress, mobilityTier, threatened, tileCost } from './rules.js';
+import { guardContains, marchFrontCountAt, marchMatch, maxProgress, mobilityTier, pushing, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 import type { BotBrain } from './tick.js';
 
@@ -81,6 +86,13 @@ export const BOT_CONSOLIDATE_TROOPS_PERMILLE = 400;
  * 3 × FLAG_MIN_TROOPS (8.6.0 후퇴의 "잔여 ≥ FLAG_MIN_TROOPS × 3" 과 같은 눈금). cap−reserve 가 작은 소국은 2 × 까지 낮춘다.
  */
 export const BOT_MIN_ATTACK_MULT = 3;
+/** v4.2 8.7 3b [A-65]: IDLE 공격 깃발 — 남은 병력이 이 이상이면 깊은 앵커로 재지정, 아니면 가까운 기지 지정 회수 */
+export const BOT_IDLE_REDEPLOY_MIN_TROOPS = 200;
+/** v4.2 8.3 [A-65]: 깊은 앵커 노선 깊이 clamp(병력 / (3 × cost), MIN, MAX) */
+export const BOT_DEEP_MIN = 4;
+export const BOT_DEEP_MAX = 20;
+/** GDD 에 없어 정함 (§10 v4.2): 새 공격 앵커 후보(국경 칸)가 내 공격 깃발 현재 위치에서 이 거리 이내면 건너뛴다 (같은 회랑 중복 방지) */
+export const BOT_PLOW_SPACING = 2;
 /** GDD 에 없어 정함 (§10): 소진 직전 회수 여유 tick (경계 = 40 + 쌓인 예산 + 누적률 × 이 값). 결정 주기 전체를 여유로 잡으면 큰 깃발을 너무 일찍 물려 손해(자가대전 측정) */
 export const BOT_EXHAUST_MARGIN_TICKS = 2;
 
@@ -97,8 +109,16 @@ export const TECH_PRIORITY: readonly (readonly (readonly [TechAxis, number])[])[
 ];
 
 interface Anchor {
+  /** 발령 앵커 = 깊은 앵커 (v4.2 [A-65]) */
   tileId: number;
+  /** 점수를 매긴 국경 칸 */
+  border: number;
+  /** 점수·깊이에 쓴 병력 */
+  troops: number;
+  /** 깊은 앵커 칸의 소유자 */
   owner: number;
+  /** v4.2 기지 공격 후보 (앵커 = 적 기지 칸 자체, 깊은 앵커 없음) */
+  base: boolean;
   kind: 0 | 1; // 0 NEUTRAL, 1 ENEMY
   score: number;
   landing: boolean;
@@ -163,6 +183,20 @@ interface Ctx {
   /** 상륙 후보 (기동 T2+) 소유자별 */
   landing: Map<number, number[]> | null;
   hostileBorder: boolean;
+  /** v4.2 깊은 앵커용: 내 땅까지 격자 거리 (minDistFromTerritory 의 다중 출발 BFS 판, 결정당 1회 lazy) */
+  terrDist: Int32Array | null;
+  /** 재지정 앵커를 고르는 중인 깃발 (자기 위치는 회랑 중복 검사에서 뺀다) */
+  selfFlagId: number;
+}
+
+function withSelf<T>(ctx: Ctx, f: Readonly<Flag>, fn: () => T): T {
+  const prev = ctx.selfFlagId;
+  ctx.selfFlagId = f.id;
+  try {
+    return fn();
+  } finally {
+    ctx.selfFlagId = prev;
+  }
 }
 
 // ───────────────────────── 공용 헬퍼 ─────────────────────────
@@ -214,12 +248,23 @@ function pseudoAttack(me: number, unit: Unit, anchor: number, targetOwnerId: num
   return { ownerId: me, unit, posture: POSTURE.ATTACK, anchorTileId: anchor, posTileId: anchor, targetOwnerId } as unknown as Flag;
 }
 
+/** v4.2: 공격 깃발이 지금 밀 수 있는 옆 칸 수 = |marchFront(f)| */
 function frontSize(state: Readonly<GameState>, f: Readonly<Flag>): number {
-  let k = 0;
-  forEachFront(state, f, () => {
-    k++;
-  });
-  return k;
+  return marchFrontCountAt(state, f.ownerId, f.posTileId);
+}
+
+/** 내 기지 중 pos 에 가장 가까운 것 (거리, tileId) — 없으면 null (v4.2 [A-61] 지정 회수) */
+function nearestBase(ctx: Ctx, pos: number): number | null {
+  let best: number | null = null;
+  let bd = Infinity;
+  for (const b of ctx.p.baseTiles) {
+    const d = ctx.state.graph.distance(b, pos);
+    if (d < bd) {
+      best = b;
+      bd = d;
+    }
+  }
+  return best;
 }
 
 // ───────────────────────── 명령 발행 ─────────────────────────
@@ -238,8 +283,9 @@ function retarget(ctx: Ctx, f: Readonly<Flag>, anchor: number): void {
   push(ctx, { type: 'cmd_flag_retarget', clientSeq: seq(ctx), flagId: f.id, anchorTileId: anchor });
   ctx.touched.add(f.id);
 }
+/** v4.2 8.7 3b: 봇 회수는 항상 가장 가까운 내 기지를 지정한다 (없으면 자동) */
 function recall(ctx: Ctx, f: Readonly<Flag>): void {
-  push(ctx, { type: 'cmd_flag_recall', clientSeq: seq(ctx), flagId: f.id });
+  push(ctx, { type: 'cmd_flag_recall', clientSeq: seq(ctx), flagId: f.id, baseTileId: nearestBase(ctx, f.posTileId) });
   ctx.touched.add(f.id);
 }
 function posture(ctx: Ctx, f: Readonly<Flag>, to: Posture): void {
@@ -341,7 +387,8 @@ function threatItems(ctx: Ctx): { items: ThreatItem[]; baseTh: [number, number][
   const { state, me, t } = ctx;
   const items: ThreatItem[] = [];
   for (const g of state.flags) {
-    if (g.ownerId === me || g.routed || g.posture !== POSTURE.ATTACK || g.state !== 'ENGAGED' || g.targetTileId === null) continue;
+    // v4.2 8.7 1: 위협 = pushing(g) (앵커 점령 ENGAGED + 행군 중 정지 점령 halted)
+    if (g.ownerId === me || g.routed || !pushing(g) || g.targetTileId === null) continue;
     if (!hostilePlayer(state, me, g.ownerId) || state.owners[g.targetTileId] !== me) continue;
     const cost = tileCost(state, g, g.targetTileId);
     const rate = Math.min(Math.floor((g.initialTroops * FLAG_SPEND_RATE_PERMILLE) / cost), maxProgress(g));
@@ -376,11 +423,16 @@ function interceptTile(ctx: Ctx, e: Readonly<Flag>): number {
 
 // ───────────────────────── 8.3 앵커 선택 ─────────────────────────
 
-function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, from = -1): number {
+/** v4.2 8.3 [A-65]: 노선 깊이 = clamp(floor(병력 / (3 × cost)), 4, 20) — 걸음당 3칸 */
+function plowDepth(troops: number, cost: number): number {
+  return Math.min(BOT_DEEP_MAX, Math.max(BOT_DEEP_MIN, Math.floor(troops / (3 * cost))));
+}
+
+function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, from: number, troops: number): number {
   const { state, me, p, t } = ctx;
-  let mass = 0;
-  for (const x of state.graph.disk(anchor, FRONT_RADIUS)) if (state.owners[x] === o && isClaimable(state.map.terrain[x])) mass++;
   const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, anchor, o), anchor);
+  // v4.2 8.3 [A-65]: mass(원 안 칸 수) → yield = min(병력 / cost, 3 × depth). 최소 1
+  const mass = Math.max(1, Math.min(Math.floor(troops / cost), 3 * plowDepth(troops, cost)));
   const march = state.graph.distance(from >= 0 ? from : originFor(state, p, anchor), anchor);
   let guardN = 0;
   let enemyDefend = 0;
@@ -418,18 +470,98 @@ function anchorDanger(ctx: Ctx, anchor: number): number {
   return s;
 }
 
-/** from = 재지정할 깃발의 현재 위치 (발령이면 -1 → 기지 출발 originFor) */
-function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1): Anchor | null {
+/** 내 땅까지 격자 거리 — 토폴로지 인접(지형 무시) 다중 출발 BFS = min over 내 타일 distance (minDistFromTerritory 와 같은 값) */
+function terrDist(ctx: Ctx): Int32Array {
+  if (ctx.terrDist) return ctx.terrDist;
+  const { state, me } = ctx;
+  const n = state.owners.length;
+  const d = new Int32Array(n).fill(-1);
+  const q: number[] = [];
+  for (let t = 0; t < n; t++)
+    if (state.owners[t] === me) {
+      d[t] = 0;
+      q.push(t);
+    }
+  const topo = state.graph.topology;
+  for (let i = 0; i < q.length; i++) {
+    const u = q[i];
+    for (const v of topo.adjacent(u)) {
+      if (d[v] >= 0) continue;
+      d[v] = d[u] + 1;
+      q.push(v);
+    }
+  }
+  ctx.terrDist = d;
+  return d;
+}
+
+/**
+ * v4.2 8.3 [A-65] 깊은 앵커: 국경 앵커 a 에서 노선 끝점을 민다.
+ * deep = argmax over { t : 점령 가능, marchMatch, a 에서 depth 걸음 안 } of ( min(내 땅까지 거리, depth), −tileCost, −tileId ).
+ * GDD 에 없어 정함(§10): 후보는 a 에서 "점령 가능 · 비내 · 비동맹 칸만 밟는" 그래프 BFS 로 depth 걸음 안 — 물 건너 칸(기하 거리만 가까운)을 고르지 않게.
+ */
+function deepAnchor(ctx: Ctx, a: number, troops: number): number {
+  const { state, me } = ctx;
+  const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, a, state.owners[a]), a);
+  const depth = plowDepth(troops, cost);
+  const td = terrDist(ctx);
+  const costAt = (x: number) => tileCost(state, pseudoAttack(me, UNIT.SWORD, x, state.owners[x]), x);
+  const seen = new Map<number, number>([[a, 0]]);
+  const q = [a];
+  let best = a;
+  let bk = Math.min(td[a], depth);
+  let bc = -1;
+  for (let i = 0; i < q.length; i++) {
+    const u = q[i];
+    const du = seen.get(u)!;
+    if (u !== a) {
+      const k = Math.min(td[u], depth);
+      if (k > bk) {
+        best = u;
+        bk = k;
+        bc = -1;
+      } else if (k === bk) {
+        if (bc < 0) bc = costAt(best);
+        const c = costAt(u);
+        if (c < bc || (c === bc && u < best)) {
+          best = u;
+          bc = c;
+        }
+      }
+    }
+    if (du >= depth) continue;
+    for (const v of state.graph.neighbors(u)) {
+      if (seen.has(v) || !isClaimable(state.map.terrain[v]) || !marchMatch(state, me, state.owners[v])) continue;
+      seen.set(v, du + 1);
+      q.push(v);
+    }
+  }
+  return best;
+}
+
+/** 공격 발령 예상 병력 (점수·깊이용) — fill 의 commit 식 근사 */
+function plannedTroops(ctx: Ctx, o: number): number {
+  const commit = o === NEUTRAL ? BOT_COMMIT_NEUTRAL_PERMILLE : BOT_COMMIT_ENEMY_PERMILLE;
+  return Math.max(FLAG_MIN_TROOPS, Math.floor((ctx.pool * commit) / 1000));
+}
+
+/**
+ * from = 재지정할 깃발의 현재 위치 (발령이면 -1 → 기지 출발 originFor), troops = 그 깃발 병력 (발령이면 -1 → plannedTroops).
+ * v4.2: 반환 tileId 는 깊은 앵커(노선 끝점), border 는 점수를 매긴 국경 칸.
+ */
+function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor | null {
   const { state, me, p } = ctx;
   const border = scanBorder(ctx);
   const landing = scanLanding(ctx);
   // 소유자별 내 공격 깃발 수 + 공격 앵커 (계획 포함)
   const targeted = new Map<number, number>();
   const anchors: [number, number][] = [...ctx.plannedAttack];
+  const plowPos: number[] = [];
   for (const f of ctx.mine) {
     if (!isLive(f) || f.posture !== POSTURE.ATTACK) continue;
     targeted.set(f.targetOwnerId, (targeted.get(f.targetOwnerId) ?? 0) + 1);
     anchors.push([f.targetOwnerId, f.anchorTileId]);
+    if (f.id !== ctx.selfFlagId) plowPos.push(f.posTileId);
   }
   for (const [o] of ctx.plannedAttack) targeted.set(o, (targeted.get(o) ?? 0) + 1);
   let adjMinTiles = Infinity;
@@ -447,6 +579,7 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1): Anchor | null {
       let ac = Infinity;
       for (const x of tiles) {
         if (anchors.some(([ao, at]) => (ao === o || ao === ANY_HOSTILE) && state.graph.distance(at, x) <= FRONT_RADIUS)) continue;
+        if (plowPos.some((pp) => state.graph.distance(pp, x) <= BOT_PLOW_SPACING)) continue;
         const c = tileCost(state, pseudoAttack(me, UNIT.SWORD, x, o), x);
         if (c < ac) {
           a = x;
@@ -460,8 +593,9 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1): Anchor | null {
     if (a1 >= 0) cands.push([a1, false]);
     const a2 = pick(landing.get(o));
     if (a2 >= 0 && state.graph.distance(a2, originFor(state, p, a2)) <= FRONT_MAX_RANGE) cands.push([a2, true]);
+    const tq = troops >= 0 ? troops : plannedTroops(ctx, o);
     for (const [a, landingCand] of cands) {
-      let score = scoreAnchor(ctx, o, a, adjMinTiles, from);
+      let score = scoreAnchor(ctx, o, a, adjMinTiles, from, tq);
       if (landingCand) score = Math.floor((score * BOT_LANDING_SCORE_PERMILLE) / 1000);
       // 8.6 회피 (근사)
       const danger = anchorDanger(ctx, a);
@@ -471,9 +605,41 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1): Anchor | null {
         if (mine * 1000 < danger * BOT_AVOID_RATIO_PERMILLE) continue;
       }
       if (!best || score > best.score || (score === best.score && o < best.owner)) {
-        best = { tileId: a, owner: o, kind: o === NEUTRAL ? 0 : 1, score, landing: landingCand };
+        best = { tileId: a, border: a, owner: o, kind: o === NEUTRAL ? 0 : 1, score, landing: landingCand, troops: tq, base: false };
       }
     }
+  }
+  // v4.2 기지 공격 (사용자 확정 2026-10-10): 내 땅에서 BOT_BASE_ATTACK_RANGE 안의 적(비동맹 플레이어) 기지마다 별도 후보.
+  // 앵커 = 기지 칸 자체(깊은 앵커 없음). 점수 = 8.3 식(체력 절반 미만 ×1.4 포함) × 2.5 × (관할 원 밖 1.5) × (수도 1.5)
+  {
+    const td = terrDist(ctx);
+    const capitals = new Set<number>();
+    for (const q of state.players) if (q) capitals.add(q.homeTileId);
+    for (const b of state.map.baseTiles) {
+      const o = state.owners[b];
+      if (!hostilePlayer(state, me, o) || !state.players[o].alive || o === excludeOwner) continue;
+      if (td[b] > BOT_BASE_ATTACK_RANGE || (targeted.get(o) ?? 0) >= 2) continue;
+      if (anchors.some(([, at]) => at === b)) continue;
+      const tq = troops >= 0 ? troops : Math.max(FLAG_MIN_TROOPS, Math.floor((ctx.pool * BOT_COMMIT_BASE_PERMILLE) / 1000));
+      let score = scoreAnchor(ctx, o, b, adjMinTiles, from, tq);
+      score = Math.floor((score * BOT_BASE_ATTACK_WEIGHT_PERMILLE) / 1000);
+      let guarded = false;
+      for (const d of state.flags) if (d.ownerId === o && d.posture === POSTURE.DEFEND && isLive(d) && guardContains(state, d, b)) guarded = true;
+      if (!guarded) score = Math.floor((score * BOT_BASE_UNGUARDED_PERMILLE) / 1000);
+      if (capitals.has(b)) score = Math.floor((score * BOT_BASE_CAPITAL_PERMILLE) / 1000);
+      const danger = anchorDanger(ctx, b);
+      if (danger > 0) {
+        const q = Math.floor((ctx.pool * BOT_COMMIT_BASE_PERMILLE) / 1000);
+        if (q * valueAs(state, me, UNIT.SWORD, POSTURE.ATTACK, b) * 1000 < danger * BOT_AVOID_RATIO_PERMILLE) continue;
+      }
+      if (!best || score > best.score || (score === best.score && o < best.owner)) {
+        best = { tileId: b, border: b, owner: o, kind: 1, score, landing: false, troops: tq, base: true };
+      }
+    }
+  }
+  if (best && !best.base) {
+    best.tileId = deepAnchor(ctx, best.border, best.troops); // v4.2 [A-65]: 점수 뒤 앵커를 노선 끝점으로
+    best.owner = state.owners[best.tileId];
   }
   return best;
 }
@@ -484,7 +650,7 @@ function currentScore(ctx: Ctx, f: Readonly<Flag>): number {
   let adjMinTiles = Infinity;
   for (const o of border.keys()) if (o !== NEUTRAL) adjMinTiles = Math.min(adjMinTiles, ctx.state.players[o].tiles);
   const o = f.targetOwnerId === ANY_HOSTILE ? ctx.state.owners[f.anchorTileId] : f.targetOwnerId;
-  return scoreAnchor(ctx, o, f.anchorTileId, adjMinTiles, f.posTileId);
+  return scoreAnchor(ctx, o, f.anchorTileId, adjMinTiles, f.posTileId, Math.floor(f.troopsMilli / 1000));
 }
 
 // ───────────────────────── 8.4 병종 ─────────────────────────
@@ -493,18 +659,20 @@ function chooseUnit(ctx: Ctx, a: Anchor): Unit {
   if (ctx.params.fixedUnit !== null) return ctx.params.fixedUnit as Unit;
   const { state, p } = ctx;
   if (a.kind === 0) return UNIT.CAVALRY;
-  if (state.map.isBase[a.tileId]) return UNIT.CAVALRY;
-  if (state.graph.distance(originFor(state, p, a.tileId), a.tileId) > BOT_FAR_FRONT_DIST) return UNIT.CAVALRY;
-  let guard = 0;
-  let enemyDefend = 0;
-  for (const d of state.flags) {
-    if (d.ownerId !== a.owner || d.posture !== POSTURE.DEFEND || !isLive(d)) continue;
-    enemyDefend++;
-    if (guardContains(state, d, a.tileId)) guard++;
+  if (a.base) {
+    // v4.2 기지 공격: 기지가 적 방어 관할 원 안이면 검병, 아니면 기병 (사용자 확정)
+    for (const d of state.flags) if (d.ownerId === a.owner && d.posture === POSTURE.DEFEND && isLive(d) && guardContains(state, d, a.tileId)) return UNIT.SWORD;
+    return UNIT.CAVALRY;
   }
-  if (guard >= 1) return UNIT.SWORD;
-  if (enemyDefend === 0) return UNIT.CAVALRY;
-  return UNIT.SWORD;
+  if (state.map.isBase[a.tileId]) return UNIT.CAVALRY;
+  if (state.graph.distance(originFor(state, p, a.border), a.border) > BOT_FAR_FRONT_DIST) return UNIT.CAVALRY;
+  // v4.2 8.7 3a: 점령 속도 = 걷는 속도 → 기병 비중 상향. 국경 칸이 적 방어 관할 원 안일 때만 검병(돌파 지구력)
+  const o = state.owners[a.border];
+  for (const d of state.flags) {
+    if (d.ownerId !== o || d.posture !== POSTURE.DEFEND || !isLive(d)) continue;
+    if (guardContains(state, d, a.border)) return UNIT.SWORD;
+  }
+  return UNIT.CAVALRY;
 }
 
 // ───────────────────────── 단계별 결정 ─────────────────────────
@@ -610,8 +778,8 @@ function defend(ctx: Ctx): void {
       let victim: Flag | null = null;
       let vg = Infinity;
       for (const f of ctx.mine) {
-        // expectedGain = 남은 front 크기 — 행군 중 깃발은 아직 front 가 없으므로 ENGAGED 만 후보 (§10)
-        if (f.posture !== POSTURE.ATTACK || f.state !== 'ENGAGED' || f.inCombat || ctx.touched.has(f.id) || !canRetarget(ctx, f)) continue;
+        // expectedGain = 남은 옆 칸 수 — v4.2: 미는 중(ENGAGED·halted)인 공격 깃발만 후보 (§10)
+        if (!pushing(f) || ctx.touched.has(f.id) || !canRetarget(ctx, f)) continue;
         const g = frontSize(state, f);
         if (g < vg) {
           victim = f;
@@ -715,7 +883,7 @@ function maintain(ctx: Ctx): void {
         continue;
       }
       if (canRetarget(ctx, f)) {
-        const a = f.posture === POSTURE.ATTACK ? bestAnchor(ctx, state.owners[f.anchorTileId], f.posTileId) : null;
+        const a = f.posture === POSTURE.ATTACK ? withSelf(ctx, f, () => bestAnchor(ctx, state.owners[f.anchorTileId], f.posTileId, myTroops)) : null;
         if (a && a.tileId !== f.anchorTileId) {
           retarget(ctx, f, a.tileId);
           ctx.plannedAttack.push([a.owner, a.tileId]);
@@ -724,10 +892,10 @@ function maintain(ctx: Ctx): void {
       }
     }
 
-    // ── 8.2 IDLE ──
+    // ── 8.2 IDLE — v4.2 8.7 3b: 병력 ≥ 200 이면 깊은 앵커로 재지정, 아니면 가까운 기지 지정 회수 ──
     if (f.state === 'IDLE') {
       if (!canRetarget(ctx, f)) continue;
-      const a = bestAnchor(ctx, -1, f.posTileId);
+      const a = myTroops >= BOT_IDLE_REDEPLOY_MIN_TROOPS ? withSelf(ctx, f, () => bestAnchor(ctx, -1, f.posTileId, myTroops)) : null;
       if (a) {
         retarget(ctx, f, a.tileId);
         ctx.plannedAttack.push([a.owner, a.tileId]);
@@ -742,8 +910,8 @@ function maintain(ctx: Ctx): void {
         if (threatened(state, f) && canPosture(ctx, f)) posture(ctx, f, POSTURE.DEFEND);
         continue;
       }
-      // 소진 직전 회수 (§10 — 소진은 잔여 전액 소멸, 회수는 85% 환급)
-      if (f.state === 'ENGAGED' && f.troopsMilli < exhaustLine(ctx, f) && preRecallPays(ctx, f)) {
+      // 소진 직전 회수 (§10 — 소진은 잔여 전액 소멸, 회수는 85% 환급). v4.2: 미는 중 = pushing (halted 포함)
+      if (pushing(f) && f.troopsMilli < exhaustLine(ctx, f) && preRecallPays(ctx, f)) {
         recall(ctx, f);
         continue;
       }
@@ -754,7 +922,7 @@ function maintain(ctx: Ctx): void {
           continue;
         }
         if (f.stalled && canRetarget(ctx, f)) {
-          const a = bestAnchor(ctx, -1, f.posTileId);
+          const a = withSelf(ctx, f, () => bestAnchor(ctx, -1, f.posTileId, myTroops));
           if (a && a.tileId !== f.anchorTileId && a.score * 1000 > currentScore(ctx, f) * BOT_STALL_SWITCH_PERMILLE) {
             retarget(ctx, f, a.tileId);
             ctx.plannedAttack.push([a.owner, a.tileId]);
@@ -762,13 +930,7 @@ function maintain(ctx: Ctx): void {
           continue;
         }
       }
-      if (f.state === 'ENGAGED' && canRetarget(ctx, f) && frontSize(state, f) < 2) {
-        const a = bestAnchor(ctx, -1, f.posTileId);
-        if (a && a.tileId !== f.anchorTileId) {
-          retarget(ctx, f, a.tileId);
-          ctx.plannedAttack.push([a.owner, a.tileId]);
-        }
-      }
+      // v4.2: "ENGAGED 인데 front < 2 → 재지정" 규칙 삭제 — 앵커 칸 ENGAGED 는 옆 칸(≤ 4)만 밀고 다 먹으면 IDLE → 위 IDLE 규칙이 처리
       continue;
     }
 
@@ -804,11 +966,12 @@ function maintain(ctx: Ctx): void {
       recall(ctx, f);
       continue;
     }
-    // 8.6.0 1. 제자리 반격: 위협 0, 병력 ≥ 70%, 쿨타임 없음 → ATTACK (공격할 적 땅이 있고 최소 방어선 유지될 때)
+    // 8.6.0 1. 제자리 반격: 위협 0, 병력 ≥ 70%, 쿨타임 없음 → ATTACK (최소 방어선 유지될 때)
+    // v4.2: 공격 = 깃발 옆 칸 → 지금 서 있는 칸 옆에 적 플레이어 칸이 있을 때만 (중립 확장은 공격 발령으로)
     if (calm && f.troopsMilli * 1000 >= f.initialTroops * 1000 * BOT_COUNTERATTACK_TROOPS_PERMILLE && canPosture(ctx, f) && defendCount(ctx) - 1 >= minDefense(ctx)) {
-      if (frontSize(state, pseudoAttack(me, f.unit, f.anchorTileId, ANY_HOSTILE)) > 0) {
-        posture(ctx, f, POSTURE.ATTACK);
-      }
+      let enemyAdj = false;
+      for (const n of state.graph.neighbors(f.posTileId)) if (isClaimable(state.map.terrain[n]) && hostilePlayer(state, me, state.owners[n])) enemyAdj = true;
+      if (enemyAdj) posture(ctx, f, POSTURE.ATTACK);
     }
   }
 }
@@ -874,6 +1037,8 @@ function recycle(ctx: Ctx): void {
   for (const f of ctx.mine) {
     if (!isLive(f) || f.inCombat || f.disengageUntilTick !== null || ctx.touched.has(f.id)) continue;
     if (f.posture === POSTURE.DEFEND && threatened(state, f)) continue;
+    // v4.2 (§10): 쟁기 중(정지 점령·앵커 점령)이거나 노선으로 가는 공격 깃발은 회수하지 않는다 — 병력이 땅으로 바뀌는 중이다
+    if (f.posture === POSTURE.ATTACK && f.state !== 'IDLE') continue;
     if (Math.floor(f.troopsMilli / 1000) * BOT_RECYCLE_RATIO > newQ) continue;
     if (!weak || f.troopsMilli < weak.troopsMilli) weak = f;
   }
@@ -924,7 +1089,7 @@ function fill(ctx: Ctx): void {
     const a = bestAnchor(ctx);
     if (!a) break;
     let unit = chooseUnit(ctx, a);
-    const commit = a.kind === 0 ? BOT_COMMIT_NEUTRAL_PERMILLE : BOT_COMMIT_ENEMY_PERMILLE;
+    const commit = a.base ? BOT_COMMIT_BASE_PERMILLE : a.kind === 0 ? BOT_COMMIT_NEUTRAL_PERMILLE : BOT_COMMIT_ENEMY_PERMILLE;
     let q = Math.min(Math.max(Math.floor((ctx.pool * commit) / 1000), minQ), ctx.pool - reserve);
     q = Math.min(q, maxIssuable(p, ctx.pool, unit));
     if (q < minQ && unit === UNIT.CAVALRY) {
@@ -959,6 +1124,8 @@ export function decideBot(state: Readonly<GameState>, me: number, t: number, par
     border: null,
     landing: null,
     hostileBorder: false,
+    terrDist: null,
+    selfFlagId: -1,
   };
   diplomacy(ctx);
   buyTech(ctx);

@@ -1,9 +1,10 @@
-# civwar.io 백엔드 프로토콜 · 구현 문서 (Phase 3 3차-1 — GDD v4.1)
+# civwar.io 백엔드 프로토콜 · 구현 문서 (Phase 3 — GDD v4.2)
 
 > **프론트엔드의 유일한 신뢰 소스.** 서버가 실제로 보내는 메시지와 이 문서가 다르면 버그다.
 > 기준: **GDD v4.1 (사용자 승인 2026-10-09)** — v4.0 부록 A 재조정값 + v4.1 A-40~A-50. 타입 원본: `shared/src/protocol.ts`, 상수 원본: `shared/src/constants.ts`.
 > 작성: 2026-10-08, multiplayer-backend-engineer. 프로토콜 버전 `PROTOCOL_VERSION = 1`.
 > **2차 갱신(2026-10-08)**: 깃발·게이지·깃발 전투·태세·ZOC·상륙·기지 체력·동맹 구현. 1차 메시지·필드는 **하나도 바꾸지 않고 추가만** 했다(§12 변경 요약).
+> **v4.2 갱신(2026-10-10, GDD v4.2 승인본 + 사용자 A-60 변경)**: 공격 = 깃발 옆 칸(쟁기, `halted`), 앵커 원 공격·중립 자동 전환 폐기, 지정 기지 회수(`cmd_flag_recall.baseTileId`), 귀환 취소 불가·ZOC 무시·자동 이탈 대기·귀환 ×1.5, 유지비 = 출전 깃발 전부(패주 제외), `FLAG_SPEED_BASE_MILLI` 140. **메시지·필드는 추가만, 의미 변경이 있다 → §18 을 먼저 읽을 것.**
 > **3차-1 갱신(2026-10-09, GDD v4.1 승인본)**: 게이지 되돌리기 폐지 → 진척도 자동 감소(7c), 방 설정(맵 크기 S/M/L·공식 프리셋 맵·최대 인원 2~12·봇 수·봇 난이도), 프리셋 맵 로더·내보내기 스크립트. **제거·의미 변경이 있다 → §14 를 먼저 읽을 것.** 봇 AI 로직 자체는 3차-2.
 
 ---
@@ -249,17 +250,20 @@ axis `0=MILITARY 1=ECONOMY 2=TERRITORY 3=MOBILITY`, tier 1..3.
 → { "type": "cmd_ack", "clientSeq": 1, "accepted": true, "flagId": 1, "posture": 0 }
 { "type": "cmd_flag_retarget", "clientSeq": 2, "flagId": 7, "anchorTileId": 2500 }
 { "type": "cmd_flag_recall", "clientSeq": 3, "flagId": 7 }
+{ "type": "cmd_flag_recall", "clientSeq": 5, "flagId": 7, "baseTileId": 2316 }   // v4.2: 귀환 기지 지정 (생략·null = 자동)
 { "type": "cmd_set_posture", "clientSeq": 4, "flagId": 7, "posture": 1 }
 ```
 
 | 명령 | 검증 순서 (먼저 걸린 코드 1개 회신) | 효과 |
 |---|---|---|
 | `cmd_flag_issue` | `ELIMINATED` → `BAD_REQUEST`(tileId 범위 밖·troops 비정수) → `NO_SLOT`(내 깃발 수 ≥ flagCap — 패주 귀환 중인 깃발도 슬롯 점유) → `BAD_UNIT` → `WATER`(DEEP·SHALLOW) → `OUT_OF_RANGE`(내 타일까지 거리 > 40) → `TOO_SMALL`(< 40) → `ALLIED`(앵커 소유자가 ACTIVE/BREAKING 동맹) → `NOT_BASE` / `NOT_OWNED_BASE`(originBaseTileId 지정 시) → `INSUFFICIENT` | 기본 태세: 내 땅 앵커 = DEFEND(`targetOwnerId = 254 ANY_HOSTILE`), 그 외 ATTACK(`targetOwnerId` = 앵커 소유자, 중립 0). 풀 차감 `ceil(troops × UNIT_CONVERT[unit] / MOB_CONVERT[기동 단계])`. 슬롯 = 최소 미사용 번호. 출발 = 지정 기지 / 앵커 최근접 내 기지 / (기지 없음) 수도 최근접 내 타일. → `flag_issued` |
-| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**귀환 중이고 전투 중이 아닐 때만** — 귀환 중 교전에 붙잡힌 깃발은 재지정 가능, QA I-2) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생(쿨타임 중·전투 중이면 현 태세 유지), `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
-| `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING`(**귀환 중이고 전투 중이 아닐 때만**, QA I-2) | `state=RETURNING`, 귀환지 = recallTarget. 도착 시 잔여 × 85% 풀 환급. **전투 중이면 이탈 대기**(귀환 중 교전도 같음 — GDD 4.15 g 재이탈: 다시 명령하고 3초 × 실효값 0.5 를 또 치른다). → `flag_recalled` (+`flag_disengage_started`) |
-| `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
+| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 전투 중이어도 항상 거절** — QA I-2 수락 경로 폐기 [A-62]) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생(쿨타임 중·전투 중이면 현 태세 유지), `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
+| `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 항상 거절**, [A-62]) → (**v4.2** `baseTileId` 지정 시) `NOT_BASE`(기지 칸 아님·범위 밖) → `NOT_OWNED_BASE`(내 기지 아님) | `state=RETURNING`, `returnBaseTileId = baseTileId ?? null`, 귀환지 = recallTarget(지정 기지 우선). 깃발은 **실제로 걸어서** 귀환지까지 간다(속도 ×1.5, ZOC 무시). 도착 시 잔여 × 85% 풀 환급. **전투 중(비귀환)이면 이탈 대기**. → `flag_recalled` (+`flag_disengage_started{auto:false}`) |
+| `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2 추가** [A-62]) → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
 
-`recallTarget`: ① 출발 타일(아직 내 소유) → ② 내 기지 중 현재 위치 최근접(동률 tileId ASC) → ③ 수도(내 소유면) → ④ 최근접 내 타일. **매 tick 재평가**.
+`recallTarget`: **v4.2 ⓪ 지정 기지(`returnBaseTileId`, 아직 내 소유일 때)** → ① 출발 타일(아직 내 소유) → ② 내 기지 중 현재 위치 최근접(동률 tileId ASC) → ③ 수도(내 소유면) → ④ 최근접 내 타일. **매 tick 재평가**. 지정 기지를 잃은 tick 에 `returnBaseTileId = null`(델타 `flagReturnBase`로 통지) → ①~④ 폴백. **되찾아도 다시 그 기지로 가지 않는다.** IDLE 2분 자동 회수는 `returnBaseTileId = null`. 패주(`flag_routed`)는 기존 지정을 유지한다(§10-84).
+
+**v4.2 귀환(RETURNING, 패주 포함) 규칙** [A-62][A-63]: ① `cmd_flag_retarget`·`cmd_flag_recall`·`cmd_set_posture` 전부 `RETURNING` 거절(패주는 `ROUTED`가 먼저) ② 이동 속도 × `RETURN_SPEED_PERMILLE`(1500)/1000 ③ ZOC 무시(대치 안 됨) ④ 깃발 전투 간선의 **공격 쪽이 될 수 없다** — 귀환 깃발(태세 무관)은 지나가며 싸움을 걸지 않고, 비귀환 적 공격 태세 깃발이 붙을 때만 전투 ⑤ 전투에 붙잡히면(비패주) 서버가 같은 tick 4b 에 **자동 이탈 대기**(15 tick, 실효값 ×0.5) → `flag_disengage_started{auto:true}` → 만료 `flag_disengaged{broke_away}` → 귀환 계속 ⑥ 공격·정지 점령 없음.
 
 ### 동맹 명령 (2차 — GDD 6.2)
 
@@ -275,7 +279,7 @@ axis `0=MILITARY 1=ECONOMY 2=TERRITORY 3=MOBILITY`, tier 1..3.
 | `cmd_ally_respond` | `NO_PROPOSAL`(없음·만료·내게 온 것 아님) → (accept=false 면 바로 거절 처리) → `BAD_TARGET`(제안자 탈락) → 위 cutoff/frozen/allied/limit | accept: `ally_formed`. decline: `ally_proposal_closed{reason:"declined"}`. 둘 다 `cmd_ack accepted:true` |
 | `cmd_ally_break` | `NOT_ALLIED`(ACTIVE 동맹 아님 — BREAKING 포함) → `MIN_DURATION`(성립 후 300 tick 미만) | `BREAKING`, `breakAtTick = t+150` → `ally_break_started`. 150 tick 뒤 3단계에서 `ally_broken{reason:"cooldown_elapsed"}` |
 
-동맹 성립 시: 상대를 `targetOwnerId`로 둔 **양측 ATTACK 깃발(MARCHING/ENGAGED)** 은 즉시 `IDLE` + 게이지·예산 0 → `flag_idle{reason:"allied"}`. `ANY_HOSTILE` 깃발은 다음 tick selectTarget 이 동맹 타일을 건너뛴다.
+동맹 성립 시: 상대를 `targetOwnerId`로 둔 **양측 ATTACK 깃발(MARCHING/ENGAGED)** 은 즉시 `IDLE` + 게이지·예산 0 → `flag_idle{reason:"allied"}`. **v4.2**: 동맹 칸은 `marchFront`에서 빠지므로 다시는 공격 대상이 아니다. 단 IDLE 공격 깃발은 옆에 비동맹 칸(중립·제3자)이 있으면 **같은 tick 4단계에서 재점화**(`flag_engaged`)해 그 칸을 민다(A-59 문자 그대로, §10-85).
 **동맹 판정 `isAlly(a,b)` = ACTIVE 또는 BREAKING** — front 대상 제외, 깃발 전투 적대 판정·편 구성, ZOC, 노출 소모(동맹 땅 위 소모 없음)에 모두 같은 함수를 쓴다.
 
 ### emote / ping
@@ -367,8 +371,9 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ```
 - `players`는 id 오름차순 전원(탈락자 포함).
 - `flags[]` 항목 shape (flagId ASC):
-  `{ id, ownerId, slotIndex, unit, posture, troops, posTileId, anchorTileId, targetOwnerId, state:"MARCHING|ENGAGED|RETURNING|IDLE", targetTileId|null, progressPct(0..99), stalled, inCombat, routed, blocked, disengaging, postureCooldownUntilTick, disengageUntilTick|null, breakaway }`
-  — **2차 추가 필드: `disengageUntilTick`, `breakaway`**. `targetOwnerId` 254 = ANY_HOSTILE(내 땅 앵커 + 공격 태세 = 제자리 반격).
+  `{ id, ownerId, slotIndex, unit, posture, troops, posTileId, anchorTileId, targetOwnerId, state:"MARCHING|ENGAGED|RETURNING|IDLE", targetTileId|null, progressPct(0..99), stalled, inCombat, routed, blocked, disengaging, postureCooldownUntilTick, disengageUntilTick|null, breakaway, halted, returnBaseTileId|null }`
+  — **2차 추가 필드: `disengageUntilTick`, `breakaway`**. **v4.2 추가 필드(항상 존재)**: `halted`(bool — 행군 중 정지 점령, 아래), `returnBaseTileId`(지정 귀환 기지, `null` = 자동). `targetOwnerId` 254 = ANY_HOSTILE — **v4.2: 규칙에 쓰이지 않는 표시용**(발령·재지정 시 앵커 소유자).
+  - **v4.2 깃발 상태 읽는 법 (공격 태세)**: `MARCHING ∧ ¬halted` = 걷는 중(공격 안 함) / `MARCHING ∧ halted` = **가는 길 옆 칸 정지 점령**("진군 중 점령") / `ENGAGED` = **앵커 칸에 서서 옆 칸 점령**("앵커 점령") / `IDLE` = 앵커 칸 옆에 먹을 칸 없음 — **옆 칸이 다시 적·중립이 되면 그 자리에서 재점화**(이동 없음), 2분(600 tick) 뒤 자동 귀환. 공격 대상은 언제나 **깃발 현재 칸의 이웃 중 점령 가능·비동맹(중립 포함) 칸**뿐(`marchFront`) — **앵커 반경 6 원 공격은 폐기**. `targetTileId` 는 그 이웃 중 하나. 방어 태세는 이동만 하고 공격하지 않는다(방어 원 반경 6 = `guard`는 유지).
   ```json
   { "id": 1, "ownerId": 1, "slotIndex": 0, "unit": 2, "posture": 0, "troops": 88, "posTileId": 1923, "anchorTileId": 1743,
     "targetOwnerId": 0, "state": "ENGAGED", "targetTileId": 1833, "progressPct": 37, "stalled": false, "inCombat": false,
@@ -387,17 +392,29 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
   "flagMoves": [], "flagStats": [], "flagProgress": [], "flagTargets": [],
   "baseHp": [], "flagsGone": [],
   "thresholdPct": 59.995,
-  "flagFlags": [[1, 0, 1, 0]]
+  "flagFlags": [[1, 0, 65, 0]],
+  "flagReturnBase": []
 }
 ```
 - **모든 배열 필드는 항상 존재**(비어 있을 수 있음). `thresholdPct`만 값이 바뀐 tick에 존재(옵셔널).
 - `playerDeltas`: `t % 5 == 0`일 때만, **표시값(`tiles,troops,gold,goldWeight,upkeepPm`)이 마지막 송신 이후 바뀐 플레이어만**. 항목 `{id,tiles,troops,gold,goldWeight,upkeepPm}`.
-- `flagMoves [flagId,posTileId]`: posTileId가 바뀐 깃발(매 tick). `flagStats [flagId,troops,state]`: `t % 5 == 0`, 바뀐 것만. `flagProgress [flagId,pct]`: ATTACK 태세 ENGAGED 깃발 전부(매 tick). `flagTargets [flagId,targetTileId|null]`: 바뀐 것만. `baseHp [tileId,hpPct]`: `t % 5 == 0`, 바뀐 기지만. `flagsGone [flagId]`.
+- **골드 수입·유지비 표시 (v4.2 A-60 변경 — "초당 골드 소모")**: `upkeepPm`(0..700) = 이번 tick 골드 정산에 쓴 유지비 비율(그로스 대비 ‰). **v4.2: 출전한 깃발 전부(태세·상태 무관 — 행군·정지 점령·앵커·IDLE·귀환), 패주(`routed`) 깃발만 제외**가 과금 대상이다. 클라이언트 계산(서버와 같은 정수식, 상수는 `match_config.constants`):
+  ```
+  ecoTier   = player.tech[1]                                        // 경제 축
+  grossMilli = floor(goldWeight × GOLD_RATE_PERMILLE × ECO_GOLD_PERMILLE_BY_TIER[ecoTier] / 1e9)   // milli 골드 / tick
+  upkeepMilli = floor(grossMilli × upkeepPm / 1000)                 // 유지비 milli / tick
+  netMilli    = grossMilli − upkeepMilli                            // 실제 골드 증가 milli / tick (≥ 그로스의 30%)
+  골드/초 = milli/tick × (1000 / TICK_MS) / 1000 = milli/tick × 5 / 1000
+     소모 골드/초 = upkeepMilli × 0.005,  순수입 골드/초 = netMilli × 0.005,  그로스 골드/초 = grossMilli × 0.005
+  ```
+  `upkeepPm` 은 `goldWeight`·`tech` 와 같은 주기(델타 5 tick, 바뀐 때만 / full 5초)로 온다. 발령 전 미리보기("이 깃발을 내면 소모가 얼마")는 `w = Σ UNIT_GARRISON_PERMILLE[unit]`(내 비패주 깃발 전부 + 새 깃발), `upkeepPm' = min(700, floor(max(0, w − 1000) × 90 / 1000))` 로 같은 식에 넣으면 된다(§8).
+- `flagMoves [flagId,posTileId]`: posTileId가 바뀐 깃발(매 tick). `flagStats [flagId,troops,state]`: `t % 5 == 0`, 바뀐 것만. `flagProgress [flagId,pct]`: **v4.2: `progressPct > 0` 인 깃발 전부 + ATTACK 태세 `ENGAGED`·`halted` 깃발(0 이어도) 매 tick, 그리고 0 이 된 tick 1회** — "목록에 없는 깃발 = 0" 규칙이 그대로 성립한다(v4.1 까지는 ATTACK·ENGAGED 만). `flagTargets [flagId,targetTileId|null]`: 바뀐 것만. `baseHp [tileId,hpPct]`: `t % 5 == 0`, 바뀐 기지만. `flagsGone [flagId]`.
 - 같은 tick에 `snapshot_delta` → `snapshot_full` 순으로 온다. full을 받으면 그 상태로 덮어쓰면 된다.
 - **2차 변경(추가만)**:
   - `flagStats`는 `t % 5 == 0`의 변경분에 더해 **교전 중(`inCombat`) 깃발은 매 tick**, **새 깃발은 첫 tick 즉시** 실린다(GDD 7.3 "교전 깃발은 매 tick 병력 필드").
   - **`flagFlags: [flagId, posture, bits, postureCooldownUntilTick][]`** — 태세·비트·쿨타임 중 하나라도 바뀐 깃발만, 매 tick. 항상 존재(빈 배열 가능).
-    `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32`.
+    `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32 | HALTED 64`(**v4.2 추가** — 값 범위 0..127).
+  - **`flagReturnBase: [flagId, returnBaseTileId|null][]` (v4.2 추가, 항상 존재)** — 지정 귀환 기지가 바뀐 깃발만(지정 회수 수락 tick, 지정 기지 상실로 null 이 된 tick). 새 깃발은 `null` 이 기본이라 싣지 않는다. 귀환 화살표: `returnBaseTileId ?? flag_recalled/flag_routed.returnTileId`.
   - 새 깃발은 `flag_issued` 이벤트 + 같은 tick 델타의 `flagMoves`/`flagStats`/`flagFlags`(첫 등장)로 알 수 있다. 사라진 깃발은 `flagsGone` + `flag_ended`.
 
 ### room_list (개인 — 플레이테스트 후속)
@@ -462,20 +479,20 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 | type | 예시 JSON | 시점 |
 |---|---|---|
-| `flag_issued` | `{"type":"flag_issued","tick":3,"flagId":1,"playerId":1,"slotIndex":0,"unit":2,"posture":0,"troops":100,"originTileId":2103,"anchorTileId":1743,"targetOwnerId":0,"etaTick":32,"engageEtaTick":27}` | 발령 수락. `etaTick` = 현재 속도로 앵커까지 걸었을 때 도착 tick **추정**(ZOC·전투 무시). **`engageEtaTick`(프론트 QA m-4, 필드 추가)** = 같은 경로에서 MARCHING 도착 판정(ATTACK: 거리 1 안 front / DEFEND: `defendArrived` / 앵커 도달)이 처음 서는 tick 추정 — 발령 시점 owners 기준, ZOC·전투·영토 변화 무시. 실측(M10 NORMAL 2500 tick, n=331) 실제 `flag_engaged` 대비 평균 오차 5.2 tick(etaTick 26.7) |
-| `flag_retargeted` | `{"type":"flag_retargeted","tick":40,"flagId":1,"anchorTileId":2500,"targetOwnerId":3,"posture":0,"resumeTick":55,"etaTick":88,"engageEtaTick":80,"auto":false}` | 재지정 수락(`auto:false`, `resumeTick` = 경직 해제 tick, `engageEtaTick` = `resumeTick` + 교전 개시 추정) / 4.5 중립 자동 전환(`auto:true`, 앵커 그대로, `resumeTick = etaTick = engageEtaTick = tick`) |
-| `flag_recalled` ⟵ **백엔드 추가** | `{"type":"flag_recalled","tick":41,"flagId":1,"returnTileId":2103}` | 회수 수락, IDLE 타임아웃(600 tick) 자동 회수 |
-| `flag_engaged` | `{"type":"flag_engaged","tick":10,"flagId":1,"posture":0,"frontTileCount":8}` / `{"type":"flag_engaged","tick":12,"flagId":2,"posture":1,"guardTileCount":34}` | MARCHING → ENGAGED. ATTACK 이면 `frontTileCount`만, DEFEND 이면 `guardTileCount`만 |
-| `flag_stalled` | `{"type":"flag_stalled","tick":70,"flagId":1,"tileId":1833}` | **v4.1 의미**: ENGAGED·공격 태세·비전투 깃발이 25 tick 연속 한 칸도 못 민(AP 0·타깃 없음·잠긴 기지) 시점 1회. `tileId`는 `targetTileId`(없으면 `null`). 되돌리기 상쇄는 더 이상 없다 |
+| `flag_issued` | `{"type":"flag_issued","tick":3,"flagId":1,"playerId":1,"slotIndex":0,"unit":2,"posture":0,"troops":100,"originTileId":2103,"anchorTileId":1743,"targetOwnerId":0,"etaTick":32,"engageEtaTick":27}` | 발령 수락. `etaTick` = 현재 속도로 앵커까지 걸었을 때 도착 tick **추정**(ZOC·전투 무시 — **v4.2: 정지 점령 시간도 뺀 순수 이동 ETA. 공격 태세는 실제 도착이 훨씬 늦다**). **`engageEtaTick`(프론트 QA m-4, 필드 추가)** = 같은 경로에서 MARCHING 정지 판정(**v4.2 ATTACK: 그 칸의 옆 칸에 적·중립 칸이 생김 = 정지 점령 시작** / DEFEND: `defendArrived` / 앵커 도달)이 처음 서는 tick 추정 — 발령 시점 owners 기준, ZOC·전투·영토 변화 무시. 실측(M10 NORMAL 2500 tick, n=331) 실제 `flag_engaged` 대비 평균 오차 5.2 tick(etaTick 26.7) |
+| `flag_retargeted` | `{"type":"flag_retargeted","tick":40,"flagId":1,"anchorTileId":2500,"targetOwnerId":3,"posture":0,"resumeTick":55,"etaTick":88,"engageEtaTick":80,"auto":false}` | 재지정 수락(`auto:false`, `resumeTick` = 경직 해제 tick, `engageEtaTick` = `resumeTick` + 정지 점령 시작 추정). **v4.2: `auto:true`(4.5 중립 자동 전환)는 더 이상 송신하지 않는다**(필드는 유지) |
+| `flag_recalled` ⟵ **백엔드 추가** | `{"type":"flag_recalled","tick":41,"flagId":1,"returnTileId":2103}` | 회수 수락, IDLE 타임아웃(600 tick) 자동 회수. `returnTileId` = 그 시점 귀환지(v4.2: 지정 기지면 그 기지). 귀환지는 매 tick 재평가되므로 지정 기지 상실 시 `flagReturnBase [id, null]` 뒤로는 recallTarget 폴백 |
+| `flag_engaged` | `{"type":"flag_engaged","tick":10,"flagId":1,"posture":0,"frontTileCount":8}` / `{"type":"flag_engaged","tick":12,"flagId":2,"posture":1,"guardTileCount":34}` | MARCHING(또는 v4.2 IDLE 재점화) → ENGAGED. ATTACK 이면 `frontTileCount`만, DEFEND 이면 `guardTileCount`만. **v4.2: `frontTileCount` = 그 순간 깃발 옆 칸 수(`|marchFront|`, 사각 ≤ 4)**. 공격 깃발은 **앵커 칸에 섰을 때만** ENGAGED 가 된다 — 가는 길 정지 점령은 `halted` 비트(이벤트 없음). IDLE 공격 깃발이 옆 칸이 다시 생겨 재점화할 때도 이 이벤트(이동 없음) |
+| `flag_stalled` | `{"type":"flag_stalled","tick":70,"flagId":1,"tileId":1833}` | **v4.1 의미**: ENGAGED(**v4.2: 또는 halted**)·공격 태세·비전투 깃발이 25 tick 연속 한 칸도 못 민(AP 0·타깃 없음·잠긴 기지) 시점 1회. `tileId`는 `targetTileId`(없으면 `null`). 되돌리기 상쇄는 더 이상 없다 |
 | `flag_progress_lost` | `{"type":"flag_progress_lost","tick":15,"flagId":2,"tileId":1833,"cause":"decayed"}` | 게이지 레이스 패배(`captured_by_other`) / 진척 > 0 인데 타깃이 바뀜(`target_lost`) / **v4.1 `decayed`: 자동 감소로 0 도달(1회). 이때 깃발의 `targetTileId`는 유지된다(다시 밀면 같은 칸에서 0부터)** |
-| `flag_idle` | `{"type":"flag_idle","tick":21,"flagId":1,"reason":"front_cleared","autoRecallTick":621}` | `front_cleared`(공격 front 소멸 · 앵커 도달했는데 front 없음) / `guard_lost` / `allied`. `unreachable`은 송신하지 않음(가중 거리장에 도달 불가 타일이 없음, GDD 4.4) |
+| `flag_idle` | `{"type":"flag_idle","tick":21,"flagId":1,"reason":"front_cleared","autoRecallTick":621}` | `front_cleared`(**v4.2: 공격 깃발이 앵커 칸에서 옆 칸을 다 먹음 · 앵커 칸에 닿았는데 옆에 먹을 칸 없음**) / `guard_lost` / `allied`. `unreachable`은 송신하지 않음(가중 거리장에 도달 불가 타일이 없음, GDD 4.4) |
 | `flag_ended` | `{"type":"flag_ended","tick":90,"flagId":1,"reason":"recalled","refunded":76}` | `recalled`(85% 환급) / `routed_returned`(0) / `exhausted`(0) / `attrited`(0) / `eliminated`(0). `refunded`는 정수 병력 |
 | `combat_started` | `{"type":"combat_started","tick":31,"groupKey":4,"flagIds":[4,7],"sides":[{"sideKey":1,"ownerIds":[1],"troops":1000,"power":1000},{"sideKey":2,"ownerIds":[2],"troops":1000,"power":1300}]}` | 무리가 새로 생기거나 기존 무리에 깃발이 합류. `troops`·`power`는 그 tick 손실 적용 **전** 값. `power` = 편 실효값 W(permille) — 교환비 k = W_방어 / W_공격 |
 | `combat_ended` | `{"type":"combat_ended","tick":129,"groupKey":4,"winnerSideKey":2,"routedFlagIds":[4]}` | 살아남은(패주·이탈 완료 제외) 편이 1개 이하가 된 tick. 동시 0 이면 `winnerSideKey:null`. 무리가 그냥 해체(상대 소멸·동맹 성립 등)되면 다음 tick 에 `winnerSideKey:null` |
 | `flag_routed` | `{"type":"flag_routed","tick":129,"flagId":4,"returnTileId":2103}` | 병력 0 → 자동 귀환. 이후 모든 명령 `ROUTED`. **이탈 대기 중 패주하면 `disengageUntilTick = null`(별도 `flag_disengaged` 없음, QA m-8)** |
 | `flag_posture_changed` | `{"type":"flag_posture_changed","tick":21,"flagId":1,"posture":1,"cooldownUntilTick":46,"auto":true,"targetOwnerId":254}` | 수동 전환(`auto:false`) / 재지정에 따른 기본 태세 재파생(`auto:true`). **QA I-1 추가 필드 `targetOwnerId`** = 전환 후 값(`owners[anchor] == 소유자 ? 254 : owners[anchor]`, 1단계 처리 시점) — 클라이언트는 이 값으로 덮어쓴다 |
 | `flag_blocked` / `flag_unblocked` | `{"type":"flag_blocked","tick":5,"flagId":2,"byFlagIds":[1]}` / `{"type":"flag_unblocked","tick":31,"flagId":2}` | 대치(ZOC 정지) 비트가 바뀐 tick (4b 끝). `byFlagIds` = 다음 칸에 ZOC 를 거는 적 방어 태세 깃발 |
-| `flag_disengage_started` | `{"type":"flag_disengage_started","tick":2,"flagId":2,"untilTick":17}` | 전투 중 재지정·회수 수락 |
+| `flag_disengage_started` | `{"type":"flag_disengage_started","tick":2,"flagId":2,"untilTick":17,"auto":false}` | 전투 중 재지정·회수 수락(`auto:false`) / **v4.2 `auto:true`(필드 추가, 항상 존재)**: 귀환(RETURNING·비패주) 깃발이 전투에 붙잡혀 서버가 자동 개시 — "귀환 중 붙잡힘, 3초 뒤 이탈" 표시 |
 | `flag_disengaged` | `{"type":"flag_disengaged","tick":17,"flagId":2,"reason":"broke_away"}` | `broke_away`(대기 완료 → breakaway) / `combat_over`(대기 중 무리 소멸) |
 | `base_captured` | `{"type":"base_captured","tick":3,"tileId":1290,"fromPlayerId":0,"toPlayerId":1,"newHpPct":50}` | 기지 체력 0 → 함락 |
 | `ally_proposed` | `{"type":"ally_proposed","tick":1,"proposalId":1,"fromPlayerId":1,"toPlayerId":2,"expireTick":151}` | 제안 생성 |
@@ -500,7 +517,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `TECH_ORDER` | 선행 단계 미구매 또는 이미 구매 (**추가** — GDD 거절 코드 목록에 테크용이 없음) | ✅ |
 | `RATE_LIMITED` | tick당 명령 초과 (**추가**) | ✅ |
 | `NOT_IMPLEMENTED` | 1차 미구현 명령 — **2차 소멸(송신 안 함)** | ✗ |
-| `NO_SLOT` `BAD_UNIT` `WATER` `ALLIED` `OUT_OF_RANGE` `TOO_SMALL` `NO_FLAG` `RETURNING` `LOCKED` `NOT_BASE` `NOT_OWNED_BASE` `ROUTED` `IN_COMBAT` `DISENGAGING` `POSTURE_COOLDOWN` `SAME_POSTURE` | GDD 7.2/7.3 (§4 표) | ✅ 2차 |
+| `NO_SLOT` `BAD_UNIT` `WATER` `ALLIED` `OUT_OF_RANGE` `TOO_SMALL` `NO_FLAG` `RETURNING` `LOCKED` `NOT_BASE` `NOT_OWNED_BASE` `ROUTED` `IN_COMBAT` `DISENGAGING` `POSTURE_COOLDOWN` `SAME_POSTURE` | GDD 7.2/7.3 (§4 표). **v4.2**: `RETURNING` = 귀환 중 깃발에 대한 재지정·회수·태세 전환 전부(전투 중 포함). `NOT_BASE`/`NOT_OWNED_BASE` = `cmd_flag_recall.baseTileId` 에도 사용 | ✅ 2차 |
 | `BAD_TARGET` `ALLY_LIMIT` `ALLY_CUTOFF` `ALLY_FROZEN` `ALREADY_ALLIED` `ALLY_PENDING` `NO_PROPOSAL` `NOT_ALLIED` `MIN_DURATION` | 동맹 거절 (**백엔드 추가** — GDD 6.2 에 코드 없음) | ✅ 2차 |
 
 ### 6.2 `error.code`
@@ -535,18 +552,18 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 단계 | 함수 (`server/src/game/tick.ts`) | 1차 |
 |---|---|---|
 | 1 입력 큐 드레인 `(recvSeq, connId, clientSeq)` | `stage1_drainInput` | ✅ 테크·깃발·태세·동맹 |
-| 2 자원 생산 playerId ASC | `stage2_produce` | ✅ 병력·골드·**주둔 유지비**(직전 tick 상태, 1 tick 지연) |
+| 2 자원 생산 playerId ASC | `stage2_produce` | ✅ 병력·골드·**유지비**(v4.2: 패주 제외 출전 깃발 전부 — 1단계 명령 적용 후, 4단계 이전의 깃발 목록) |
 | 3 외교·시간 타이머 | `stage3_timers` → `allianceTimers` | ✅ 제안 만료·BREAKING→해제·freeze·Lockout + 종반 러시·봇 인계·threshold_update |
-| 4 깃발 이동 flagId ASC | `movement.ts` | ✅ 경직·전투 정지·ZOC(tick 시작 위치 스냅숏)·전진·노출 소모·도착·귀환 환급 |
+| 4 깃발 이동 flagId ASC | `movement.ts` | ✅ **v4.2 (GDD 4.4a b)**: 경직 → inCombat·ENGAGED(`halted=false`, 노출 소모) → IDLE(공격 태세면 옆 칸 생길 때 재점화) → MARCHING `settle`(방어 도착 > 옆 칸 있음: 앵커면 ENGAGED·아니면 `halted` > 앵커면 IDLE) → 이동(ZOC — **RETURNING 은 무시**, 속도 **RETURNING ×1.5**) → 새 칸에서 `settle`(남은 이동 진행도 버림) / RETURNING 귀환지 재평가·환급 |
 | 4a 깃발 전투 Phase A (읽기 전용 → `FlagCombatPlan`) | `combat.ts` | ✅ |
-| 4b 깃발 전투 Phase B flagId ASC | `combat.ts` | ✅ 손실·inCombat·패주·이탈 대기·blocked·combat 이벤트 |
-| 5 AP 예산 누적 (ENGAGED ∧ ¬inCombat) | `gauge.ts` | ✅ |
-| 6 전투 Phase A (읽기 전용 → `PushPlan`: pushes/baseHits). **v4.1: 방어 배분·`defSpend`·`undo` 삭제, `adv == 0` 은 push 아님** | `gauge.ts` | ✅ |
-| 7 전투 Phase B (tileId ASC, flagId ASC). **v4.1: net = adv, DEFEND 지출 삭제, `pushedSet`(tick 로컬) 반환, 안 민 ENGAGED·ATTACK·비전투 깃발 `updateStall(f,0)`(flagId ASC)** | `gauge.ts` | ✅ 게이지·레이스·기지 피해/함락 |
+| 4b 깃발 전투 Phase B flagId ASC | `combat.ts` | ✅ 손실·inCombat(**v4.2: inCombat 이면 `halted=false`**)·패주·**v4.2 귀환 깃발 자동 이탈 대기**·이탈 대기 만료·blocked·combat 이벤트. 간선 = 적대·거리 ≤ 1·**RETURNING 이 아닌** 공격 태세 깃발이 한쪽 이상 |
+| 5 AP 예산 누적 — **v4.2: `pushing(f)` = ¬inCombat ∧ ATTACK ∧ (ENGAGED ∨ halted)**. 걷는 MARCHING 은 누적 없음, 정지가 풀려도 예산 리셋 없음 [A-54] | `gauge.ts` | ✅ |
+| 6 전투 Phase A (읽기 전용 → `PushPlan`: pushes/baseHits). **v4.1: 방어 배분·`defSpend`·`undo` 삭제, `adv == 0` 은 push 아님. v4.2: 대상 `pushing(f)`, 타깃 = `selectAttackTargetRO`(아래)** | `gauge.ts` | ✅ |
+| 7 전투 Phase B (tileId ASC, flagId ASC). **v4.1: net = adv, DEFEND 지출 삭제, `pushedSet`(tick 로컬) 반환, 안 민 `pushing` 깃발 `updateStall(f,0)`(flagId ASC)**. halted 와 ENGAGED 사이 우선권 없음(같은 레이스) | `gauge.ts` | ✅ 게이지·레이스·기지 피해/함락 |
 | **7c 진척도 자동 감소 (v4.1)** flagId ASC — `progressMilli > 0 ∧ ∉ pushedSet ∧ ¬holdProgress` 이면 −20(0 클램프), 0 도달 시 `flag_progress_lost{cause:"decayed"}`. `holdProgress` = inCombat ∨ 4a 스냅숏 위치 거리 ≤ 1 에 적대(비동맹) presentEnemy 깃발(¬routed ∧ troops > 0, 상태·태세 무관) | `gauge.ts stage7c_progressDecay` (+ `combat.ts snapshotPresence`, 4a 산출물 `FlagCombatPlan.presence`) | ✅ |
 | 8 기지 체력 회복 tileId ASC | `stage8_baseRegen` | ✅ |
-| 9 파생 상태 | `gauge.ts stage9_derived` | ✅ calmTicks — v4.1 `threatened`(A-43: inCombat ∨ 관할 원 안 칸을 `targetTileId`로 둔 적 ENGAGED 공격 깃발) 사용. `GARRISON_ESCALATE_MAX = 1` 이라 규칙 영향 없음 |
-| 10 깃발 종료 판정 | `gauge.ts stage10_flagEnd` | ✅ front/guard 소멸 → IDLE, 중립 자동 전환, 소진, IDLE 타임아웃 |
+| 9 파생 상태 | `gauge.ts stage9_derived` | ✅ calmTicks — `threatened`(inCombat ∨ 관할 원 안 칸을 `targetTileId`로 둔 적 **`pushing`** 공격 깃발 — v4.2) 사용. `GARRISON_ESCALATE_MAX = 1` 이라 규칙 영향 없음 |
+| 10 깃발 종료 판정 | `gauge.ts stage10_flagEnd` | ✅ **v4.2**: ENGAGED·ATTACK 은 옆 칸(`marchFront`) 비면 IDLE(`front_cleared`), 아니면 < 40 소진 / ENGAGED·DEFEND guard 소멸 → IDLE·소진 / **MARCHING·halted < 40 → 소진** / IDLE 600 tick → 자동 귀환(`returnBaseTileId = null`). **중립 자동 전환 삭제** |
 | 11 봇 — **v4.1: 봇별 `t % bot.decisionInterval == 0`**(EASY 30 / NORMAL 15 / HARD 10), playerId ASC | `stage11_bots` | ✅ 3차-2 `CivBot` (`bot.ts`, §11) |
 | 12 탈락 | `stage12_elimination` | ✅ |
 | 13 승리 | `stage13_victory` | ✅ |
@@ -565,15 +582,46 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 - 진척도 감소: 밀지 않는 tick 마다 `progressMilli = max(0, progressMilli − 20)` (유지 조건 위 7c). `progressPct = floor(progressMilli / 10)` 그대로
 - `availAP = floor(min(spendBudgetMilli, troopsMilli) / 1000)`, 예산 `+initialTroops × 15`/tick, 상한 `initialTroops × 15 × 25`
 - `adv = min(floor(AP × 1000 / cost), 2 × UNIT_ASSAULT)`, 지출 `ceil(adv × cost / 1000)`
-- `speedMilli = max(1, floor(120 × UNIT_SPEED × MOB_SPEED / (moveCost(pos) × 1000)))`, moveCost = 얕은 물이면 `max(2000, SHALLOW_MOVE_BY_TIER[기동])`, 아니면 `TERRAIN_MOVE`
+- `speedMilli = max(1, floor(140 × UNIT_SPEED × MOB_SPEED × RET / (moveCost(pos) × 10⁶)))` — **v4.2: `FLAG_SPEED_BASE_MILLI` 120 → 140 [A-64]**, `RET` = RETURNING(패주 포함)이면 `RETURN_SPEED_PERMILLE`(1500) 아니면 1000 (같은 floor 안). 예: 검병·평원·무테크 행군 140, 귀환 210 milli/tick. moveCost = 얕은 물이면 `max(2000, SHALLOW_MOVE_BY_TIER[기동])`, 아니면 `TERRAIN_MOVE`
+- **v4.2 공격 대상 `marchFront(f)`** = 깃발 현재 칸 `neighbors`(이동 그래프 이웃) 중 `isClaimable ∧ owner ≠ 나 ∧ ¬isAlly(나, owner)`(중립 포함). `selectAttackTargetRO`: 현 `targetTileId` 가 `marchFront` 안이면 유지(sticky), 아니면 `(MARCHING 이고 경로 다음 칸이면 0 아니면 1, distance(t, anchor), tileCost, tileId)` 최소. 쟁기 미리보기: 직선 경로면 걸음당 새 칸 3개(앞·좌·우) = 폭 3 회랑, 출발 칸에서는 뒤 칸까지 4개
 - 거리장: 목적지에서 역방향 Dijkstra, 간선 가중치 = 들어가는 칸의 moveCost, 키 `(dist, tileId)`. 다음 칸 = 이웃 중 `(dist, tileId)` 최소. 캐시 키 `(목적지, 기동 단계)`
 - 노출 소모: 내 땅·동맹 땅이 아니면 `max(1000, floor(troopsMilli × 5 / 10000))`, 물 위면 `max(1000, floor(a × WATER_EXPOSURE[기동] / 1000))`
 - 깃발 전투: GDD 4.15 c·d 그대로 (`L`, `T = N_sides × L`, `inv = floor(10⁹ / W)`, 잔여 milli 는 sideKey ASC 로 1씩, 편 내부는 병력 비례 floor + 잔여를 (troopsMilli DESC, flagId ASC) 로 1씩)
-- 주둔 유지비: `w = Σ UNIT_GARRISON[unit]` (ENGAGED ∧ 앵커가 내 땅), `drainPm = min(700, floor(max(0, w − 1000) × 90 / 1000))` → `snapshot.players[].upkeepPm`
+- 유지비: **v4.2 [A-60 변경]** `w = Σ UNIT_GARRISON_PERMILLE[unit]` (**내 깃발 중 `routed` 가 아닌 것 전부** — 태세·상태 무관. 창 600 / 검 1000 / 기병 1600), `drainPm = min(700, floor(max(0, w − 1000) × 90 / 1000))` → `players[].upkeepPm`. 순증 = 그로스 − floor(그로스 × drainPm / 1000) ≥ 그로스의 30% (상한 700 유지). 예: 검 1 = 0‰, 검 2 = 90‰, 검 3 = 180‰, 기병 7 = 700‰(상한). 골드/초 계산은 §5 snapshot_delta
 
 ---
 
 ## 9. 테스트·스모크 결과
+
+### v4.2 (2026-10-10, GDD v4.2 + A-60 변경 + 봇 기지 공격)
+- `npm run typecheck` 통과(shared·server·client). `npm test`: **서버 8 파일 전부 통과**(flags 42·bot 12 포함). 루트 `npm test` 의 실패 1건은 **클라이언트** `m-4 engageEtaTick` 테스트(표본 수 > 100 요구, `flag_engaged` 를 실측 기준으로 씀) — v4.2 에서 공격 깃발의 `flag_engaged` 는 앵커 칸 도착 때만 나오므로 표본이 줄었다. 서버 동작은 의도대로이며 클라이언트 테스트의 기준 이벤트를 "첫 `HALTED` 비트 또는 `flag_engaged`" 로 바꿔야 한다(§18).
+- **v4.2 로 의미가 바뀌어 교체한 기존 테스트 (사유는 테스트 주석에도)**: ① 진척도 감소 시나리오 — IDLE 공격 깃발이 옆 칸 생기면 재점화(A-59)하므로 옆 칸을 내 땅으로 둠 ② "발령 → 행군 → 교전" — `flag_engaged` 대신 `halted` 관측 ③ "앵커를 먹어도 front 가 빌 때까지 계속 민다" → **직선 쟁기 폭 3** ④ 동맹 IDLE(allied) — 같은 tick 재점화, 동맹 칸 비대상 ⑤ QA I-2(귀환 중 재회수 수락) → **A-62 전부 RETURNING 거절 + 자동 이탈** ⑥ 유지비 9% 테스트 이름(내용 동일).
+- **신규 테스트 (flags.test.ts `v4.2` 묶음 13 + bot 3)**: 직선 쟁기 폭 3(회랑 밖 점령 0)·앵커 ENGAGED(frontTileCount 3)·IDLE·600 tick 자동 귀환(`returnBaseTileId null`) / IDLE 재점화(이동 없음) / 동맹 비대상·중립·제3자 대상·동맹 땅 위에서 점령 / **고립지 생성** / 물 위 해안 정지 점령 / 방어 태세 행군은 공격 안 함·걷는 중 예산 누적 0 / breakaway 한 칸 이동 전 정지 없음 / 전투 우선(halted 해제·예산·진척 동결) / **유지비 = 출전 깃발 전부(패주 제외)·상한 700** / 지정 기지 회수(`NOT_BASE`·`NOT_OWNED_BASE`·실제 이동·상실 폴백·되찾아도 복귀 안 함·`flagReturnBase` 델타) / 귀환 ×1.5(패주 포함, 140 → 210)·ZOC 무시(같은 배치 행군은 대치) / 귀환 깃발은 공격 쪽 아님 / 자동 이탈 대기 → broke_away → 귀환 계속 / 봇: 약한 적 기지 → 기병·풀 50%, 관할 원 안 기지 → 검병, 깊은 앵커. 모든 시뮬레이션 테스트는 매 tick `ledgerImbalance == 0`.
+- `smoke`: v4.2 항목 추가(정지 점령 `HALTED` 비트 → 진척 → 중립 점령, `snapshot_full.flags[].halted/returnBaseTileId`, `cmd_flag_recall{baseTileId}` → `flagReturnBase`, 귀환 중 재회수 `RETURNING`). `SMOKE PASSED`.
+- `qa:ws` 78/78, 스키마 위반 0. `qa:headless`: **재구성 불일치 0종, 회계 위반 0, 스키마 위반 0, 순서 위반 0**. `qa:scenarios` 84/85 — 남은 1건은 기존 m-13(GDD #7 예시 수치, 서버 결함 아님 — 744/772 그대로). 섹션 6(I-2)은 A-62 로 기대값 교체.
+- 대표 전투 `duels.ts` **불변**(113/98/86/78/103/107/103/100/78 tick, 225/404/518/148/87/148/194/523).
+- **자가대전** (`npm run selfplay -w @civwar/server -- 10 1000 M 10`, 전원 NORMAL, 시드 1000~1009, 매 tick 회계 검사):
+
+| 지표 | v4.1 실측 | v4.2 (봇 기지 공격 전) | **v4.2 최종** |
+|---|---|---|---|
+| 종료 평균 / 분포 | 31.9분 (31.3~32.0) | 32.0 (전부 32.0) | **32.0 (전부 32.0)** |
+| 종료 사유 | timeout 9 · threshold 1 | timeout 10 | **timeout 10** |
+| 1위 점유율 @5/10/15/20/25/30분 | 4.8/10.1/14.9/19.9/24.8/**28.7** | 4.8/10.0/13.6/15.9/18.6/**21.0** | 4.8/9.9/13.7/17.7/22.5/**25.5** |
+| 봇 APM / 거절률 | 7.8 / 0% | 7.6 / 0% | **7.1 / 0%** |
+| 공격 깃발 시간 (걷기/정지 점령/앵커 점령/교전/귀환/IDLE) | 행군 23 · 교전 7 · 귀환 13 (§11) | 42.5/21.9/0.7/11.6/21.4/1.9 | **40.3/22.8/0.7/17.6/16.7/1.9** |
+| 점령 귀속 (정지 점령/앵커) | — | 96.1% / 1.7% | 95.5% / 1.8% |
+| 공격 발령 병종 (창/검/기) | — | 0/1.8/98.2 | 0/3.2/96.8 |
+| 평균 유지비 upkeepPm | — (주둔만) | 284‰ | **265‰** |
+| 테크 구매/플레이어 @15분 / 종료 | — | 1.5 / 3.4 | **1.6 / 3.2** |
+| 종료 시 고립지 칸 비율 (B-21) | — | 16.6% | 16.1% |
+| 병력 소멸 (노출/전투/공격 지출) | 노출 ~10% · 전투 ~17% | 4.4/28.9/66.7 | 3.8/36.6/59.6 |
+| 플레이어 기지 함락/판 (그중 수도) · 탈락/판 | — | — | **44.6 (28.1) · 1.1** |
+
+  - **A-60 분리 측정** (같은 코드·같은 시드 1000~1003, 30분, 유지비만 옛 "방어 주둔만" 으로 임시 교체 후 원복): 30분 1위 22.3% vs 새 규칙 22.1% — **점유율 영향 거의 없음**. 평균 유지비 73‰ → 302‰, 테크 구매/플레이어 3.9 → 3.2 (**약 −18%, 테크가 늦어진다**). 봇은 슬롯을 항상 채우므로(방어 비중 47%) 깃발 4~6개 × 가중치로 상시 20~35% 둔화.
+  - 쟁기 점령 = 깃발이 실제로 먹는 칸의 96%. 앵커 ENGAGED 는 1% 미만 — 봇 깃발은 깊은 앵커 전에 병력이 다 탄다(깊이 식 = 병력 소진 깊이, 의도대로).
+  - 수도 함락 28회/판은 같은 수도가 여러 번 주인이 바뀐 횟수 포함. 탈락 1.1/판, 조기 종료 0 — 판이 일찍 끝나지는 않는다.
+  - 성능: tick 평균 0.29 ms, 최대 23.6 ms(거리장 생성), 봇 평균 0.05 ms/tick·최대 10.4 ms.
+  - **게임 상수는 A-64(속도 140)·A-63(귀환 ×1.5) 외 바꾸지 않았다.** 하드 타임아웃 10/10 은 v4.1(9/10)과 같은 원인(§11 페이싱 관찰 1·4 — 봇 예비 병력·대칭 봇) + 쟁기로 깃발당 점령 시간이 늘어난 몫. GDD 5.4 v4.2 의 표준 29.4분은 봇 자가대전에서 재현되지 않는다.
 
 ### 3차-2 봇 (2026-10-09, GDD v4.1 8장)
 - `npm run typecheck` 통과. `npm test`: **8 파일 / 116 테스트 통과**(이후 aggression 3개 추가 → 119, QA 후속 3개 → 122). `npm run smoke`: `SMOKE PASSED` (룸 기본 두뇌가 이제 `CivBot` — 봇 자리가 실제로 발령·테크·동맹 응답을 한다).
@@ -663,8 +711,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 18. **recallTarget ①** "출발 기지"를 "출발 타일(아직 내 소유)"로 읽음(기지 없이 발령한 깃발의 출발지는 기지가 아님). **④ 최근접 내 타일** 폴백 추가(수도 상실 시).
 19. ~~기본 태세 자동 재파생~~ → **폐지(사용자 결정, GDD 4.3a 개정)**. 기본 태세는 발령·재지정 때만 정해진다. 공격 깃발은 앵커를 점령한 뒤에도 front 가 빌 때까지 계속 밀고, 비면 기존 IDLE/중립 자동 전환 규칙을 따른다. 9단계는 calmTicks 만 갱신. (`flag_posture_changed auto:true`는 이제 재지정 때만 나온다.)
 20. **되돌리기 배분은 GDD 의사코드 그대로**: `pending = adv − undo`(기지는 `dmg − undo`) → 방어는 그 tick 전진량만 상쇄하고(ceil 잔여만큼 소폭 음수 가능) 이미 쌓인 진척도·깎인 기지 체력을 되돌리지는 않는다. 산문("역방향으로 민다")과 다를 수 있어 **확인 요청**.
-21. IDLE 공격 깃발은 front 가 다시 생겨도 자동 재교전하지 않는다(4.4 의사코드 그대로: ENGAGED/IDLE 은 이동·도착 판정 없음). 재지정·IDLE 타임아웃(600 tick) 자동 회수로만 빠진다.
-22. 소진 판정(< 40)은 GDD 4.11b 대로 **ENGAGED 깃발만**. MARCHING/IDLE/RETURNING 깃발은 40 미만이어도 유지.
+21. ~~IDLE 공격 깃발은 자동 재교전하지 않는다~~ → **v4.2 A-59: 옆 칸이 다시 적·중립이면 그 자리에서 재점화**(§18).
+22. 소진 판정(< 40)은 GDD 4.11b 대로 **ENGAGED 깃발 + v4.2 정지 점령(halted) 깃발**. 걷는 MARCHING/IDLE/RETURNING 깃발은 40 미만이어도 유지.
 23. **3.2 `min(troops + regen, cap)` 그대로** — 회수 환급·영토 상실로 풀이 cap 을 넘으면 다음 tick 잘린다. 장부 `capClamp` 로 기록. GDD 빈칸(환급이 cap 에 잘리는 것이 의도인지) → **확인 요청**.
 24. ZOC 는 tick 당 1회, 전진 전에 판정(최고 속도도 tick 당 1칸 미만이라 루프 중 재판정 불필요). 대치 중엔 `moveProgMilli`가 늘지 않는다. `lockUntilTick` 중인 깃발은 노출 소모도 건너뛴다(4.4 `continue` 그대로).
 25. 기지가 함락 락(25 tick) 중이면 그 기지를 고른 공격 깃발은 그 tick 아무것도 하지 않는다(지출 0).
@@ -744,7 +792,22 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 76. **문서화(QA m-2)**: 관전자 새로고침 → 로비 복귀(관전 세션은 끊김 즉시 폐기). 서버 동작 변경 없음.
 77. **플레이테스트 — 공개 룸 방장 즉시 시작**(사용자 결정 2026-10-10, QA m-6 번복): `room.ts startNow` 가 `isPublic` 을 보지 않는다. 방장 = 첫 입장자(퇴장 시 남은 사람 중 playerId 최소). 공개 룸 설정 변경 금지는 유지. `rooms.test.ts`·`qa-ws.ts` 갱신.
 78. **플레이테스트 — 방 찾기**: C2S `lobby_list_rooms`·`lobby_join_listed`, S2C `room_list` 추가(§4·§5). 공개 룸만·코드 비노출·`roomId` 핸들·세션당 1초 1회(`RATE_LIMITED`)·최대 50개는 백엔드 결정. `lobby.ts listRooms/joinListed`, `room.ts listing`.
-79. **플레이테스트 — 모든 깃발 이동 방향 표시**는 프로토콜 변경 없이 기존 값(`anchorTileId`·`targetTileId`·`flag_recalled/flag_routed.returnTileId`)만 사용. 늦게 입장한 클라이언트는 이미 귀환 중인 깃발의 귀환지를 모른다(스냅샷에 없음 — 그 깃발은 화살표 생략).
+79. **플레이테스트 — 모든 깃발 이동 방향 표시**는 프로토콜 변경 없이 기존 값(`anchorTileId`·`targetTileId`·`flag_recalled/flag_routed.returnTileId`)만 사용. 늦게 입장한 클라이언트는 이미 귀환 중인 깃발의 귀환지를 모른다(스냅샷에 없음 — 그 깃발은 화살표 생략). **v4.2: 지정 귀환이면 `snapshot_full.flags[].returnBaseTileId` 로 알 수 있다.**
+
+### v4.2 (GDD v4.2 + 사용자 A-60 변경 + 봇 기지 공격)에서 정한 것
+
+80. **`halted` 직렬화**: `snapshot_full.flags[].halted` + 델타 `flagFlags` 비트 `HALTED 64`(별도 이벤트 없음 — GDD 7.3). `returnBaseTileId` 는 full 필드 + **새 델타 배열 `flagReturnBase`**(바뀐 깃발만). TS 타입은 두 필드를 optional 로 둠(구 클라이언트 리터럴 호환) — 서버는 항상 싣는다.
+81. **`flagProgress` 송신 조건 확대**: `progressPct > 0` 인 깃발 전부 + ATTACK·(ENGAGED ∨ halted) 매 tick + 0 이 된 tick. 정지 점령이 풀리거나 전투로 멈춘 MARCHING 깃발도 진척을 유지하므로(A-54·A-22) "없으면 0" 규칙을 지키려면 필요(프론트 지적 `progressPct` 불일치 해결).
+82. **4단계 `settle` ③ 은 실제로 칸을 옮긴 tick 에만** 판정(GDD 는 무조건) — 이동 안 한 tick 은 ① 과 입력이 같아 결과가 같다. `settle` 이 ENGAGED/IDLE 로 바꿀 때는 ①에서도 `moveProgMilli = 0`.
+83. **귀환 속도 ×1.5 는 `speedMilli` 의 같은 floor 안에서 곱한다**(`floor(140×UNIT×MOB×1500 / (move×10⁶))`) — 별도 floor 보다 정확. 검병 평원 210 milli/tick.
+84. **패주 시 `returnBaseTileId` 유지**(GDD 는 회수 명령·IDLE 자동 회수만 규정). 지정 귀환 중 붙잡혀 패주해도 같은 기지로 간다.
+85. **동맹 성립 IDLE(allied)** 은 GDD 6.2 그대로 두되, A-59 재점화가 같은 tick 4단계에서 적용된다(옆에 비동맹 칸이 있으면 즉시 ENGAGED). 동맹 칸 자체는 `marchFront` 에서 빠지므로 다시 공격하지 않는다.
+86. **`attackReady` 에 `state ≠ RETURNING`** 명시(GDD 는 RETURNING 이 settle 을 안 탄다는 구조로만 보장).
+87. **유지비 [A-60 사용자 변경 2026-10-10]**: GDD v4.2 본문(방어 주둔만)과 다르게 **패주 아닌 출전 깃발 전부** 과금(`economy.ts paysUpkeep`). 공식·면제 1000·상한 700 은 그대로. `isGarrison`(방어 주둔)은 9단계 calmTicks(비활성 누진)에만 남는다.
+88. **봇 깊은 앵커 후보 = 국경 칸에서 "점령 가능·비내·비동맹 칸만 밟는" 그래프 BFS `depth` 걸음 안**(GDD 는 기하 `distance ≤ depth`) — 물 건너 칸을 "내 땅에서 멀다"고 고르지 않게. "내 땅까지 거리" 는 토폴로지 인접 다중 출발 BFS(= `minDistFromTerritory`). 점수의 `mass → yield = min(병력/cost, 3×depth)`(최소 1), `march` 는 국경 칸 기준.
+89. **봇 v4.2 기타**: 모든 봇 회수에 가장 가까운 내 기지를 `baseTileId` 로 지정(GDD 는 IDLE 약한 깃발만 명시). IDLE 깃발(공격·방어) 병력 ≥ 200 → 깊은 앵커 재지정, 아니면 지정 회수(`BOT_IDLE_REDEPLOY_MIN_TROOPS`). "ENGAGED 인데 front < 2 → 재지정" 규칙 삭제(앵커 칸 ENGAGED 는 옆 칸만 밀고 IDLE). 새 공격 후보 국경 칸이 내 공격 깃발 위치 거리 ≤ 2 면 제외(`BOT_PLOW_SPACING`, 회랑 중복 방지). 공격 병종: 국경 칸이 적 방어 관할 원 안이면 검, 아니면 기병(8.7 3a "기병 비중 상향" — NORMAL·HARD, EASY 는 검 고정). 제자리 반격은 지금 칸 옆에 적 플레이어 칸이 있을 때만. 슬롯 재활용 대상에서 쟁기 중·노선으로 가는 공격 깃발 제외(IDLE 공격·위협 없는 방어만). 위협·선점 후보 = `pushing`.
+90. **봇 기지 공격 (사용자 확정 2026-10-10)**: `bestAnchor` 에 내 땅에서 `BOT_BASE_ATTACK_RANGE`(6) 안의 **적(비동맹 플레이어) 기지마다 별도 후보** — 앵커 = 기지 칸(깊은 앵커 없음). 점수 = 8.3 식 × `BOT_BASE_ATTACK_WEIGHT_PERMILLE`(2500) × 관할 원 밖이면 `BOT_BASE_UNGUARDED_PERMILLE`(1500, **에이전트 선택**) × 수도면 `BOT_BASE_CAPITAL_PERMILLE`(1500, **에이전트 선택**) × 체력 절반 미만 1.4(기존 8.3 항, 합침). 같은 소유자 2깃발 제한·이미 그 기지를 노리는 깃발 있으면 제외·회피(8.6) 그대로. 병종: 관할 원 안 = 검, 아니면 기병. 병력 = 풀 × `BOT_COMMIT_BASE_PERMILLE`(500), 최소 공격·예비 규칙 그대로. 중립 기지는 후보 아님(기존 국경 후보로만). 상수는 `shared/constants.ts`(→ `match_config.constants` 에도 보임, 추가만).
+91. **로비(체크리스트 10)**: 26b357c 구현분 확인 — 공개 방 방장 `lobby_start_now` 허용, 방 찾기는 GDD 7.3 의 `lobby_join_public{roomId}`/`lobby_spectate{roomId}` 대신 기존 **`lobby_join_listed{roomId, spectate?}`** 하나로 구현돼 있다(§4). `room_list` 필드도 §5 가 정본(GDD 7.3 의 `players`·`mapLabel`·`elapsedTick` 이름과 다름). 이번에 바꾸지 않았다.
 
 ---
 
@@ -773,6 +836,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 3. **효율 손실**: 장부 기준 노출 소모 ~10%, 깃발 전투 ~17%, 변환 (기병 1.15) 4~12%, 회수 3% — 5.1 의 1단계 효율 0.734 보다 낮다.
 4. **대칭 봇은 스노볼이 약하다**: 1위가 45% 에 닿으려면 다른 봇의 붕괴가 필요하나 NORMAL 끼리는 균형. 레버 진단 (reserve 0·minDef 0) 에서도 30분 1위 평균 35.8%.
 5. **난이도**: 중반이 슬롯 병목이라 reserve 레버가 거의 안 먹고, minDef 25%/30% 는 슬롯 4~5개에서 같은 개수로 올림 → **HARD ≈ NORMAL** (HARD 1 vs NORMAL 9 승률 30%). B-19 목표 (사람 승률 HARD ≤ 15%) 를 4 레버만으로 만들기 어렵다.
+
+**v4.2 봇 (8.7, §10-88~90)**: 결정 순서 동일. 4번 깃발 정비에서 IDLE → (병력 ≥ 200) 깊은 앵커 재지정 / 지정 기지 회수, 7번 채우기의 앵커 = 깊은 앵커 또는 **적 기지**(풀 50%). RETURNING 깃발에는 명령을 내지 않는다(거절률 0% 유지). 측정은 §9 v4.2.
 
 ## 12. 2차 프로토콜 변경 요약 (프론트 영향)
 
@@ -823,7 +888,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 구분 | 내용 |
 |---|---|
 | 필드 추가 | `flag_posture_changed.targetOwnerId` (I-1) — 받으면 깃발의 `targetOwnerId` 를 덮어쓴다 |
-| 규칙 | 귀환 중 교전에 붙잡힌 깃발에 회수·재지정 가능 → `flag_disengage_started` (I-2). 패주 깃발은 그대로 불가 |
+| 규칙 | ~~귀환 중 교전에 붙잡힌 깃발에 회수·재지정 가능 (I-2)~~ → **v4.2 [A-62] 폐기**: 귀환 중 명령은 전부 `RETURNING`, 대신 자동 이탈 대기(`flag_disengage_started{auto:true}`) — §18 |
 | 순서 | `cmd_ack` 이 그 tick 방송보다 먼저 온다 → `flag_issued` 전에 `cmd_ack.flagId` 를 알 수 있고 `game_over` 가 그 tick 마지막 (m-5) |
 | 기타 | 공개 룸 `lobby_start_now` → `NOT_HOST` (m-6). 재접속 부트스트랩의 본인 `connected=true` (m-7). 봇 명령 ack 미배달 (m-10). 종료 후 남은 명령 `NOT_IN_GAME` ack (m-9). 65자 이상 닉네임도 `BAD_NICKNAME` (m-1) |
 | QA 스크립트 | `npm run qa:headless|qa:scenarios|qa:ws -w @civwar/server` (`qa-schema.ts` 는 모듈) |
@@ -842,3 +907,25 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 개인 메시지 추가 (프론트 QA J-2) | GAME_OVER 룸 부트스트랩 뒤 `game_over` 재송신 (§2, §5, §10-73) |
 | 문서화 | 관전자 새로고침 → 로비 (§3, §10-76), 정리된 룸에 `lobby_leave` → `NOT_IN_ROOM` (§3) |
 | 플레이테스트 후속 (2026-10-10) | 공개 룸 방장 즉시 시작(§3, §10-77 — 공개 룸 `lobby_start_now` 가 방장이면 수락으로 **의미 변경**), 방 찾기 메시지 3종(§4·§5, §10-78), 이동 방향 표시는 프로토콜 변경 없음(§10-79) |
+
+## 18. v4.2 변경 요약 (프론트 영향 — 2026-10-10, GDD v4.2 + A-60 변경)
+
+**이 절만 보고 클라이언트를 맞출 수 있게 썼다. 메시지·필드는 전부 추가만이고, 아래 "의미 변경"이 기존 구현을 깨뜨릴 수 있다.**
+
+| 구분 | 내용 |
+|---|---|
+| **C→S 추가** | `cmd_flag_recall.baseTileId?: number \| null` — 깃발 선택 후 **내 기지 클릭 = 지정 회수**. 거절 `NOT_BASE`(기지 칸 아님) / `NOT_OWNED_BASE`(내 것 아님). 생략·null = 자동 귀환지 |
+| **snapshot_full 추가** | `flags[].halted: bool`, `flags[].returnBaseTileId: number \| null` (항상 존재) |
+| **snapshot_delta 추가** | `flagFlags` 비트 `HALTED = 64`(값 범위 0..127). 새 배열 `flagReturnBase: [flagId, baseTileId \| null][]`(항상 존재, 바뀐 깃발만) |
+| **이벤트 필드 추가** | `flag_disengage_started.auto: bool` — `true` = 귀환 깃발이 붙잡혀 서버가 자동 개시("귀환 중 — 붙잡힘, 3초 뒤 이탈") |
+| **상수 추가/변경** | `RETURN_SPEED_PERMILLE = 1500`(신규), **`FLAG_SPEED_BASE_MILLI` 120 → 140**, 봇 상수 `BOT_COMMIT_BASE_PERMILLE`·`BOT_BASE_ATTACK_RANGE`·`BOT_BASE_ATTACK_WEIGHT_PERMILLE`·`BOT_BASE_UNGUARDED_PERMILLE`·`BOT_BASE_CAPITAL_PERMILLE`(표시 불필요). 모두 `match_config.constants` 로 온다 — ETA·속도 예측은 서버 값을 쓸 것 |
+| **의미 변경 — 공격** | 공격 태세 깃발의 대상 = **깃발 현재 칸의 이웃 중 점령 가능·비동맹(중립·제3자 포함) 칸뿐**. **앵커 반경 6 원 공격 폐기**(붉은 원 UI 제거 → 경로선 + 폭 3 회랑 미리보기). 내 땅에 닿지 않아도 됨 → **고립 영토** 생긴다(렌더는 칸 단위라 영향 없음). 깃발은 먹을 옆 칸이 있으면 **멈춰서**(`MARCHING` + `halted`) 점령, 없어지면 다시 걷는다. 앵커 칸에서는 `ENGAGED`(옆 칸 점령) → 다 먹으면 `IDLE` → 옆 칸이 다시 적·중립이 되면 **그 자리에서 재점화**(`flag_engaged`, 이동 없음) → IDLE 600 tick 뒤 자동 귀환. 방어 태세는 이동만(방어 원 반경 6 = guard 유지) |
+| **의미 변경 — `flag_engaged`** | 공격 깃발은 **앵커 칸에 섰을 때(또는 IDLE 재점화)만** 나온다. 가는 길의 정지 점령은 이벤트 없이 `HALTED` 비트로만 알 수 있다. `frontTileCount` = 그 순간 옆 칸 수(≤ 4). **클라이언트 m-4 테스트("engageEtaTick 오차")는 실측 기준을 "그 깃발의 첫 `HALTED` 비트 tick 또는 `flag_engaged` 중 먼저"로 바꿀 것** — `engageEtaTick` 의 정의(ATTACK = 정지 점령이 처음 시작되는 칸)가 그 시점이다 |
+| **의미 변경 — ETA** | `etaTick` = 정지 점령 시간을 뺀 이동 ETA(공격 태세는 실제 도착이 훨씬 늦다). 귀환 ETA = 귀환 속도 ×1.5 반영(`speedMilli` 식 §8) |
+| **의미 변경 — `flagProgress`** | `progressPct > 0` 인 깃발은 상태와 무관하게 매 tick 실린다(+ ATTACK·ENGAGED/halted 는 0 이어도, + 0 이 된 tick 1회). **"목록에 없으면 0" 규칙 그대로 유효**. v4.1 까지는 ATTACK·ENGAGED 만이었다 |
+| **의미 변경 — 귀환** | RETURNING(회수·IDLE 자동·패주) 깃발: `cmd_flag_retarget`·`cmd_flag_recall`·`cmd_set_posture` **전부 `RETURNING` 거절, 전투 중이어도**(QA I-2 수락 경로 폐기) → 명령 버튼 비활성 + "귀환 중 — 취소 불가". 실제로 걸어서 귀환(×1.5), ZOC 무시, 지나가며 싸움을 걸지 않음, 붙잡히면 자동 이탈 대기 후 계속. 지정 기지를 잃으면 `flagReturnBase [id, null]` → 자동 귀환지(되찾아도 안 돌아감). 화살표 = `returnBaseTileId ?? (flag_recalled/flag_routed).returnTileId` |
+| **의미 변경 — 유지비 (A-60 사용자 변경)** | `upkeepPm` 이 이제 **출전 깃발 전부(패주 제외, 태세·상태 무관)** 기준 — 깃발을 내면 바로 골드 수입이 준다. 상한 700‰ 유지(순수입 ≥ 그로스의 30%). **하단 바 "초당 골드 소모"**: `gross = floor(goldWeight × GOLD_RATE_PERMILLE × ECO_GOLD_PERMILLE_BY_TIER[tech[1]] / 1e9)`(milli/tick), `upkeep = floor(gross × upkeepPm / 1000)`, `net = gross − upkeep`; 골드/초 = 값 × 5 / 1000(`TICK_MS` 200). 발령 미리보기는 §8 유지비 식에 새 깃발 가중치(창 600·검 1000·기 1600)를 더해 계산 |
+| **송신 중단** | `flag_retargeted{auto:true}`(4.5 중립 자동 전환 폐기 — 필드는 유지). `targetOwnerId` 는 표시용(규칙 미사용) |
+| **동맹** | 동맹 칸은 공격 대상 아님. 동맹 성립으로 IDLE(allied)된 깃발도 옆에 비동맹 칸이 있으면 같은 tick 재점화 |
+| 불변 | 깃발 전투 수치(대표 전투 표 그대로), 방어 태세·ZOC(귀환 제외)·게이지 레이스·기지 체력, 로비·방 찾기 메시지 |
+

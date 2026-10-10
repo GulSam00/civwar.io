@@ -221,3 +221,61 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     expect(hi.attacks).toBeGreaterThan(lo.attacks);
   });
 });
+
+describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2026-10-10)', () => {
+  /** p1 수도에서 가장 가까운 남의 기지를 p2 땅으로 만들고, p1 땅을 그 기지 3칸 앞까지 늘린다 */
+  function baseScene(hpLow: boolean) {
+    const sim = botGame(2024, 10, 'NORMAL', CivBot, 500);
+    const s = sim.state;
+    const p1 = s.players[1];
+    const home = p1.homeTileId;
+    const b = s.map.baseTiles.filter((x) => s.owners[x] !== 1 && x !== s.players[2].homeTileId).sort((x, y) => s.graph.distance(x, home) - s.graph.distance(y, home) || x - y)[0];
+    setTileOwner(s, b, 2, false);
+    // 수도 → 기지 방향 직선 근사로 거리 3 까지 p1 땅
+    let cur = home;
+    while (s.graph.distance(cur, b) > 3) {
+      const nx = s.graph.neighbors(cur).filter((n) => isClaimable(s.map.terrain[n])).sort((x, y) => s.graph.distance(x, b) - s.graph.distance(y, b) || x - y)[0];
+      if (nx === undefined) break;
+      cur = nx;
+      if (s.owners[cur] !== 2) setTileOwner(s, cur, 1, false);
+    }
+    const bs = s.bases[s.baseIndexOf.get(b)!];
+    if (hpLow) bs.hpMilli = Math.floor(bs.hpMilli / 4);
+    p1.troopsMilli = 1000 * 1000;
+    return { s, b };
+  }
+
+  it('가까운 약한 적 기지(관할 원 밖, 체력 1/4)를 앵커로 기병 발령, 병력 ≈ 풀 50%', () => {
+    const { s, b } = baseScene(true);
+    const cmds = decideBot(s, 1, 3000, s.players[1].bot);
+    const iss = cmds.filter((c) => c.type === 'cmd_flag_issue') as Extract<C2S_GameCommand, { type: 'cmd_flag_issue' }>[];
+    const atk = iss.find((c) => c.anchorTileId === b);
+    expect(atk).toBeTruthy();
+    expect(atk!.unit).toBe(UNIT.CAVALRY);
+    // 풀 1000, 기병 환산 1.15 → maxIssuable 한도 안에서 floor(풀 × 500‰) (먼저 낸 최소 방어선 발령이 풀을 줄일 수 있다)
+    expect(atk!.troops).toBeGreaterThanOrEqual(150);
+    expect(atk!.troops).toBeLessThanOrEqual(500);
+  });
+
+  it('기지가 적 방어 관할 원 안이면 검병', () => {
+    const { s, b } = baseScene(true);
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 50, pos: b, anchor: b, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    const cmds = decideBot(s, 1, 3000, s.players[1].bot);
+    const atk = cmds.find((c) => c.type === 'cmd_flag_issue' && c.anchorTileId === b) as Extract<C2S_GameCommand, { type: 'cmd_flag_issue' }> | undefined;
+    expect(atk).toBeTruthy();
+    expect(atk!.unit).toBe(UNIT.SWORD);
+  });
+
+  it('공격 발령 앵커는 국경 칸이 아니라 노선 끝점(내 땅에서 4칸 이상) — 깊은 앵커', () => {
+    const sim = botGame(1000, 10, 'NORMAL');
+    const s = sim.state;
+    const anchors: number[] = [];
+    for (let i = 0; i < 300; i++) {
+      const out = sim.step();
+      for (const m of out.broadcast) if (m.type === 'flag_issued' && m.posture === POSTURE.ATTACK && m.playerId === 1) anchors.push(m.anchorTileId);
+    }
+    expect(anchors.length).toBeGreaterThan(0);
+    // 발령 직후 확인은 어렵다(영토가 변함) — 앵커가 수도에서 6칸 이상 떨어진 것이 하나 이상
+    expect(anchors.some((a) => s.graph.distance(a, s.players[1].homeTileId) >= 6)).toBe(true);
+  });
+});

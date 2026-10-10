@@ -147,24 +147,34 @@ async function main(): Promise<void> {
     for (let t = 0; t < owners0.length && anchor < 0; t++) {
       if (dist(t, home) === 4 && owners0[t] === 0 && terrain[t] !== 0 && terrain[t] !== 6 && !mi.bases.includes(t)) anchor = t;
     }
-    a.send({ type: 'cmd_flag_issue', clientSeq: 4, unit: 2, troops: 100, anchorTileId: anchor, originBaseTileId: null });
+    a.send({ type: 'cmd_flag_issue', clientSeq: 4, unit: 1, troops: 140, anchorTileId: anchor, originBaseTileId: null });
     const ackF = await a.wait('cmd_ack', (m) => m.clientSeq === 4);
     ok(ackF.accepted && ackF.flagId === 1 && ackF.posture === 0, `cmd_flag_issue 수락 (flagId ${ackF.flagId}, posture ATTACK, anchor ${anchor})`);
     const fi = await a.wait('flag_issued', (m) => m.flagId === 1);
-    ok(fi.playerId === 1 && fi.unit === 2 && fi.troops === 100 && fi.etaTick > fi.tick, `flag_issued (origin ${fi.originTileId}, eta tick ${fi.etaTick})`);
+    ok(fi.playerId === 1 && fi.unit === 1 && fi.troops === 140 && fi.etaTick > fi.tick, `flag_issued (origin ${fi.originTileId}, eta tick ${fi.etaTick})`);
     const mv = await a.wait('snapshot_delta', (m) => m.flagMoves.some(([id]) => id === 1), 15000);
     ok(true, `flagMoves 수신 (tick ${mv.tick})`);
-    const fe = await a.wait('flag_engaged', (m) => m.flagId === 1, 20000);
-    ok(fe.posture === 0 && (fe.frontTileCount ?? 0) > 0, `flag_engaged (front ${fe.frontTileCount}칸, tick ${fe.tick})`);
+    // v4.2 (4.4a): 공격 깃발은 옆 칸이 생기는 순간 정지 점령 — flagFlags HALTED 비트
+    const fh = await a.wait('snapshot_delta', (m) => m.flagFlags.some(([id, , bits]) => id === 1 && (bits & 64) !== 0), 20000);
+    ok(true, `flagFlags HALTED 비트 (정지 점령, tick ${fh.tick})`);
     const prog = await a.wait('snapshot_delta', (m) => m.flagProgress.some(([id, pct]) => id === 1 && pct > 0), 15000);
     ok(true, `flagProgress 게이지 상승 (tick ${prog.tick})`);
     const cap = await a.wait('snapshot_delta', (m) => m.tileChanges.some(([, o]) => o === 1), 20000);
     ok(true, `중립 점령 tileChanges ${JSON.stringify(cap.tileChanges)} (tick ${cap.tick})`);
     const sfF = await a.wait('snapshot_full', (m) => m.flags.some((f) => f.id === 1), 15000);
     const fs = sfF.flags.find((f) => f.id === 1)!;
-    ok(fs.state === 'ENGAGED' && fs.breakaway === false && fs.disengageUntilTick === null && Array.isArray(sfF.allyProposals), 'snapshot_full.flags 2차 필드');
+    ok(fs.breakaway === false && fs.disengageUntilTick === null && Array.isArray(sfF.allyProposals), 'snapshot_full.flags 2차 필드');
+    ok(typeof fs.halted === 'boolean' && fs.returnBaseTileId === null, `snapshot_full.flags v4.2 필드 (halted ${fs.halted}, returnBaseTileId null)`);
     a.send({ type: 'cmd_set_posture', clientSeq: 5, flagId: 1, posture: 0 });
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 5)).reason === 'SAME_POSTURE', 'cmd_set_posture 같은 태세 → SAME_POSTURE');
+    // v4.2 [A-61][A-62]: 지정 기지 회수 → 귀환 중 재회수 거절
+    a.send({ type: 'cmd_flag_recall', clientSeq: 50, flagId: 1, baseTileId: home });
+    const rk = await a.wait('cmd_ack', (m) => m.clientSeq === 50);
+    const rb = await a.wait('snapshot_delta', (m) => (m.flagReturnBase ?? []).some(([id, b]) => id === 1 && b === home), 5000);
+    ok(rk.accepted, `cmd_flag_recall{baseTileId} 수락 → flagReturnBase [1, ${home}] (tick ${rb.tick})`);
+    a.send({ type: 'cmd_flag_recall', clientSeq: 51, flagId: 1 });
+    const rk2 = await a.wait('cmd_ack', (m) => m.clientSeq === 51);
+    ok(!rk2.accepted && (rk2.reason === 'RETURNING' || rk2.reason === 'NO_FLAG'), `귀환 중 재회수 거절 (${rk2.reason})`);
     a.send({ type: 'cmd_ally_propose', clientSeq: 6, targetPlayerId: 2 });
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 6)).accepted, 'cmd_ally_propose 수락');
     const ap = await b.wait('ally_proposed');

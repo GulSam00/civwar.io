@@ -1,7 +1,8 @@
 /**
  * 색 팔레트 — 깔끔한 플랫 (design-decisions 「화면/UX·비주얼 기획 1차」).
  * 지형은 채도 낮은 단색, 플레이어 색은 채도 높은 12색 — 지형과 겹치지 않고 서로 구분되게.
- * 소유 타일 = 플레이어 색 85% + 지형 15% (지형이 은은하게 비친다).
+ * 소유 타일 = 플레이어 색 OWNER_FILL_ALPHA(42%) 를 지형 위에 반투명으로 겹친다 — 지형 색이 구분되게 (사용자 요청 2026-10-10).
+ * 소유 구분은 경계선 + 영토 안쪽 테두리 띠(renderer drawOwnerBands)가 맡는다.
  */
 
 /** 지형 7종 (TERRAIN 인덱스): DEEP PLAIN FERTILE HILLS DESERT MOUNTAIN SHALLOW */
@@ -50,14 +51,17 @@ export function playerDark(id: number): string {
   return `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
 }
 
+/** 영토 채우기 불투명도 (0.35~0.45 권장 범위) */
+export const OWNER_FILL_ALPHA = 0.42;
+
 /** 타일 색 (0xRRGGBBAA) */
 export function tileRgba(terrain: number, owner: number): number {
   const t = TERRAIN_RGB[terrain] ?? TERRAIN_RGB[1];
   if (owner === 0) return pack(t[0], t[1], t[2]);
   const p = PLAYER_RGB[owner] ?? PLAYER_RGB[0];
-  // 산·언덕은 조금 어둡게 비치도록 지형 명도를 섞는다
-  const mix = 0.15;
-  return pack(p[0] * (1 - mix) + t[0] * mix, p[1] * (1 - mix) + t[1] * mix, p[2] * (1 - mix) + t[2] * mix);
+  // 반투명 겹치기 = 플레이어 색 a + 지형 (1 − a). 1 타일 = 1 픽셀 레이어라 미리 섞어 불투명으로 쓴다
+  const a = OWNER_FILL_ALPHA;
+  return pack(p[0] * a + t[0] * (1 - a), p[1] * a + t[1] * (1 - a), p[2] * a + t[2] * (1 - a));
 }
 
 function pack(r: number, g: number, b: number): number {

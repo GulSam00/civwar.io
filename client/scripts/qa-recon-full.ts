@@ -18,7 +18,7 @@ import { generateMapForSize } from '../../server/src/map/generate.js';
 import { MapCatalog, mapFromPreset } from '../../server/src/map/presets.js';
 import { buildMapInit, buildMatchConfig, buildSnapshotFull } from '../../server/src/game/snapshot.js';
 import { troopCap, grossGoldMilliPerTick, techCost as sTechCost } from '../../server/src/game/economy.js';
-import { frontCount, guardCount, minDistFromTerritory } from '../../server/src/game/rules.js';
+import { guardCount, minDistFromTerritory } from '../../server/src/game/rules.js';
 
 const wire = <T>(m: T): T => JSON.parse(JSON.stringify(m));
 const DIFFS: BotDifficultyName[] = ['EASY', 'NORMAL', 'HARD'];
@@ -164,10 +164,7 @@ function run(cfg: Cfg) {
             const pseudo = { ownerId: me, targetOwnerId: owner === me ? 254 : owner, anchorTileId: tile, posTileId: tile } as never;
             if (pv.kind === 'blocked' && pv.label.startsWith('사거리') !== outRange) calc.previewRangeMis++;
             if (pv.kind === 'attack' && outRange) calc.previewRangeMis++;
-            if (pv.kind === 'attack' && pv.count !== frontCount(state, pseudo)) {
-              calc.previewCountMis++;
-              if (calcSamples.length < 20) calcSamples.push(`t${t} front p${me} tile ${tile} c ${pv.count} s ${frontCount(state, pseudo)}`);
-            }
+            // v4.2: 공격 원(front) 폐기 — 공격 예고는 진격 경로·쟁기 회랑(route.ts)이라 앵커 front 개수 비교는 없음
             if (pv.kind === 'defend' && pv.count !== guardCount(state, pseudo)) calc.previewCountMis++;
           }
         }

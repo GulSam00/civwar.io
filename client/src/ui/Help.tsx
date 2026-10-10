@@ -60,12 +60,12 @@ export function Help({ onClose }: { onClose: () => void }) {
           </p>
           <ul>
             <li>
-              <kbd>1</kbd> 창병 · <kbd>2</kbd> 검병 · <kbd>3</kbd> 기병을 고르고 맵을 클릭하면 발령됩니다. 최소 {FLAG_MIN_TROOPS}명, 내 땅에서 {FRONT_MAX_RANGE}칸 안.
+              맵의 지점을 클릭하면 가장 가까운 내 기지에서 그 지점까지 <b>진격 경로</b>(점선 화살표)가 나오고, 지점 둘레에 창병·검병·기병 <b>삼각 메뉴</b>가 뜹니다. 하나를 고르면(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>도 가능) 출전합니다. 내 기지를 먼저 클릭하면 그 기지에서 출전합니다(깃발이 겹쳐 있으면 <kbd>Alt</kbd>+클릭). 바깥 클릭·우클릭·<kbd>Esc</kbd> = 취소. 최소 {FLAG_MIN_TROOPS}명, 내 땅에서 {FRONT_MAX_RANGE}칸 안.
             </li>
             <li>
-              <kbd>Q</kbd>/<kbd>E</kbd>로 보낼 비율을 바꿉니다. 출발 기지는 자동(앵커에서 가장 가까운 내 기지)이며, 병종을 고른 상태에서 내 기지를 <kbd>Alt</kbd>+클릭하거나 기지 위에서 <kbd>B</kbd>를 누르면 지정됩니다.
+              <kbd>Q</kbd>/<kbd>E</kbd>(하단 바)로 보낼 병력 비율을 바꿉니다. 공격 깃발은 가는 길 옆의 적·중립 칸을 모두 먹으며 나아갑니다(붉은 음영이 미리 보여 줍니다).
             </li>
-            <li>깃발을 클릭해 선택한 뒤 우클릭하면 목적지를 바꾸고(재지정), <kbd>R</kbd>로 회수합니다. 회수하면 남은 병력의 {FLAG_RECALL_REFUND_PERMILLE / 10}%가 돌아옵니다.</li>
+            <li>깃발을 클릭해 선택한 뒤 우클릭하면 목적지를 바꾸고(재지정), <kbd>R</kbd>로 회수합니다. 깃발을 선택한 채 내 기지를 클릭하면 그 기지로 귀환합니다(귀환은 취소할 수 없음). 회수하면 남은 병력의 {FLAG_RECALL_REFUND_PERMILLE / 10}%가 돌아옵니다.</li>
             <li>
               <b>창병</b>은 느리지만 방어에 강하고, <b>기병</b>은 빠르고 공격에 강하지만 방어에 약합니다. <b>검병</b>은 그 사이입니다.
             </li>
@@ -76,7 +76,7 @@ export function Help({ onClose }: { onClose: () => void }) {
           <h3>태세 — 공격과 방어</h3>
           <p>
             적·중립 땅으로 보내면 <span className="atk">공격 태세</span>(마름모), 내 땅으로 보내면 <span className="def">방어 태세</span>(원)가 기본으로 붙습니다. 커서의
-            붉은/푸른 원(반경 {FRONT_RADIUS}칸)이 미리 보여 줍니다. 선택한 깃발은 <kbd>F</kbd>로 태세를 바꿀 수 있지만 {sec(POSTURE_COOLDOWN_TICKS)} 쿨타임이 있고,
+            경로 색(붉음/푸름)과 삼각 메뉴가 미리 알려 주고, 방어 태세는 보호 원(반경 {FRONT_RADIUS}칸)도 보여 줍니다. 선택한 깃발은 <kbd>F</kbd>로 태세를 바꿀 수 있지만 {sec(POSTURE_COOLDOWN_TICKS)} 쿨타임이 있고,
             전투 중이거나 이탈 대기 중에는 바꿀 수 없습니다. 바꾸면 진척도가 0이 됩니다.
           </p>
         </section>
@@ -156,7 +156,7 @@ export function Help({ onClose }: { onClose: () => void }) {
         <section>
           <h3>조작 요약</h3>
           <p className="keys">
-            <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 병종 · 클릭 발령(<kbd>Shift</kbd> 유지) · <kbd>Q</kbd>/<kbd>E</kbd> 비율 · 깃발 클릭 선택 · 우클릭 재지정 · <kbd>F</kbd> 태세 ·{' '}
+            지점(또는 기지 → 지점) 클릭 → 삼각 메뉴 병종(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>) 출전 · 깃발 선택 + 내 기지 클릭 귀환 · <kbd>Q</kbd>/<kbd>E</kbd> 비율 · 깃발 클릭 선택 · 우클릭 재지정 · <kbd>F</kbd> 태세 ·{' '}
             <kbd>R</kbd> 회수 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크 · <kbd>P</kbd> 외교 · <kbd>C</kbd> 색각 보조 · <kbd>V</kbd> 이동 방향 화살표 · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
           </p>
         </section>

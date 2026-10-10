@@ -93,7 +93,7 @@ export function Lobby({ store }: { store: ClientStore }) {
         <ConnectionLine store={store} />
       </div>
       <p className="hint">
-        PC 권장 · 마우스 + 단축키 (1/2/3 병종, 클릭 발령) ·{' '}
+        PC 권장 · 마우스 (지점 클릭 → 병종 선택으로 출전) ·{' '}
         <button className="btn-link" onClick={() => setHelp(true)}>
           규칙 도움말
         </button>

@@ -155,8 +155,10 @@ describe('커서 예고 (GDD 4.3)', () => {
     expect(computePreview(m, topo, 1, 5 * 20 + 3, field)!.kind).toBe('defend');
     const atk = computePreview(m, topo, 1, 5 * 20 + 5, field)!;
     expect(atk.kind).toBe('attack');
-    expect(atk.count).toBeGreaterThan(0); // 원 안 · 플레이어 2 · 내 땅 인접 칸
-    expect(atk.disk.length).toBe(topo.disk(5 * 20 + 5, 6).length);
+    // v4.2: 공격 원 폐기 — 공격 예고는 진격 경로·쟁기 회랑(route.ts, issueFlow.test)이고 원은 방어 보호 원만
+    expect(atk.disk).toHaveLength(0);
+    expect(atk.label).toContain('경로 옆');
+    expect(computePreview(m, topo, 1, 5 * 20 + 3, field)!.disk.length).toBe(topo.disk(5 * 20 + 3, 6).length);
     expect(computePreview(m, topo, 1, 5 * 20 + 10, field)!.label).toContain('동맹');
     expect(computePreview(m, topo, 1, 15, field)!.kind).toBe('blocked');
     expect(computePreview(m, topo, 1, 5 * 20 + 15, field)!.kind).toBe('attack'); // 중립, 사거리 안

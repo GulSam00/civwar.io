@@ -378,7 +378,6 @@ kbd {
   bottom: 10px;
   transform: translateX(-50%);
   max-width: calc(100% - 500px);
-  min-width: 360px;
   flex-wrap: wrap;
   justify-content: center;
   display: flex;
@@ -389,32 +388,26 @@ kbd {
   border-radius: 8px;
   padding: 8px 10px;
 }
-.unit-btn {
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  border-radius: var(--radius);
-  padding: 8px 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.unit-btn small {
-  color: var(--muted);
-  margin-left: 4px;
-  font-variant-numeric: tabular-nums;
-}
-.unit-btn.armed {
-  border-color: #fff;
-  background: var(--primary);
-}
-.unit-btn.armed small {
-  color: #dfe9ff;
-}
 .ratio {
   display: flex;
   flex-direction: column;
   font-size: 12px;
   color: var(--muted);
   margin-left: 6px;
+}
+.gold-flow {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  border-left: 1px solid var(--line);
+  padding-left: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.gold-flow b.upkeep {
+  color: var(--warn);
+}
+.gold-flow b.warn-text {
+  color: var(--danger);
 }
 .ratio b {
   color: var(--text);
@@ -485,6 +478,146 @@ kbd {
   font-size: 13px;
   white-space: nowrap;
 }
+/* 지형 정보 툴팁 (커서 왼쪽 위, 클릭 통과) */
+.terrain-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  z-index: 4;
+  max-width: 280px;
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.terrain-tip .tt-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.terrain-tip .tt-base {
+  color: var(--warn);
+  font-size: 11px;
+}
+.terrain-tip .tt-mods {
+  color: var(--muted);
+}
+.terrain-tip .tt-owner {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+/* 출전 삼각(라디얼) 메뉴 — 확정 지점 화면 좌표에 붙는다 (위치는 렌더 루프가 transform 으로) */
+.radial-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  display: none;
+  z-index: 5;
+}
+.radial {
+  --rc: var(--muted);
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.radial-attack {
+  --rc: var(--atk);
+}
+.radial-defend {
+  --rc: var(--def);
+}
+.radial-center {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid var(--rc);
+  background: rgba(10, 14, 20, 0.6);
+  pointer-events: none;
+}
+.radial-center b,
+.radial-center small {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+.radial-center b {
+  top: 74px;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid var(--rc);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.radial-center small {
+  top: 96px;
+  font-size: 11px;
+  color: var(--text);
+  background: rgba(10, 14, 20, 0.8);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.radial-btn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 64px;
+  height: 52px;
+  margin: -26px 0 0 -32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 2px solid var(--rc);
+  border-radius: 10px;
+  background: rgba(18, 26, 36, 0.95);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.radial-btn:hover,
+.radial-btn:focus-visible {
+  background: var(--rc);
+  outline: none;
+}
+.radial-btn kbd {
+  font-size: 10px;
+  line-height: 1;
+}
+.radial-btn small {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.radial-btn:hover small {
+  color: var(--text);
+}
+/* 삼각형 꼭짓점: 위 = 창병, 왼쪽 아래 = 검병, 오른쪽 아래 = 기병 */
+.radial-u0 {
+  transform: translate(0, -58px);
+}
+.radial-u1 {
+  transform: translate(-52px, 32px);
+}
+.radial-u2 {
+  transform: translate(52px, 32px);
+}
 .cursor-tip[data-kind='attack'] {
   border-left-color: var(--atk);
 }
@@ -544,10 +677,21 @@ kbd {
 .standings tr.me td {
   font-weight: 700;
 }
-.gameover-reopen {
+.gameover-pill {
   position: absolute;
-  top: 70px;
-  right: 8px;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  background: rgba(18, 26, 36, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  z-index: 6;
 }
 
 /* ── 토스트 ── */

@@ -1,5 +1,6 @@
 /**
- * 게이지 (GDD v4.1 4.6 / 4.7 / 4.10 / 4.12) — 5·6·7·7c단계, 그리고 9·10단계 깃발 처리.
+ * 게이지 (GDD v4.2 4.4a c / 4.6 / 4.7 / 4.10 / 4.12) — 5·6·7·7c단계, 그리고 9·10단계 깃발 처리.
+ * v4.2: 대상 = pushing(f) (ENGAGED·ATTACK 또는 행군 중 halted), 타깃 = selectAttackTarget(marchFront).
  * v4.1: 게이지 되돌리기 폐지 -> 밀지 않는 공격 게이지는 자동 감소(7c), 주변 적 깃발이 있으면 유지.
  */
 import {
@@ -11,23 +12,22 @@ import {
   FLAG_SPEND_BUDGET_CAP_TICKS,
   FLAG_SPEND_RATE_PERMILLE,
   FLAG_STALL_TICKS,
-  FRONT_RADIUS,
   POSTURE,
   PROGRESS_DECAY_MILLI_PER_TICK,
   PROGRESS_HOLD_RANGE,
-  isClaimable,
 } from '@civwar/shared';
 import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import type { FlagPresence } from './combat.js';
-import { availAP, frontNonEmpty, guardCount, maxProgress, selectTargetRO, threatened, tileCost } from './rules.js';
-import { NEUTRAL, isAlly, setTileOwner, type Flag, type GameState } from './state.js';
+import { isGarrison } from './economy.js';
+import { availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
+import { isAlly, setTileOwner, type Flag, type GameState } from './state.js';
 
 // ───────────────────────── 5. AP 예산 누적 ─────────────────────────
 
 export function stage5_accumulateBudget(state: GameState, _t: number): void {
   for (const f of state.flags) {
-    if (f.state !== 'ENGAGED' || f.inCombat) continue;
+    if (!pushing(f)) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음
     const per = f.initialTroops * FLAG_SPEND_RATE_PERMILLE;
     f.spendBudgetMilli = Math.min(f.spendBudgetMilli + per, per * FLAG_SPEND_BUDGET_CAP_TICKS);
   }
@@ -57,8 +57,8 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
   const pushes: Push[] = [];
   const baseHits: BaseHit[] = [];
   for (const f of state.flags) {
-    if (f.state !== 'ENGAGED' || f.posture !== POSTURE.ATTACK || f.inCombat) continue;
-    const X = selectTargetRO(state, f);
+    if (!pushing(f)) continue; // v4.2 (4.4a c)
+    const X = selectAttackTargetRO(state, f);
     if (X === null) continue;
     const c = tileCost(state, f, X);
     const adv = Math.min(Math.floor((availAP(f) * 1000) / c), maxProgress(f));
@@ -130,7 +130,7 @@ export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number,
     else applyBaseHits(state, X, group.map((g) => g.e as BaseHit), t, out);
   }
   for (const f of state.flags) {
-    if (f.state !== 'ENGAGED' || f.posture !== POSTURE.ATTACK || f.inCombat || pushedSet.has(f.id)) continue;
+    if (!pushing(f) || pushedSet.has(f.id)) continue; // v4.2: updateStall 대상 = pushing(f)
     updateStall(f, 0, t, out);
   }
   return pushedSet;
@@ -244,8 +244,7 @@ export function holdProgress(state: Readonly<GameState>, presence: FlagPresence,
  */
 export function stage9_derived(state: GameState, _t: number, _out: Outbox): void {
   for (const f of state.flags) {
-    const garrison = f.state === 'ENGAGED' && state.owners[f.anchorTileId] === f.ownerId;
-    f.calmTicks = garrison && !threatened(state, f) ? f.calmTicks + 1 : 0;
+    f.calmTicks = isGarrison(state, f) && !threatened(state, f) ? f.calmTicks + 1 : 0; // v4.2: isGarrison 에 DEFEND [A-60]
   }
 }
 
@@ -259,26 +258,7 @@ function goIdle(f: Flag, t: number, reason: 'front_cleared' | 'guard_lost', out:
   out.broadcast.push({ type: 'flag_idle', tick: t, flagId: f.id, reason, autoRecallTick: t + FLAG_IDLE_TIMEOUT });
 }
 
-/** 4.5 중립 자동 전환 — 성공하면 true */
-function neutralAutoSwitch(state: GameState, f: Flag, t: number, out: Outbox): boolean {
-  const best = new Map<number, number>(); // owner → 최소 tileCost
-  for (const x of state.graph.disk(f.anchorTileId, FRONT_RADIUS)) {
-    const o = state.owners[x];
-    if (o === NEUTRAL || o === f.ownerId || !isClaimable(state.map.terrain[x]) || isAlly(state, f.ownerId, o)) continue;
-    const c = tileCost(state, f, x);
-    const prev = best.get(o);
-    if (prev === undefined || c < prev) best.set(o, c);
-  }
-  let pick = -1;
-  let pc = Infinity;
-  for (const [o, c] of best) if (c < pc || (c === pc && o < pick)) [pick, pc] = [o, c];
-  if (pick < 0) return false;
-  f.targetOwnerId = pick;
-  f.targetTileId = null;
-  f.progressMilli = 0;
-  out.broadcast.push({ type: 'flag_retargeted', tick: t, flagId: f.id, anchorTileId: f.anchorTileId, targetOwnerId: pick, posture: f.posture, resumeTick: t, etaTick: t, engageEtaTick: t, auto: true });
-  return true;
-}
+// v4.2: 4.5 중립 자동 전환(neutralAutoSwitch)·flag_retargeted(auto=true) 송신 삭제 — 공격 대상이 소유자를 가리지 않는다
 
 function exhaust(state: GameState, f: Flag, t: number, out: Outbox): void {
   state.ledger.exhausted += f.troopsMilli;
@@ -290,16 +270,19 @@ export function stage10_flagEnd(state: GameState, t: number, out: Outbox): void 
   for (const f of state.flags.slice()) {
     if (f.inCombat || !state.players[f.ownerId].alive) continue;
     if (f.state === 'ENGAGED' && f.posture === POSTURE.ATTACK) {
-      if (!frontNonEmpty(state, f)) {
-        if (f.targetOwnerId === NEUTRAL && neutralAutoSwitch(state, f, t, out)) continue;
-        goIdle(f, t, 'front_cleared', out);
-      } else if (f.troopsMilli < FLAG_MIN_TROOPS * 1000) exhaust(state, f, t, out);
+      if (!marchFrontNonEmpty(state, f)) goIdle(f, t, 'front_cleared', out); // v4.2: 옆 칸이 없으면 IDLE [A-59]
+      else if (f.troopsMilli < FLAG_MIN_TROOPS * 1000) exhaust(state, f, t, out);
+      continue;
     } else if (f.state === 'ENGAGED' && f.posture === POSTURE.DEFEND) {
       if (guardCount(state, f) === 0) goIdle(f, t, 'guard_lost', out);
       else if (f.troopsMilli < FLAG_MIN_TROOPS * 1000) exhaust(state, f, t, out);
+      continue;
+    } else if (f.state === 'MARCHING' && f.halted && f.troopsMilli < FLAG_MIN_TROOPS * 1000) {
+      exhaust(state, f, t, out); // v4.2 (4.4a c): 정지 점령도 소진 규칙 동일
+      continue;
     }
     if (f.state === 'IDLE' && f.idleSinceTick !== null && t - f.idleSinceTick >= FLAG_IDLE_TIMEOUT) {
-      beginReturn(state, f);
+      beginReturn(state, f, null); // [A-61]: IDLE 자동 회수는 지정 기지 없음
       out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
     }
   }

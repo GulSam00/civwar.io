@@ -14,6 +14,7 @@ import {
   UNIT_GARRISON_PERMILLE,
   GOLD_RATE_PERMILLE,
   MOB_SLOT_BONUS_BY_TIER,
+  POSTURE,
   REGEN_BASE_MILLI,
   REGEN_SQRT_COEF_PERMILLE,
   TECH_AXIS,
@@ -23,7 +24,7 @@ import {
   TROOP_CAP_BASE,
   TROOP_CAP_PER_TILE,
 } from '@civwar/shared';
-import type { GameState, PlayerState } from './state.js';
+import type { Flag, GameState, PlayerState } from './state.js';
 
 /** floor(sqrt(x)) — 정수 x ≥ 0. Math.sqrt 는 IEEE 정확 반올림이지만 경계 보정으로 플랫폼 무관 보장 */
 export function isqrt(x: number): number {
@@ -67,14 +68,25 @@ export function grossGoldMilliPerTick(p: Readonly<PlayerState>): number {
   return Math.floor((p.goldWeight * GOLD_RATE_PERMILLE * goldPm) / 1_000_000_000);
 }
 
+/** 주둔(방어 태세 ENGAGED, 내 땅 앵커) — v4.2 이후 유지비와 무관. 9단계 calmTicks(누진, 비활성)만 쓴다 */
+export function isGarrison(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  return f.state === 'ENGAGED' && f.posture === POSTURE.DEFEND && state.owners[f.anchorTileId] === f.ownerId;
+}
+
+/** v4.2 [A-60 변경, 사용자 2026-10-10]: 유지비 대상 = 출전한 깃발 전부(태세·상태 무관), 패주(병력 0) 제외 */
+export function paysUpkeep(f: Readonly<Flag>): boolean {
+  return !f.routed;
+}
+
 /**
- * 주둔 유지비 permille (GDD 4.4 a). 2단계에서 호출 → 직전 tick 종료 시점 상태를 읽는다(1 tick 지연, 의도된 고정 규칙).
- * isGarrison(f) = ENGAGED ∧ tile[anchor].owner == f.ownerId. escalate(f) ≡ 1 (GARRISON_ESCALATE_MAX = 1, 사용자 기각).
+ * 유지비 permille (GDD 4.4 a, v4.2 A-60 변경). 2단계에서 호출 → 1단계 명령 적용 후·4단계 이전 깃발 목록을 읽는다.
+ * weight = Σ UNIT_GARRISON_PERMILLE[unit] (패주 제외 전 깃발) · escalate ≡ 1, billable = max(0, weight − 1000),
+ * drainPm = min(700, floor(billable × 90 / 1000)). 상한 700 < 1000 → 순증 ≥ 그로스의 30% (순증 ≥ 0 보장 유지).
  */
 export function garrisonUpkeepPermille(state: Readonly<GameState>, p: Readonly<PlayerState>): number {
   let w = 0;
   for (const f of state.flags) {
-    if (f.ownerId !== p.id || f.state !== 'ENGAGED' || state.owners[f.anchorTileId] !== p.id) continue;
+    if (f.ownerId !== p.id || !paysUpkeep(f)) continue;
     w += UNIT_GARRISON_PERMILLE[f.unit] * GARRISON_ESCALATE_MAX;
   }
   const billable = Math.max(0, w - GARRISON_UPKEEP_FREE_PERMILLE);

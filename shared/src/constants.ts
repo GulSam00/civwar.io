@@ -168,7 +168,7 @@ export const FLAG_CAP_BASE = 3;
 export const FLAG_TILES_PER_SLOT = 300;
 export const FLAG_CAP_HARD_MAX = 7;
 export const FLAG_MIN_TROOPS = 40;
-export const FLAG_SPEED_BASE_MILLI = 120;
+export const FLAG_SPEED_BASE_MILLI = 140; // v4.2 [A-64] 120 → 140 (쟁기 규칙으로 점령 속도가 걷는 속도에 묶임)
 export const FLAG_SPEND_RATE_PERMILLE = 15;
 export const FLAG_SPEND_BUDGET_CAP_TICKS = 25;
 export const FLAG_TILE_RATE_BASE = 2;
@@ -177,6 +177,8 @@ export const FRONT_MAX_RANGE = 40;
 export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2)
 export const FLAG_RETARGET_LOCK_TICK = 15;
 export const FLAG_RECALL_REFUND_PERMILLE = 850;
+/** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
+export const RETURN_SPEED_PERMILLE = 1500;
 export const FLAG_IDLE_TIMEOUT = 600;
 export const FLAG_EXPOSED_ATTRITION_BP = 5;
 export const FLAG_STALL_TICKS = 25;
@@ -274,6 +276,12 @@ export const BOT_DIFFICULTY: Readonly<Record<BotDifficultyName, Readonly<BotDiff
 export const BOT_DIFFICULTY_DEFAULT: BotDifficultyName = 'NORMAL';
 export const BOT_COMMIT_NEUTRAL_PERMILLE = 450;
 export const BOT_COMMIT_ENEMY_PERMILLE = 350;
+// v4.2 봇 기지 공격 (사용자 확정 2026-10-10: 국경 6칸 안 적 기지 후보 · 점수 ×2.5 · 풀 50%). 나머지 값은 에이전트 선택 (프로토콜 §10)
+export const BOT_COMMIT_BASE_PERMILLE = 500; // 기지 공격 발령 병력 = 풀 × 50% (사용자 확정)
+export const BOT_BASE_ATTACK_RANGE = 6; // 내 땅에서 이 거리 안의 적 기지만 후보 (사용자 확정)
+export const BOT_BASE_ATTACK_WEIGHT_PERMILLE = 2500; // 기지 후보 점수 ×2.5 (사용자 확정)
+export const BOT_BASE_UNGUARDED_PERMILLE = 1500; // 적 방어 관할 원 밖 기지 ×1.5 (에이전트 선택)
+export const BOT_BASE_CAPITAL_PERMILLE = 1500; // 수도 ×1.5 (에이전트 선택). 체력 절반 미만 ×1.4 는 기존 8.3 항 그대로
 export const BOT_DEFEND_COMMIT_PERMILLE = 400;
 export const BOT_NEUTRAL_BIAS_TICK = 2442;
 export const BOT_THREAT_TRIGGER = 3000;

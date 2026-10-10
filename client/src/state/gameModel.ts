@@ -176,6 +176,9 @@ export class GameModel {
           postureCooldownUntilTick: 0,
           disengageUntilTick: null,
           breakaway: false,
+          // v4.2 (shared FlagSnapshot 추가 필드) — 이후 snapshot_delta flagFlags(HALTED)·flagReturnBase 가 갱신
+          halted: false,
+          returnBaseTileId: null,
         });
         this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
         break;
@@ -345,6 +348,12 @@ export class GameModel {
       f.disengaging = (bits & FLAG_BIT.DISENGAGING) !== 0;
       f.breakaway = (bits & FLAG_BIT.BREAKAWAY) !== 0;
       f.stalled = (bits & FLAG_BIT.STALLED) !== 0;
+      f.halted = (bits & FLAG_BIT.HALTED) !== 0; // v4.2 4.4a 정지 점령
+    }
+    // v4.2 [A-61]: 지정 귀환 기지 — 바뀐 깃발만
+    for (const [id, base] of d.flagReturnBase ?? []) {
+      const f = this.flags.get(id);
+      if (f) f.returnBaseTileId = base;
     }
     if (this.allianceFreezeUntilTick !== null && d.tick >= this.allianceFreezeUntilTick) this.allianceFreezeUntilTick = null;
     this.version++;

@@ -1,0 +1,86 @@
+/** 사용자 요청 2026-10-10: 지형 정보 툴팁, 반투명 영토, 하단 바 유지비 */
+import { describe, expect, it } from 'vitest';
+import { POSTURE, rleEncode, type FlagSnapshot } from '@civwar/shared';
+import { GameModel } from '../src/state/gameModel.js';
+import { terrainInfo } from '../src/ui/terrainInfo.js';
+import { OWNER_FILL_ALPHA, TERRAIN_RGB, tileRgba } from '../src/render/palette.js';
+import { detectRule, drainPm, nextFlagExtraPm } from '../src/ui/upkeep.js';
+
+const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
+  id: 1, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: 1, anchorTileId: 2,
+  targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
+  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, ...over,
+});
+
+function model(flags: FlagSnapshot[] = [], upkeepPm = 0): GameModel {
+  const m = new GameModel({
+    type: 'match_config', seed: 1, topology: 'square', width: 4, height: 2, totalLandTiles: 7, tickMs: 200, hardTimeoutTick: 9600,
+    endgameRush: { tick: 8400, costMultPermille: 750 },
+    thresholdCurve: { startPct: 60, decayStartTick: 4800, decayPerMinPermille: 1500, floorPct: 45, scale: 200 },
+    mapSource: 'random', botDifficulty: 'NORMAL', constants: {},
+  });
+  // 0 DEEP, 1 PLAIN, 2 FERTILE, 3 HILLS / 4 DESERT, 5 MOUNTAIN, 6 SHALLOW, 7 PLAIN
+  m.apply({ type: 'map_init', terrain: rleEncode([0, 1, 2, 3, 4, 5, 6, 1]), spawns: [{ playerId: 1, tileId: 1, homeTileId: 1 }], bases: [1, 7] });
+  m.apply({
+    type: 'snapshot_full', tick: 25, owners: rleEncode([0, 1, 1, 2, 0, 0, 0, 2]),
+    players: [
+      { id: 1, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm, tech: [0, 0, 0, 0], flagCap: 5, alive: true, connected: true },
+      { id: 2, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 5, alive: true, connected: true },
+    ],
+    flags, bases: [{ tileId: 1, ownerId: 1, hpPct: 80 }, { tileId: 7, ownerId: 2, hpPct: 100 }],
+    alliances: [], allyProposals: [], allianceFreezeUntilTick: null, lockoutDissolveTick: null, thresholdPct: 60, ticksRemaining: 9575, endgameRushActive: false,
+  });
+  return m;
+}
+
+describe('지형 정보 툴팁', () => {
+  const nick = (id: number) => `P${id}`;
+  it('언덕: 방어 ×1.30, 이동 ×0.80, 소유자 이름', () => {
+    const i = terrainInfo(model(), 3, 1, 0, nick)!;
+    expect(i.terrain).toBe('언덕');
+    expect(i.mods).toContain('방어 ×1.30');
+    expect(i.mods).toContain('이동 속도 ×0.80');
+    expect(i.ownerName).toBe('P2');
+    expect(i.base).toBeNull();
+  });
+  it('내 수도 칸 = 기지 정보, 중립·물', () => {
+    const cap = terrainInfo(model(), 1, 1, 0, nick)!;
+    expect(cap.ownerName).toBe('P1 (나)');
+    expect(cap.base).toBe('수도 · 체력 80%');
+    expect(terrainInfo(model(), 5, 1, 0, nick)!.ownerName).toBe('중립');
+    expect(terrainInfo(model(), 5, 1, 0, nick)!.mods).toContain('방어 ×1.60');
+    expect(terrainInfo(model(), 0, 1, 0, nick)!.mods[0]).toContain('통행 불가');
+    expect(terrainInfo(model(), 6, 1, 0, nick)!.mods).toContain('이동 속도 ×0.20'); // 얕은 물 기동 0단계
+    expect(terrainInfo(model(), 6, 1, 3, nick)!.mods).toContain('이동 속도 ×0.40');
+  });
+});
+
+describe('반투명 영토', () => {
+  it('플레이어 색 OWNER_FILL_ALPHA 만큼 지형 위에 겹친다 — 같은 플레이어라도 지형별로 색이 다르다', () => {
+    expect(OWNER_FILL_ALPHA).toBeGreaterThanOrEqual(0.35);
+    expect(OWNER_FILL_ALPHA).toBeLessThanOrEqual(0.45);
+    expect(tileRgba(1, 0)).not.toBe(tileRgba(1, 1));
+    expect(tileRgba(1, 1)).not.toBe(tileRgba(5, 1));
+    const r = (tileRgba(5, 1) >>> 24) & 0xff;
+    expect(r).toBe(Math.round(0xe5 * OWNER_FILL_ALPHA + TERRAIN_RGB[5][0] * (1 - OWNER_FILL_ALPHA)));
+  });
+});
+
+describe('하단 바 유지비', () => {
+  it('서버 upkeepPm 과 맞는 규칙을 고르고, 모든 깃발 과금 규칙일 때만 다음 깃발 미리보기', () => {
+    // 검 1000 + 기 1600 = 2600 → (2600−1000)×90/1000 = 144‰
+    const flags = [flag({ id: 1, unit: 1 }), flag({ id: 2, unit: 2 })];
+    expect(drainPm(2600)).toBe(144);
+    const all = model(flags, 144);
+    expect(detectRule(all, 1, 144)).toBe('all');
+    expect(nextFlagExtraPm(all, 1, 'all', 0)).toBe(drainPm(3200) - 144);
+    // 주둔만 과금(종전 규칙): 공격 행군 깃발은 0 → upkeepPm 0
+    const gar = model(flags, 0);
+    expect(detectRule(gar, 1, 0)).toBe('garrison');
+    expect(nextFlagExtraPm(gar, 1, 'garrison', 0)).toBeNull();
+    // 깃발이 없으면 두 규칙이 구분되지 않는다 → null (마지막 판별값 사용)
+    expect(detectRule(model([], 0), 1, 0)).toBeNull();
+    // 식이 맞지 않으면 null (미리보기 숨김)
+    expect(detectRule(all, 1, 77)).toBeNull();
+  });
+});

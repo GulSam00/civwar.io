@@ -133,6 +133,8 @@ function flagSnap(f: Readonly<Flag>): FlagSnapshot {
     postureCooldownUntilTick: f.postureCooldownUntilTick,
     disengageUntilTick: f.disengageUntilTick,
     breakaway: f.breakaway,
+    halted: f.halted,
+    returnBaseTileId: f.returnBaseTileId,
   };
 }
 
@@ -162,7 +164,8 @@ export function flagBits(f: Readonly<Flag>): number {
     (f.blocked ? FLAG_BIT.BLOCKED : 0) |
     (f.disengageUntilTick !== null ? FLAG_BIT.DISENGAGING : 0) |
     (f.breakaway ? FLAG_BIT.BREAKAWAY : 0) |
-    (f.stalled ? FLAG_BIT.STALLED : 0)
+    (f.stalled ? FLAG_BIT.STALLED : 0) |
+    (f.halted ? FLAG_BIT.HALTED : 0)
   );
 }
 
@@ -177,6 +180,8 @@ export class DeltaTracker {
   private flagStat = new Map<number, string>();
   private flagTarget = new Map<number, number | null>();
   private flagFlag = new Map<number, string>();
+  private flagProg = new Map<number, number>();
+  private flagRetBase = new Map<number, number | null>();
   private baseHp = new Map<number, number>();
   private threshold = -1;
 
@@ -192,7 +197,11 @@ export class DeltaTracker {
     this.flagStat.clear();
     this.flagTarget.clear();
     this.flagFlag.clear();
+    this.flagProg.clear();
+    this.flagRetBase.clear();
     for (const f of state.flags) {
+      this.flagProg.set(f.id, progressPct(f.progressMilli));
+      this.flagRetBase.set(f.id, f.returnBaseTileId);
       this.flagFlag.set(f.id, flagFlagsKey(f));
       this.flagPos.set(f.id, f.posTileId);
       this.flagStat.set(f.id, `${Math.floor(f.troopsMilli / 1000)}|${f.state}`);
@@ -217,6 +226,7 @@ export class DeltaTracker {
       baseHp: [],
       flagsGone: state.changes.flagsGone.slice(),
       flagFlags: [],
+      flagReturnBase: [],
     };
     if (t % PLAYER_DELTA_INTERVAL === 0) {
       for (const p of state.players) {
@@ -243,7 +253,15 @@ export class DeltaTracker {
           d.flagStats.push([f.id, troops, f.state as FlagState]);
         }
       }
-      if (f.posture === POSTURE.ATTACK && f.state === 'ENGAGED') d.flagProgress.push([f.id, progressPct(f.progressMilli)]);
+      // v4.2: progressPct > 0 인 깃발 전부 + ATTACK·(ENGAGED 또는 halted) 깃발은 0 이어도 매 tick, 그리고 0 이 된 tick 1회.
+      // → 클라이언트 규칙 "목록에 없는 깃발 = 0" 이 그대로 성립한다 (행군 중 전투로 진척을 유지한 깃발도 실린다)
+      const pct = progressPct(f.progressMilli);
+      if (pct > 0 || (f.posture === POSTURE.ATTACK && (f.state === 'ENGAGED' || f.halted)) || this.flagProg.get(f.id) !== pct) d.flagProgress.push([f.id, pct]);
+      this.flagProg.set(f.id, pct);
+      if (this.flagRetBase.has(f.id) ? this.flagRetBase.get(f.id) !== f.returnBaseTileId : f.returnBaseTileId !== null) {
+        d.flagReturnBase!.push([f.id, f.returnBaseTileId]);
+      }
+      this.flagRetBase.set(f.id, f.returnBaseTileId);
       const fk = flagFlagsKey(f);
       if (this.flagFlag.get(f.id) !== fk) {
         this.flagFlag.set(f.id, fk);
@@ -259,6 +277,8 @@ export class DeltaTracker {
       this.flagStat.delete(id);
       this.flagTarget.delete(id);
       this.flagFlag.delete(id);
+      this.flagProg.delete(id);
+      this.flagRetBase.delete(id);
     }
     if (t % BASE_HP_DELTA_INTERVAL === 0) {
       for (const b of state.bases) {

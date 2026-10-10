@@ -1,5 +1,5 @@
 /**
- * civwar.io WebSocket 프로토콜 타입 (GDD v4.1 7장).
+ * civwar.io WebSocket 프로토콜 타입 (GDD v4.2 7장).
  * 신뢰 소스 문서: _workspace/02_backend_protocol.md — 이 파일과 문서는 항상 함께 갱신한다.
  *
  * 전송: 텍스트 프레임 1개 = JSON 객체 1개. 모든 메시지는 `type` 판별 필드를 갖는다.
@@ -166,6 +166,8 @@ export interface C2S_CmdFlagRecall {
   type: 'cmd_flag_recall';
   clientSeq: number;
   flagId: number;
+  /** v4.2 [A-61] (추가만): 귀환할 내 기지 tileId. 생략·null = 자동(출발 기지 → 최근접 내 기지 → 수도). 거절 NOT_BASE / NOT_OWNED_BASE */
+  baseTileId?: number | null;
 }
 export interface C2S_CmdSetPosture {
   type: 'cmd_set_posture';
@@ -405,6 +407,13 @@ export interface FlagSnapshot {
   disengageUntilTick: number | null;
   /** 2차 추가: 이탈 완료 후 첫 칸 이동 전 — 교전 대상 아님 */
   breakaway: boolean;
+  /**
+   * v4.2 (4.4a, 추가만): MARCHING·ATTACK 깃발이 옆 칸을 점령하려고 멈춘 상태(정지 점령). 서버는 항상 싣는다.
+   * (TS 타입만 optional — 구 클라이언트 코드가 FlagSnapshot 리터럴을 만드는 곳의 호환용)
+   */
+  halted?: boolean;
+  /** v4.2 [A-61] (추가만): cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 자동. 서버는 항상 싣는다 */
+  returnBaseTileId?: number | null;
 }
 
 export interface BaseSnapshot {
@@ -454,6 +463,8 @@ export const FLAG_BIT = {
   DISENGAGING: 8,
   BREAKAWAY: 16,
   STALLED: 32,
+  /** v4.2 (4.4a): 행군 중 정지 점령 */
+  HALTED: 64,
 } as const;
 
 export interface PlayerDelta {
@@ -479,6 +490,8 @@ export interface S2C_SnapshotDelta {
   thresholdPct?: number; // 값이 바뀐 tick 에만
   /** 2차 추가: [flagId, posture, bits(FLAG_BIT), postureCooldownUntilTick] — 셋 중 하나라도 바뀐 깃발만, 매 tick */
   flagFlags: [number, Posture, number, number][];
+  /** v4.2 [A-61] (추가만): [flagId, returnBaseTileId|null] — 값이 바뀐 깃발만. 서버는 항상 싣는다(빈 배열 가능) */
+  flagReturnBase?: [number, number | null][];
 }
 
 export interface S2C_CmdAck {
@@ -685,6 +698,8 @@ export interface S2C_FlagDisengageStarted {
   tick: number;
   flagId: number;
   untilTick: number;
+  /** v4.2 [A-62] (추가만): true = 귀환(RETURNING) 깃발이 전투에 붙잡혀 서버가 자동으로 개시. false = 재지정·회수 명령 */
+  auto: boolean;
 }
 export interface S2C_FlagDisengaged {
   type: 'flag_disengaged';

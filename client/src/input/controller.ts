@@ -1,33 +1,49 @@
 /**
  * 인게임 입력 — 마우스/키보드 → 카메라 조작 또는 서버 명령(의도).
  *
- * 조작 (GDD 4.3 "병종 키 → 맵 클릭 = 2액션"):
- *   1/2/3      병종 선택(창/검/기) → 커서가 기본 태세·결과 예고 → 좌클릭 = 발령 (Shift+클릭 = 병종 유지)
- *   Q/E, [/]   발령 비율 −/+10%
- *   좌클릭 깃발  선택 (내 깃발이면 조작 가능)
- *   우클릭      선택한 내 깃발 재지정 / 병종 선택 취소
- *   F          선택 깃발 태세 전환      R  선택 깃발 회수      Tab  내 깃발 순환
+ * 조작 (v4.2 출전 UI — design-decisions「GDD v4.2 2차 검토 결정」):
+ *   맵 지점 클릭  → 가장 가까운 내 기지(서버와 같은 가중 이동 거리) 자동 하이라이트 + 기지→지점 진격 경로 점선 화살표
+ *                   + 클릭 지점에 창/검/기 삼각 메뉴 → 하나 고르면 발령 (originBaseTileId = 하이라이트 기지)
+ *   내 기지 클릭  → 기지에서 커서까지 경로 화살표가 따라옴 → 지점 클릭 → 삼각 메뉴 → 그 기지에서 발령
+ *                   (기지 위에 깃발이 겹쳐 있으면 Alt+클릭으로 기지를 고른다)
+ *   1/2/3        삼각 메뉴가 떠 있을 때 병종 선택 (창/검/기)
+ *   바깥 클릭 · 우클릭 · Esc = 출전 취소
+ *   Q/E, [/]     발령 비율 −/+10% (하단 바)
+ *   좌클릭 깃발   선택 (내 깃발이면 조작 가능)
+ *   깃발 선택 + 내 기지 클릭 = 그 기지로 귀환 (cmd_flag_recall.baseTileId, A-61) · 적/중립 기지 클릭 = 재지정
+ *   깃발 선택 + 우클릭 = 재지정 · 다른 곳 클릭 = 선택 해제
+ *   F          선택 깃발 태세 전환      R  선택 깃발 회수(자동 귀환지)      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
- *   Alt+클릭 내 기지 / B(기지 위에서) = 발령 출발 기지 지정 (다시 하면 자동)
  *   T 테크 · P 외교 · C 색각 보조 · V 이동 방향 화살표 · ? 도움말 (React 패널 — Interaction 플래그)
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
  *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
-import { POSTURE, UNIT_CONVERT_PERMILLE, MOB_CONVERT_PERMILLE_BY_TIER, type Unit } from '@civwar/shared';
-import { panBy, screenToWorld, zoomAt, clampCamera } from '../render/camera.js';
+import { POSTURE, TECH_AXIS, UNIT_CONVERT_PERMILLE, MOB_CONVERT_PERMILLE_BY_TIER, type Unit } from '@civwar/shared';
+import { panBy, screenToWorld, worldToScreen, zoomAt, clampCamera } from '../render/camera.js';
 import type { GameRenderer } from '../render/renderer.js';
 import type { ClientStore } from '../state/store.js';
 import { troopsForRatio } from './preview.js';
+import { RouteCache, computeRoute, nearestOwnBase, type RoutePreview } from './route.js';
+
+export type IssuePosture = 'attack' | 'defend' | 'blocked';
+
+/**
+ * 출전(발령) 진행 상태.
+ *  aim  : 기지를 골랐고 목적지를 기다리는 중 (기지 → 커서 화살표)
+ *  pick : 목적지까지 정해졌고 삼각 메뉴에서 병종을 고르는 중
+ */
+export type IssueState = { phase: 'aim'; base: number } | { phase: 'pick'; base: number; anchor: number; posture: IssuePosture };
 
 export class Interaction {
-  armedUnit: Unit | null = null;
+  /** 출전 진행 상태 (null = 없음) */
+  issue: IssueState | null = null;
   ratio = 0.5;
   selectedFlagId: number | null = null;
   hoverTile = -1;
   hoverX = 0;
   hoverY = 0;
-  /** 발령 출발 기지 (null = 서버 자동: 앵커 최근접 내 기지) */
-  originBase: number | null = null;
+  /** 커서가 맵 캔버스 위에 있다 (HUD·패널·메뉴 위가 아님) — 지형 정보 툴팁 표시 조건 */
+  overMap = false;
   /** 열린 패널 */
   panel: 'tech' | 'ally' | null = null;
   helpOpen = false;
@@ -50,6 +66,9 @@ export class GameInputController {
   private touchMoved = false;
   private keysHeld = new Set<string>();
   private detach: (() => void) | null = null;
+  private routes = new RouteCache();
+  private routeKey = '';
+  private route: RoutePreview | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -97,6 +116,7 @@ export class GameInputController {
     const onKeyUp = (e: KeyboardEvent) => this.keysHeld.delete(e.key.toLowerCase());
     const onLeave = () => {
       this.ix.hoverTile = -1;
+      this.ix.overMap = false;
     };
     const onBlur = () => this.keysHeld.clear();
     c.addEventListener('mousedown', onDown);
@@ -201,6 +221,7 @@ export class GameInputController {
     const inside = p.x >= 0 && p.y >= 0 && p.x <= this.canvas.clientWidth && p.y <= this.canvas.clientHeight;
     this.ix.hoverX = p.x;
     this.ix.hoverY = p.y;
+    this.ix.overMap = inside && e.target === this.canvas;
     this.ix.hoverTile = inside ? this.pixelToTileId(p.x, p.y) : -1;
   }
 
@@ -209,36 +230,123 @@ export class GameInputController {
     this.dragging = null;
     if (!d || d.moved || e.button !== 0 || d.button !== 0) return;
     const p = this.local(e);
-    if (e.altKey && this.ix.armedUnit !== null) {
-      this.toggleOriginAt(this.pixelToTileId(p.x, p.y));
-      return;
-    }
-    this.click(p.x, p.y, e.shiftKey);
+    this.click(p.x, p.y, e.altKey);
   }
 
-  /** 출발 기지 지정/해제 — 내 기지 칸이어야 한다 (서버 검증 NOT_BASE/NOT_OWNED_BASE 는 그대로 ack 로 받는다) */
-  toggleOriginAt(tile: number): void {
+  // ───────────── 출전 (v4.2 UI) ─────────────
+
+  /** 내 기지 칸인가 */
+  isMyBase(tile: number): boolean {
     const g = this.store.game;
     const me = this.store.myPlayerId;
-    if (!g || me === null || tile < 0) return;
-    const b = g.bases.get(tile);
-    if (!b || b.ownerId !== me) {
-      this.store.toast('출발 기지는 내 기지만 지정할 수 있습니다 (기지 칸 위에서)', 'error', 2000);
-      return;
+    if (!g || me === null || tile < 0) return false;
+    return g.bases.get(tile)?.ownerId === me;
+  }
+
+  /** 기지 칸인가 (소유 무관) */
+  isBaseTile(tile: number): boolean {
+    return tile >= 0 && !!this.store.game?.bases.has(tile);
+  }
+
+  private myMobilityTier(): number {
+    const g = this.store.game;
+    const me = this.store.myPlayerId;
+    const p = g && me !== null ? g.players.get(me) : undefined;
+    return p ? p.tech[TECH_AXIS.MOBILITY] : 0;
+  }
+
+  /** 목적지까지 이동 거리(서버와 같은 가중 경로)가 가장 짧은 내 기지 */
+  nearestBaseFor(anchor: number): number | null {
+    const g = this.store.game;
+    const me = this.store.myPlayerId;
+    const topo = this.renderer.topo;
+    if (!g || me === null || !topo || !g.terrain || anchor < 0) return null;
+    const field = this.routes.fieldFor(g, topo, anchor, this.myMobilityTier());
+    return nearestOwnBase(g, field, me);
+  }
+
+  /** 지점의 기본 태세 예고 (내 땅 = 방어, 적·중립 = 공격, 물·동맹 = 불가) — 표시 전용, 서버가 최종 판정 */
+  postureAt(tile: number): IssuePosture {
+    const g = this.store.game;
+    const me = this.store.myPlayerId;
+    if (!g || me === null || tile < 0 || !g.isLand(tile)) return 'blocked';
+    const o = g.owners[tile];
+    if (o === me) return 'defend';
+    if (g.isAlly(me, o)) return 'blocked';
+    return 'attack';
+  }
+
+  /**
+   * 지금 그릴 진격 경로 (렌더 루프가 매 프레임 호출 — 키가 같으면 캐시).
+   *  aim  : 고른 기지 → 커서 칸
+   *  pick : 기지 → 확정 지점
+   */
+  currentRoute(): RoutePreview | null {
+    const g = this.store.game;
+    const me = this.store.myPlayerId;
+    const topo = this.renderer.topo;
+    const is = this.ix.issue;
+    if (!g || me === null || !topo || !g.terrain || !is) return null;
+    const anchor = is.phase === 'aim' ? this.ix.hoverTile : is.anchor;
+    if (anchor < 0) return null;
+    const attack = (is.phase === 'pick' ? is.posture : this.postureAt(anchor)) === 'attack';
+    const tier = this.myMobilityTier();
+    const key = `${is.base}:${anchor}:${attack}:${tier}:${g.ownersVersion}:${g.tick}`;
+    if (key !== this.routeKey) {
+      const field = this.routes.fieldFor(g, topo, anchor, tier);
+      this.route = computeRoute(g, topo, field, me, is.base, anchor, attack);
+      this.routeKey = key;
     }
-    this.ix.originBase = this.ix.originBase === tile ? null : tile;
+    return this.route;
+  }
+
+  /** 삼각 메뉴의 화면 위치 (확정 지점 칸 중심) */
+  pickScreenPos(): { x: number; y: number } | null {
+    const is = this.ix.issue;
+    const topo = this.renderer.topo;
+    if (!is || is.phase !== 'pick' || !topo) return null;
+    const c = topo.tileCenter(is.anchor);
+    return worldToScreen(this.renderer.camera, c.x, c.y);
+  }
+
+  /** 출전 취소 */
+  cancelIssue(): void {
+    if (!this.ix.issue) return;
+    this.ix.issue = null;
     this.ix.bump();
   }
 
-  /** 출발 기지가 더는 내 것이 아니면 자동으로 되돌린다 */
-  validateOrigin(): void {
-    const o = this.ix.originBase;
-    if (o === null) return;
-    const g = this.store.game;
-    if (!g || g.bases.get(o)?.ownerId !== this.store.myPlayerId) {
-      this.ix.originBase = null;
-      this.ix.bump();
-    }
+  /** 기지 → 커서 화살표 단계 시작 */
+  beginAim(base: number): void {
+    if (!this.canCommand() || !this.isMyBase(base)) return;
+    this.ix.issue = { phase: 'aim', base };
+    this.ix.selectedFlagId = null;
+    this.ix.bump();
+  }
+
+  /** 목적지 확정 → 삼각 메뉴. base 가 없으면 가장 가까운 내 기지 */
+  beginPick(anchor: number, base: number | null): void {
+    if (!this.canCommand() || anchor < 0) return;
+    const b = base ?? this.nearestBaseFor(anchor);
+    if (b === null) {
+      this.store.toast('출전할 내 기지가 없습니다', 'error', 2000);
+      this.ix.issue = null;
+    } else this.ix.issue = { phase: 'pick', base: b, anchor, posture: this.postureAt(anchor) };
+    this.ix.selectedFlagId = null;
+    this.ix.bump();
+  }
+
+  /** 삼각 메뉴에서 병종 선택 → 발령 (cmd_flag_issue, originBaseTileId = 하이라이트 기지) */
+  chooseUnit(u: Unit): void {
+    const is = this.ix.issue;
+    if (!is || is.phase !== 'pick') return;
+    if (!this.canCommand()) return this.cancelIssue();
+    // 메뉴가 떠 있는 동안 기지를 잃었으면(서버는 NOT_OWNED_BASE) 그 지점의 가장 가까운 내 기지로 바꾼다
+    const base = this.isMyBase(is.base) ? is.base : this.nearestBaseFor(is.anchor);
+    if (base === null) return this.cancelIssue();
+    this.store.issueFlag(u, this.troopsToSend(u), is.anchor, base);
+    this.ix.issue = null;
+    this.ix.bump();
   }
 
   private onTouch(e: TouchEvent, phase: 'start' | 'move' | 'end'): void {
@@ -284,30 +392,56 @@ export class GameInputController {
     }
   }
 
-  /** 좌클릭 (드래그 아님) — 테스트에서도 직접 호출 */
-  click(sx: number, sy: number, keepArmed = false): void {
+  /**
+   * 좌클릭 (드래그 아님) — 테스트에서도 직접 호출. alt = Alt+클릭 (깃발이 겹친 내 기지를 출전 기지로 고를 때)
+   * 우선순위: 삼각 메뉴(캔버스 클릭 = 바깥 = 취소) > 기지→커서 화살표(지점 확정) > 선택한 내 깃발 + 기지(귀환/재지정)
+   *          > 깃발 선택 > 선택 해제 > 내 기지(화살표 시작) > 지점(최근접 기지 + 삼각 메뉴)
+   */
+  click(sx: number, sy: number, alt = false): void {
     const tile = this.pixelToTileId(sx, sy);
-    if (this.ix.armedUnit !== null) {
-      if (tile < 0 || !this.canCommand()) return;
-      const unit = this.ix.armedUnit;
-      this.validateOrigin();
-      this.store.issueFlag(unit, this.troopsToSend(unit), tile, this.ix.originBase);
-      if (!keepArmed) this.ix.armedUnit = null;
+    const is = this.ix.issue;
+    // 삼각 메뉴 버튼은 DOM 이라 캔버스 클릭으로 오지 않는다 → 여기 오면 바깥 클릭
+    if (is?.phase === 'pick') return this.cancelIssue();
+    if (is?.phase === 'aim') {
+      if (tile < 0 || !this.canCommand() || tile === is.base) return this.cancelIssue(); // 같은 기지 다시 클릭 = 취소
+      if (alt && this.isMyBase(tile)) return this.beginAim(tile); // Alt+다른 내 기지 = 출발 기지 바꾸기
+      return this.beginPick(tile, is.base);
+    }
+    const g = this.store.game;
+    const sel = this.ix.selectedFlagId;
+    if (!alt && tile >= 0 && g?.bases.has(tile) && this.myFlag(sel) && this.canCommand()) {
+      const f = g.flags.get(sel!)!;
+      if (f.state === 'RETURNING') {
+        this.store.toast('귀환 중 — 취소할 수 없습니다', 'info', 1800);
+        return;
+      }
+      // 내 기지 = 그 기지로 귀환(A-61), 적·중립 기지 = 재지정 (GDD v4.2 프론트 체크리스트 4)
+      if (this.isMyBase(tile)) this.store.recall(sel!, tile);
+      else this.store.retarget(sel!, tile);
+      this.ix.selectedFlagId = null;
       this.ix.bump();
       return;
     }
+    if (alt && this.isMyBase(tile)) return this.beginAim(tile);
     const hit = this.renderer.flagAt(sx, sy);
-    this.ix.selectedFlagId = hit;
-    this.ix.bump();
+    if (hit !== null) {
+      this.ix.selectedFlagId = hit;
+      this.ix.bump();
+      return;
+    }
+    if (sel !== null) {
+      this.ix.selectedFlagId = null;
+      this.ix.bump();
+      return;
+    }
+    if (tile < 0 || !this.canCommand()) return;
+    if (this.isMyBase(tile)) return this.beginAim(tile);
+    this.beginPick(tile, null);
   }
 
   private onContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    if (this.ix.armedUnit !== null) {
-      this.ix.armedUnit = null;
-      this.ix.bump();
-      return;
-    }
+    if (this.ix.issue) return this.cancelIssue();
     const p = this.local(e);
     const tile = this.pixelToTileId(p.x, p.y);
     if (tile >= 0 && this.myFlag(this.ix.selectedFlagId) && this.canCommand()) {
@@ -321,12 +455,6 @@ export class GameInputController {
     zoomAt(this.renderer.camera, p.x, p.y, Math.exp(-e.deltaY * 0.0015));
     this.clamp();
     this.refreshHover();
-  }
-
-  armUnit(u: Unit): void {
-    if (!this.canCommand()) return;
-    this.ix.armedUnit = this.ix.armedUnit === u ? null : u;
-    this.ix.bump();
   }
 
   setRatio(r: number): void {
@@ -406,11 +534,11 @@ export class GameInputController {
     }
     switch (k) {
       case '1':
-        return this.armUnit(0);
       case '2':
-        return this.armUnit(1);
       case '3':
-        return this.armUnit(2);
+        // 삼각 메뉴가 떠 있을 때만 병종 선택 (기존 "병종 키 → 클릭" 흐름은 v4.2 출전 UI 로 대체)
+        if (this.ix.issue?.phase === 'pick') this.chooseUnit((Number(k) - 1) as Unit);
+        return;
       case 'q':
       case '[':
         return this.setRatio(this.ix.ratio - 0.1);
@@ -428,9 +556,6 @@ export class GameInputController {
       case 'tab':
         e.preventDefault();
         return this.cycleMyFlags();
-      case 'b':
-        if (this.ix.armedUnit !== null) this.toggleOriginAt(this.ix.hoverTile);
-        return;
       case 'v':
         return this.toggleDirections();
       case 't':
@@ -454,8 +579,9 @@ export class GameInputController {
           this.ix.helpOpen = false;
           this.ix.panel = null;
           this.ix.leaveConfirm = false;
+        } else if (this.ix.issue) {
+          this.ix.issue = null;
         } else {
-          this.ix.armedUnit = null;
           this.ix.selectedFlagId = null;
         }
         this.ix.bump();

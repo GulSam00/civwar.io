@@ -1,15 +1,13 @@
 /**
- * 깃발 규칙의 순수 함수 모음 (GDD 4.1 / 4.4 / 4.6 / 4.7 v4.1). 상태를 쓰지 않는다 — Phase A 에서 안전.
+ * 깃발 규칙의 순수 함수 모음 (GDD 4.1 / 4.4 / 4.4a / 4.6 / 4.7 — v4.2). 상태를 쓰지 않는다 — Phase A 에서 안전.
  *
  * 정수 규칙: 비용 산출은 micro(1e-6) 고정소수점으로 곱셈마다 floor, 마지막에 ceil.
  * (GDD 의 실수 곱 후 ceil 과 같은 값을 내며, 차이는 중간 floor 의 1e-6 미만 절사뿐 — 프로토콜 §10)
  */
 import {
   ADJACENCY_COEF_PERMILLE,
-  ANY_HOSTILE,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENEMY_BASE,
-  FLAG_ENGAGE_RANGE,
   FLAG_SPEED_BASE_MILLI,
   FLAG_TILE_RATE_BASE,
   FRONT_RADIUS,
@@ -20,6 +18,7 @@ import {
   NEUTRAL_BASE,
   NEUTRAL_SQRT_COEF_PERMILLE,
   POSTURE,
+  RETURN_SPEED_PERMILLE,
   SHALLOW_MOVE_PERMILLE_BY_TIER,
   SHALLOW_MOVE_PERMILLE_MIN,
   SUPPLY_COEF_PERMILLE,
@@ -48,81 +47,85 @@ export function claimable(state: Readonly<GameState>, t: number): boolean {
   return isClaimable(state.map.terrain[t]);
 }
 
-// ───────────────────────── front / guard (4.1, 4.15 i) ─────────────────────────
+// ───────────────────────── 공격 = 깃발 옆 칸 (v4.2 4.4a) ─────────────────────────
+// v4.2 [A-53 변경]: 앵커 원(반경 6) 공격 front·targetMatch·selectTarget·beach 폐기. 공격 태세 깃발의 유일한 대상은 marchFront.
 
-/** targetMatch — 내 땅·동맹(ACTIVE/BREAKING)은 언제나 제외 (4.10 표 "동맹") */
-export function targetMatch(state: Readonly<GameState>, f: Readonly<Flag>, o: number): boolean {
-  if (o === f.ownerId) return false;
-  if (f.targetOwnerId === ANY_HOSTILE) return o !== NEUTRAL && !isAlly(state, f.ownerId, o);
-  return o === f.targetOwnerId && !isAlly(state, f.ownerId, o);
+/** marchMatch(owner, o) = o != owner and not isAlly(owner, o) — NEUTRAL 포함, 적대 플레이어 전원 [A-51] */
+export function marchMatch(state: Readonly<GameState>, ownerId: number, o: number): boolean {
+  return o !== ownerId && !isAlly(state, ownerId, o);
 }
 
-function hasOwnNeighbor(state: Readonly<GameState>, t: number, ownerId: number): boolean {
-  for (const n of state.graph.neighbors(t)) if (state.owners[n] === ownerId) return true;
-  return false;
+/** t ∈ marchFront 의 지형·소유 조건 (t 가 pos 의 이웃인지는 호출자가 보장) */
+function marchTile(state: Readonly<GameState>, ownerId: number, t: number): boolean {
+  return claimable(state, t) && marchMatch(state, ownerId, state.owners[t]);
 }
 
-function inMainFront(state: Readonly<GameState>, f: Readonly<Flag>, t: number): boolean {
-  return (
-    claimable(state, t) &&
-    targetMatch(state, f, state.owners[t]) &&
-    state.graph.distance(t, f.anchorTileId) <= FRONT_RADIUS &&
-    hasOwnNeighbor(state, t, f.ownerId)
-  );
+/** marchFront(pos) = { t ∈ neighbors(pos) : isClaimable(t) and marchMatch(owner, owner(t)) } 를 neighbors 고정 순서로 방문 */
+export function forEachMarchFrontAt(state: Readonly<GameState>, ownerId: number, pos: number, cb: (t: number) => boolean | void): void {
+  for (const t of state.graph.neighbors(pos)) if (marchTile(state, ownerId, t) && cb(t) === true) return;
 }
 
-/** front(f) 의 원소를 tileId 오름차순(디스크) → 해안 교두보 순으로 방문. 중복 없음 */
-export function forEachFront(state: Readonly<GameState>, f: Readonly<Flag>, cb: (t: number) => boolean | void): void {
-  for (const t of state.graph.disk(f.anchorTileId, FRONT_RADIUS)) {
-    if (inMainFront(state, f, t) && cb(t) === true) return;
-  }
-  if (!claimable(state, f.posTileId)) {
-    for (const t of state.graph.neighbors(f.posTileId)) {
-      if (!claimable(state, t) || !targetMatch(state, f, state.owners[t])) continue;
-      if (inMainFront(state, f, t)) continue; // 이미 방문
-      if (cb(t) === true) return;
-    }
-  }
-}
-
-export function frontCount(state: Readonly<GameState>, f: Readonly<Flag>): number {
+export function marchFrontCountAt(state: Readonly<GameState>, ownerId: number, pos: number): number {
   let k = 0;
-  forEachFront(state, f, () => {
+  forEachMarchFrontAt(state, ownerId, pos, () => {
     k++;
   });
   return k;
 }
 
-export function frontNonEmpty(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+/** |marchFront(f)| — flag_engaged.frontTileCount */
+export function marchFrontCount(state: Readonly<GameState>, f: Readonly<Flag>): number {
+  return marchFrontCountAt(state, f.ownerId, f.posTileId);
+}
+
+export function marchFrontNonEmpty(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
   let any = false;
-  forEachFront(state, f, () => (any = true));
+  forEachMarchFrontAt(state, f.ownerId, f.posTileId, () => (any = true));
   return any;
 }
 
-/** 4.4 도착 판정: front 중 posTileId 에서 거리 ≤ r 인 칸이 있는가 */
-export function frontWithin(state: Readonly<GameState>, f: Readonly<Flag>, r: number): boolean {
-  let hit = false;
-  forEachFront(state, f, (t) => (hit = state.graph.distance(t, f.posTileId) <= r));
-  return hit;
+export function inMarchFront(state: Readonly<GameState>, f: Readonly<Flag>, X: number): boolean {
+  if (!marchTile(state, f.ownerId, X)) return false;
+  for (const n of state.graph.neighbors(f.posTileId)) if (n === X) return true;
+  return false;
 }
 
-/** front 정렬 (distance ASC, tileCost ASC, tileId ASC) 의 첫 원소 */
-export function frontFirst(state: Readonly<GameState>, f: Readonly<Flag>): number | null {
-  let best: number | null = null;
+/** attackReady(f) — 정지 점령·재점화 자격 (이탈 대기 = inCombat, breakaway 는 한 칸 이동 후부터 [A-55], RETURNING 은 공격 안 함) */
+export function attackReady(f: Readonly<Flag>): boolean {
+  return f.posture === POSTURE.ATTACK && !f.routed && !f.inCombat && !f.breakaway && f.state !== 'RETURNING';
+}
+
+/** pushing(f) — 5·6·7·9·10단계의 "밀고 있는 공격 깃발" = 비전투 ATTACK 이고 (ENGAGED 또는 행군 중 halted) */
+export function pushing(f: Readonly<Flag>): boolean {
+  return !f.inCombat && f.posture === POSTURE.ATTACK && (f.state === 'ENGAGED' || f.halted);
+}
+
+/**
+ * selectAttackTarget 읽기 전용판 (4.4a c, [A-52]). sticky: 현 타깃이 marchFront 안이면 유지.
+ * 새 타깃 = argmin ( 행군 중 경로 앞 칸이면 0 아니면 1, distance(t, anchor), tileCost, tileId ). 진척 리셋은 Phase B 가 판단.
+ */
+export function selectAttackTargetRO(state: Readonly<GameState>, f: Readonly<Flag>): number | null {
+  const X = f.targetTileId;
+  if (X !== null && inMarchFront(state, f, X)) return X;
+  let best = -1;
+  let bk0 = 0;
   let bd = 0;
   let bc = 0;
-  forEachFront(state, f, (t) => {
+  forEachMarchFrontAt(state, f.ownerId, f.posTileId, (t) => {
+    const k0 = f.state === 'MARCHING' && t === f.nextTileId ? 0 : 1;
     const d = state.graph.distance(t, f.anchorTileId);
-    if (best !== null && d > bd) return;
     const c = tileCost(state, f, t);
-    if (best === null || d < bd || c < bc || (c === bc && t < best)) {
+    if (best < 0 || k0 < bk0 || (k0 === bk0 && (d < bd || (d === bd && (c < bc || (c === bc && t < best)))))) {
       best = t;
+      bk0 = k0;
       bd = d;
       bc = c;
     }
   });
-  return best;
+  return best < 0 ? null : best;
 }
+
+// ───────────────────────── guard (4.1 — v4.2 방어 태세 전용) ─────────────────────────
 
 export function guardContains(state: Readonly<GameState>, f: Readonly<Flag>, t: number): boolean {
   return state.owners[t] === f.ownerId && claimable(state, t) && state.graph.distance(t, f.anchorTileId) <= FRONT_RADIUS;
@@ -135,13 +138,13 @@ export function guardCount(state: Readonly<GameState>, f: Readonly<Flag>): numbe
 }
 
 /**
- * 4.4 (d) threatened — v4.1 재정의 [A-43]: 타일 진척 조회 → 적 공격 깃발 타깃 조회.
- * threatened(f) = f.inCombat or 적대 g : g.posture == ATTACK and g.state == ENGAGED and g.targetTileId in guard(f)
+ * 4.4 (d) threatened — v4.2: 적 조건 = pushing(g) (행군 중 정지 점령하는 적 깃발 포함).
+ * threatened(f) = f.inCombat or 적대 g : pushing(g) and g.targetTileId in guard(f)
  */
 export function threatened(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
   if (f.inCombat) return true;
   for (const g of state.flags) {
-    if (g.posture !== POSTURE.ATTACK || g.state !== 'ENGAGED' || g.targetTileId === null) continue;
+    if (!pushing(g) || g.targetTileId === null) continue;
     if (g.ownerId === f.ownerId || isAlly(state, f.ownerId, g.ownerId)) continue;
     if (guardContains(state, f, g.targetTileId)) return true;
   }
@@ -152,24 +155,6 @@ export function threatened(state: Readonly<GameState>, f: Readonly<Flag>): boole
 export function defendArrived(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
   if (f.posTileId === f.anchorTileId) return true;
   return state.owners[f.anchorTileId] !== f.ownerId && guardContains(state, f, f.posTileId);
-}
-
-/**
- * selectTarget 읽기 전용판 (4.6 d). sticky 조건이 맞으면 현 타깃 유지, 아니면 front 첫 원소.
- * 진척도 리셋 여부(new != old)는 Phase B 가 판단한다.
- */
-export function selectTargetRO(state: Readonly<GameState>, f: Readonly<Flag>): number | null {
-  const X = f.targetTileId;
-  if (
-    X !== null &&
-    claimable(state, X) &&
-    targetMatch(state, f, state.owners[X]) &&
-    state.graph.distance(X, f.anchorTileId) <= FRONT_RADIUS &&
-    hasOwnNeighbor(state, X, f.ownerId)
-  ) {
-    return X;
-  }
-  return frontFirst(state, f);
 }
 
 // ───────────────────────── 비용 (4.6 b / 4.7 a) ─────────────────────────
@@ -232,11 +217,18 @@ export function moveCostPermille(state: Readonly<GameState>, p: Readonly<PlayerS
   return TERRAIN_MOVE_PERMILLE[ter];
 }
 
+/**
+ * speedMilli (4.4) — v4.2 [A-63]: RETURNING(패주 포함)이면 × RETURN_SPEED_PERMILLE / 1000 (같은 floor 안에서 곱한다 — 프로토콜 §10).
+ * 최대 분자 140 × 1450 × 2000 × 1500 ≈ 6.1e11 < 2^53.
+ */
 export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: number): number {
   const p = state.players[f.ownerId];
+  const ret = f.state === 'RETURNING' ? RETURN_SPEED_PERMILLE : 1000;
   return Math.max(
     1,
-    Math.floor((FLAG_SPEED_BASE_MILLI * UNIT_SPEED_PERMILLE[f.unit] * MOB_SPEED_PERMILLE_BY_TIER[mobilityTier(p)]) / (moveCostPermille(state, p, t) * 1000)),
+    Math.floor(
+      (FLAG_SPEED_BASE_MILLI * UNIT_SPEED_PERMILLE[f.unit] * MOB_SPEED_PERMILLE_BY_TIER[mobilityTier(p)] * ret) / (moveCostPermille(state, p, t) * 1_000_000),
+    ),
   );
 }
 
@@ -358,15 +350,14 @@ export function etaTicks(state: GameState, f: Readonly<Flag>, from: number, dest
 }
 
 /**
- * 표시용 교전 개시 ETA (프론트 QA m-4, 필드 추가): from → dest 경로를 따라 걸으며 movement.ts 의 MARCHING 도착 판정
- * (ATTACK = frontWithin(FLAG_ENGAGE_RANGE), DEFEND = defendArrived, 그 외 앵커 도달)이 처음 참이 되는 칸까지의 tick 수.
- * 현재 owners 기준 추정 — 행군 중 영토 변화·ZOC·전투는 무시. 판정이 끝까지 안 서면 etaTicks 와 같다.
+ * 표시용 교전 개시 ETA (프론트 QA m-4, 필드 추가): from → dest 경로를 따라 걸으며 movement.ts settle 판정이 처음 참이 되는 칸까지의 tick 수.
+ * v4.2: ATTACK = 그 칸의 marchFront 가 비어 있지 않음(정지 점령 시작 — 4.4a), DEFEND = defendArrived, 그 외 앵커 도달.
+ * 현재 owners 기준 추정 — 행군 중 영토 변화·정지 점령 시간·ZOC·전투는 무시. 판정이 끝까지 안 서면 etaTicks 와 같다.
  */
 export function engageEtaTicks(state: GameState, f: Readonly<Flag>, from: number, dest: number): number {
   const probe = { ...f, posTileId: from } as Flag;
   const arrived = () =>
-    probe.posTileId === dest ||
-    (probe.posture === POSTURE.ATTACK ? frontWithin(state, probe, FLAG_ENGAGE_RANGE) : defendArrived(state, probe));
+    probe.posTileId === dest || (probe.posture === POSTURE.ATTACK ? marchFrontNonEmpty(state, probe) : defendArrived(state, probe));
   let ticks = 0;
   for (let guard = 0; !arrived() && guard < 4096; guard++) {
     ticks += Math.ceil(1000 / speedMilliAt(state, f, probe.posTileId));
@@ -377,9 +368,18 @@ export function engageEtaTicks(state: GameState, f: Readonly<Flag>, from: number
   return ticks;
 }
 
-/** recallTarget (4.4): ① 출발 타일(내 소유) → ② 내 기지 최근접 → ③ 수도 → ④ 최근접 내 타일 */
+/** v4.2 [A-61]: 지정 귀환 기지가 아직 내 것인가 */
+export function returnBaseValid(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  return f.returnBaseTileId !== null && state.owners[f.returnBaseTileId] === f.ownerId;
+}
+
+/**
+ * recallTarget (4.4): v4.2 [A-61] 지정 기지(내 소유일 때) → ① 출발 타일(내 소유) → ② 내 기지 최근접 → ③ 수도 → ④ 최근접 내 타일.
+ * 지정 기지를 잃으면 폴백하고, movement.ts 가 returnBaseTileId = null 로 지운다(되찾아도 다시 돌아가지 않는다).
+ */
 export function recallTarget(state: Readonly<GameState>, f: Readonly<Flag>): number {
   const me = f.ownerId;
+  if (returnBaseValid(state, f)) return f.returnBaseTileId!;
   if (state.owners[f.originTileId] === me) return f.originTileId;
   const p = state.players[me];
   const pos = f.posTileId;

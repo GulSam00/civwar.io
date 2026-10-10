@@ -281,7 +281,8 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   const ds = r.ev.find((e) => e.type === 'flag_disengage_started');
   check('flag_disengage_started untilTick = t+15', ds?.untilTick === ds?.tick + 15, JSON.stringify(ds));
   r = stepWith(sim, [[4, { type: 'cmd_set_posture', flagId: 4, posture: 0 }]]);
-  expect('이탈 대기 중 태세 전환', r.acks[0], 'DISENGAGING');
+  // v4.2 [A-62]: 회수로 이탈 대기 중인 깃발은 이미 RETURNING → RETURNING 이 DISENGAGING 보다 먼저 (재지정 이탈 대기는 여전히 DISENGAGING)
+  expect('이탈 대기(회수) 중 태세 전환', r.acks[0], 'RETURNING');
   let dg: any = null;
   let t17 = { a: 0, d: 0 };
   const hist: string[] = [];
@@ -315,7 +316,9 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   const { s, sim } = setup(4242, 4);
   const home = s.players[1].homeTileId;
   const X = findTile(s, (t) => s.owners[t] === NEUTRAL && isClaimable(s.map.terrain[t]) && s.graph.distance(home, t) === 2);
-  const f = makeFlag({ id: 1, ownerId: 1, slotIndex: 0, unit: 1, troopsMilli: 100_000, initialTroops: 0, posTileId: home, anchorTileId: X, originTileId: home });
+  // v4.2: 공격 = 깃발 옆 칸 → X 에 인접한 내 땅 칸에 세운다 (수도 칸이면 옆 칸이 전부 내 땅이라 IDLE)
+  const P = s.graph.neighbors(X).find((n) => s.owners[n] === 1)!;
+  const f = makeFlag({ id: 1, ownerId: 1, slotIndex: 0, unit: 1, troopsMilli: 100_000, initialTroops: 0, posTileId: P, anchorTileId: X, originTileId: home });
   f.state = 'ENGAGED';
   f.progressMilli = 100;
   f.targetTileId = X;
@@ -358,7 +361,8 @@ console.log('\n=== qa-scenarios ===');
   stepWith(sim, []);
   check('[전제] 귀환 중 깃발이 공격 깃발과 인접 → 교전(inCombat, RETURNING)', ret.inCombat && ret.state === 'RETURNING', `inCombat=${ret.inCombat} state=${ret.state}`);
   const r = stepWith(sim, [[1, { type: 'cmd_flag_recall', flagId: 1 }], [1, { type: 'cmd_flag_retarget', flagId: 1, anchorTileId: s.players[1].homeTileId }]]);
-  check('교전 중 귀환 깃발 재회수 → 이탈 대기 가능해야 (GDD 4.15 g)', reason(r.acks[0]) === 'ACCEPT' || reason(r.acks[1]) === 'ACCEPT', `recall ${reason(r.acks[0])}, retarget ${reason(r.acks[1])}`);
+  // v4.2 [A-62]: 귀환 취소 불가 — 명령은 전부 RETURNING 거절, 대신 서버가 자동 이탈 대기 (QA I-2 → 사용자 결정으로 대체)
+  check('v4.2 [A-62] 교전 중 귀환 깃발 명령 → RETURNING 거절, 자동 이탈 대기 중', reason(r.acks[0]) === 'RETURNING' && reason(r.acks[1]) === 'RETURNING' && ret.disengageUntilTick !== null, `recall ${reason(r.acks[0])}, retarget ${reason(r.acks[1])}, disengageUntilTick=${ret.disengageUntilTick}`);
   let moved = false;
   const p0 = ret.posTileId;
   for (let i = 0; i < 40; i++) { stepWith(sim, []); if (ret.posTileId !== p0) moved = true; }

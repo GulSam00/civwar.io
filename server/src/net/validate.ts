@@ -88,7 +88,9 @@ export function parseClientMessage(raw: string): ParseResult {
       return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId, anchorTileId: m.anchorTileId } };
     case 'cmd_flag_recall':
       if (!isU32(m.flagId)) return bad('flagId must be uint32');
-      return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId } };
+      // v4.2 [A-61]: baseTileId 는 추가만 (생략·null = 자동 귀환지)
+      if (m.baseTileId !== undefined && m.baseTileId !== null && !isU32(m.baseTileId)) return bad('baseTileId must be uint32|null');
+      return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId, baseTileId: (m.baseTileId as number | null | undefined) ?? null } };
     case 'cmd_set_posture':
       if (!isU32(m.flagId)) return bad('flagId must be uint32');
       if (!inRange(m.posture, 0, 1)) return bad('posture must be 0|1');

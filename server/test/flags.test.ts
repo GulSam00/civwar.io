@@ -263,10 +263,13 @@ describe('게이지', () => {
 });
 
 describe('v4.1 진척도 자동 감소 (4.7 e) · 정체 재정의 (4.7 f)', () => {
-  /** 감소 대상 공격 깃발: IDLE(밀지 않음), 진척 500, 타깃 X */
+  /**
+   * 감소 대상 공격 깃발: IDLE(밀지 않음), 진척 500, 타깃 X.
+   * v4.2 교체 사유: IDLE 공격 깃발은 옆 칸이 적·중립이면 그 자리에서 재점화(A-59)하므로, 옆 칸(반경 1)을 전부 내 땅으로 둔다.
+   */
   function decayScenario() {
     const { sim, s, c } = scenario();
-    setTileOwner(s, c, 1, false);
+    for (const t of s.graph.disk(c, 1)) setTileOwner(s, t, 1, false);
     const X = c + 1;
     const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'IDLE', idleSinceTick: 0, targetTileId: X, progressMilli: 500 });
     return { sim, s, c, X, f };
@@ -371,7 +374,8 @@ describe('v4.1 진척도 자동 감소 (4.7 e) · 정체 재정의 (4.7 f)', () 
 });
 
 describe('게이지 (계속)', () => {
-  it('발령 → 행군 → 교전 → 중립 점령 (실제 명령 경로), 회계 불변식 매 tick', () => {
+  // v4.2 교체 사유: 공격 깃발은 국경에 닿는 순간부터 옆 칸을 정지 점령(halted)한다 — 병력 100 기병은 앵커 전에 소진될 수 있어 flag_engaged 대신 halted 관측
+  it('발령 → 행군 → 정지 점령(halted) → 중립 점령 (실제 명령 경로), 회계 불변식 매 tick', () => {
     const sim = makeSim();
     const s = sim.state;
     const home = s.players[1].homeTileId;
@@ -385,32 +389,52 @@ describe('게이지 (계속)', () => {
     expect(anchor).toBeGreaterThanOrEqual(0);
     const tiles0 = s.players[1].tiles;
     sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: anchor, originBaseTileId: null });
-    const r = run(sim, 300);
+    let haltedSeen = false;
+    const r = run(sim, 300, () => {
+      if (s.flags.some((f) => f.id === 1 && f.halted && f.state === 'MARCHING')) haltedSeen = true;
+    });
     expect(r.personal[0]).toMatchObject({ type: 'cmd_ack', clientSeq: 1, accepted: true, flagId: 1, posture: POSTURE.ATTACK });
     const ts = r.all.map((m) => m.type);
     expect(ts).toContain('flag_issued');
-    expect(ts).toContain('flag_engaged');
+    expect(haltedSeen).toBe(true);
     expect(s.players[1].tiles).toBeGreaterThan(tiles0);
   });
 
-  it('공격 깃발은 앵커를 먹어도 방어로 바뀌지 않고 front 가 빌 때까지 계속 민다 (4.3a 재파생 폐지)', () => {
-    const { sim, s, c } = scenario();
+  // v4.2 교체 사유: 앵커 원(반경 6) 공격 폐기 [A-53]. "front 가 빌 때까지 원 안을 민다" → "노선 옆 칸(폭 3)을 먹으며 앵커까지 가고 옆 칸까지 먹고 IDLE"
+  it('직선 쟁기 폭 3: 경로 옆 칸 전부 점령 → 앵커 ENGAGED(옆 칸) → IDLE, 태세는 ATTACK 유지, 2분 뒤 자동 귀환(지정 기지 없음)', () => {
+    const { sim, s, c, W } = scenario();
     setTileOwner(s, c - 7, 1, false);
-    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1200, pos: c - 7, anchor: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'ENGAGED' });
-    const tiles0 = s.players[1].tiles;
-    let anchorTick = -1;
-    const r = run(sim, 400, () => {
-      if (anchorTick < 0 && s.owners[c] === 1) anchorTick = s.tick;
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1200, pos: c - 7, anchor: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    const before = new Set<number>();
+    for (let t = 0; t < s.owners.length; t++) if (s.owners[t] === 1) before.add(t);
+    let idleTick = -1;
+    const r = run(sim, 600, () => {
+      if (idleTick < 0 && f.state === 'IDLE') idleTick = s.tick;
     });
-    const captured = s.players[1].tiles - tiles0;
-    console.log(`[one-flag] sword 1200 neutral: captured ${captured} tiles, anchor at tick ${anchorTick}, end state ${s.flags.find((x) => x.id === f.id)?.state ?? 'gone'}`);
-    expect(anchorTick).toBeGreaterThan(0);
-    expect(r.all.some((m) => m.type === 'flag_posture_changed')).toBe(false);
+    expect(idleTick).toBeGreaterThan(0);
+    expect(f.posTileId).toBe(c);
     expect(f.posture).toBe(POSTURE.ATTACK);
-    expect(captured).toBeGreaterThan(30); // 앵커(7칸)를 훨씬 넘어 계속 점령
+    expect(r.all.some((m) => m.type === 'flag_posture_changed')).toBe(false);
+    const eng = r.all.find((m) => m.type === 'flag_engaged' && m.flagId === f.id);
+    expect(eng).toMatchObject({ posture: POSTURE.ATTACK, frontTileCount: 3 }); // 앵커 칸 옆: c+1, c±W (c-1 은 이미 내 땅)
+    expect(r.all.find((m) => m.type === 'flag_idle' && m.flagId === f.id)).toMatchObject({ reason: 'front_cleared' });
+    // 회랑 = 행 c-8..c+1 + 위·아래 행 c-7..c (폭 3). 그 밖은 새로 먹은 칸이 없다
+    const expected = new Set<number>();
+    for (let k = -8; k <= 1; k++) expected.add(c + k);
+    for (let k = -7; k <= 0; k++) {
+      expected.add(c + k - W);
+      expected.add(c + k + W);
+    }
+    for (const t of expected) expect(s.owners[t]).toBe(1);
+    for (let t = 0; t < s.owners.length; t++) if (s.owners[t] === 1 && !before.has(t)) expect(expected.has(t)).toBe(true);
+    // IDLE 2분(600 tick) → 자동 귀환, returnBaseTileId = null [A-59][A-61]
+    const r2 = run(sim, idleTick + 600 - s.tick + 1);
+    expect(r2.all.find((m) => m.type === 'flag_recalled' && m.flagId === f.id)).toBeTruthy();
+    expect(f.state).toBe('RETURNING');
+    expect(f.returnBaseTileId).toBeNull();
   });
 
-  it('주둔 유지비: 내 땅 ENGAGED 검 2개 → 그로스의 9%', () => {
+  it('유지비: 출전 검 2개 → 그로스의 9%', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 1, false);
     setTileOwner(s, c + 1, 1, false);
@@ -448,7 +472,13 @@ describe('기지 · 동맹', () => {
     sim.enqueue(2, 2, { type: 'cmd_ally_respond', clientSeq: 1, proposalId: 1, accept: true });
     r = run(sim, 1);
     expect(r.all.map((m) => m.type)).toEqual(expect.arrayContaining(['ally_formed', 'flag_idle']));
-    expect(f.state).toBe('IDLE');
+    // v4.2 교체 사유: IDLE(allied) 공격 깃발도 옆에 비동맹 칸(여기선 중립)이 있으면 같은 tick 4단계에서 재점화한다 [A-59].
+    // 동맹 칸(c)은 marchFront 에서 빠지므로 다시는 타깃이 되지 않는다
+    expect(r.all.find((m) => m.type === 'flag_idle' && m.flagId === f.id)).toMatchObject({ reason: 'allied' });
+    expect(f.targetTileId).not.toBe(c);
+    run(sim, 30);
+    expect(s.owners[c]).toBe(2);
+    expect(f.targetTileId).not.toBe(c);
     expect(s.alliances).toHaveLength(1);
     sim.enqueue(1, 1, { type: 'cmd_ally_break', clientSeq: 2, allyPlayerId: 2 });
     expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'MIN_DURATION' });
@@ -518,21 +548,26 @@ describe('결정론 (전투·게이지 포함)', () => {
 });
 
 describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
-  it('I-2: 교전 중 귀환(RETURNING) 깃발 재회수·재지정 수락 → 이탈 대기 시작, 패주 깃발은 여전히 ROUTED', () => {
+  // v4.2 교체 사유: QA I-2 수락 경로 폐기 [A-62] — 귀환 중엔 모든 명령 거절(전투 중이어도), 붙잡히면 서버가 자동 이탈 대기
+  it('v4.2 [A-62]: 교전 중 귀환 깃발 — 회수·재지정·태세 전부 RETURNING 거절, 자동 이탈 대기(auto), 패주 깃발은 ROUTED', () => {
     const sim = makeSim();
     const s = sim.state;
     const c = findOpenArea(s, 3);
     plainify(s, c, 3);
     const back = addFlag(s, { ownerId: 1, unit: 0, troops: 1000, pos: c, posture: POSTURE.DEFEND, state: 'RETURNING', returnTileId: s.players[1].homeTileId });
     addFlag(s, { ownerId: 2, unit: 2, troops: 1000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED', targetOwnerId: 1 });
-    sim.step();
+    const out1 = sim.step();
     expect(back.inCombat).toBe(true);
+    expect(out1.broadcast.find((m) => m.type === 'flag_disengage_started' && m.flagId === back.id)).toMatchObject({ auto: true, untilTick: 1 + 15 });
     sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 1, flagId: back.id });
+    sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 2, flagId: back.id, anchorTileId: c + 2 });
+    sim.enqueue(1, 1, { type: 'cmd_set_posture', clientSeq: 3, flagId: back.id, posture: POSTURE.ATTACK });
     const out = sim.step();
-    expect(out.personal.find((p) => p.msg.type === 'cmd_ack')?.msg).toMatchObject({ accepted: true });
-    expect(out.broadcast.some((m) => m.type === 'flag_disengage_started' && m.flagId === back.id)).toBe(true);
+    const acks = out.personal.filter((p) => p.msg.type === 'cmd_ack').map((p) => p.msg);
+    expect(acks).toEqual([1, 2, 3].map((q) => expect.objectContaining({ clientSeq: q, accepted: false, reason: 'RETURNING' })));
+    expect(out.broadcast.some((m) => m.type === 'flag_disengage_started')).toBe(false); // 이미 대기 중 — 재개시 없음
     back.routed = true;
-    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 2, flagId: back.id });
+    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 4, flagId: back.id });
     expect(sim.step().personal.find((p) => p.msg.type === 'cmd_ack')?.msg).toMatchObject({ accepted: false, reason: 'ROUTED' });
     expect(ledgerImbalance(s)).toBe(0);
   });
@@ -563,3 +598,229 @@ describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
     expect(sim.flushPending()).toEqual([]);
   });
 });
+
+describe('v4.2 공격 = 깃발 옆 칸 (4.4a) · 귀환 (4.4 v4.2)', () => {
+  it('IDLE 공격 깃발 재점화: 옆 칸이 다시 적이 되면 그 자리에서 ENGAGED (이동 없음) [A-59]', () => {
+    const { sim, s, c } = scenario();
+    for (const t of s.graph.disk(c, 1)) setTileOwner(s, t, 1, false);
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, anchor: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'IDLE', idleSinceTick: 0 });
+    run(sim, 3);
+    expect(f.state).toBe('IDLE');
+    setTileOwner(s, c + 1, 2, false);
+    const r = run(sim, 1);
+    expect(f.state).toBe('ENGAGED');
+    expect(f.posTileId).toBe(c);
+    expect(r.all.find((m) => m.type === 'flag_engaged' && m.flagId === f.id)).toMatchObject({ frontTileCount: 1 });
+    run(sim, 60);
+    expect(s.owners[c + 1]).toBe(1);
+    expect(f.state).toBe('IDLE');
+  });
+
+  it('대상: 동맹 칸 제외, 중립·제3자 포함 (A-51) — 동맹 땅 위에 서서 옆 칸을 먹는다', () => {
+    const { sim, s, c, W } = scenario();
+    s.alliances.push({ a: 1, b: 2, state: 'ACTIVE', sinceTick: 0, breakAtTick: null });
+    rebuildAllyMatrix(s);
+    setTileOwner(s, c, 2, false); // 깃발이 선 칸 = 동맹 땅
+    setTileOwner(s, c - 1, 2, false); // 동맹
+    setTileOwner(s, c + 1, 3, false); // 제3자
+    // c ± W 는 중립
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 800, pos: c, anchor: c + 5, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    run(sim, 1);
+    expect(f.halted).toBe(true);
+    run(sim, 80);
+    expect(s.owners[c - 1]).toBe(2);
+    expect(s.owners[c + 1]).toBe(1);
+    expect(s.owners[c - W]).toBe(1);
+    expect(s.owners[c + W]).toBe(1);
+  });
+
+  it('고립 영토 생성: 동맹 땅을 지나 먹은 칸은 내 본토와 연결되지 않아도 된다 [A-56]', () => {
+    const { sim, s, c } = scenario();
+    s.alliances.push({ a: 1, b: 2, state: 'ACTIVE', sinceTick: 0, breakAtTick: null });
+    rebuildAllyMatrix(s);
+    const home = c - 8;
+    setTileOwner(s, home, 1, false);
+    for (let k = -7; k <= 0; k++) for (const d of [-s.map.width, 0, s.map.width]) setTileOwner(s, c + k + d, 2, false); // 폭 3 동맹 회랑
+    addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 800, pos: home, anchor: c + 2, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    run(sim, 300);
+    expect(s.owners[c + 1]).toBe(1);
+    // home 과 연결된 내 땅 성분 밖에 내 땅이 있다
+    const comp = new Set<number>([home]);
+    const q = [home];
+    for (let i = 0; i < q.length; i++) for (const n of s.graph.neighbors(q[i])) if (s.owners[n] === 1 && !comp.has(n)) (comp.add(n), q.push(n));
+    expect(comp.has(c + 1)).toBe(false);
+  });
+
+  it('물 위 깃발: 해안 이웃을 정지 점령한다 (beach 폐기 → marchFront)', () => {
+    const { sim, s, c } = scenario();
+    s.map.terrain[c] = TERRAIN.SHALLOW;
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 600, pos: c, anchor: c + 4, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    s.owners[c - 1] = 1; // 출발 쪽 (기록 없이 — tiles 파생은 이 테스트에서 안 본다)
+    s.players[1].tiles += 1;
+    run(sim, 1);
+    expect(f.halted).toBe(true);
+    run(sim, 40);
+    expect(s.owners[c + 1]).toBe(1);
+  });
+
+  it('방어 태세 행군은 공격하지 않는다 / 걷는 중 예산 누적 0', () => {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c - 7, 1, false);
+    setTileOwner(s, c, 1, false);
+    const d = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 800, pos: c - 7, anchor: c, posture: POSTURE.DEFEND, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    const tiles0 = s.players[1].tiles;
+    run(sim, 20, () => {
+      expect(d.halted).toBe(false);
+      expect(d.spendBudgetMilli).toBe(0);
+    });
+    expect(s.players[1].tiles).toBe(tiles0);
+    // 내 땅만 걷는 공격 깃발: 옆 칸 없음 → 걷기만, 예산 누적 0
+    const { sim: sim2, s: s2, c: c2 } = scenario();
+    for (let k = -7; k <= 0; k++) for (const t of s2.graph.disk(c2 + k, 1)) setTileOwner(s2, t, 1, false);
+    const a = addFlag(s2, { ownerId: 1, unit: UNIT.SWORD, troops: 800, pos: c2 - 7, anchor: c2 - 1, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    run(sim2, 20, () => {
+      if (a.state === 'MARCHING') {
+        expect(a.halted).toBe(false);
+        expect(a.spendBudgetMilli).toBe(0);
+      }
+    });
+  });
+
+  it('breakaway 깃발은 한 칸 이동하기 전엔 정지 점령하지 않는다 [A-55]', () => {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c, 1, false);
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 800, pos: c, anchor: c + 6, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING', breakaway: true });
+    let movedTick = -1;
+    run(sim, 20, () => {
+      if (f.breakaway) {
+        expect(f.halted).toBe(false);
+        expect(f.spendBudgetMilli).toBe(0);
+      } else if (movedTick < 0) {
+        movedTick = s.tick;
+        expect(f.posTileId).toBe(c + 1);
+        expect(f.halted).toBe(true);
+      }
+    });
+    expect(movedTick).toBeGreaterThan(1);
+  });
+
+  it('전투 우선: 정지 점령 중 적 방어 깃발이 붙으면 halted 해제·예산 동결, 진척도 유지', () => {
+    const { sim, s, c, W } = scenario();
+    setTileOwner(s, c - 1, 1, false);
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1000, pos: c - 1, anchor: c + 6, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'MARCHING' });
+    run(sim, 2);
+    expect(f.halted).toBe(true);
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 1000, pos: c - 1 + W, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    run(sim, 1);
+    expect(f.inCombat).toBe(true);
+    expect(f.halted).toBe(false);
+    const bud = f.spendBudgetMilli;
+    const prog = f.progressMilli;
+    run(sim, 5);
+    expect(f.spendBudgetMilli).toBe(bud);
+    expect(f.progressMilli).toBe(prog);
+  });
+
+  it('유지비 = 출전 깃발 전부 [A-60 변경]: 태세·상태 무관, 패주만 제외, 상한 700 (순증 ≥ 0)', () => {
+    const { sim, s, c } = scenario();
+    for (const t of s.graph.disk(c, 2)) setTileOwner(s, t, 1, false);
+    // 검 방어 ENGAGED + 기병 공격 MARCHING(내 땅 안) + 창 IDLE = 1000 + 1600 + 600 = 3200 → 과금 2200 × 90 / 1000 = 198
+    addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: c - 1, anchor: c + 1, posture: POSTURE.ATTACK, state: 'MARCHING' });
+    addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: c + s.map.width, posture: POSTURE.ATTACK, state: 'IDLE', idleSinceTick: 0 });
+    const routed = addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 0, pos: c - s.map.width, posture: POSTURE.ATTACK, state: 'RETURNING', routed: true, returnTileId: c });
+    void routed;
+    run(sim, 1);
+    expect(s.players[1].upkeepPm).toBe(198);
+    // 상한: 기병 7개 = 11200 → 과금 10200 × 0.09 = 918 → 700
+    const { sim: sim2, s: s2, c: c2 } = scenario();
+    for (const t of s2.graph.disk(c2, 2)) setTileOwner(s2, t, 1, false);
+    for (let k = 0; k < 7; k++) addFlag(s2, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: c2, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    run(sim2, 1);
+    expect(s2.players[1].upkeepPm).toBe(700);
+  });
+
+  it('지정 기지 회수 [A-61]: NOT_BASE / NOT_OWNED_BASE 거절, 지정 기지로 이동해 귀환, 잃으면 폴백 후 복귀 안 함', () => {
+    const sim = makeSim();
+    const s = sim.state;
+    const p = s.players[1];
+    const myBase = p.baseTiles[0];
+    // 남의 기지 하나를 p1 에게 준다 (지정 대상), 다른 하나는 남의 것으로 둔다
+    const others = s.map.baseTiles.filter((b) => s.owners[b] !== 1);
+    const target = others.sort((a, b) => s.graph.distance(a, myBase) - s.graph.distance(b, myBase) || a - b)[0];
+    const foreign = others.find((b) => b !== target)!;
+    setTileOwner(s, target, 1, false);
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 300, pos: myBase, anchor: myBase, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
+    const nonBase = s.graph.neighbors(myBase).find((t) => !s.map.isBase[t])!;
+    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 1, flagId: f.id, baseTileId: nonBase });
+    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 2, flagId: f.id, baseTileId: foreign });
+    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 3, flagId: f.id, baseTileId: target });
+    const r = run(sim, 1);
+    expect(r.personal.map((m) => (m.type === 'cmd_ack' ? m.reason ?? 'OK' : ''))).toEqual(['NOT_BASE', 'NOT_OWNED_BASE', 'OK']);
+    expect(f.state).toBe('RETURNING');
+    expect(f.returnBaseTileId).toBe(target);
+    expect(f.returnTileId).toBe(target);
+    const rec = r.all.find((m) => m.type === 'flag_recalled');
+    expect(rec).toMatchObject({ flagId: f.id, returnTileId: target });
+    const d0 = r.all.find((m) => m.type === 'snapshot_delta');
+    expect(d0 && d0.type === 'snapshot_delta' && d0.flagReturnBase).toContainEqual([f.id, target]);
+    run(sim, 3);
+    expect(s.graph.distance(f.posTileId, target)).toBeLessThan(s.graph.distance(myBase, target));
+    // 지정 기지 상실 → 다음 tick 폴백(출발 기지), returnBaseTileId = null. 되찾아도 다시 가지 않는다
+    setTileOwner(s, target, 2, false);
+    run(sim, 1);
+    expect(f.returnBaseTileId).toBeNull();
+    expect(f.returnTileId).toBe(myBase);
+    setTileOwner(s, target, 1, false);
+    run(sim, 1);
+    expect(f.returnTileId).toBe(myBase);
+    const r2 = run(sim, 400);
+    expect(r2.all.find((m) => m.type === 'flag_ended' && m.flagId === f.id)).toMatchObject({ reason: 'recalled' });
+  });
+
+  it('귀환 ×1.5 (패주 포함) [A-63] · ZOC 무시 [A-62]', async () => {
+    const { speedMilliAt } = await import('../src/game/rules.js');
+    const { s, c } = scenario();
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.ATTACK, state: 'MARCHING' });
+    expect(speedMilliAt(s, f, c)).toBe(140); // FLAG_SPEED_BASE_MILLI 140 [A-64]
+    f.state = 'RETURNING';
+    expect(speedMilliAt(s, f, c)).toBe(210);
+    f.routed = true;
+    expect(speedMilliAt(s, f, c)).toBe(210);
+    // ZOC: 적 방어 깃발 옆 칸을 지나가는 귀환 깃발은 멈추지 않는다 (같은 배치의 행군 깃발은 대치)
+    for (const state of ['RETURNING', 'MARCHING'] as const) {
+      const sc = scenario();
+      const { sim: sm, s: ss, c: cc } = sc;
+      setTileOwner(ss, cc + 6, 1, false);
+      const g = addFlag(ss, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: cc, anchor: cc + 6, posture: POSTURE.DEFEND, state, returnTileId: cc + 6, originTileId: cc + 6 });
+      addFlag(ss, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: cc + 2, posture: POSTURE.DEFEND, state: 'ENGAGED' }); // 경로 위 (방어↔방어 = 무전투)
+      run(sm, 30);
+      if (state === 'RETURNING') expect(!ss.flags.includes(g) || g.posTileId > cc + 2).toBe(true);
+      else {
+        expect(g.posTileId).toBe(cc + 1);
+        expect(g.blocked).toBe(true);
+      }
+    }
+  });
+
+  it('귀환 깃발은 공격 쪽이 될 수 없다: 귀환(공격 태세) ↔ 적 방어 깃발 인접 = 전투 없음', () => {
+    const { sim, s, c } = scenario();
+    const back = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, posture: POSTURE.ATTACK, state: 'RETURNING', returnTileId: c + 8, originTileId: c + 8 });
+    setTileOwner(s, c + 8, 1, false);
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c + 1 + s.map.width, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    run(sim, 5, () => expect(back.inCombat).toBe(false));
+  });
+
+  it('자동 이탈 대기 → broke_away → 귀환 계속 (붙잡은 적 공격 깃발)', () => {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c + 8, 1, false);
+    const back = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1000, pos: c, posture: POSTURE.DEFEND, state: 'RETURNING', returnTileId: c + 8, originTileId: c + 8 });
+    addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: 300, pos: c - 1, anchor: c - 1, posture: POSTURE.ATTACK, state: 'IDLE', idleSinceTick: 0 });
+    const r = run(sim, 40);
+    expect(r.all.find((m) => m.type === 'flag_disengage_started')).toMatchObject({ flagId: back.id, auto: true });
+    expect(r.all.find((m) => m.type === 'flag_disengaged' && m.flagId === back.id)).toMatchObject({ reason: 'broke_away' });
+    expect(back.posTileId).not.toBe(c);
+    expect(back.state).toBe('RETURNING');
+  });
+});
+

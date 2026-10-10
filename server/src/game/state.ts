@@ -86,6 +86,10 @@ export interface Flag {
   breakaway: boolean;
   blocked: boolean;
   calmTicks: number; // 주둔 유지비 무위협 누진 (4.4d)
+  /** v4.2 (4.4a, A-54): MARCHING·ATTACK 깃발의 행군 중 정지 점령. 4단계가 매 tick 다시 쓴다 (4b 가 inCombat 이면 false) */
+  halted: boolean;
+  /** v4.2 [A-61]: cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 기존 recallTarget 순서 */
+  returnBaseTileId: number | null;
 }
 
 export interface BaseState {
@@ -386,6 +390,8 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     breakaway: false,
     blocked: false,
     calmTicks: 0,
+    halted: false,
+    returnBaseTileId: null,
     ...partial,
   };
 }

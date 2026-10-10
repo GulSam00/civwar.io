@@ -105,20 +105,22 @@ describe('m-4 engageEtaTick (서버 추가 필드) — 실제 교전 개시와�
     const est = new Map<number, { eta: number; engage: number }>();
     const errEta: number[] = [];
     const errEng: number[] = [];
+    const hit = (id: number, tick: number) => {
+      const e = est.get(id);
+      if (!e) return;
+      errEta.push(Math.abs(tick - e.eta));
+      errEng.push(Math.abs(tick - e.engage));
+      est.delete(id);
+    };
     while (!sim.finished && state.tick < 2500) {
       for (const m0 of sim.step().broadcast) {
         const m = m0 as ServerMessage;
         if (m.type === 'flag_issued') est.set(m.flagId, { eta: m.etaTick, engage: m.engageEtaTick });
         if (m.type === 'flag_retargeted' && !m.auto) est.set(m.flagId, { eta: m.etaTick, engage: m.engageEtaTick });
-        if (m.type === 'flag_engaged') {
-          const e = est.get(m.flagId);
-          if (e) {
-            errEta.push(Math.abs(m.tick - e.eta));
-            errEng.push(Math.abs(m.tick - e.engage));
-            est.delete(m.flagId);
-          }
-        }
+        if (m.type === 'flag_engaged') hit(m.flagId, m.tick);
       }
+      // v4.2: 가는 길의 정지 점령은 이벤트 없이 halted 로만 드러난다 — 첫 halted 또는 flag_engaged 중 먼저 (프로토콜 §18)
+      for (const f of state.flags) if (f.halted) hit(f.id, state.tick);
     }
     const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
     expect(errEng.length).toBeGreaterThan(100);
