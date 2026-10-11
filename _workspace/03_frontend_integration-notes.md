@@ -210,3 +210,12 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 - 맵: 팬·줌·미니맵·지형 툴팁·깃발 선택(정보만). 순위표는 종료 후 모든 사람(플레이어·탈락자·관전자)에게 따라가기 모드(`ui/panels.tsx Scoreboard`), 따라가는 플레이어의 HUD 를 보여 준다(`store.viewerId` — 종료 후에만 follow 우선).
 - 명령 차단: 기존 `canCommand()`(gameOver / room GAME_OVER) — 출전 메뉴·화살표·귀환·재지정·F/R·숫자키 모두 무동작, 하단 바·테크·외교·이모트 숨김. 테스트 `issueFlow.test.ts` 「게임 종료 후 둘러보기」.
 - 브라우저 확인은 진행 중 판에 `game_over` 를 store 에 주입해 했다(실제 종료 판 아님 — 서버가 계속 tick 을 보내 맵이 움직임). 스크린샷 `_workspace/screenshots/post-game-map-view.jpg`.
+
+## 12. 병종 아이콘 · 지형 툴팁 세로 배치 · 옵션 창 (2026-10-11)
+프로토콜 변경 없음(메시지 shape·필드 사용 동일). 클라이언트 표시 전용.
+
+- **병종 아이콘**: 그림 데이터는 `render/unitGlyphs.ts`(24×24 path, 창 = 대각 자루+촉, 검 = 세로 칼날+코등이, 기병 = 말굽) 한 곳. 캔버스는 `drawUnitGlyph()`(Path2D, 어두운 외곽선 위 흰색 — 플레이어 색·색각 보조 무관하게 모양으로 구분), DOM 은 `ui/unitIcons.tsx <UnitIcon>`(inline SVG, currentColor, role=img + aria-label/title = 한국어 이름, `withName` 이면 아이콘+이름). 적용: 깃발 마커(r ≥ 6 = LOD 포함, 크기 max(10, 1.5r); Path2D 없는 환경은 기존 글자 대체), 삼각 메뉴 버튼(title/aria-label = 병종·병력·단축키), 깃발 패널(아이콘+이름), 하단 바 "다음 깃발 유지비", 도움말(아이콘+이름). 이벤트 피드에는 병종 문구가 없어 변경 없음. README 는 Markdown 이라 글자 유지(아이콘 설명 추가).
+- **지형 툴팁**: `terrainInfo().rows`(field·label·value, 순서 지형→방어→이동 속도→점령 비용→골드→소유자→기지 체력) 추가, `visibleTipRows()` 로 옵션 필터. `.terrain-tip` = flex column, 한 줄에 한 항목(라벨 왼쪽 muted / 값 오른쪽 tabular). 기존 `mods` 는 테스트 호환으로 유지.
+- **옵션 창**(`ui/OptionsPanel.tsx`, 상태 `ui/options.ts`): HUD 톱니 버튼(좁은 화면 포함) / `O`. 색각 보조(`C` 유지), 깃발 이동 방향 화살표 모두/내 깃발만/숨김(`V` 순환, `RenderView.directions`), 지형 툴팁 켜기 + 항목 7개. localStorage `civwar.options.v1` JSON, 읽기·쓰기 try/catch → 실패 시 기본값/이번 세션만, 깨진 필드는 필드 단위로 기본값(`sanitizeOptions`). 이전 키 `civwar.colorblind`/`civwar.directions` 는 새 키가 없을 때 이전. Esc(컨트롤러 + 창 자체 리스너 — 체크박스 포커스 시) · 바깥 클릭으로 닫힘. HUD 의 C/V 버튼은 옵션 창으로 옮겨 제거.
+- 테스트 `client/test/options.test.ts`(10): 기본값·저장/복원·저장소 예외/깨진 JSON·필드 단위 sanitize·이전 키 이전·V 순환·툴팁 행 순서/필터/툴팁 끔·깊은 물·아이콘 3종 상이.
+- 브라우저(내장, 1280×800, 서버 8092 + Vite 5182): 삼각 메뉴 아이콘, 맵 깃발 3종, 작은 줌 + 색각 보조(3배 픽셀 확대 크롭), 툴팁 7행/골드 끔, 옵션 창 변경 → localStorage 저장 → 새로고침 후 복원, `O` 열기·Esc·바깥 클릭 닫기, 내 깃발만 = 봇 깃발 화살표 없음, 도움말·깃발 패널. 스크린샷 `_workspace/screenshots/unit-icons-*.{png,jpg}`, `terrain-tooltip-column.jpg`, `options-window.jpg`.

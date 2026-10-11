@@ -494,22 +494,35 @@ kbd {
   font-size: 12px;
   line-height: 1.45;
 }
-.terrain-tip .tt-head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
+.terrain-tip {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 150px;
 }
-.terrain-tip .tt-base {
-  color: var(--warn);
-  font-size: 11px;
-}
-.terrain-tip .tt-mods {
-  color: var(--muted);
-}
-.terrain-tip .tt-owner {
+.terrain-tip .tt-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  white-space: nowrap;
+}
+.terrain-tip .tt-terrain {
+  padding-bottom: 2px;
+  margin-bottom: 1px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.terrain-tip .tt-k {
+  color: var(--muted);
+}
+.terrain-tip .tt-v {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.terrain-tip .tt-baseHp .tt-v {
+  color: var(--warn);
 }
 /* 출전 삼각(라디얼) 메뉴 — 확정 지점 화면 좌표에 붙는다 (위치는 렌더 루프가 transform 으로) */
 .radial-anchor {
@@ -1164,4 +1177,149 @@ kbd {
 }
 .room-status.open {
   color: #7bd88f;
+}
+
+/* 병종 아이콘 (ui/unitIcons.tsx) */
+.unit-icon {
+  display: inline-block;
+  vertical-align: -0.2em;
+  flex: none;
+}
+.unit-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.upkeep-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+}
+.help .unit-tag {
+  vertical-align: -0.15em;
+}
+
+/* 옵션 창 (ui/OptionsPanel.tsx) */
+.gear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+}
+.options-overlay {
+  z-index: 20;
+}
+.options {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px 20px 14px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  font-size: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.options-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.opt-group {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.opt-group:first-of-type {
+  border-top: 0;
+}
+.opt-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.opt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.opt-row small {
+  margin-left: auto;
+}
+.opt-row kbd {
+  margin-left: auto;
+}
+.opt-row small + kbd {
+  margin-left: 0;
+}
+.opt-row input {
+  margin: 0;
+  accent-color: var(--primary);
+}
+.opt-seg {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.opt-seg-item {
+  flex: 1;
+  text-align: center;
+  padding: 6px 4px;
+  cursor: pointer;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.opt-seg-item + .opt-seg-item {
+  border-left: 1px solid var(--line);
+}
+.opt-seg-item.on {
+  background: var(--primary);
+}
+.opt-seg-item input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.opt-seg-item:focus-within {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+.opt-fields {
+  margin: 6px 0 0;
+  padding: 4px 0 0 24px;
+  border: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* 툴팁 표시 순서대로 위→아래, 왼쪽 열 먼저 */
+  grid-template-rows: repeat(4, auto);
+  grid-auto-flow: column;
+  column-gap: 12px;
+}
+.opt-fields legend {
+  padding: 0;
+  margin-left: -24px;
+  margin-bottom: 2px;
+}
+.opt-fields:disabled {
+  opacity: 0.45;
+}
+.opt-fields:disabled .opt-row {
+  cursor: default;
+}
+.opt-foot {
+  margin: 4px 0 0;
 }

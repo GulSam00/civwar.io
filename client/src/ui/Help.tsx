@@ -18,6 +18,7 @@ import {
   THRESHOLD_START_PCT,
   TICK_MS,
 } from '@civwar/shared';
+import { UnitIcon } from './unitIcons.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
@@ -60,14 +61,14 @@ export function Help({ onClose }: { onClose: () => void }) {
           </p>
           <ul>
             <li>
-              맵의 지점을 클릭하면 가장 가까운 내 기지에서 그 지점까지 <b>진격 경로</b>(점선 화살표)가 나오고, 지점 둘레에 창병·검병·기병 <b>삼각 메뉴</b>가 뜹니다. 하나를 고르면(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>도 가능) 출전합니다. 내 기지를 먼저 클릭하면 그 기지에서 출전합니다(깃발이 겹쳐 있으면 <kbd>Alt</kbd>+클릭). 바깥 클릭·우클릭·<kbd>Esc</kbd> = 취소. 최소 {FLAG_MIN_TROOPS}명, 내 땅에서 {FRONT_MAX_RANGE}칸 안.
+              맵의 지점을 클릭하면 가장 가까운 내 기지에서 그 지점까지 <b>진격 경로</b>(점선 화살표)가 나오고, 지점 둘레에 <UnitIcon unit={0} withName />·<UnitIcon unit={1} withName />·<UnitIcon unit={2} withName /> <b>삼각 메뉴</b>가 뜹니다(위 = 창, 왼쪽 아래 = 검, 오른쪽 아래 = 기병). 하나를 고르면(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>도 가능) 출전합니다. 내 기지를 먼저 클릭하면 그 기지에서 출전합니다(깃발이 겹쳐 있으면 <kbd>Alt</kbd>+클릭). 바깥 클릭·우클릭·<kbd>Esc</kbd> = 취소. 최소 {FLAG_MIN_TROOPS}명, 내 땅에서 {FRONT_MAX_RANGE}칸 안.
             </li>
             <li>
               <kbd>Q</kbd>/<kbd>E</kbd>(하단 바)로 보낼 병력 비율을 바꿉니다. 공격 깃발은 가는 길 옆의 적·중립 칸을 모두 먹으며 나아갑니다(붉은 음영이 미리 보여 줍니다).
             </li>
             <li>깃발을 클릭해 선택한 뒤 우클릭하면 목적지를 바꾸고(재지정), <kbd>R</kbd>로 회수합니다. 깃발을 선택한 채 내 기지를 클릭하면 그 기지로 귀환합니다(귀환은 취소할 수 없음). 회수하면 남은 병력의 {FLAG_RECALL_REFUND_PERMILLE / 10}%가 돌아옵니다.</li>
             <li>
-              <b>창병</b>은 느리지만 방어에 강하고, <b>기병</b>은 빠르고 공격에 강하지만 방어에 약합니다. <b>검병</b>은 그 사이입니다.
+              <b><UnitIcon unit={0} withName /></b>(창)은 느리지만 방어에 강하고, <b><UnitIcon unit={2} withName /></b>(말굽)은 빠르고 공격에 강하지만 방어에 약합니다. <b><UnitIcon unit={1} withName /></b>(검)은 그 사이입니다. 맵의 깃발 표식 가운데에도 같은 아이콘이 그려집니다.
             </li>
           </ul>
         </section>
@@ -154,10 +155,18 @@ export function Help({ onClose }: { onClose: () => void }) {
         </section>
 
         <section>
+          <h3>옵션</h3>
+          <p>
+            HUD의 톱니 버튼이나 <kbd>O</kbd>로 옵션 창을 엽니다. 색각 보조(영토 무늬·플레이어 번호), 깃발 이동 방향 화살표(모두 / 내 깃발만 / 숨김), 지형 툴팁과 그
+            항목(지형 유형·방어 배율·이동 속도·점령 비용·골드·소유자·기지 체력)을 고를 수 있고, 설정은 이 브라우저에 저장됩니다. <kbd>Esc</kbd> 또는 바깥 클릭으로 닫습니다.
+          </p>
+        </section>
+
+        <section>
           <h3>조작 요약</h3>
           <p className="keys">
             지점(또는 기지 → 지점) 클릭 → 삼각 메뉴 병종(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>) 출전 · 깃발 선택 + 내 기지 클릭 귀환 · <kbd>Q</kbd>/<kbd>E</kbd> 비율 · 깃발 클릭 선택 · 우클릭 재지정 · <kbd>F</kbd> 태세 ·{' '}
-            <kbd>R</kbd> 회수 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크 · <kbd>P</kbd> 외교 · <kbd>C</kbd> 색각 보조 · <kbd>V</kbd> 이동 방향 화살표 · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
+            <kbd>R</kbd> 회수 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크 · <kbd>P</kbd> 외교 · <kbd>O</kbd> 옵션(톱니 버튼) · <kbd>C</kbd> 색각 보조 · <kbd>V</kbd> 이동 방향 화살표(모두 → 내 깃발만 → 숨김) · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
           </p>
         </section>
       </article>

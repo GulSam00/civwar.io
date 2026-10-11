@@ -16,6 +16,7 @@ import { ownerPattern } from './patterns.js';
 import { isDecayTick } from './progressRule.js';
 import type { CursorPreview } from '../input/preview.js';
 import type { RoutePreview } from '../input/route.js';
+import { drawUnitGlyph } from './unitGlyphs.js';
 import { UNIT_SHORT } from '../ui/text.js';
 
 export interface RenderView {
@@ -31,8 +32,8 @@ export interface RenderView {
   routeKind: 'attack' | 'defend' | 'blocked' | null;
   /** 색각 보조: 영토 패턴 + 깃발 플레이어 번호 */
   colorblind: boolean;
-  /** 모든 깃발의 이동 방향 화살표 (V 로 끄고 켬) */
-  showDirections: boolean;
+  /** 깃발 이동 방향 화살표: 모두 / 내 깃발만 / 숨김 (옵션 창, V 로 순환) */
+  directions: 'all' | 'mine' | 'off';
   /** 최근 이모트 (수도 위 말풍선) */
   emotes: readonly { playerId: number; code: number; at: number }[];
   emoteText(code: number): string;
@@ -548,7 +549,7 @@ export class GameRenderer {
       ctx.stroke();
       ctx.restore();
     }
-    if (view.showDirections) this.drawDirections(ctx, model, topo, view, lod, baseR);
+    if (view.directions !== 'off') this.drawDirections(ctx, model, topo, view, lod, baseR);
     const order = [...model.flags.values()].sort((a, b) => rank(a, view) - rank(b, view) || a.id - b.id);
     for (const f of order) {
       const w = this.flagWorld.get(f.id)!;
@@ -570,7 +571,9 @@ export class GameRenderer {
   private drawDirections(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView, lod: boolean, r: number): void {
     const cam = this.camera;
     ctx.save();
+    const mineOnly = view.directions === 'mine';
     for (const f of model.flags.values()) {
+      if (mineOnly && f.ownerId !== view.me) continue;
       let dest: number | null = null;
       if (f.state === 'MARCHING') dest = f.anchorTileId;
       else if (f.state === 'RETURNING') dest = model.flagReturn.get(f.id) ?? null;
@@ -665,7 +668,10 @@ export class GameRenderer {
     ctx.strokeStyle = '#111';
     ctx.stroke();
 
-    if (r >= 8) this.label(ctx, UNIT_SHORT[f.unit] ?? '?', x, y + 1, Math.round(r * 1.05), '#fff', true);
+    // 병종 아이콘 (창 / 검 / 말굽) — 모양으로 구분되므로 색각 보조 모드에서도 같다. 작은 줌(LOD r=6)에서도 그린다.
+    if (r >= 6 && !drawUnitGlyph(ctx, f.unit, x, y, Math.max(10, Math.round(r * 1.5)))) {
+      this.label(ctx, UNIT_SHORT[f.unit] ?? '?', x, y + 1, Math.round(r * 1.05), '#fff', true);
+    }
     // 색각 보조: 플레이어 번호 배지
     if (view.colorblind && r >= 7) {
       const bx = x - r - 2;

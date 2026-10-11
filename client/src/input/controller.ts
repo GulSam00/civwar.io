@@ -14,7 +14,7 @@
  *   깃발 선택 + 우클릭 = 재지정 · 다른 곳 클릭 = 선택 해제
  *   F          선택 깃발 태세 전환      R  선택 깃발 회수(자동 귀환지)      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
- *   T 테크 · P 외교 · C 색각 보조 · V 이동 방향 화살표 · ? 도움말 (React 패널 — Interaction 플래그)
+ *   T 테크 · P 외교 · O 옵션 창 · C 색각 보조 · V 이동 방향 화살표(모두→내 것만→숨김) · ? 도움말 (React 패널 — Interaction 플래그)
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
  *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
@@ -24,6 +24,7 @@ import type { GameRenderer } from '../render/renderer.js';
 import type { ClientStore } from '../state/store.js';
 import { troopsForRatio } from './preview.js';
 import { RouteCache, computeRoute, nearestOwnBase, type RoutePreview } from './route.js';
+import { defaultOptions, nextDirectionMode, saveOptions, type GameOptions } from '../ui/options.js';
 
 export type IssuePosture = 'attack' | 'defend' | 'blocked';
 
@@ -47,9 +48,13 @@ export class Interaction {
   /** 열린 패널 */
   panel: 'tech' | 'ally' | null = null;
   helpOpen = false;
-  colorblind = false;
-  /** 모든 깃발 이동 방향 화살표 (V) */
-  showDirections = true;
+  /** 옵션 창 (톱니 버튼 / O) */
+  optionsOpen = false;
+  /** 옵션 창 설정 — 색각 보조, 이동 방향 화살표, 지형 툴팁 (ui/options.ts, localStorage) */
+  options: GameOptions = defaultOptions();
+  get colorblind(): boolean {
+    return this.options.colorblind;
+  }
   /** 나가기 확인 대화상자 */
   leaveConfirm = false;
   /** React 패널이 다시 그릴지 판단 */
@@ -462,23 +467,24 @@ export class GameInputController {
     this.ix.bump();
   }
 
+  /** V: 이동 방향 화살표 모두 → 내 깃발만 → 숨기기 */
   toggleDirections(): void {
-    this.ix.showDirections = !this.ix.showDirections;
-    try {
-      localStorage.setItem('civwar.directions', this.ix.showDirections ? '1' : '0');
-    } catch {
-      /* 무시 */
-    }
-    this.ix.bump();
+    this.setOptions({ directions: nextDirectionMode(this.ix.options.directions) });
   }
 
   setColorblind(on: boolean): void {
-    this.ix.colorblind = on;
-    try {
-      localStorage.setItem('civwar.colorblind', on ? '1' : '0');
-    } catch {
-      /* 저장 불가 — 이번 세션만 */
-    }
+    this.setOptions({ colorblind: on });
+  }
+
+  /** 옵션 일부 변경 + 저장 (저장 실패 = 이번 세션만) */
+  setOptions(patch: Partial<GameOptions>): void {
+    this.ix.options = { ...this.ix.options, ...patch, tooltipFields: { ...this.ix.options.tooltipFields, ...patch.tooltipFields } };
+    saveOptions(this.ix.options);
+    this.ix.bump();
+  }
+
+  toggleOptions(open = !this.ix.optionsOpen): void {
+    this.ix.optionsOpen = open;
     this.ix.bump();
   }
 
@@ -569,14 +575,17 @@ export class GameInputController {
       case 'c':
         this.setColorblind(!this.ix.colorblind);
         return;
+      case 'o':
+        return this.toggleOptions();
       case '?':
       case '/':
         this.ix.helpOpen = !this.ix.helpOpen;
         this.ix.bump();
         return;
       case 'escape':
-        if (this.ix.helpOpen || this.ix.panel || this.ix.leaveConfirm) {
+        if (this.ix.helpOpen || this.ix.optionsOpen || this.ix.panel || this.ix.leaveConfirm) {
           this.ix.helpOpen = false;
+          this.ix.optionsOpen = false;
           this.ix.panel = null;
           this.ix.leaveConfirm = false;
         } else if (this.ix.issue) {

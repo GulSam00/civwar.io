@@ -130,10 +130,10 @@ export const BASE_RELAX_MIN_CAPITAL_DIST = 9;
 export const BASE_RELAX_MIN_WATER_DIST = 1;
 
 // ══ 기지 체력 ══
-export const BASE_HP_MAX_MILLI = 15000;
-export const BASE_HP_INIT_MILLI = 15000;
-export const BASE_HP_CAPTURE_MILLI = 7500;
-export const BASE_HP_REGEN_MILLI = 23; // [A-39]
+export const BASE_HP_MAX_MILLI = 22500; // 사용자 2026-10-11: 기지 체력 ×1.5 (15000 → 22500)
+export const BASE_HP_INIT_MILLI = 22500;
+export const BASE_HP_CAPTURE_MILLI = 11250;
+export const BASE_HP_REGEN_MILLI = 35; // [A-39] ×1.5 (23 → 35, 완전 회복 시간 유지 — 에이전트 선택)
 export const BASE_REGEN_DELAY_TICK = 50;
 export const BASE_CAPTURE_LOCK_TICK = 25;
 

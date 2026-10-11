@@ -8,7 +8,10 @@ import { clampCamera } from '../render/camera.js';
 import { GameInputController, Interaction } from '../input/controller.js';
 import { RangeCache, computePreview, type CursorPreview } from '../input/preview.js';
 import type { RoutePreview } from '../input/route.js';
-import { terrainInfo } from './terrainInfo.js';
+import { terrainInfo, visibleTipRows } from './terrainInfo.js';
+import { TOOLTIP_FIELDS, loadOptions } from './options.js';
+import { OptionsLayer, GearIcon } from './OptionsPanel.js';
+import { UnitIcon } from './unitIcons.js';
 import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
@@ -65,12 +68,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
     const canvas = canvasRef.current!;
     const renderer = new GameRenderer(canvas);
     const ix = new Interaction();
-    try {
-      ix.colorblind = localStorage.getItem('civwar.colorblind') === '1';
-      ix.showDirections = localStorage.getItem('civwar.directions') !== '0';
-    } catch {
-      /* 무시 */
-    }
+    ix.options = loadOptions(); // 실패하면 기본값 (ui/options.ts)
     const controller = new GameInputController(canvas, renderer, store, ix);
     controller.attach();
     setCtl(controller);
@@ -123,7 +121,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
           route,
           routeKind,
           colorblind: ix.colorblind,
-          showDirections: ix.showDirections,
+          directions: ix.options.directions,
           emotes: store.emotes,
           emoteText: (c) => EMOTE_TEXT[c] ?? `#${c}`,
           nicknameOf: (id) => store.nicknameOf(id),
@@ -174,6 +172,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       {ctl && !narrow && <DiplomacyPanel store={store} ctl={ctl} />}
       {ctl && !narrow && <IncomingProposals store={store} ctl={ctl} />}
       {ctl && <HelpLayer ctl={ctl} />}
+      {ctl && <OptionsLayer ctl={ctl} />}
       {store.game && (store.game.gameOver || store.room?.phase === 'GAME_OVER') && <GameOverOverlay store={store} game={store.game} />}
       {ctl && <LeaveDialog store={store} ctl={ctl} />}
       {store.reconnecting && <div className="banner">연결이 끊겼습니다 — 다시 연결하는 중…</div>}
@@ -204,43 +203,48 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
     if (el.style.display !== 'none') el.style.display = 'none';
     el.dataset.key = '';
   };
-  if (!game?.ready || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
+  if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
   const viewer = store.viewerId;
   const tier = viewer !== null ? (game.players.get(viewer)?.tech[TECH_AXIS.MOBILITY] ?? 0) : 0;
   const t = ix.hoverTile;
   const b = game.bases.get(t);
-  const key = `${t}:${game.owners[t]}:${b ? Math.round(b.hpPct) : ''}:${tier}`;
+  const o = ix.options;
+  const fieldsKey = TOOLTIP_FIELDS.map((f) => (o.tooltipFields[f] ? 1 : 0)).join('');
+  const key = `${t}:${game.owners[t]}:${b ? Math.round(b.hpPct) : ''}:${tier}:${fieldsKey}`;
   if (el.dataset.key !== key) {
     const info = terrainInfo(game, t, store.myPlayerId, tier, (id) => store.nicknameOf(id));
-    if (!info) return hide();
+    const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields) : [];
+    if (!info || !rows.length) return hide();
     el.dataset.key = key;
-    el.replaceChildren();
-    const head = document.createElement('div');
-    head.className = 'tt-head';
-    const name = document.createElement('b');
-    name.textContent = info.terrain;
-    head.append(name);
-    if (info.base) {
-      const base = document.createElement('span');
-      base.className = 'tt-base';
-      base.textContent = info.base;
-      head.append(base);
-    }
-    const mods = document.createElement('div');
-    mods.className = 'tt-mods';
-    mods.textContent = info.mods.join(' · ');
-    const owner = document.createElement('div');
-    owner.className = 'tt-owner';
-    if (info.ownerId) {
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      dot.style.background = playerColor(info.ownerId);
-      owner.append(dot);
-    }
-    owner.append(document.createTextNode(info.ownerName));
-    el.append(head, mods, owner);
+    // 한 줄에 한 항목 (flex column): 지형 → 보정들 → 소유자 → 기지 체력
+    el.replaceChildren(
+      ...rows.map((r) => {
+        const row = document.createElement('div');
+        row.className = `tt-row tt-${r.field}`;
+        if (r.field === 'terrain') {
+          const name = document.createElement('b');
+          name.textContent = r.value;
+          row.append(name);
+          return row;
+        }
+        const k = document.createElement('span');
+        k.className = 'tt-k';
+        k.textContent = r.label;
+        const v = document.createElement('span');
+        v.className = 'tt-v';
+        if (r.field === 'owner' && info.ownerId) {
+          const dot = document.createElement('span');
+          dot.className = 'dot';
+          dot.style.background = playerColor(info.ownerId);
+          v.append(dot);
+        }
+        v.append(document.createTextNode(r.value));
+        row.append(k, v);
+        return row;
+      }),
+    );
   }
-  el.style.display = 'block';
+  el.style.display = 'flex'; // .terrain-tip = flex column (한 줄에 한 항목)
   const parent = el.parentElement;
   const w = el.offsetWidth;
   const h = el.offsetHeight;
@@ -330,9 +334,16 @@ function IssueRadial({ store, ctl }: { store: ClientStore; ctl: GameInputControl
         <small>{routeText(route, is.posture).replace(/^ · /, '') || ' '}</small>
       </div>
       {([0, 1, 2] as Unit[]).map((u) => (
-        <button key={u} role="menuitem" className={`radial-btn radial-u${u}`} onClick={() => ctl.chooseUnit(u)} title={`단축키 ${u + 1}`}>
+        <button
+          key={u}
+          role="menuitem"
+          className={`radial-btn radial-u${u}`}
+          onClick={() => ctl.chooseUnit(u)}
+          title={`${UNIT_NAME[u]} · 단축키 ${u + 1}`}
+          aria-label={`${UNIT_NAME[u]} ${ctl.troopsToSend(u)}명 · 단축키 ${u + 1}`}
+        >
           <kbd>{u + 1}</kbd>
-          <span>{UNIT_NAME[u]}</span>
+          <UnitIcon unit={u} size={22} />
           <small>{ctl.troopsToSend(u)}</small>
         </button>
       ))}
@@ -386,8 +397,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
               <HudBtn on={ctl.ix.panel === 'ally'} k="P" label="외교" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'ally' ? null : 'ally'), ctl.ix.bump())} />
             </>
           )}
-          <HudBtn on={ctl.ix.colorblind} k="C" label="색각 보조" onClick={() => ctl.setColorblind(!ctl.ix.colorblind)} />
-          <HudBtn on={ctl.ix.showDirections} k="V" label="이동 방향" onClick={() => ctl.toggleDirections()} />
+          <OptionsBtn ctl={ctl} />
           <HudBtn on={ctl.ix.helpOpen} k="?" label="도움말" onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} />
           {!spectating && !over && <EmoteMenu store={store} />}
           <button className="hud-btn leave-btn" onClick={() => requestLeave(store, ctl)}>
@@ -397,6 +407,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       )}
       {narrow && (
         <span className="hud-buttons">
+          <OptionsBtn ctl={ctl} />
           <button className="btn btn-sm" onClick={() => ((ctl.ix.helpOpen = true), ctl.ix.bump())}>
             ?
           </button>
@@ -481,6 +492,15 @@ function EmoteMenu({ store }: { store: ClientStore }) {
   );
 }
 
+/** 옵션 창 톱니 버튼 (O) */
+function OptionsBtn({ ctl }: { ctl: GameInputController }) {
+  return (
+    <button className={`hud-btn gear-btn ${ctl.ix.optionsOpen ? 'on' : ''}`} onClick={() => ctl.toggleOptions()} title="옵션 (O)" aria-label="옵션 (O)" aria-haspopup="dialog" aria-expanded={ctl.ix.optionsOpen}>
+      <GearIcon size={16} />
+    </button>
+  );
+}
+
 function HudBtn({ on, k, label, onClick }: { on: boolean; k: string; label: string; onClick: () => void }) {
   return (
     <button className={`hud-btn ${on ? 'on' : ''}`} onClick={onClick}>
@@ -530,7 +550,13 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
         </span>
         {showExtra && (
           <span className="muted small">
-            다음 깃발 유지비 {extra.map((e, u) => `${UNIT_NAME[u]} −${((inc.gross * e!) / 1000).toFixed(1)}`).join(' · ')}/초
+            다음 깃발 유지비{' '}
+            {extra.map((e, u) => (
+              <span key={u} className="upkeep-unit">
+                <UnitIcon unit={u as Unit} size={13} /> −{((inc.gross * e!) / 1000).toFixed(1)}
+              </span>
+            ))}
+            /초
           </span>
         )}
       </div>
@@ -578,7 +604,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
       </div>
       <div className="flag-panel-body">
         <div>
-          {UNIT_NAME[f.unit]} <b>{f.troops}</b>
+          <UnitIcon unit={f.unit as Unit} size={18} withName /> <b>{f.troops}</b>
         </div>
         <div>
           태세 <b className={f.posture === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[f.posture]}</b>
