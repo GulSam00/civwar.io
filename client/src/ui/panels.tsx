@@ -1,22 +1,13 @@
 /**
- * 인게임 패널 — 테크 · 외교(동맹) · 순위표(관전 따라가기) · 이벤트 피드.
+ * 인게임 패널 — 외교(동맹) · 순위표(관전 따라가기) · 이벤트 피드. (테크 창은 TechWindow.tsx)
  * 모두 store.game 을 주기적으로 읽어 그린다(usePolled). 명령은 store 메서드 → cmd_* → cmd_ack 로만 결과 확인.
  */
-import {
-  ALLIANCE_CUTOFF_TICK,
-  ALLIANCE_MIN_DURATION,
-  MAX_ALLIES_PER_PLAYER,
-  TECH_BRANCH_COUNT,
-  TECH_BRANCH_NAME,
-  techOwned,
-  techPrereqMet,
-} from '@civwar/shared';
+import { ALLIANCE_CUTOFF_TICK, ALLIANCE_MIN_DURATION, MAX_ALLIES_PER_PLAYER } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import type { GameInputController } from '../input/controller.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
-import { techCost, techNodes } from './techInfo.js';
 import { fmtClock } from './text.js';
 
 function constOf<T>(g: GameModel, name: string, fallback: T): T {
@@ -24,69 +15,6 @@ function constOf<T>(g: GameModel, name: string, fallback: T): T {
   return (v === undefined ? fallback : v) as T;
 }
 const ticksToClock = (g: GameModel, ticks: number) => fmtClock(Math.max(0, ticks) * g.config.tickMs);
-
-// ───────────────────────── 테크 ─────────────────────────
-
-export function TechPanel({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
-  usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 150);
-  const g = store.game;
-  const me = store.myPlayerId;
-  if (!g || ctl.ix.panel !== 'tech') return null;
-  const p = me !== null ? g.players.get(me) : undefined;
-  const viewer = p ?? (store.viewerId !== null ? g.players.get(store.viewerId) : undefined);
-  const canBuy = ctl.canCommand();
-  const consts = g.config.constants;
-  return (
-    <div className="side-panel tech-panel">
-      <div className="side-head">
-        <b>테크</b>
-        {viewer && <span className="muted"> 골드 {viewer.gold.toLocaleString()}</span>}
-        <button className="btn btn-x" onClick={() => ((ctl.ix.panel = null), ctl.ix.bump())} aria-label="닫기">
-          ×
-        </button>
-      </div>
-      {!viewer && <p className="muted">플레이어를 따라가면 그 플레이어의 테크가 보입니다.</p>}
-      {viewer && (
-        // v4.3 임시 목록 (백엔드 전환 때 빌드 유지용) — 갈래 열 × 티어 격자·상세 패널은 프론트 작업에서 교체
-        <div className="tech-grid">
-          {Array.from({ length: TECH_BRANCH_COUNT }, (_, branch) => (
-            <div key={branch} className="tech-col">
-              <div className="tech-axis">
-                <b>{TECH_BRANCH_NAME[branch]}</b>
-              </div>
-              {techNodes(consts)
-                .filter((n) => n.branch === branch)
-                .map((n) => {
-                  const owned = techOwned(viewer.techMask, n.id);
-                  const next = !owned && techPrereqMet(viewer.techMask, n.id, techNodes(consts));
-                  const cost = techCost(n.tier, viewer.techCount, consts);
-                  const afford = viewer.gold >= cost;
-                  const cls = owned ? 'owned' : next ? (afford ? 'next afford' : 'next') : 'locked';
-                  return (
-                    <button
-                      key={n.id}
-                      className={`tech-node ${cls}`}
-                      disabled={!canBuy || !next || !afford || !p}
-                      onClick={() => store.buyTech(n.id)}
-                      title={owned ? '구매함' : next ? (afford ? '클릭해 구매' : '골드 부족') : '선행 노드를 먼저 사야 합니다'}
-                    >
-                      <span className="tech-tier">
-                        T{n.tier} {n.name} {owned ? '✓' : next ? `${cost.toLocaleString()} 골드` : ''}
-                      </span>
-                      <ul>
-                        <li>{n.desc}</li>
-                      </ul>
-                    </button>
-                  );
-                })}
-            </div>
-          ))}
-        </div>
-      )}
-      <p className="muted small">가격은 살 때마다 6%씩 오릅니다 (갈래 무관). 효과는 즉시, 되돌릴 수 없음.</p>
-    </div>
-  );
-}
 
 // ───────────────────────── 외교 ─────────────────────────
 

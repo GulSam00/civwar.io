@@ -931,56 +931,6 @@ kbd {
   gap: 6px;
   margin-bottom: 8px;
 }
-.tech-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-.tech-axis {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 4px;
-  min-height: 44px;
-}
-.tech-node {
-  width: 100%;
-  text-align: left;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  border-radius: var(--radius);
-  padding: 6px;
-  margin-bottom: 6px;
-  font-size: 11px;
-  cursor: pointer;
-}
-.tech-node ul {
-  margin: 4px 0 0;
-  padding-left: 14px;
-  color: var(--muted);
-}
-.tech-tier {
-  font-weight: 700;
-  font-size: 12px;
-}
-.tech-node.owned {
-  border-color: #3f8f55;
-  background: #1e3527;
-}
-.tech-node.owned ul {
-  color: #b9dcc2;
-}
-.tech-node.next.afford {
-  border-color: var(--primary-hi);
-}
-.tech-node.next:not(.afford) .tech-tier {
-  color: var(--danger);
-}
-.tech-node.locked {
-  opacity: 0.5;
-}
-.tech-node:disabled {
-  cursor: default;
-}
 .ally-timers {
   margin-bottom: 8px;
 }
@@ -1322,4 +1272,482 @@ kbd {
 }
 .opt-foot {
   margin: 4px 0 0;
+}
+
+/* ══════════ 테크 창 v4.3 (01b 5.2 안 A 격자 / 5.3 안 B 탭 — TechWindow.tsx) ══════════ */
+.tech-window {
+  position: absolute;
+  /* 가운데 정렬 + 내용 폭 (left:50% 방식은 남은 폭 절반으로 줄어 상세 패널이 아래로 밀린다) */
+  left: 8px;
+  right: 8px;
+  margin: 0 auto;
+  width: fit-content;
+  bottom: 96px;
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 170px);
+  overflow: auto;
+  background: rgba(16, 23, 32, 0.95);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px 8px;
+  z-index: 4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.tw-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.tw-head > b {
+  font-size: 15px;
+}
+.tw-head .btn-x {
+  margin-left: auto;
+}
+.tw-who {
+  font-size: 12px;
+  color: var(--warn);
+}
+.tw-gold {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.tw-body {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+@media (max-width: 1240px) {
+  .tw-body {
+    flex-wrap: wrap;
+  }
+}
+.tw-grid-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.tw-grid {
+  position: relative;
+  flex: none;
+}
+.tw-col-head {
+  position: absolute;
+  top: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.tw-row-head {
+  position: absolute;
+  left: 0;
+  width: 18px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  font-family: Georgia, serif;
+}
+.tw-divider {
+  position: absolute;
+  width: 0;
+  border-left: 1px dashed var(--line);
+}
+.tw-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+/* 노드 — 상태별 테두리 모양 + 기호 (색만으로 구분하지 않는다) */
+.tnode {
+  --bc: #9aa;
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  background: #18222d;
+  color: var(--text);
+  border: 2px solid var(--bc);
+  transition: box-shadow 0.15s;
+}
+.tnode:hover,
+.tnode:focus-visible {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+  outline: none;
+}
+.tnode.sel {
+  box-shadow: 0 0 0 3px #fff;
+}
+/* 잠김: 회색 점선, 아이콘 40% */
+.tnode.s-locked {
+  border: 2px dashed #6b7a8a;
+  background: #141b23;
+}
+.tnode.s-locked > .tech-icon {
+  opacity: 0.4;
+}
+/* 골드 부족: 갈래 색 얇은 실선 + 진행 링 */
+.tnode.s-short {
+  border-width: 1.5px;
+}
+.tnode-ring {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  pointer-events: none;
+}
+.tnode-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.tnode-ring .ring-bg {
+  stroke: rgba(255, 255, 255, 0.1);
+}
+.tnode-ring .ring-fg {
+  stroke: var(--bc);
+  stroke-linecap: round;
+}
+/* 구매 가능: 갈래 색 굵은 실선, 한 번 깜빡이고 정지 */
+.tnode.s-buyable {
+  border-width: 4px;
+  animation: tnode-flash 0.9s ease-out 1;
+}
+@keyframes tnode-flash {
+  0% {
+    box-shadow: 0 0 0 0 var(--bc);
+  }
+  40% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+/* 구매 요청 중: 이중 테두리 + 시계 */
+.tnode.s-pending {
+  border: 3px double var(--bc);
+  cursor: progress;
+}
+/* 보유: 갈래 색 채움, 아이콘 반전(어두운 먹색 — 밝은 갈래 색 위 대비), 아래 체크 */
+.tnode.s-owned {
+  background: var(--bc);
+  color: #0d141c;
+  border: 2px solid #fff;
+}
+.tnode-unit {
+  position: absolute;
+  left: -5px;
+  top: -5px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #0d141c;
+  color: #dfe6ee;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+}
+.tnode-badge {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #0d141c;
+  color: #dfe6ee;
+  border: 1px solid var(--line);
+}
+.tnode-badge.tr {
+  right: -5px;
+  top: -5px;
+}
+.tnode-badge.pending {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.tnode-badge.bc {
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  background: #fff;
+  color: #0d141c;
+  border-color: #0d141c;
+}
+.tnode-label {
+  position: absolute;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.2;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tnode-label.s-locked .tn-name {
+  color: var(--muted);
+}
+.tn-price {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  animation: price-tick 0.6s ease-out 1;
+}
+.tnode-label.s-buyable .tn-price {
+  color: #fff;
+  font-weight: 700;
+}
+@keyframes price-tick {
+  0% {
+    color: var(--warn);
+    transform: translateY(-3px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* 상세 패널 */
+.tw-detail {
+  width: 300px;
+  flex: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.tw-detail-empty {
+  font-size: 12px;
+  align-self: stretch;
+}
+.twd-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.twd-head .btn-x {
+  margin-left: auto;
+  align-self: flex-start;
+}
+.twd-icon {
+  --bc: #9aa;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bc);
+  background: #18222d;
+}
+.twd-icon.s-owned {
+  background: var(--bc);
+  color: #0d141c;
+}
+.twd-icon.s-locked {
+  border-style: dashed;
+  border-color: #6b7a8a;
+}
+.twd-title {
+  display: flex;
+  flex-direction: column;
+}
+.twd-title b {
+  font-size: 15px;
+}
+.twd-state.s-buyable,
+.ok-text {
+  color: #7bd88f;
+}
+.twd-state.s-short,
+.twd-state.s-locked {
+  color: var(--muted);
+}
+.twd-state.s-pending {
+  color: var(--warn);
+}
+.twd-desc {
+  margin: 8px 0 6px;
+  font-weight: 600;
+}
+.twd-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+.twd-k {
+  color: #cfd8e3;
+}
+.twd-v {
+  font-variant-numeric: tabular-nums;
+}
+.twd-v .num {
+  font-size: 13px;
+}
+.twd-v .arrow {
+  color: var(--muted);
+  margin: 0 2px;
+}
+.twd-row.chg .after {
+  color: #fff;
+  font-weight: 700;
+}
+.twd-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  margin: 8px 0 4px;
+}
+.twd-facts dt {
+  color: var(--muted);
+}
+.twd-facts dd {
+  margin: 0;
+}
+.tn-price-big {
+  animation: price-tick 0.6s ease-out 1;
+  display: inline-block;
+}
+.twd-buy {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  font-weight: 700;
+}
+.warn-text {
+  color: var(--warn);
+}
+
+/* 범례 */
+.tw-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  color: #cfd8e3;
+  align-items: center;
+}
+.tw-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tnode-mini {
+  --bc: #9aa;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  border: 2px solid var(--bc);
+  background: #18222d;
+  color: #dfe6ee;
+}
+.tnode-mini.s-owned {
+  background: var(--bc);
+  color: #0d141c;
+  border-color: #fff;
+}
+.tnode-mini.s-buyable {
+  border-width: 3.5px;
+}
+.tnode-mini.s-short {
+  border-width: 1px;
+}
+.tnode-mini.s-pending {
+  border: 3px double var(--bc);
+  color: var(--warn);
+}
+.tnode-mini.s-locked {
+  border: 1.5px dashed #6b7a8a;
+}
+
+/* HUD 배지 (살 수 있는 노드 수) */
+.hud-badge {
+  display: inline-block;
+  min-width: 17px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--warn);
+  color: #1a1200;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+}
+.tech-btn.on {
+  border-color: #fff;
+  background: var(--primary);
+}
+
+/* 좁은 화면: 아래에서 올라오는 시트 + 갈래 탭 + 세로 트리 */
+.tech-window.tw-narrow {
+  left: 0;
+  right: 0;
+  width: auto;
+  bottom: 0;
+  max-width: none;
+  max-height: 78%;
+  border-radius: 12px 12px 0 0;
+  padding: 10px 12px 12px;
+}
+.tw-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.tw-tab {
+  --bc: #9aa;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 4px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #18222d;
+  color: var(--bc);
+  cursor: pointer;
+}
+.tw-tab.on {
+  border: 2px solid var(--bc);
+  background: #223042;
+}
+.tw-tab-name {
+  font-size: 10px;
+  color: var(--text);
+}
+.tw-tab-dot {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  border: 1px solid #1a1200;
+}
+.tw-vtree {
+  position: relative;
+  margin: 0 auto;
+}
+.tw-narrow .tw-detail {
+  width: auto;
+  margin-top: 8px;
 }

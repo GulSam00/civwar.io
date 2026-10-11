@@ -1,0 +1,286 @@
+/**
+ * 테크 트리 v4.3 화면 계산 (순수 함수 — React·DOM 없음, 테스트 대상).
+ *  - 노드 상태 5종 (01b 5.1 [A-79]): 잠김 / 골드 부족 / 구매 가능 / 구매 요청 중 / 보유
+ *  - 가격 표시 (프로토콜 §19.3 — techNodeCost, n = techCount)
+ *  - 상세 패널 "지금 → 구매 후" 수치 (techStatValues(mask) 대 techStatValues(mask | 1<<i), 보유 노드는 "없을 때 → 있을 때")
+ *  - 대기 시간 추정 (순수입 = goldPerSecond.net)
+ *  - 격자 배치 (안 A: 열 = 갈래, 줄 = 티어, T2 는 좌/우 반 칸, T3 는 부모 아래)
+ * 상수는 match_config.constants 우선 (techInfo.ts 의 techNodes/techStatsOf/techCost 를 거친다).
+ */
+import {
+  TECH_BRANCH_COUNT,
+  TECH_STAT,
+  UNIT_ATK_PERMILLE,
+  UNIT_DEF_PERMILLE,
+  techCombatPm,
+  techOwned,
+  techPrereqMet,
+  techShallowPm,
+  techSpeedPm,
+  type TechNodeDef,
+} from '@civwar/shared';
+import { goldPerSecond, techCost, techNodes, techStatsOf } from './techInfo.js';
+import { UNIT_NAME } from './text.js';
+
+type Consts = Record<string, unknown> | undefined;
+function c<T>(consts: Consts, name: string, fallback: T): T {
+  const v = consts?.[name];
+  return (v === undefined ? fallback : v) as T;
+}
+
+// ───────────── 노드 상태 ─────────────
+
+export type TechNodeState = 'owned' | 'pending' | 'buyable' | 'short' | 'locked';
+
+export interface TechNodeView {
+  node: TechNodeDef;
+  state: TechNodeState;
+  /** 지금 사면 낼 가격 (보유 노드도 계산은 한다 — 표시는 상태에 따라) */
+  cost: number;
+  /** 골드 부족 진행 링 = min(1, gold / cost) */
+  progress: number;
+}
+
+export interface TechPlayerLike {
+  techMask: number;
+  techCount: number;
+  gold: number;
+}
+
+/**
+ * 한 노드의 상태. 우선순위: 보유 → 요청 중(서버 확인 전) → 잠김(부모 미보유) → 구매 가능(gold ≥ cost) → 골드 부족.
+ * pending 은 클릭 후 cmd_ack 를 기다리는 노드 id 집합 (store.pendingTechNodes).
+ */
+export function techNodeState(p: TechPlayerLike, node: TechNodeDef, nodes: readonly TechNodeDef[], cost: number, pending?: ReadonlySet<number>): TechNodeState {
+  if (techOwned(p.techMask, node.id)) return 'owned';
+  if (pending?.has(node.id)) return 'pending';
+  if (!techPrereqMet(p.techMask, node.id, nodes)) return 'locked';
+  return p.gold >= cost ? 'buyable' : 'short';
+}
+
+export function techNodeViews(p: TechPlayerLike, consts?: Consts, pending?: ReadonlySet<number>): TechNodeView[] {
+  const nodes = techNodes(consts);
+  return nodes.map((node) => {
+    const cost = techCost(node.tier, p.techCount, consts);
+    return { node, cost, state: techNodeState(p, node, nodes, cost, pending), progress: cost > 0 ? Math.min(1, Math.max(0, p.gold / cost)) : 1 };
+  });
+}
+
+/** 지금 살 수 있는 노드 수 (HUD 버튼 배지) */
+export function purchasableCount(p: TechPlayerLike, consts?: Consts): number {
+  return techNodeViews(p, consts).filter((v) => v.state === 'buyable').length;
+}
+
+/** 갈래별 "살 수 있음" 여부 (모바일 탭 점) */
+export function purchasableByBranch(views: readonly TechNodeView[]): boolean[] {
+  const out = new Array<boolean>(TECH_BRANCH_COUNT).fill(false);
+  for (const v of views) if (v.state === 'buyable') out[v.node.branch] = true;
+  return out;
+}
+
+// ───────────── 가격 ─────────────
+
+export interface TechPriceInfo {
+  cost: number;
+  base: number;
+  /** 지금까지 산 노드 수 (= 누진 n) */
+  purchased: number;
+  /** 누진 가산 % (= 6 × n) */
+  surchargePct: number;
+  /** 한 번 더 사면 이 노드 가격 */
+  nextCost: number;
+}
+
+export function techPriceInfo(tier: number, techCount: number, consts?: Consts): TechPriceInfo {
+  const base = techCost(tier, 0, consts);
+  const coef = c(consts, 'TECH_PROGRESSIVE_COEF_PERMILLE', 60);
+  return {
+    cost: techCost(tier, techCount, consts),
+    base,
+    purchased: techCount,
+    surchargePct: (coef * techCount) / 10,
+    nextCost: techCost(tier, techCount + 1, consts),
+  };
+}
+
+/** 골드가 모자랄 때 모일 때까지 걸리는 초 (참고치). 이미 충분하면 0, 순수입 ≤ 0 이면 null */
+export function secondsToAfford(gold: number, cost: number, netPerSec: number): number | null {
+  if (gold >= cost) return 0;
+  if (!(netPerSec > 0)) return null;
+  return Math.ceil((cost - gold) / netPerSec);
+}
+
+/** 대기 시간 표시 — 15분 넘으면 사실상 "모이지 않음" */
+export function fmtWait(sec: number): string {
+  if (sec >= 900) return '15분 넘게 걸림';
+  if (sec < 60) return `약 ${sec}초 후`;
+  return `약 ${Math.floor(sec / 60)}분 ${sec % 60}초 후`;
+}
+
+// ───────────── 상세 패널 수치 ─────────────
+
+export interface StatRow {
+  label: string;
+  before: string;
+  after: string;
+  /** 값이 바뀌는 행인가 (강조) */
+  changed: boolean;
+}
+
+export interface TechDetailCtx {
+  consts?: Consts;
+  techMask: number;
+  /** 골드 수입 행 (ECO) — 없으면 생략 */
+  goldWeight?: number;
+  upkeepPm?: number;
+  /** 병력 상한 / 깃발 슬롯 실제 값 (GameModel.troopCapOf / flagCapOf) — 없으면 생략 */
+  troopCap?: (mask: number) => number;
+  flagCap?: (mask: number) => number;
+}
+
+const x2 = (pm: number) => `×${(pm / 1000).toFixed(2)}`;
+const x3 = (pm: number) => `×${(pm / 1000).toFixed(3)}`;
+const pmText = (pm: number) => `${pm}‰`;
+
+/** 스탯 하나의 주 행 (라벨 + 서식) */
+function primaryRow(stat: number, before: number[], after: number[], consts: Consts): StatRow {
+  const S = TECH_STAT;
+  const ATK = c<readonly number[]>(consts, 'UNIT_ATK_PERMILLE', UNIT_ATK_PERMILLE);
+  const DEF = c<readonly number[]>(consts, 'UNIT_DEF_PERMILLE', UNIT_DEF_PERMILLE);
+  const u = (base: number) => UNIT_NAME[stat - base];
+  let label: string;
+  let fmt: (v: number[]) => string;
+  if (stat === S.ATK_COST) (label = '적 땅 점령비용 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.DEF_COST) (label = '내 땅 피점령비용 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.COMBAT_ATK) (label = '공격 태세 전투값 배율 (전 병종)'), (fmt = (v) => x3(v[stat]));
+  else if (stat === S.COMBAT_DEF) (label = '방어 태세 전투값 배율 (전 병종)'), (fmt = (v) => x3(v[stat]));
+  else if (stat === S.GOLD) (label = '골드 생산 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.UPKEEP_COEF) (label = '깃발 유지비 계수'), (fmt = (v) => pmText(v[stat]));
+  else if (stat === S.REGEN) (label = '병력 재생 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.NEUTRAL_COST) (label = '중립 땅 점령비용 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.TROOP_CAP) (label = '병력 상한 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.SUPPLY_COEF) (label = '보급선 비용 계수 (칸당)'), (fmt = (v) => pmText(v[stat]));
+  else if (stat === S.SPEED) (label = '이동속도 배율 (전 병종 공통)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.SHALLOW_MOVE) (label = '얕은 물 이동배율 (클수록 느림)'), (fmt = (v) => x2(techShallowPm(v)));
+  else if (stat === S.SLOT_BONUS) (label = '깃발 슬롯 보너스'), (fmt = (v) => `+${v[stat]}`);
+  else if (stat === S.LANDING_COMBAT) (label = '상륙 교전 전투값 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat >= S.COMBAT_ATK_SPEAR && stat <= S.COMBAT_ATK_CAVALRY) {
+    const unit = stat - S.COMBAT_ATK_SPEAR;
+    label = `${u(S.COMBAT_ATK_SPEAR)} 공격 태세 전투 공격력`;
+    fmt = (v) => String(Math.floor((ATK[unit] * techCombatPm(v, unit, false)) / 1000));
+  } else if (stat >= S.COMBAT_DEF_SPEAR && stat <= S.COMBAT_DEF_CAVALRY) {
+    const unit = stat - S.COMBAT_DEF_SPEAR;
+    label = `${u(S.COMBAT_DEF_SPEAR)} 방어 태세 전투 방어력`;
+    fmt = (v) => String(Math.floor((DEF[unit] * techCombatPm(v, unit, true)) / 1000));
+  } else if (stat >= S.SPEED_SPEAR && stat <= S.SPEED_CAVALRY) {
+    const unit = stat - S.SPEED_SPEAR;
+    label = `${u(S.SPEED_SPEAR)} 이동속도 배율 (공통 포함)`;
+    fmt = (v) => x2(techSpeedPm(v, unit));
+  } else if (stat >= S.UPKEEP_WEIGHT_SPEAR && stat <= S.UPKEEP_WEIGHT_CAVALRY) (label = `${u(S.UPKEEP_WEIGHT_SPEAR)} 유지비 가중치`), (fmt = (v) => (v[stat] / 1000).toFixed(2));
+  else if (stat >= S.CONVERT_SPEAR && stat <= S.CONVERT_CAVALRY) (label = `${u(S.CONVERT_SPEAR)} 편성비 (병력 1당 풀 차감)`), (fmt = (v) => x2(v[stat]));
+  else if (stat >= S.CAPTURE_MULT_SPEAR && stat <= S.CAPTURE_MULT_CAVALRY) (label = `${u(S.CAPTURE_MULT_SPEAR)} 점령비용 배율`), (fmt = (v) => x2(v[stat]));
+  else (label = `스탯 ${stat}`), (fmt = (v) => String(v[stat]));
+  const b = fmt(before);
+  const a = fmt(after);
+  return { label, before: b, after: a, changed: b !== a };
+}
+
+/** 공통 전투 배율 노드(MIL-2A/3B)의 병종별 실제 전투값 행 */
+function combatUnitsRow(defend: boolean, before: number[], after: number[], consts: Consts): StatRow {
+  const base = defend ? c<readonly number[]>(consts, 'UNIT_DEF_PERMILLE', UNIT_DEF_PERMILLE) : c<readonly number[]>(consts, 'UNIT_ATK_PERMILLE', UNIT_ATK_PERMILLE);
+  const val = (v: number[]) => [0, 1, 2].map((u) => Math.floor((base[u] * techCombatPm(v, u, defend)) / 1000)).join(' / ');
+  const b = val(before);
+  const a = val(after);
+  return { label: `${defend ? '방어' : '공격'} 전투값 창 / 검 / 기`, before: b, after: a, changed: b !== a };
+}
+
+export interface TechDetail {
+  /** 보유 노드 = "없을 때 → 있을 때", 미보유 = "지금 → 구매 후" */
+  owned: boolean;
+  rows: StatRow[];
+  beforeLabel: string;
+  afterLabel: string;
+}
+
+/** 상세 패널 수치 행. 다른 보유 노드까지 합친 실제 값(§19.3 techStatValues) */
+export function techDetailRows(node: TechNodeDef, ctx: TechDetailCtx): TechDetail {
+  const bit = (1 << node.id) >>> 0;
+  const owned = techOwned(ctx.techMask, node.id);
+  const maskBefore = owned ? (ctx.techMask & ~bit) >>> 0 : ctx.techMask >>> 0;
+  const maskAfter = (maskBefore | bit) >>> 0;
+  const before = techStatsOf(maskBefore, ctx.consts);
+  const after = techStatsOf(maskAfter, ctx.consts);
+  const S = TECH_STAT;
+  const rows: StatRow[] = [primaryRow(node.stat, before, after, ctx.consts)];
+  if (node.stat === S.COMBAT_ATK) rows.push(combatUnitsRow(false, before, after, ctx.consts));
+  if (node.stat === S.COMBAT_DEF) rows.push(combatUnitsRow(true, before, after, ctx.consts));
+  if (node.stat === S.GOLD && ctx.goldWeight !== undefined) {
+    const gb = goldPerSecond(ctx.goldWeight, maskBefore, ctx.upkeepPm ?? 0, ctx.consts).gross;
+    const ga = goldPerSecond(ctx.goldWeight, maskAfter, ctx.upkeepPm ?? 0, ctx.consts).gross;
+    rows.push({ label: '골드 수입 (지금 영토 기준)', before: `+${gb.toFixed(1)}/초`, after: `+${ga.toFixed(1)}/초`, changed: gb !== ga });
+  }
+  if (node.stat === S.TROOP_CAP && ctx.troopCap) {
+    const b = ctx.troopCap(maskBefore);
+    const a = ctx.troopCap(maskAfter);
+    rows.push({ label: '병력 상한 (지금 영토 기준)', before: b.toLocaleString(), after: a.toLocaleString(), changed: a !== b });
+  }
+  if (node.stat === S.SLOT_BONUS && ctx.flagCap) {
+    const b = ctx.flagCap(maskBefore);
+    const a = ctx.flagCap(maskAfter);
+    rows.push({ label: '깃발 슬롯 (상한 7)', before: String(b), after: String(a), changed: a !== b });
+  }
+  return { owned, rows, beforeLabel: owned ? '없을 때' : '지금', afterLabel: owned ? '보유' : '구매 후' };
+}
+
+/** 노드가 어디에 적용되는지 한 줄 (상세 패널 "어디에 적용") */
+export function techScopeText(node: TechNodeDef): string {
+  const S = TECH_STAT;
+  const s = node.stat;
+  if (s >= S.COMBAT_ATK_SPEAR && s <= S.CAPTURE_MULT_CAVALRY) {
+    const unit = (s - S.COMBAT_ATK_SPEAR) % 3;
+    return `${UNIT_NAME[unit]} 깃발에만 적용`;
+  }
+  if (s === S.COMBAT_ATK) return '공격 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
+  if (s === S.COMBAT_DEF) return '방어 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
+  if (s === S.LANDING_COMBAT) return '물 위 깃발이 땅 위 적 깃발과 싸울 때';
+  return '모든 깃발·영토에 적용';
+}
+
+// ───────────── 격자 배치 (안 A / 모바일 안 B 공용) ─────────────
+
+export interface TechNodePos {
+  id: number;
+  branch: number;
+  tier: number;
+  /** 갈래 열 안 가로 위치 0..1 (T1 = 0.5, T2 = 0.25 / 0.75, T3 = 부모 위치) */
+  fx: number;
+}
+
+/** 열 안 위치. 같은 부모의 형제는 id 순서대로 왼쪽 → 오른쪽 */
+export function techLayout(nodes: readonly TechNodeDef[]): TechNodePos[] {
+  const fx = new Map<number, number>();
+  const sorted = [...nodes].sort((a, b) => a.tier - b.tier || a.id - b.id);
+  for (const n of sorted) {
+    if (n.parent === null) {
+      const roots = nodes.filter((m) => m.branch === n.branch && m.parent === null);
+      fx.set(n.id, (roots.indexOf(n) + 1) / (roots.length + 1));
+      continue;
+    }
+    const sibs = nodes.filter((m) => m.parent === n.parent).sort((a, b) => a.id - b.id);
+    const parentX = fx.get(n.parent) ?? 0.5;
+    if (n.tier === 2) fx.set(n.id, sibs.length === 1 ? parentX : 0.25 + (0.5 * sibs.indexOf(n)) / (sibs.length - 1));
+    else fx.set(n.id, sibs.length === 1 ? parentX : parentX + (sibs.indexOf(n) - (sibs.length - 1) / 2) * 0.2);
+  }
+  return nodes.map((n) => ({ id: n.id, branch: n.branch, tier: n.tier, fx: fx.get(n.id) ?? 0.5 }));
+}
+
+/** 루트까지의 선행 경로 (hover 강조) — 자기 자신 포함 */
+export function techAncestors(nodes: readonly TechNodeDef[], id: number): Set<number> {
+  const out = new Set<number>();
+  let cur: number | null = id;
+  while (cur !== null && !out.has(cur)) {
+    out.add(cur);
+    cur = nodes[cur]?.parent ?? null;
+  }
+  return out;
+}

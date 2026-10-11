@@ -38,7 +38,20 @@ export interface KeyValueStorage {
 interface PendingCmd {
   type: C2S_GameCommand['type'];
   sentAt: number;
+  /** cmd_buy_tech 의 노드 id (테크 창 "구매 요청 중" 상태) */
+  nodeId?: number;
 }
+
+/** cmd_ack 를 이 시간 넘게 못 받으면 "요청 중" 표시를 접는다 (끊김 등) */
+const PENDING_TECH_MS = 5000;
+
+/** 테크 구매 거절 문구 (테크 창 토스트 — 공용 REJECT_TEXT 보다 구체적으로) */
+export const TECH_REJECT_TEXT: Partial<Record<string, string>> = {
+  INSUFFICIENT: '골드가 부족합니다',
+  PREREQ_MISSING: '선행 노드를 먼저 사야 합니다',
+  ALREADY_OWNED: '이미 보유한 노드입니다',
+  BAD_REQUEST: '잘못된 테크 요청입니다',
+};
 
 const LS_TOKEN = 'civwar.playerToken';
 const LS_NICK = 'civwar.nickname';
@@ -244,7 +257,7 @@ export class ClientStore {
       this.toast('서버와 연결되어 있지 않습니다', 'error');
       return -1;
     }
-    this.pending.set(clientSeq, { type: msg.type, sentAt: this.now() });
+    this.pending.set(clientSeq, { type: msg.type, sentAt: this.now(), ...(msg.type === 'cmd_buy_tech' ? { nodeId: msg.nodeId } : {}) });
     return clientSeq;
   }
   issueFlag(unit: Unit, troops: number, anchorTileId: number, originBaseTileId: number | null = null): number {
@@ -254,6 +267,16 @@ export class ClientStore {
   buyTech(nodeId: number): number {
     return this.command({ type: 'cmd_buy_tech', nodeId });
   }
+  /** cmd_ack 를 기다리는 테크 노드 id (테크 창 "구매 요청 중") */
+  pendingTechNodes(): Set<number> {
+    const out = new Set<number>();
+    const t = this.now();
+    for (const p of this.pending.values()) if (p.type === 'cmd_buy_tech' && p.nodeId !== undefined && t - p.sentAt < PENDING_TECH_MS) out.add(p.nodeId);
+    // 수락 ack 와 tech_purchased(techMask) 사이 짧은 틈 — 보유가 반영될 때까지 "요청 중" 유지 (보유가 상태 우선순위에서 먼저다)
+    for (const [id, at] of this.acceptedTech) if (t - at < PENDING_TECH_MS) out.add(id);
+    return out;
+  }
+  private acceptedTech = new Map<number, number>();
   proposeAlly(targetPlayerId: number): number {
     return this.command({ type: 'cmd_ally_propose', targetPlayerId });
   }
@@ -420,8 +443,11 @@ export class ClientStore {
       case 'cmd_ack': {
         const p = this.pending.get(m.clientSeq);
         this.pending.delete(m.clientSeq);
-        if (!m.accepted && m.reason) this.toast(REJECT_TEXT[m.reason] ?? m.reason, 'error');
-        void p;
+        if (m.accepted && p?.type === 'cmd_buy_tech' && p.nodeId !== undefined) this.acceptedTech.set(p.nodeId, this.now());
+        if (!m.accepted && m.reason) {
+          const text = (p?.type === 'cmd_buy_tech' ? TECH_REJECT_TEXT[m.reason] : undefined) ?? REJECT_TEXT[m.reason] ?? m.reason;
+          this.toast(p?.type === 'cmd_buy_tech' ? `테크 구매 실패 — ${text}` : text, 'error');
+        }
         return;
       }
       case 'error': {

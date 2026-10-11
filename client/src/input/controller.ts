@@ -48,6 +48,10 @@ export class Interaction {
   overMap = false;
   /** 열린 패널 */
   panel: 'tech' | 'ally' | null = null;
+  /** 테크 창 상세 패널에 연 노드 (null = 닫힘) */
+  techDetail: number | null = null;
+  /** 좁은 화면 테크 창의 갈래 탭 (0..6) */
+  techTab = 0;
   helpOpen = false;
   /** 옵션 창 (톱니 버튼 / O) */
   optionsOpen = false;
@@ -567,6 +571,7 @@ export class GameInputController {
         return this.toggleDirections();
       case 't':
         this.ix.panel = this.ix.panel === 'tech' ? null : 'tech';
+        if (this.ix.panel !== 'tech') this.ix.techDetail = null;
         this.ix.bump();
         return;
       case 'p':
@@ -584,10 +589,17 @@ export class GameInputController {
         this.ix.bump();
         return;
       case 'escape':
+        // 테크 창: 상세 패널이 열려 있으면 그것만 먼저 닫는다
+        if (this.ix.panel === 'tech' && this.ix.techDetail !== null && !this.ix.helpOpen && !this.ix.optionsOpen && !this.ix.leaveConfirm) {
+          this.ix.techDetail = null;
+          this.ix.bump();
+          return;
+        }
         if (this.ix.helpOpen || this.ix.optionsOpen || this.ix.panel || this.ix.leaveConfirm) {
           this.ix.helpOpen = false;
           this.ix.optionsOpen = false;
           this.ix.panel = null;
+          this.ix.techDetail = null;
           this.ix.leaveConfirm = false;
         } else if (this.ix.issue) {
           this.ix.issue = null;

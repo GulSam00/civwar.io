@@ -17,7 +17,9 @@ import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
 import { goldPerSecond, techStatsOf } from './techInfo.js';
-import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, TechPanel } from './panels.js';
+import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard } from './panels.js';
+import { TechWindow } from './TechWindow.js';
+import { purchasableCount } from './techTree.js';
 import { Help } from './Help.js';
 
 /** 좁은 화면(모바일) = 관전·간단 보기 (PC 우선 결정) */
@@ -168,7 +170,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       {ctl && !narrow && <EventFeed store={store} />}
       {ctl && !narrow && <CommandBar store={store} ctl={ctl} />}
       {ctl && <FlagPanel store={store} ctl={ctl} narrow={narrow} />}
-      {ctl && !narrow && <TechPanel store={store} ctl={ctl} />}
+      {ctl && <TechWindow store={store} ctl={ctl} narrow={narrow} />}
       {ctl && !narrow && <DiplomacyPanel store={store} ctl={ctl} />}
       {ctl && !narrow && <IncomingProposals store={store} ctl={ctl} />}
       {ctl && <HelpLayer ctl={ctl} />}
@@ -366,6 +368,14 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const spectating = me === null || viewer !== me;
   const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
   const income = p ? goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants) : null;
+  // 테크 버튼 배지 = 지금 살 수 있는 노드 수 (내가 명령할 수 있을 때만)
+  const mineP = me !== null ? g.players.get(me) : undefined;
+  const techBadge = mineP && ctl.canCommand() ? purchasableCount(mineP, g.config.constants) : 0;
+  const toggleTech = () => {
+    ctl.ix.panel = ctl.ix.panel === 'tech' ? null : 'tech';
+    if (ctl.ix.panel !== 'tech') ctl.ix.techDetail = null;
+    ctl.ix.bump();
+  };
   return (
     <div className="hud-top">
       {spectating && <span className="pill spectate-pill">{me !== null && g.players.get(me) && !g.players.get(me)!.alive ? '탈락 · 관전' : '관전'}{p ? ` · ${store.nicknameOf(p.id)}` : ''}</span>}
@@ -392,12 +402,9 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       {g.lockoutDissolveTick !== null && <span className="pill warn-pill">전원 동맹 — 강제 해제 {fmtClock((g.lockoutDissolveTick - g.tick) * g.config.tickMs)}</span>}
       {!narrow && (
         <span className="hud-buttons">
-          {!spectating && !over && (
-            <>
-              <HudBtn on={ctl.ix.panel === 'tech'} k="T" label="테크" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'tech' ? null : 'tech'), ctl.ix.bump())} />
-              <HudBtn on={ctl.ix.panel === 'ally'} k="P" label="외교" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'ally' ? null : 'ally'), ctl.ix.bump())} />
-            </>
-          )}
+          {/* 테크 창은 관전·종료 후에도 열 수 있다(보기 전용) */}
+          <HudBtn on={ctl.ix.panel === 'tech'} k="T" label="테크" badge={techBadge} techToggle onClick={toggleTech} />
+          {!spectating && !over && <HudBtn on={ctl.ix.panel === 'ally'} k="P" label="외교" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'ally' ? null : 'ally'), ctl.ix.bump())} />}
           <OptionsBtn ctl={ctl} />
           <HudBtn on={ctl.ix.helpOpen} k="?" label="도움말" onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} />
           {!spectating && !over && <EmoteMenu store={store} />}
@@ -408,6 +415,9 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       )}
       {narrow && (
         <span className="hud-buttons">
+          <button className={`btn btn-sm tech-btn ${ctl.ix.panel === 'tech' ? 'on' : ''}`} data-tech-toggle onClick={toggleTech} aria-label={techBadge ? `테크 (살 수 있는 노드 ${techBadge}개)` : '테크'}>
+            테크{techBadge > 0 && <span className="hud-badge">{techBadge}</span>}
+          </button>
           <OptionsBtn ctl={ctl} />
           <button className="btn btn-sm" onClick={() => ((ctl.ix.helpOpen = true), ctl.ix.bump())}>
             ?
@@ -502,10 +512,17 @@ function OptionsBtn({ ctl }: { ctl: GameInputController }) {
   );
 }
 
-function HudBtn({ on, k, label, onClick }: { on: boolean; k: string; label: string; onClick: () => void }) {
+function HudBtn({ on, k, label, onClick, badge = 0, techToggle = false }: { on: boolean; k: string; label: string; onClick: () => void; badge?: number; techToggle?: boolean }) {
   return (
-    <button className={`hud-btn ${on ? 'on' : ''}`} onClick={onClick}>
+    <button
+      className={`hud-btn ${on ? 'on' : ''}`}
+      onClick={onClick}
+      data-tech-toggle={techToggle ? '' : undefined}
+      aria-label={badge > 0 ? `${label} (${k}) — 살 수 있는 노드 ${badge}개` : undefined}
+      title={badge > 0 ? `지금 살 수 있는 노드 ${badge}개` : undefined}
+    >
       <kbd>{k}</kbd> {label}
+      {badge > 0 && <span className="hud-badge">{badge}</span>}
     </button>
   );
 }

@@ -35,22 +35,24 @@ export const UNIT_GLYPHS: Readonly<Record<Unit, readonly GlyphPart[]>> = {
   ],
 };
 
-let cache: Path2D[][] | null = null;
-function paths(): Path2D[][] | null {
-  if (cache) return cache;
+const pathCache = new Map<string, Path2D>();
+function path2d(d: string): Path2D | null {
   if (typeof Path2D === 'undefined') return null;
-  cache = ([0, 1, 2] as Unit[]).map((u) => UNIT_GLYPHS[u].map((p) => new Path2D(p.d)));
-  return cache;
+  let p = pathCache.get(d);
+  if (!p) {
+    p = new Path2D(d);
+    pathCache.set(d, p);
+  }
+  return p;
 }
 
 /**
- * (cx, cy) 중심에 size px 크기로 병종 아이콘을 그린다. 어두운 외곽선(outline) 위에 color 로 칠해 어떤 바탕(플레이어 색)에서도 읽히게 한다.
- * Path2D 가 없는 환경(테스트)에서는 아무것도 하지 않고 false.
+ * 24×24 그림 조각(GlyphPart[])을 (cx, cy) 중심 size px 로 그린다 — 어두운 외곽선(outline) 위에 color.
+ * 병종 아이콘과 교전 아이콘(render/combatPairs.ts)이 함께 쓴다. Path2D 가 없는 환경(테스트)이면 false.
  */
-export function drawUnitGlyph(ctx: CanvasRenderingContext2D, unit: number, cx: number, cy: number, size: number, color = '#fff', outline = 'rgba(0,0,0,0.8)'): boolean {
-  const ps = paths();
-  const parts = UNIT_GLYPHS[unit as Unit];
-  if (!ps || !parts) return false;
+export function drawGlyphParts(ctx: CanvasRenderingContext2D, parts: readonly GlyphPart[], cx: number, cy: number, size: number, color = '#fff', outline = 'rgba(0,0,0,0.8)'): boolean {
+  if (typeof Path2D === 'undefined' || !parts.length) return false;
+  const ps = parts.map((p) => path2d(p.d)!);
   const k = size / 24;
   ctx.save();
   ctx.translate(cx - size / 2, cy - size / 2);
@@ -62,17 +64,27 @@ export function drawUnitGlyph(ctx: CanvasRenderingContext2D, unit: number, cx: n
   ctx.strokeStyle = outline;
   parts.forEach((p, i) => {
     ctx.lineWidth = (p.mode === 'stroke' ? (p.width ?? 2) : 0) + halo;
-    ctx.stroke(ps[unit][i]);
+    ctx.stroke(ps[i]);
   });
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
   parts.forEach((p, i) => {
-    if (p.mode === 'fill') ctx.fill(ps[unit][i]);
+    if (p.mode === 'fill') ctx.fill(ps[i]);
     else {
       ctx.lineWidth = p.width ?? 2;
-      ctx.stroke(ps[unit][i]);
+      ctx.stroke(ps[i]);
     }
   });
   ctx.restore();
   return true;
+}
+
+/**
+ * (cx, cy) 중심에 size px 크기로 병종 아이콘을 그린다. 어두운 외곽선(outline) 위에 color 로 칠해 어떤 바탕(플레이어 색)에서도 읽히게 한다.
+ * Path2D 가 없는 환경(테스트)에서는 아무것도 하지 않고 false.
+ */
+export function drawUnitGlyph(ctx: CanvasRenderingContext2D, unit: number, cx: number, cy: number, size: number, color = '#fff', outline = 'rgba(0,0,0,0.8)'): boolean {
+  const parts = UNIT_GLYPHS[unit as Unit];
+  if (!parts) return false;
+  return drawGlyphParts(ctx, parts, cx, cy, size, color, outline);
 }

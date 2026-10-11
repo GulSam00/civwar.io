@@ -16,7 +16,8 @@ import { ownerPattern } from './patterns.js';
 import { isDecayTick } from './progressRule.js';
 import type { CursorPreview } from '../input/preview.js';
 import type { RoutePreview } from '../input/route.js';
-import { drawUnitGlyph } from './unitGlyphs.js';
+import { drawGlyphParts, drawUnitGlyph } from './unitGlyphs.js';
+import { SHIELD_GLYPH, SWORD_GLYPH, combatPairs, declutter, glyphOf, pairGlyphKind, type CombatPair } from './combatPairs.js';
 import { UNIT_SHORT } from '../ui/text.js';
 
 export interface RenderView {
@@ -550,6 +551,9 @@ export class GameRenderer {
       ctx.restore();
     }
     if (view.directions !== 'off') this.drawDirections(ctx, model, topo, view, lod, baseR);
+    // 교전 쌍 (§20 8방향 접촉) — 연결선은 깃발 아래, 검/방패 아이콘은 깃발 위
+    const pairs = combatPairs(model.flags.values(), (a, b) => topo.touching(a, b), (a, b) => model.isAlly(a, b));
+    this.drawCombatLinks(ctx, pairs);
     const order = [...model.flags.values()].sort((a, b) => rank(a, view) - rank(b, view) || a.id - b.id);
     for (const f of order) {
       const w = this.flagWorld.get(f.id)!;
@@ -561,6 +565,138 @@ export class GameRenderer {
       screens.push({ id: f.id, x: p.x, y: p.y, r });
     }
     this.flagScreens = screens;
+    this.drawCombatBadges(ctx, pairs, lod, baseR, now);
+  }
+
+  /** 교전 쌍의 화면 좌표 (보간 위치) */
+  private pairScreen(pr: CombatPair): { p: Pt; q: Pt } | null {
+    const wa = this.flagWorld.get(pr.a);
+    const wb = this.flagWorld.get(pr.b);
+    if (!wa || !wb) return null;
+    return { p: worldToScreen(this.camera, wa.x, wa.y), q: worldToScreen(this.camera, wb.x, wb.y) };
+  }
+
+  /** 교전 연결선 — 깃발 사이 짧은 선 (어두운 외곽 + 밝은 선: 바탕·색각 보조와 무관하게 보인다) */
+  private drawCombatLinks(ctx: CanvasRenderingContext2D, pairs: readonly CombatPair[]): void {
+    if (!pairs.length) return;
+    const cam = this.camera;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const pr of pairs) {
+      const s = this.pairScreen(pr);
+      if (!s) continue;
+      const { p, q } = s;
+      if (Math.max(p.x, q.x) < -40 || Math.max(p.y, q.y) < -40 || Math.min(p.x, q.x) > cam.viewW + 40 || Math.min(p.y, q.y) > cam.viewH + 40) continue;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,236,170,0.95)';
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 새 교전 쌍이 처음 보인 시각 (짧은 섬광) */
+  private pairSeen = new Map<string, number>();
+
+  /**
+   * 교전 아이콘. 쌍마다 한 자리(두 깃발 중점에서 선에 수직으로 비켜 난 곳 — 깃발에 가리지 않게).
+   *  - 보통: 작은 원 배지 둘, 선 방향으로 각 깃발 쪽에 그 깃발 태세(공격 = 검, 방어 = 방패)
+   *  - 축소 보기(LOD·쌍이 많을 때): 배지 하나(검 둘 / 방패 위 검 / 방패)
+   * 겹치는 자리는 버린다(declutter). 배지 둘레가 천천히 맥동하고, 새 쌍은 한 번 퍼지는 섬광.
+   */
+  private drawCombatBadges(ctx: CanvasRenderingContext2D, pairs: readonly CombatPair[], lod: boolean, r: number, now: number): void {
+    const seen = this.pairSeen;
+    const live = new Set<string>();
+    if (!pairs.length) {
+      seen.clear();
+      return;
+    }
+    const cam = this.camera;
+    const compact = lod || pairs.length > 16;
+    const items: { pr: CombatPair; m: Pt; at: Pt; u: Pt; key: string }[] = [];
+    for (const pr of pairs) {
+      const s = this.pairScreen(pr);
+      if (!s) continue;
+      const { p, q } = s;
+      const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+      if (m.x < -30 || m.y < -30 || m.x > cam.viewW + 30 || m.y > cam.viewH + 30) continue;
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const d = Math.hypot(dx, dy);
+      const u = d > 0.5 ? { x: dx / d, y: dy / d } : { x: 1, y: 0 };
+      // 수직 방향 중 화면 위쪽(같으면 오른쪽)
+      let nx = -u.y;
+      let ny = u.x;
+      if (ny > 0 || (ny === 0 && nx < 0)) (nx = -nx), (ny = -ny);
+      const off = compact ? r + 8 : r + Math.max(9, Math.min(13, r * 0.8)) + 4;
+      const key = `${pr.a}-${pr.b}`;
+      live.add(key);
+      if (!seen.has(key)) seen.set(key, now);
+      items.push({ pr, m, at: { x: m.x + nx * off, y: m.y + ny * off }, u, key });
+    }
+    for (const k of [...seen.keys()]) if (!live.has(k)) seen.delete(k);
+    const keep = declutter(
+      items.map((it) => it.at),
+      compact ? 16 : 3 * Math.max(9, Math.min(13, r * 0.8)) + 4,
+    );
+    ctx.save();
+    for (const i of keep) {
+      const { pr, m, at, u, key } = items[i];
+      const pulse = 0.5 + 0.5 * Math.sin(now / 160 + ((pr.a * 7 + pr.b * 13) % 10));
+      // 새 교전 섬광 (0.7초 동안 한 번 퍼짐)
+      const age = now - (seen.get(key) ?? now);
+      if (age < 700) {
+        const k = age / 700;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 6 + 26 * k, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,236,170,${(1 - k) * 0.9})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+      // 중점 → 배지 짧은 끈 (어느 선의 아이콘인지)
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(at.x, at.y);
+      ctx.strokeStyle = 'rgba(255,236,170,0.7)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      if (compact) {
+        const kind = pairGlyphKind(pr);
+        this.combatBadge(ctx, at.x, at.y, 8.5, kind === 'swords' ? COLOR_ATTACK : kind === 'shields' ? COLOR_DEFEND : '#ffd54f', pulse);
+        drawGlyphParts(ctx, glyphOf(kind), at.x, at.y, 12);
+      } else {
+        // 깃발 크기에 맞춰 키운다 (확대할수록 깃발이 커지므로 아이콘도 따라 커짐)
+        const rad = Math.max(9, Math.min(13, r * 0.8));
+        const g = rad + 1;
+        const pa = { x: at.x - u.x * g, y: at.y - u.y * g };
+        const pb = { x: at.x + u.x * g, y: at.y + u.y * g };
+        this.combatBadge(ctx, pa.x, pa.y, rad, pr.aAttack ? COLOR_ATTACK : COLOR_DEFEND, pulse);
+        this.combatBadge(ctx, pb.x, pb.y, rad, pr.bAttack ? COLOR_ATTACK : COLOR_DEFEND, pulse);
+        drawGlyphParts(ctx, pr.aAttack ? SWORD_GLYPH : SHIELD_GLYPH, pa.x, pa.y, Math.round(rad * 1.45));
+        drawGlyphParts(ctx, pr.bAttack ? SWORD_GLYPH : SHIELD_GLYPH, pb.x, pb.y, Math.round(rad * 1.45));
+      }
+    }
+    ctx.restore();
+  }
+
+  private combatBadge(ctx: CanvasRenderingContext2D, x: number, y: number, rad: number, ring: string, pulse: number): void {
+    ctx.beginPath();
+    ctx.arc(x, y, rad + 2 + pulse * 2.5, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,236,170,${0.15 + pulse * 0.35})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(12,16,22,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = ring;
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
 
   /**

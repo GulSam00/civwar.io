@@ -26,6 +26,11 @@ export interface TopologyView {
   /** 서버 토폴로지와 같은 거리 (사각 = 맨해튼) */
   distance(a: number, b: number): number;
   neighbors(tileId: number): readonly number[];
+  /**
+   * 깃발 접촉 판정 (프로토콜 §20 — 깃발 대 깃발 전투·ZOC·진척도 유지). 같은 칸 포함.
+   * 사각 = 체비셰프 1 (대각선 포함 8방향), 육각으로 바꾸면 = 같은 칸 또는 이웃. 땅 점령·경로는 neighbors(4방향) 그대로.
+   */
+  touching(a: number, b: number): boolean;
   /** distance(center, t) <= r 인 타일 */
   disk(center: number, r: number): number[];
   /** 다중 출발 거리장 (sources 중 최근접까지의 distance). 사각은 장애물 없는 BFS = 맨해튼 최소 */
@@ -108,6 +113,13 @@ export class SquareTopologyView implements TopologyView {
 
   neighbors(tileId: number): readonly number[] {
     return this.adj[tileId] ?? [];
+  }
+
+  touching(a: number, b: number): boolean {
+    const w = this.width;
+    const ar = Math.floor(a / w);
+    const br = Math.floor(b / w);
+    return Math.abs(ar - br) <= 1 && Math.abs(a - ar * w - (b - br * w)) <= 1;
   }
 
   disk(center: number, r: number): number[] {

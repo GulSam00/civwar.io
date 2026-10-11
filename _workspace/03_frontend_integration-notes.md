@@ -219,3 +219,30 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 - **옵션 창**(`ui/OptionsPanel.tsx`, 상태 `ui/options.ts`): HUD 톱니 버튼(좁은 화면 포함) / `O`. 색각 보조(`C` 유지), 깃발 이동 방향 화살표 모두/내 깃발만/숨김(`V` 순환, `RenderView.directions`), 지형 툴팁 켜기 + 항목 7개. localStorage `civwar.options.v1` JSON, 읽기·쓰기 try/catch → 실패 시 기본값/이번 세션만, 깨진 필드는 필드 단위로 기본값(`sanitizeOptions`). 이전 키 `civwar.colorblind`/`civwar.directions` 는 새 키가 없을 때 이전. Esc(컨트롤러 + 창 자체 리스너 — 체크박스 포커스 시) · 바깥 클릭으로 닫힘. HUD 의 C/V 버튼은 옵션 창으로 옮겨 제거.
 - 테스트 `client/test/options.test.ts`(10): 기본값·저장/복원·저장소 예외/깨진 JSON·필드 단위 sanitize·이전 키 이전·V 순환·툴팁 행 순서/필터/툴팁 끔·깊은 물·아이콘 3종 상이.
 - 브라우저(내장, 1280×800, 서버 8092 + Vite 5182): 삼각 메뉴 아이콘, 맵 깃발 3종, 작은 줌 + 색각 보조(3배 픽셀 확대 크롭), 툴팁 7행/골드 끔, 옵션 창 변경 → localStorage 저장 → 새로고침 후 복원, `O` 열기·Esc·바깥 클릭 닫기, 내 깃발만 = 봇 깃발 화살표 없음, 도움말·깃발 패널. 스크린샷 `_workspace/screenshots/unit-icons-*.{png,jpg}`, `terrain-tooltip-column.jpg`, `options-window.jpg`.
+
+## 13. 테크 창 v4.3 (갈래 열 격자) · 교전 시각화 (2026-10-11)
+
+근거: 프로토콜 §19(테크 v4.3)·§20(8방향 접촉), GDD §3.4, `01b_tech-tree-v4.3-proposal.md` §5(안 A 격자, 폰은 안 B 탭), design-decisions 2026-10-11. `server/`·`shared/` 변경 없음.
+
+### 테크 창 (`ui/TechWindow.tsx`, 계산 `ui/techTree.ts`, 아이콘 `ui/techIcons.tsx`)
+- 백엔드 임시 노드 버튼 목록(`panels.tsx TechPanel`)을 삭제하고 교체. 열기 = HUD `테크` 버튼 / `T`, 닫기 = `Esc`(상세 → 창 순서) / 창 바깥 클릭(캡처 단계에서 받아 맵 클릭으로 이어지지 않게 막음) / ×.
+- HUD 버튼 배지 = 지금 살 수 있는 노드 수(내가 명령 가능할 때만). 좁은 화면 HUD 에도 `테크` 버튼 추가.
+- 격자: 열 = 갈래 7개(MIL ECO TER MOB | SPE SWO CAV, 공통/병종 사이 점선), 줄 = 티어 I·II·III. T2 는 좌/우 반 칸, T3 는 부모 아래(`techLayout`). 연결선: 부모 보유 = 갈래 색 실선 2px, 미보유 = 회색 점선 1px, hover 노드의 루트까지 경로 굵게.
+- 노드 상태 5종(`techNodeState`, 우선순위 보유 → 요청 중 → 잠김 → 구매 가능 → 골드 부족) — 색 + 테두리 모양 + 기호: 잠김 = 회색 점선 + 자물쇠 + 아이콘 40%, 가격 숨김 / 골드 부족 = 얇은 실선 + 진행 링(gold/price) / 구매 가능 = 굵은 실선, 한 번만 깜빡 / 요청 중 = 이중 테두리 + 시계 / 보유 = 갈래 색 채움 + 체크. 창 아래 범례.
+- "요청 중" = `store.pendingTechNodes()`: `cmd_buy_tech` 를 보내고 `cmd_ack` 전, 그리고 수락 ack 뒤 `tech_purchased`(techMask) 반영 전 짧은 틈(최대 5초). 거절 토스트는 테크 전용 문구(`TECH_REJECT_TEXT`: PREREQ_MISSING / ALREADY_OWNED / INSUFFICIENT → "골드가 부족합니다" / BAD_REQUEST).
+- 상세 패널(노드 클릭, 같은 노드 다시 클릭 또는 Esc 로 닫힘): 아이콘·이름·갈래·티어·코드·상태, desc, **지금 → 구매 후**(보유 노드는 **없을 때 → 보유**) 수치 = `techStatValues(mask)` 대 `techStatValues(mask | bit)`(다른 보유 노드 합산). 공통 전투 노드는 병종별 실제 전투값 행, ECO 골드 노드는 초당 골드 수입, TER 상한 노드는 실제 병력 상한(`GameModel.troopCapOf`), MOB-3A 는 실제 슬롯(`flagCapOf`). 적용 범위 한 줄, 선행(✓/✗), 가격(기본·구매 n회 반영 +6n%, 다음 구매 시 가격), 대기 시간(순수입 기준, 15분 넘으면 "15분 넘게 걸림"), 구매 버튼(`cmd_buy_tech{nodeId}` — 구매 가능 + 명령 가능일 때만 활성).
+- 보는 플레이어 = `store.viewerId`. 관전·탈락·종료 후에는 따라가는 플레이어의 트리를 보기 전용으로(버튼 비활성, 머리글에 "보기 전용"). 아무도 안 따라가면 안내 문구.
+- 좁은 화면(`useNarrow`): 아래에서 올라오는 시트, 갈래 탭 7개(살 수 있는 노드가 있으면 점), 선택 갈래의 세로 트리, 상세는 트리 아래.
+- 아이콘: 32노드 단색 선 SVG(viewBox 24, stroke 2, currentColor, 면 없음) — 01b 2.3 "아이콘" 열. 병종 갈래 머리글·노드 왼쪽 위 미니 기호는 `UnitIcon`(unitGlyphs) 재사용.
+- **01b 와 다르게 한 것**: 보유 노드의 아이콘을 "흰색 반전" 대신 **먹색(#0d141c)** 으로 — 갈래 색(황금·녹색 등 밝은 색) 채움 위에서 흰색은 대비가 모자라서. 상세 패널을 노드 더블클릭 구매 없이 버튼만(A-80 ①).
+
+### 교전 시각화 (`render/combatPairs.ts`, `renderer.ts drawCombatLinks/drawCombatBadges`)
+- 쌍 추출(클라이언트 계산): 두 깃발 모두 서버 `inCombat` 비트 + 주인 다름 + 동맹 아님 + `TopologyView.touching(posTileId)` (사각 = 체비셰프 1, 대각선 포함 — §20). `touching` 은 `topology.ts` 에만(육각 전환 시 같은 칸 또는 이웃). `combat_started` 메시지는 쓰지 않는다(재접속·늦은 입장에도 비트만으로 복원).
+- 그림: 깃발 아래 연결선(어두운 외곽 + 밝은 선), 깃발 위 아이콘. 보통 보기 = 중점에서 선에 수직으로 비켜 난 자리에 배지 둘(각 깃발 쪽에 그 깃발 태세: 공격 = 기울인 검, 방어 = 방패, 배지 테두리 = 공격 붉음/방어 푸름), 깃발 크기에 비례. 축소 보기(LOD 또는 화면 쌍 > 16) = 쌍마다 배지 하나(검 둘 / 방패 위 검 / 방패). 가까운 배지는 버림(`declutter`). 배지 둘레 맥동 + 새 쌍은 0.7초 섬광. 기존 깃발 붉은 맥동 링은 그대로.
+- 검 아이콘은 병종 "검병" 아이콘(세로 칼날)과 헷갈리지 않게 기울인 모양. 색각 보조 모드에서도 모양으로 구분(색 무관).
+
+### 기타
+- `Help.tsx`: 테크(7갈래·상세·구매·상태 표시·+6%·관전 보기), 전투·ZOC 8방향, 교전 아이콘, 기동 테크 문구(물 위 소모 감소 삭제 반영). README 조작 표 갱신.
+- 테스트: `client/test/techTree.test.ts`(상태 5종·배지 수·가격·대기 시간·상세 수치 01b 예시 1365→1430 포함·격자 배치·아이콘 32개), `client/test/combatPairs.test.ts`(체비셰프 접촉·대각선 쌍·동맹/같은 주인/비전투 제외·2대1·같은 칸·아이콘 종류·겹침 제거).
+- 스크린샷: `_workspace/screenshots/v43-tech-tree-grid.jpg`, `v43-tech-detail-panel.jpg`, `v43-tech-phone-tabs.jpg`, `v43-combat-diagonal-sword-shield.jpg`, `v43-combat-zoomed-out-colorblind.jpg` (서버 8092 / Vite 5182, 봇 9 공개 방).
+- 프로토콜 불일치 의심 없음. 참고: 교전은 1~3초 안에 끝나는 경우가 많아 실제 화면에서 아이콘이 잠깐만 보인다(스크린샷은 클라이언트 수신을 잠시 멈춰 찍음).
