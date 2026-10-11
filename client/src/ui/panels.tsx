@@ -6,16 +6,17 @@ import {
   ALLIANCE_CUTOFF_TICK,
   ALLIANCE_MIN_DURATION,
   MAX_ALLIES_PER_PLAYER,
-  TECH_AXIS_COUNT,
-  TECH_MAX_TIER,
-  type TechAxis,
+  TECH_BRANCH_COUNT,
+  TECH_BRANCH_NAME,
+  techOwned,
+  techPrereqMet,
 } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import type { GameInputController } from '../input/controller.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
-import { TECH_BLURB, TECH_NAME, techCost, techEffects } from './techInfo.js';
+import { techCost, techNodes } from './techInfo.js';
 import { fmtClock } from './text.js';
 
 function constOf<T>(g: GameModel, name: string, fallback: T): T {
@@ -46,44 +47,43 @@ export function TechPanel({ store, ctl }: { store: ClientStore; ctl: GameInputCo
       </div>
       {!viewer && <p className="muted">플레이어를 따라가면 그 플레이어의 테크가 보입니다.</p>}
       {viewer && (
+        // v4.3 임시 목록 (백엔드 전환 때 빌드 유지용) — 갈래 열 × 티어 격자·상세 패널은 프론트 작업에서 교체
         <div className="tech-grid">
-          {Array.from({ length: TECH_AXIS_COUNT }, (_, axis) => (
-            <div key={axis} className="tech-col">
+          {Array.from({ length: TECH_BRANCH_COUNT }, (_, branch) => (
+            <div key={branch} className="tech-col">
               <div className="tech-axis">
-                <b>{TECH_NAME[axis]}</b>
-                <span className="muted small">{TECH_BLURB[axis]}</span>
+                <b>{TECH_BRANCH_NAME[branch]}</b>
               </div>
-              {Array.from({ length: TECH_MAX_TIER }, (_, i) => {
-                const tier = i + 1;
-                const owned = viewer.tech[axis] >= tier;
-                const next = viewer.tech[axis] === tier - 1;
-                const cost = techCost(tier, viewer.tech, consts);
-                const afford = viewer.gold >= cost;
-                const cls = owned ? 'owned' : next ? (afford ? 'next afford' : 'next') : 'locked';
-                return (
-                  <button
-                    key={tier}
-                    className={`tech-node ${cls}`}
-                    disabled={!canBuy || !next || !afford || !p}
-                    onClick={() => store.buyTech(axis as TechAxis, tier as 1 | 2 | 3)}
-                    title={owned ? '구매함' : next ? (afford ? '클릭해 구매' : '골드 부족') : '앞 단계를 먼저 사야 합니다'}
-                  >
-                    <span className="tech-tier">
-                      T{tier} {owned ? '✓' : next ? `${cost.toLocaleString()} 골드` : ''}
-                    </span>
-                    <ul>
-                      {techEffects(axis, tier, consts).map((t) => (
-                        <li key={t}>{t}</li>
-                      ))}
-                    </ul>
-                  </button>
-                );
-              })}
+              {techNodes(consts)
+                .filter((n) => n.branch === branch)
+                .map((n) => {
+                  const owned = techOwned(viewer.techMask, n.id);
+                  const next = !owned && techPrereqMet(viewer.techMask, n.id, techNodes(consts));
+                  const cost = techCost(n.tier, viewer.techCount, consts);
+                  const afford = viewer.gold >= cost;
+                  const cls = owned ? 'owned' : next ? (afford ? 'next afford' : 'next') : 'locked';
+                  return (
+                    <button
+                      key={n.id}
+                      className={`tech-node ${cls}`}
+                      disabled={!canBuy || !next || !afford || !p}
+                      onClick={() => store.buyTech(n.id)}
+                      title={owned ? '구매함' : next ? (afford ? '클릭해 구매' : '골드 부족') : '선행 노드를 먼저 사야 합니다'}
+                    >
+                      <span className="tech-tier">
+                        T{n.tier} {n.name} {owned ? '✓' : next ? `${cost.toLocaleString()} 골드` : ''}
+                      </span>
+                      <ul>
+                        <li>{n.desc}</li>
+                      </ul>
+                    </button>
+                  );
+                })}
             </div>
           ))}
         </div>
       )}
-      <p className="muted small">가격은 살 때마다 25%씩 오릅니다 (축 무관). 효과는 즉시, 되돌릴 수 없음.</p>
+      <p className="muted small">가격은 살 때마다 6%씩 오릅니다 (갈래 무관). 효과는 즉시, 되돌릴 수 없음.</p>
     </div>
   );
 }

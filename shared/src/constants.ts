@@ -174,7 +174,7 @@ export const FLAG_SPEND_BUDGET_CAP_TICKS = 25;
 export const FLAG_TILE_RATE_BASE = 2;
 export const FRONT_RADIUS = 6;
 export const FRONT_MAX_RANGE = 40;
-export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2)
+export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2). 사용자 결정 2026-10-11: 깃발 접촉(전투·ZOC·진척 유지) = 8방향(대각선 포함, topology.touching). 땅 점령은 4방향 그대로
 export const FLAG_RETARGET_LOCK_TICK = 15;
 export const FLAG_RECALL_REFUND_PERMILLE = 850;
 /** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
@@ -204,37 +204,153 @@ export const UNIT_CONVERT_PERMILLE = [1000, 1000, 1150] as const;
 // v4.1 삭제: DEFENSE_LEVERAGE_PERMILLE, UNIT_DEF_PUSH_PERMILLE (게이지 되돌리기 폐지).
 // UNIT_DEF_PERMILLE(깃발 전투 DEF, A-23)은 독립 상수로 유지.
 export const PROGRESS_DECAY_MILLI_PER_TICK = 20; // [A-40] 밀지 않는 tick 마다 감소 — 1000 → 0 에 50 tick(10초)
-export const PROGRESS_HOLD_RANGE = 1; // [A-41] = FLAG_ENGAGE_RANGE. 4a 스냅숏 거리 ≤ 1 적 깃발 → 감소 면제
+export const PROGRESS_HOLD_RANGE = 1; // [A-41] = FLAG_ENGAGE_RANGE. 4a 스냅숏에서 접촉(8방향, 2026-10-11) 중인 적 깃발 → 감소 면제
 
 // ══ 태세 ══
 export const POSTURE = { ATTACK: 0, DEFEND: 1 } as const;
 export type Posture = (typeof POSTURE)[keyof typeof POSTURE];
 
-// ══ 테크 ══
-export const TECH_AXIS = { MILITARY: 0, ECONOMY: 1, TERRITORY: 2, MOBILITY: 3 } as const;
-export type TechAxis = (typeof TECH_AXIS)[keyof typeof TECH_AXIS];
-export const TECH_AXIS_COUNT = 4;
-export const TECH_MAX_TIER = 3;
-/** 인덱스 = tier-1 */
-export const TECH_BASE_COST = [450, 1100, 2600] as const;
-export const TECH_PROGRESSIVE_COEF_PERMILLE = 250;
-//                                                  무테크 T1   T2   T3
-export const MIL_ATK_COST_PERMILLE_BY_TIER = [1000, 930, 860, 780] as const;
-export const MIL_DEF_COST_PERMILLE_BY_TIER = [1000, 1070, 1150, 1220] as const;
-export const MIL_COMBAT_PERMILLE_BY_TIER = [1000, 1025, 1050, 1075] as const; // [A-36]
-export const ECO_GOLD_PERMILLE_BY_TIER = [1000, 1250, 1550, 1900] as const;
-export const ECO_REGEN_PERMILLE_BY_TIER = [1000, 1060, 1130, 1200] as const;
-export const TER_NEUTRAL_COST_PERMILLE_BY_TIER = [1000, 880, 760, 620] as const;
-export const TER_CAP_PERMILLE_BY_TIER = [1000, 1100, 1220, 1350] as const;
-export const MOB_SPEED_PERMILLE_BY_TIER = [1000, 1450, 1720, 2000] as const;
-export const MOB_SLOT_BONUS_BY_TIER = [0, 0, 1, 2] as const;
-export const MOB_CONVERT_PERMILLE_BY_TIER = [1000, 1080, 1150, 1220] as const;
-// 물 업그레이드 = 기동 축 단계 [A-19]
-export const SHALLOW_MOVE_PERMILLE_BY_TIER = [5000, 4000, 3000, 2500] as const;
-export const SHALLOW_MOVE_PERMILLE_MIN = 2000; // [A-20]
-export const WATER_EXPOSURE_PERMILLE_BY_TIER = [1000, 1000, 500, 500] as const;
-export const COMBAT_WATER_VS_LAND_PERMILLE = [800, 870, 950, 1000] as const; // [A-25]
-export const COMBAT_WATER_VS_WATER_PERMILLE = [1000, 1000, 1050, 1100] as const; // [A-25]
+// ══ 테크 v4.3 ══ (사용자 승인 2026-10-11 — 01b_tech-tree-v4.3-proposal.md, A-66~A-84 전부 ①)
+// 7갈래(공통 4 + 병종 3) × 32노드, 노드마다 부모 하나·스탯 하나. 보유 노드 = techMask(uint32, 비트 i = 노드 i).
+// 효과 합산 [A-71]: stat 값 = (보유한 'set' 노드가 있으면 그 값, 없으면 TECH_STAT_BASE) + Σ 보유한 'add' 노드의 value.
+//   정수 덧셈만 → 구매 순서와 무관. 한 스탯에 'set' 노드는 최대 하나, 'set' 과 'add' 를 섞지 않는다(shared/tech.ts 가 로드 시 검사).
+// 가격 [A-69·A-70]: cost(node, n) = floor(TECH_NODE_BASE_COST[tier-1] × (1000 + TECH_PROGRESSIVE_COEF_PERMILLE × n) / 1000), n = 총 구매 수.
+//
+// v4.3 에서 폐기 (구 4축 × 3단계 — 기록용 주석, 서버·클라이언트 어디서도 읽지 않는다. match_config.constants 에서도 빠졌다):
+//   TECH_AXIS / TECH_AXIS_COUNT / TECH_MAX_TIER / TECH_BASE_COST [450,1100,2600] / 누진 250‰
+//   MIL_ATK_COST [1000,930,860,780] · MIL_DEF_COST [1000,1070,1150,1220] · MIL_COMBAT [1000,1025,1050,1075]
+//   ECO_GOLD [1000,1250,1550,1900] · ECO_REGEN [1000,1060,1130,1200] · TER_NEUTRAL_COST [1000,880,760,620] · TER_CAP [1000,1100,1220,1350]
+//   MOB_SPEED [1000,1450,1720,2000] · MOB_SLOT_BONUS [0,0,1,2] · MOB_CONVERT [1000,1080,1150,1220]
+//   SHALLOW_MOVE_BY_TIER [5000,4000,3000,2500] · WATER_EXPOSURE [1000,1000,500,500]
+//   COMBAT_WATER_VS_LAND [800,870,950,1000] · COMBAT_WATER_VS_WATER [1000,1000,1050,1100]
+// [A-75] 사라진 효과: 물 위 노출 소모 감소(항상 ×1.0), 물 대 물 교전 보너스(항상 ×1.0), 전 병종 편성 효율(기병 CAV-2A 로 축소), 슬롯 +2 단계(최대 +1).
+export const SHALLOW_MOVE_PERMILLE_MIN = 2000; // [A-20] 얕은 물 이동배율 하한 (테크로도 이 아래로 못 내려간다)
+/** 상륙(물 위 깃발이 땅 위 적과 교전) 깃발 전투 실효값 배율 — 무테크 값. MOB-3B 상륙정이 950 으로 덮어쓴다 (손실 배율 ≈ 1.25 → 1.05) [A-25] */
+export const COMBAT_WATER_VS_LAND_PERMILLE = 800;
+
+export const TECH_BRANCH = { MIL: 0, ECO: 1, TER: 2, MOB: 3, SPE: 4, SWO: 5, CAV: 6 } as const;
+export type TechBranch = (typeof TECH_BRANCH)[keyof typeof TECH_BRANCH];
+export const TECH_BRANCH_COUNT = 7;
+export const TECH_BRANCH_NAME = ['군사', '경제', '영토', '기동', '창병', '검병', '기병'] as const;
+
+/**
+ * 테크가 건드리는 스탯 (TECH_NODES[].stat). 값은 전부 정수.
+ * 병종별 스탯은 `<이름>_SPEAR + unit` 으로 인덱싱한다 (UNIT.SPEAR 0 / SWORD 1 / CAVALRY 2).
+ */
+export const TECH_STAT = {
+  ATK_COST: 0, // 적 땅 점령비용 배율 (공격자 쪽) ‰
+  DEF_COST: 1, // 내 땅 피점령비용 배율 (방어자 쪽) ‰
+  COMBAT_ATK: 2, // 공격 태세 깃발 전투값 배율 — 공통 부분 ‰ (병종 증분 COMBAT_ATK_* 를 더해 쓴다)
+  COMBAT_DEF: 3, // 방어 태세 깃발 전투값 배율 — 공통 부분 ‰ (병종 증분 COMBAT_DEF_* 를 더해 쓴다)
+  GOLD: 4, // 골드 생산 배율 ‰
+  UPKEEP_COEF: 5, // 그 플레이어의 GARRISON_UPKEEP_PERMILLE (값 자체)
+  REGEN: 6, // 병력 재생 배율 ‰
+  NEUTRAL_COST: 7, // 중립 땅 점령비용 배율 ‰
+  TROOP_CAP: 8, // 병력 상한 배율 ‰
+  SUPPLY_COEF: 9, // 그 플레이어의 SUPPLY_COEF_PERMILLE (값 자체)
+  SPEED: 10, // 깃발 이동속도 배율 — 공통 부분 ‰ (병종 증분 SPEED_* 를 더해 쓴다)
+  SHALLOW_MOVE: 11, // 얕은 물 이동배율 ‰ (값 자체, 하한 SHALLOW_MOVE_PERMILLE_MIN)
+  SLOT_BONUS: 12, // 깃발 슬롯 보너스 (개수)
+  LANDING_COMBAT: 13, // 상륙 교전 실효값 배율 ‰ (값 자체)
+  COMBAT_ATK_SPEAR: 14,
+  COMBAT_ATK_SWORD: 15,
+  COMBAT_ATK_CAVALRY: 16,
+  COMBAT_DEF_SPEAR: 17,
+  COMBAT_DEF_SWORD: 18,
+  COMBAT_DEF_CAVALRY: 19,
+  SPEED_SPEAR: 20,
+  SPEED_SWORD: 21,
+  SPEED_CAVALRY: 22,
+  UPKEEP_WEIGHT_SPEAR: 23, // 그 플레이어의 UNIT_GARRISON_PERMILLE[unit] (값 자체)
+  UPKEEP_WEIGHT_SWORD: 24,
+  UPKEEP_WEIGHT_CAVALRY: 25,
+  CONVERT_SPEAR: 26, // 그 플레이어의 UNIT_CONVERT_PERMILLE[unit] (값 자체)
+  CONVERT_SWORD: 27,
+  CONVERT_CAVALRY: 28,
+  CAPTURE_MULT_SPEAR: 29, // 그 플레이어의 UNIT_ATK_MULT_PERMILLE[unit] (점령비용 병종 배율, 값 자체)
+  CAPTURE_MULT_SWORD: 30,
+  CAPTURE_MULT_CAVALRY: 31,
+} as const;
+export type TechStat = (typeof TECH_STAT)[keyof typeof TECH_STAT];
+export const TECH_STAT_COUNT = 32;
+/** 무테크 스탯 값 (인덱스 = TECH_STAT). 값 자체가 상수인 스탯은 그 상수를 그대로 쓴다 */
+export const TECH_STAT_BASE: readonly number[] = [
+  1000, 1000, 1000, 1000, 1000, GARRISON_UPKEEP_PERMILLE, 1000, 1000, 1000, SUPPLY_COEF_PERMILLE,
+  1000, SHALLOW_MOVE_PERMILLE, 0, COMBAT_WATER_VS_LAND_PERMILLE,
+  0, 0, 0, // COMBAT_ATK_* (공통 COMBAT_ATK 에 더하는 병종 증분)
+  0, 0, 0, // COMBAT_DEF_*
+  0, 0, 0, // SPEED_* (공통 SPEED 에 더하는 병종 증분)
+  UNIT_GARRISON_PERMILLE[0], UNIT_GARRISON_PERMILLE[1], UNIT_GARRISON_PERMILLE[2],
+  UNIT_CONVERT_PERMILLE[0], UNIT_CONVERT_PERMILLE[1], UNIT_CONVERT_PERMILLE[2],
+  UNIT_ATK_MULT_PERMILLE[0], UNIT_ATK_MULT_PERMILLE[1], UNIT_ATK_MULT_PERMILLE[2],
+];
+
+/** [A-69] 티어별 기본 가격 (인덱스 = tier-1) */
+export const TECH_NODE_BASE_COST = [160, 360, 700] as const;
+/** [A-69·A-70] 구매 1회마다 +6% (총 구매 수 기준) */
+export const TECH_PROGRESSIVE_COEF_PERMILLE = 60;
+export const TECH_NODE_COUNT = 32;
+
+export interface TechNodeDef {
+  /** 0..31 = techMask 비트 번호 = cmd_buy_tech.nodeId */
+  id: number;
+  code: string;
+  branch: TechBranch;
+  /** 티어 = 가격 티어 (TECH_NODE_BASE_COST[tier-1]) */
+  tier: 1 | 2 | 3;
+  /** 선행 노드 id (T1 = null) [A-66] */
+  parent: number | null;
+  stat: TechStat;
+  /** 'add' = 스탯에 value 를 더한다 / 'set' = 스탯을 value 로 덮어쓴다 */
+  op: 'add' | 'set';
+  value: number;
+  name: string;
+  /** 짧은 효과 문구 (UI 한 줄) */
+  desc: string;
+}
+
+/** [A-72] 32노드 (01b 2.3 표 그대로). id = 표의 # */
+export const TECH_NODES: readonly TechNodeDef[] = [
+  // 군사 MIL — 공통
+  { id: 0, code: 'MIL-1', branch: 0, tier: 1, parent: null, stat: 0, op: 'add', value: -40, name: '훈련장', desc: '적 땅 점령비용 −4%' },
+  { id: 1, code: 'MIL-2A', branch: 0, tier: 2, parent: 0, stat: 2, op: 'add', value: 30, name: '공격 교리', desc: '공격 태세 깃발 전투 공격력 +3%' },
+  { id: 2, code: 'MIL-2B', branch: 0, tier: 2, parent: 0, stat: 1, op: 'add', value: 60, name: '성벽 보강', desc: '내 땅 피점령비용 +6%' },
+  { id: 3, code: 'MIL-3A', branch: 0, tier: 3, parent: 1, stat: 0, op: 'add', value: -50, name: '공성 전술', desc: '적 땅 점령비용 −5% 추가' },
+  { id: 4, code: 'MIL-3B', branch: 0, tier: 3, parent: 2, stat: 3, op: 'add', value: 40, name: '방어 교리', desc: '방어 태세 깃발 전투 방어력 +4%' },
+  // 경제 ECO
+  { id: 5, code: 'ECO-1', branch: 1, tier: 1, parent: null, stat: 4, op: 'add', value: 80, name: '세금 징수', desc: '골드 생산 +8%' },
+  { id: 6, code: 'ECO-2A', branch: 1, tier: 2, parent: 5, stat: 4, op: 'add', value: 100, name: '시장', desc: '골드 생산 +10%' },
+  { id: 7, code: 'ECO-2B', branch: 1, tier: 2, parent: 5, stat: 5, op: 'set', value: 72, name: '병참', desc: '깃발 유지비 −20% (유지비 계수 90 → 72‰)' },
+  { id: 8, code: 'ECO-3A', branch: 1, tier: 3, parent: 6, stat: 4, op: 'add', value: 120, name: '조폐국', desc: '골드 생산 +12%' },
+  { id: 9, code: 'ECO-3B', branch: 1, tier: 3, parent: 7, stat: 6, op: 'add', value: 60, name: '곡창', desc: '병력 재생 +6%' },
+  // 영토 TER
+  { id: 10, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: 7, op: 'add', value: -60, name: '개척민', desc: '중립 땅 점령비용 −6%' },
+  { id: 11, code: 'TER-2A', branch: 2, tier: 2, parent: 10, stat: 7, op: 'add', value: -80, name: '측량', desc: '중립 땅 점령비용 −8%' },
+  { id: 12, code: 'TER-2B', branch: 2, tier: 2, parent: 10, stat: 8, op: 'add', value: 60, name: '징병소', desc: '병력 상한 +6%' },
+  { id: 13, code: 'TER-3A', branch: 2, tier: 3, parent: 11, stat: 9, op: 'set', value: 15, name: '도로망', desc: '보급선 비용 계수 −25% (칸당 20 → 15‰)' },
+  { id: 14, code: 'TER-3B', branch: 2, tier: 3, parent: 12, stat: 8, op: 'add', value: 80, name: '상비군', desc: '병력 상한 +8%' },
+  // 기동 MOB — 공통
+  { id: 15, code: 'MOB-1', branch: 3, tier: 1, parent: null, stat: 10, op: 'add', value: 150, name: '행군로', desc: '깃발 이동속도 +15% (전 병종)' },
+  { id: 16, code: 'MOB-2A', branch: 3, tier: 2, parent: 15, stat: 10, op: 'add', value: 150, name: '강행군', desc: '깃발 이동속도 +15% (전 병종)' },
+  { id: 17, code: 'MOB-2B', branch: 3, tier: 2, parent: 15, stat: 11, op: 'set', value: 3500, name: '조선술', desc: '얕은 물 이동배율 5.00 → 3.50' },
+  { id: 18, code: 'MOB-3A', branch: 3, tier: 3, parent: 16, stat: 12, op: 'add', value: 1, name: '참모부', desc: '깃발 슬롯 +1' },
+  { id: 19, code: 'MOB-3B', branch: 3, tier: 3, parent: 17, stat: 13, op: 'set', value: 950, name: '상륙정', desc: '상륙 교전 손실 배율 1.25 → 1.05 (물 위 전투값 ×0.80 → ×0.95)' },
+  // 창병 SPE — 창병 깃발에만
+  { id: 20, code: 'SPE-1', branch: 4, tier: 1, parent: null, stat: 17, op: 'add', value: 50, name: '장창 대열', desc: '창병 깃발 전투 방어력 +5%' },
+  { id: 21, code: 'SPE-2A', branch: 4, tier: 2, parent: 20, stat: 23, op: 'set', value: 450, name: '주둔 진지', desc: '창병 유지비 가중치 0.60 → 0.45' },
+  { id: 22, code: 'SPE-2B', branch: 4, tier: 2, parent: 20, stat: 20, op: 'add', value: 100, name: '행군 장화', desc: '창병 이동속도 +10%' },
+  { id: 23, code: 'SPE-3', branch: 4, tier: 3, parent: 21, stat: 17, op: 'add', value: 50, name: '고슴도치 진', desc: '창병 깃발 전투 방어력 +5% 추가' },
+  // 검병 SWO — 검병 깃발에만
+  { id: 24, code: 'SWO-1', branch: 5, tier: 1, parent: null, stat: 15, op: 'add', value: 50, name: '검술', desc: '검병 깃발 전투 공격력 +5%' },
+  { id: 25, code: 'SWO-2A', branch: 5, tier: 2, parent: 24, stat: 18, op: 'add', value: 50, name: '사슬 갑옷', desc: '검병 깃발 전투 방어력 +5%' },
+  { id: 26, code: 'SWO-2B', branch: 5, tier: 2, parent: 24, stat: 30, op: 'set', value: 950, name: '돌격 보병', desc: '검병 점령비용 배율 1.00 → 0.95' },
+  { id: 27, code: 'SWO-3', branch: 5, tier: 3, parent: 26, stat: 15, op: 'add', value: 60, name: '정예 보병', desc: '검병 깃발 전투 공격력 +6% 추가' },
+  // 기병 CAV — 기병 깃발에만
+  { id: 28, code: 'CAV-1', branch: 6, tier: 1, parent: null, stat: 22, op: 'add', value: 100, name: '군마', desc: '기병 이동속도 +10%' },
+  { id: 29, code: 'CAV-2A', branch: 6, tier: 2, parent: 28, stat: 28, op: 'set', value: 1070, name: '마구간', desc: '기병 편성비 1.15 → 1.07' },
+  { id: 30, code: 'CAV-2B', branch: 6, tier: 2, parent: 28, stat: 16, op: 'add', value: 50, name: '기병창', desc: '기병 깃발 전투 공격력 +5%' },
+  { id: 31, code: 'CAV-3', branch: 6, tier: 3, parent: 29, stat: 25, op: 'set', value: 1300, name: '역참', desc: '기병 유지비 가중치 1.60 → 1.30' },
+];
 
 // ══ 승리 ══
 export const THRESHOLD_START_PCT = 60;

@@ -8,7 +8,7 @@
  *
  * 출력: 판별 종료 tick·분·사유·승자, 5분 간격 1위 점유율(%), 봇 APM(수락 명령/분/봇), 거절 비율, tick ms (평균/최대).
  */
-import { HARD_TIMEOUT_TICK, MAP_SIZE_PRESETS, TICKS_PER_MIN, type BotDifficultyName, type MapSizeClass } from '@civwar/shared';
+import { HARD_TIMEOUT_TICK, MAP_SIZE_PRESETS, TECH_NODES, TICKS_PER_MIN, type BotDifficultyName, type MapSizeClass } from '@civwar/shared';
 import { CivBot } from '../src/game/bot.js';
 import { createGameState, ledgerImbalance } from '../src/game/state.js';
 import { Simulation, type BotBrain } from '../src/game/tick.js';
@@ -64,6 +64,14 @@ export interface GameReport {
   /** 플레이어당 테크 구매 수 @15분 / 종료 */
   tech15: number;
   techEnd: number;
+  /** v4.3: 구매 티어 분포 [T1, T2, T3] (판 전체), 노드별 구매 수 (32) */
+  techTiers: number[];
+  techNodes: number[];
+  /** v4.3: 종료 시 테크 수 — 1위(타일) / 생존자 중앙 순위 / 생존 2위 이하 평균 / 탈락자 평균(없으면 null) */
+  techLeader: number;
+  techMedian: number;
+  techOthers: number;
+  techElim: number | null;
   /** 종료 시 고립지 칸 비율 % (내 기지·수도와 연결 안 된 칸 / 전체 소유 칸) */
   enclavePct: number;
   /** v4.2 기지 함락 수 (전체 / 그중 수도) */
@@ -120,6 +128,8 @@ function playGame(seed: number, k: number): GameReport {
   let upN = 0;
   let tech15 = 0;
   let techBuys = 0;
+  const techTiers = [0, 0, 0];
+  const techNodes = new Array(TECH_NODES.length).fill(0);
   let baseCaps = 0;
   let capitalCaps = 0;
   const capitals = new Set(state.players.filter(Boolean).map((p) => p.homeTileId));
@@ -144,7 +154,11 @@ function playGame(seed: number, k: number): GameReport {
     for (const m of out.broadcast) {
       if (m.type === 'game_over') gameOver = { finalTick: m.finalTick, reason: m.reason, winnerId: m.winnerId };
       else if (m.type === 'flag_issued' && m.posture === 0) atkUnits[m.unit]++;
-      else if (m.type === 'tech_purchased') techBuys++;
+      else if (m.type === 'tech_purchased') {
+        techBuys++;
+        techTiers[TECH_NODES[m.nodeId].tier - 1]++;
+        techNodes[m.nodeId]++;
+      }
       else if (m.type === 'base_captured' && m.fromPlayerId !== 0) {
         baseCaps++;
         if (capitals.has(m.tileId)) capitalCaps++;
@@ -196,7 +210,16 @@ function playGame(seed: number, k: number): GameReport {
   const atkTot = Math.max(1, Object.values(atkTime).reduce((a, b) => a + b, 0));
   const finalShares = state.players.filter(Boolean).map((p) => ({ id: p.id, diff: diffs[p.id - 1], aggr: p.bot.aggressionPermille ?? 500, sharePct: Math.round((p.tiles * 1000) / land) / 10, alive: p.alive }));
   const w = gameOver?.winnerId ?? null;
+  const alive = state.players.filter((p) => p && p.alive).sort((a, b) => b.tiles - a.tiles || a.id - b.id);
+  const dead = state.players.filter((p) => p && !p.alive);
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   return {
+    techTiers,
+    techNodes,
+    techLeader: alive[0]?.techPurchased ?? 0,
+    techMedian: alive[Math.floor(alive.length / 2)]?.techPurchased ?? 0,
+    techOthers: mean(alive.slice(1).map((p) => p.techPurchased)),
+    techElim: dead.length ? mean(dead.map((p) => p.techPurchased)) : null,
     seed,
     endTick: gameOver?.finalTick ?? ticks,
     reason: gameOver?.reason ?? 'none',
@@ -267,6 +290,19 @@ console.log(`defense-slot share (DEFEND flags / all flags, sampled every 15 tick
   const uT = Math.max(1, u[0] + u[1] + u[2]);
   console.log(`v4.2 attack issues by unit: spear ${((u[0] * 100) / uT).toFixed(1)}%, sword ${((u[1] * 100) / uT).toFixed(1)}%, cavalry ${((u[2] * 100) / uT).toFixed(1)}%`);
   console.log(`v4.2 upkeepPm mean ${avg((r) => r.upkeepPmMean)}‰; tech buys/player @15m ${avg((r) => r.tech15)}, @end ${avg((r) => r.techEnd)}; enclave tiles at end ${avg((r) => r.enclavePct)}%`);
+  {
+    const tt = [0, 0, 0];
+    const nn = new Array(TECH_NODES.length).fill(0);
+    for (const r of reports) {
+      r.techTiers.forEach((v, i) => (tt[i] += v));
+      r.techNodes.forEach((v, i) => (nn[i] += v));
+    }
+    const tT = Math.max(1, tt[0] + tt[1] + tt[2]);
+    const el = reports.filter((r) => r.techElim !== null);
+    console.log(`v4.3 tech at end — leader ${avg((r) => r.techLeader)}, median-alive ${avg((r) => r.techMedian)}, alive rank 2+ ${avg((r) => r.techOthers)}, eliminated ${el.length ? (el.reduce((a, r) => a + r.techElim!, 0) / el.length).toFixed(1) : '-'} (${el.length} games)`);
+    console.log(`v4.3 tech tiers bought: T1 ${((tt[0] * 100) / tT).toFixed(1)}% / T2 ${((tt[1] * 100) / tT).toFixed(1)}% / T3 ${((tt[2] * 100) / tT).toFixed(1)}% (per player ${(tt[0] / reports.length / N).toFixed(2)} / ${(tt[1] / reports.length / N).toFixed(2)} / ${(tt[2] / reports.length / N).toFixed(2)})`);
+    console.log(`v4.3 node buy rate (% of player-games): ${TECH_NODES.map((n) => `${n.code} ${((nn[n.id] * 100) / (reports.length * N)).toFixed(0)}`).join(', ')}`);
+  }
   console.log(`v4.2 player-base captures/game ${avg((r) => r.baseCaps)} (capitals ${avg((r) => r.capitalCaps)}), eliminations/game ${avg((r) => r.finalShares.filter((x) => !x.alive).length)}`);
   console.log(`v4.2 troop sinks %: exposure ${avg((r) => r.sinks.exposure)}, combat ${avg((r) => r.sinks.combat)}, spentAP ${avg((r) => r.sinks.spentAP)}`);
 }

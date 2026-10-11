@@ -8,6 +8,7 @@ import type { MapGraph, Topology } from './topology.js';
 export class SquareTopology implements Topology {
   readonly kind = 'square' as const;
   private readonly adj: number[][];
+  private readonly contact: number[][];
 
   constructor(
     readonly width: number,
@@ -25,6 +26,33 @@ export class SquareTopology implements Topology {
       if (r < height - 1) list.push(t + width);
       this.adj[t] = list;
     }
+    // 깃발 접촉 = 8방향 (체비셰프 1), tileId 오름차순
+    this.contact = new Array(n);
+    for (let t = 0; t < n; t++) {
+      const r = Math.floor(t / width);
+      const c = t - r * width;
+      const list: number[] = [];
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const rr = r + dr;
+          const cc = c + dc;
+          if (rr >= 0 && rr < height && cc >= 0 && cc < width) list.push(rr * width + cc);
+        }
+      this.contact[t] = list;
+    }
+  }
+
+  contactNeighbors(t: number): readonly number[] {
+    return this.contact[t];
+  }
+
+  /** 체비셰프 거리 ≤ 1 */
+  touching(a: number, b: number): boolean {
+    const w = this.width;
+    const ar = Math.floor(a / w);
+    const br = Math.floor(b / w);
+    return Math.abs(ar - br) <= 1 && Math.abs(a - ar * w - (b - br * w)) <= 1;
   }
 
   tileCount(): number {
@@ -128,6 +156,12 @@ export class TerrainGraph implements MapGraph {
   }
   neighbors(t: number): readonly number[] {
     return this.nb[t];
+  }
+  contactNeighbors(t: number): readonly number[] {
+    return this.topology.contactNeighbors(t);
+  }
+  touching(a: number, b: number): boolean {
+    return this.topology.touching(a, b);
   }
   private readonly diskCache = new Map<number, readonly number[]>();
   disk(center: number, r: number): readonly number[] {

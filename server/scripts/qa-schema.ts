@@ -68,7 +68,7 @@ const UNIT = ['enum', 0, 1, 2] as const;
 const FLAG_STATE = ['enum', 'MARCHING', 'ENGAGED', 'RETURNING', 'IDLE'] as const;
 const DIFF = ['enum', 'EASY', 'NORMAL', 'HARD'] as const;
 /** 문서 §6.1 */
-export const DOC_REJECT = ['ELIMINATED', 'INSUFFICIENT', 'BAD_REQUEST', 'NOT_IN_GAME', 'TECH_ORDER', 'RATE_LIMITED', 'NO_SLOT', 'BAD_UNIT', 'WATER', 'ALLIED', 'OUT_OF_RANGE', 'TOO_SMALL', 'NO_FLAG', 'RETURNING', 'LOCKED', 'NOT_BASE', 'NOT_OWNED_BASE', 'ROUTED', 'IN_COMBAT', 'DISENGAGING', 'POSTURE_COOLDOWN', 'SAME_POSTURE', 'BAD_TARGET', 'ALLY_LIMIT', 'ALLY_CUTOFF', 'ALLY_FROZEN', 'ALREADY_ALLIED', 'ALLY_PENDING', 'NO_PROPOSAL', 'NOT_ALLIED', 'MIN_DURATION'] as const;
+export const DOC_REJECT = ['ELIMINATED', 'INSUFFICIENT', 'BAD_REQUEST', 'NOT_IN_GAME', 'PREREQ_MISSING', 'ALREADY_OWNED', 'RATE_LIMITED', 'NO_SLOT', 'BAD_UNIT', 'WATER', 'ALLIED', 'OUT_OF_RANGE', 'TOO_SMALL', 'NO_FLAG', 'RETURNING', 'LOCKED', 'NOT_BASE', 'NOT_OWNED_BASE', 'ROUTED', 'IN_COMBAT', 'DISENGAGING', 'POSTURE_COOLDOWN', 'SAME_POSTURE', 'BAD_TARGET', 'ALLY_LIMIT', 'ALLY_CUTOFF', 'ALLY_FROZEN', 'ALREADY_ALLIED', 'ALLY_PENDING', 'NO_PROPOSAL', 'NOT_ALLIED', 'MIN_DURATION'] as const;
 /** 문서 §6.2 */
 export const DOC_ERROR = ['BAD_MESSAGE', 'BAD_VERSION', 'NOT_HELLO', 'ALREADY_HELLO', 'BAD_NICKNAME', 'BAD_TARGET_PLAYERS', 'ROOM_NOT_FOUND', 'ROOM_FULL', 'ROOM_IN_PROGRESS', 'ALREADY_IN_ROOM', 'NOT_IN_ROOM', 'NOT_HOST', 'NOT_LOBBY', 'RATE_LIMITED', 'BAD_ROOM_OPTIONS', 'MAP_NOT_FOUND', 'NOT_ENOUGH_PLAYERS'] as const;
 
@@ -119,7 +119,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   map_init: { terrain: arr('int'), spawns: arr(obj({ playerId: 'int', tileId: 'int', homeTileId: 'int' })), bases: arr('int') },
   snapshot_full: {
     tick: 'int', owners: arr('int'),
-    players: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: range(0, 700), tech: arr(range(0, 3), 4), flagCap: range(3, 7), alive: 'bool', connected: 'bool' })),
+    players: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: range(0, 700), techMask: range(0, 0xffffffff), techCount: range(0, 32), flagCap: range(3, 7), alive: 'bool', connected: 'bool' })),
     flags: arr(flagSnap),
     bases: arr(obj({ tileId: 'int', ownerId: 'int', hpPct: range(0, 100) })),
     alliances: arr(obj({ a: 'int', b: 'int', state: ['enum', 'ACTIVE', 'BREAKING'], sinceTick: 'int', breakAtTick: 'int|null' })),
@@ -129,7 +129,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   },
   snapshot_delta: {
     tick: 'int', tileChanges: arr(tuple('int', 'int')),
-    playerDeltas: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: 'int' })),
+    playerDeltas: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: 'int', techMask: range(0, 0xffffffff) })),
     flagMoves: arr(tuple('int', 'int')), flagStats: arr(tuple('int', 'int', FLAG_STATE)), flagProgress: arr(tuple('int', range(0, 99))),
     flagTargets: arr(tuple('int', 'int|null')), baseHp: arr(tuple('int', range(0, 100))), flagsGone: arr('int'), 'thresholdPct?': 'num',
     flagFlags: arr(tuple('int', POSTURE, range(0, 127), 'int')),
@@ -138,7 +138,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE },
   error: { code: ['enum', ...DOC_ERROR], message: 'str' },
   pong: { clientTime: 'num', serverTime: 'int', tick: 'int' },
-  tech_purchased: { tick: 'int', playerId: 'int', axis: range(0, 3), tier: range(1, 3), cost: 'int', newFlagCap: range(3, 7) },
+  tech_purchased: { tick: 'int', playerId: 'int', nodeId: range(0, 31), cost: 'int', newFlagCap: range(3, 7), techMask: range(0, 0xffffffff) },
   threshold_update: { tick: 'int', thresholdPct: 'num' },
   endgame_rush: { tick: 'int', costMultPermille: 'int' },
   player_eliminated: { tick: 'int', playerId: 'int', byPlayerId: 'int|null' },

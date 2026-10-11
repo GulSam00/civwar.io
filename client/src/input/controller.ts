@@ -18,13 +18,14 @@
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
  *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
-import { POSTURE, TECH_AXIS, UNIT_CONVERT_PERMILLE, MOB_CONVERT_PERMILLE_BY_TIER, type Unit } from '@civwar/shared';
+import { POSTURE, techConvertPm, techShallowPm, type Unit } from '@civwar/shared';
 import { panBy, screenToWorld, worldToScreen, zoomAt, clampCamera } from '../render/camera.js';
 import type { GameRenderer } from '../render/renderer.js';
 import type { ClientStore } from '../state/store.js';
 import { troopsForRatio } from './preview.js';
 import { RouteCache, computeRoute, nearestOwnBase, type RoutePreview } from './route.js';
 import { defaultOptions, nextDirectionMode, saveOptions, type GameOptions } from '../ui/options.js';
+import { techStatsOf } from '../ui/techInfo.js';
 
 export type IssuePosture = 'attack' | 'defend' | 'blocked';
 
@@ -105,9 +106,8 @@ export class GameInputController {
     if (!g || me === null) return 0;
     const p = g.players.get(me);
     if (!p) return 0;
-    const uc = (g.config.constants?.UNIT_CONVERT_PERMILLE as readonly number[] | undefined) ?? UNIT_CONVERT_PERMILLE;
-    const mc = (g.config.constants?.MOB_CONVERT_PERMILLE_BY_TIER as readonly number[] | undefined) ?? MOB_CONVERT_PERMILLE_BY_TIER;
-    return troopsForRatio(p.troops, this.ix.ratio, uc[unit], mc[p.tech[3]]);
+    // v4.3: 편성비 = 플레이어 스탯 CONVERT_<unit> (구 전 병종 편성 효율 폐기 → 나누는 값 1000)
+    return troopsForRatio(p.troops, this.ix.ratio, techConvertPm(techStatsOf(p.techMask, g.config.constants), unit), 1000);
   }
 
   attach(): void {
@@ -253,11 +253,12 @@ export class GameInputController {
     return tile >= 0 && !!this.store.game?.bases.has(tile);
   }
 
+  /** v4.3: 내 얕은 물 이동배율 ‰ (MOB-2B 조선술 반영) — 거리장 키 */
   private myMobilityTier(): number {
     const g = this.store.game;
     const me = this.store.myPlayerId;
     const p = g && me !== null ? g.players.get(me) : undefined;
-    return p ? p.tech[TECH_AXIS.MOBILITY] : 0;
+    return techShallowPm(techStatsOf(p?.techMask ?? 0, g?.config.constants));
   }
 
   /** 목적지까지 이동 거리(서버와 같은 가중 경로)가 가장 짧은 내 기지 */

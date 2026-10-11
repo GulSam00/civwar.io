@@ -11,7 +11,6 @@ import {
   type ClientMessage,
   type OfficialMapInfo,
   type Posture,
-  type TechAxis,
   type RoomOptions,
   type S2C_RoomList,
   type S2C_RoomState,
@@ -251,8 +250,9 @@ export class ClientStore {
   issueFlag(unit: Unit, troops: number, anchorTileId: number, originBaseTileId: number | null = null): number {
     return this.command({ type: 'cmd_flag_issue', unit, troops, anchorTileId, originBaseTileId });
   }
-  buyTech(axis: TechAxis, tier: 1 | 2 | 3): number {
-    return this.command({ type: 'cmd_buy_tech', axis, tier });
+  /** v4.3: TECH_NODES id */
+  buyTech(nodeId: number): number {
+    return this.command({ type: 'cmd_buy_tech', nodeId });
   }
   proposeAlly(targetPlayerId: number): number {
     return this.command({ type: 'cmd_ally_propose', targetPlayerId });

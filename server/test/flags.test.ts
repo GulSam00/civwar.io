@@ -192,6 +192,64 @@ describe('ZOC · 대치 · 태세', () => {
   });
 });
 
+describe('깃발 접촉 = 8방향 (사용자 결정 2026-10-11)', () => {
+  it('토폴로지: contactNeighbors 8개(대각선 포함), touching = 체비셰프 ≤ 1, 이동 이웃은 4방향 그대로', () => {
+    const { s, c, W } = scenario();
+    expect([...s.graph.contactNeighbors(c)]).toEqual([c - W - 1, c - W, c - W + 1, c - 1, c + 1, c + W - 1, c + W, c + W + 1]);
+    expect(s.graph.touching(c, c + W + 1)).toBe(true);
+    expect(s.graph.touching(c, c)).toBe(true);
+    expect(s.graph.touching(c, c + 2)).toBe(false);
+    expect([...s.graph.neighbors(c)]).toEqual([c - W, c - 1, c + 1, c + W]);
+  });
+
+  it('대각선 접촉 → 깃발 전투 개시 (공격 태세 vs 방어 태세)', () => {
+    const { sim, s, c, W } = scenario();
+    setTileOwner(s, c, 2, false);
+    setTileOwner(s, c + W + 1, 1, false);
+    const d = addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    const a = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c + W + 1, anchor: c + W + 1, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'IDLE', idleSinceTick: 0 });
+    const r = run(sim, 1);
+    expect(r.all.map((m) => m.type)).toContain('combat_started');
+    expect(a.inCombat && d.inCombat).toBe(true);
+    expect(a.posTileId).toBe(c + W + 1); // 대각선 그대로 — 이동 없이 교전
+  });
+
+  it('대각선 ZOC: 다음 칸·현재 칸이 모두 적 방어 깃발과 접촉하면 행군이 멈춘다 (4방향이면 현재 칸은 비접촉)', () => {
+    const { sim, s, c, W } = scenario();
+    for (const t of [c, c + 1, c + 2, c + 3]) setTileOwner(s, t, 1, false);
+    setTileOwner(s, c + W + 1, 2, false);
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c + W + 1, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, anchor: c + 3, posture: POSTURE.DEFEND, state: 'MARCHING' });
+    const r = run(sim, 30);
+    expect(f.posTileId).toBe(c);
+    expect(f.blocked).toBe(true);
+    expect(f.inCombat).toBe(false); // 방어 ↔ 방어는 싸우지 않는다
+    expect(r.all.find((m) => m.type === 'flag_blocked')).toMatchObject({ flagId: f.id });
+  });
+
+  it('대각선 적 깃발이 있으면 진척도가 줄지 않는다 (holdProgress)', () => {
+    const { sim, s, c, W } = scenario();
+    for (const t of s.graph.disk(c, 1)) setTileOwner(s, t, 1, false);
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED', progressMilli: 500, targetTileId: c + 1 });
+    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: c + W + 1, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    run(sim, 5);
+    expect(f.progressMilli).toBe(500);
+  });
+
+  it('땅 점령은 4방향 그대로: marchFront 에 대각선 칸이 들어가지 않는다', () => {
+    const { sim, s, c, W } = scenario();
+    for (const t of s.graph.disk(c, 2)) setTileOwner(s, t, 1, false);
+    setTileOwner(s, c + W + 1, 2, false); // 대각선만 적
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: c, anchor: c, posture: POSTURE.ATTACK, targetOwnerId: NEUTRAL, state: 'IDLE', idleSinceTick: 0 });
+    run(sim, 3);
+    expect(f.state).toBe('IDLE'); // 재점화 없음
+    expect(s.owners[c + W + 1]).toBe(2);
+    setTileOwner(s, c + 1, 2, false); // 옆(4방향) 칸이 적이 되면 재점화
+    run(sim, 1);
+    expect(f.state).toBe('ENGAGED');
+  });
+});
+
 describe('이탈 대기 · 패주', () => {
   it('전투 중 회수 → 3초 대기(실효값 ×0.5) → broke_away, 패주 깃발 명령은 ROUTED', () => {
     const { sim, s, c } = scenario();
@@ -587,13 +645,13 @@ describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
 
   it('m-10: 봇(connId 0) 명령 ack 은 fromBot 표시, m-9: 종료 후 남은 사람 명령은 NOT_IN_GAME ack', () => {
     const sim = makeSim();
-    sim.enqueue(0, 2, { type: 'cmd_buy_tech', clientSeq: 9, axis: 0, tier: 3 });
-    sim.enqueue(5, 1, { type: 'cmd_buy_tech', clientSeq: 10, axis: 0, tier: 3 });
+    sim.enqueue(0, 2, { type: 'cmd_buy_tech', clientSeq: 9, nodeId: 3 });
+    sim.enqueue(5, 1, { type: 'cmd_buy_tech', clientSeq: 10, nodeId: 3 });
     const out = sim.step();
     expect(out.personal.find((p) => p.playerId === 2)?.fromBot).toBe(true);
     expect(out.personal.find((p) => p.playerId === 1)?.fromBot).toBeUndefined();
-    sim.enqueue(5, 1, { type: 'cmd_buy_tech', clientSeq: 11, axis: 0, tier: 1 });
-    sim.enqueue(0, 2, { type: 'cmd_buy_tech', clientSeq: 12, axis: 0, tier: 1 });
+    sim.enqueue(5, 1, { type: 'cmd_buy_tech', clientSeq: 11, nodeId: 0 });
+    sim.enqueue(0, 2, { type: 'cmd_buy_tech', clientSeq: 12, nodeId: 0 });
     expect(sim.flushPending()).toEqual([{ playerId: 1, msg: { type: 'cmd_ack', clientSeq: 11, accepted: false, reason: 'NOT_IN_GAME' } }]);
     expect(sim.flushPending()).toEqual([]);
   });

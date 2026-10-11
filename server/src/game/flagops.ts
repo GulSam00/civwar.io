@@ -8,10 +8,8 @@ import {
   FLAG_MIN_TROOPS,
   FLAG_RETARGET_LOCK_TICK,
   FRONT_MAX_RANGE,
-  MOB_CONVERT_PERMILLE_BY_TIER,
   POSTURE,
   POSTURE_COOLDOWN_TICKS,
-  UNIT_CONVERT_PERMILLE,
   isClaimable,
   type C2S_CmdFlagIssue,
   type C2S_CmdFlagRecall,
@@ -21,10 +19,11 @@ import {
   type FlagEndReason,
   type Posture,
   type Unit,
+  techConvertPm,
 } from '@civwar/shared';
 import { flagCap } from './economy.js';
 import type { Outbox } from './outbox.js';
-import { engageEtaTicks, etaTicks, minDistFromTerritory, mobilityTier, recallTarget, stepToward } from './rules.js';
+import { engageEtaTicks, etaTicks, minDistFromTerritory, recallTarget, stepToward } from './rules.js';
 import { isAlly, makeFlag, type Flag, type GameState } from './state.js';
 
 export type CmdResult = { reason: CmdRejectReason } | { flagId: number; posture: Posture };
@@ -138,8 +137,8 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
     origin = argminDist(state, own, p.homeTileId);
   }
 
-  const convertEff = MOB_CONVERT_PERMILLE_BY_TIER[mobilityTier(p)];
-  const poolCost = Math.ceil((msg.troops * UNIT_CONVERT_PERMILLE[unit]) / convertEff);
+  // v4.3: 편성비 = 플레이어 스탯 CONVERT_<unit> (기병 1150, CAV-2A 1070). 전 병종 편성 효율(구 MOB_CONVERT)은 폐기 [A-75]
+  const poolCost = Math.ceil((msg.troops * techConvertPm(p.statPm, unit)) / 1000);
   if (poolCost * 1000 > p.troopsMilli) return { reason: 'INSUFFICIENT' };
 
   p.troopsMilli -= poolCost * 1000;

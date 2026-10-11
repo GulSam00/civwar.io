@@ -210,7 +210,7 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
  * progressMilli -= PROGRESS_DECAY_MILLI_PER_TICK (0 클램프). 0 도달 시 flag_progress_lost(cause="decayed") 1회.
  * targetTileId 는 유지(sticky) — 다시 밀면 같은 타깃에서 0부터.
  *
- * holdProgress(f) = f.inCombat or 적대 깃발 g in presence4a : distance(pos4a[f], pos4a[g]) <= PROGRESS_HOLD_RANGE.
+ * holdProgress(f) = f.inCombat or 적대 깃발 g in presence4a : touching(pos4a[f], pos4a[g]) (2026-10-11: 8방향 접촉 — PROGRESS_HOLD_RANGE 1 = 접촉).
  * presence4a 는 4a 스냅숏(이동 직후, 4b 손실 전)이라 4b 에서 패주한 깃발도 이번 tick 엔 "주변 적"이다.
  * 각 깃발은 자기 progressMilli 만 바꾸므로 처리 순서가 결과를 바꾸지 않는다.
  */
@@ -225,10 +225,16 @@ export function stage7c_progressDecay(state: GameState, presence: FlagPresence, 
   }
 }
 
+/** PROGRESS_HOLD_RANGE (= 1) 안 = 같은 칸 + 접촉 이웃 (사각 8방향) */
+function holdTiles(state: Readonly<GameState>, pos: number): readonly number[] {
+  if (PROGRESS_HOLD_RANGE !== 1) throw new Error('PROGRESS_HOLD_RANGE 는 접촉(1)만 지원');
+  return [pos, ...state.graph.contactNeighbors(pos)];
+}
+
 export function holdProgress(state: Readonly<GameState>, presence: FlagPresence, f: Readonly<Flag>): boolean {
   if (f.inCombat) return true;
   const pos = presence.posOf.get(f.id) ?? f.posTileId;
-  for (const x of state.graph.disk(pos, PROGRESS_HOLD_RANGE)) {
+  for (const x of holdTiles(state, pos)) {
     const owners = presence.ownersAt.get(x);
     if (!owners) continue;
     for (const o of owners) if (o !== f.ownerId && !isAlly(state, f.ownerId, o)) return true;

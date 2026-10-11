@@ -21,7 +21,7 @@ function hashState(s: GameState): string {
   const h = createHash('sha256');
   h.update(Buffer.from(s.owners));
   h.update(JSON.stringify(s.flags));
-  h.update(JSON.stringify(s.players.filter(Boolean).map((p) => [p.troopsMilli, p.goldMilli, p.tech, p.tiles])));
+  h.update(JSON.stringify(s.players.filter(Boolean).map((p) => [p.troopsMilli, p.goldMilli, p.techMask, p.tiles])));
   return h.digest('hex');
 }
 
@@ -152,7 +152,8 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     const iss = cmds.find((x): x is Extract<C2S_GameCommand, { type: 'cmd_flag_issue' }> => x.type === 'cmd_flag_issue');
     expect(iss).toBeDefined();
     expect(s.owners[iss!.anchorTileId]).toBe(1);
-    expect(s.graph.distance(iss!.anchorTileId, e.posTileId)).toBeLessThanOrEqual(1);
+    // 2026-10-11: 요격 칸 = 적 깃발과 접촉(8방향, 대각선 포함)하는 내 땅
+    expect(s.graph.touching(iss!.anchorTileId, e.posTileId)).toBe(true);
     expect([UNIT.SPEAR, UNIT.CAVALRY]).toContain(iss!.unit);
     // 요격 병력 ≥ 적 × 1.25 × (적 v / 내 v)
     expect(iss!.troops).toBeGreaterThanOrEqual(1000);

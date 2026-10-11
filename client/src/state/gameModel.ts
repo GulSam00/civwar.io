@@ -16,12 +16,15 @@ import {
   FLAG_CAP_BASE,
   FLAG_CAP_HARD_MAX,
   FLAG_TILES_PER_SLOT,
-  MOB_SLOT_BONUS_BY_TIER,
-  TER_CAP_PERMILLE_BY_TIER,
+  TECH_NODES,
+  TECH_STAT,
+  TECH_STAT_BASE,
   TROOP_CAP_BASE,
   TROOP_CAP_PER_TILE,
   isClaimable,
   rleDecode,
+  techCount,
+  techStatValues,
   type AllianceSnapshot,
   type AllyProposalSnapshot,
   type BaseSnapshot,
@@ -37,6 +40,11 @@ import {
 } from '@civwar/shared';
 
 export { ANY_HOSTILE };
+
+/** v4.3: 플레이어 스탯 (서버 statPm 과 같은 식, 상수는 match_config 우선) */
+function techStatsFor(cfg: S2C_MatchConfig | null, mask: number): number[] {
+  return techStatValues(mask, constNum(cfg, 'TECH_NODES', TECH_NODES), constNum(cfg, 'TECH_STAT_BASE', TECH_STAT_BASE));
+}
 
 /** match_config.constants 우선, 없으면 shared 상수 (프로토콜 §5 "서버가 보낸 값을 우선") */
 function constNum<T>(cfg: S2C_MatchConfig | null, name: string, fallback: T): T {
@@ -110,7 +118,7 @@ export class GameModel {
 
   loadFull(f: S2C_SnapshotFull): void {
     this.owners = rleDecode(f.owners, this.tileCount);
-    this.players = new Map(f.players.map((p) => [p.id, { ...p, tech: [...p.tech] as PlayerSnapshot['tech'] }]));
+    this.players = new Map(f.players.map((p) => [p.id, { ...p }]));
     this.flags = new Map(f.flags.map((x) => [x.id, { ...x }]));
     for (const id of [...this.flagEta.keys()]) if (this.flags.get(id)?.state !== 'MARCHING') this.flagEta.delete(id);
     for (const id of [...this.flagReturn.keys()]) if (this.flags.get(id)?.state !== 'RETURNING') this.flagReturn.delete(id);
@@ -220,7 +228,8 @@ export class GameModel {
       case 'tech_purchased': {
         const p = this.players.get(e.playerId);
         if (p) {
-          p.tech[e.axis] = e.tier;
+          p.techMask = e.techMask;
+          p.techCount = techCount(e.techMask);
           p.flagCap = e.newFlagCap;
         }
         break;
@@ -374,19 +383,19 @@ export class GameModel {
     return this.alliances.has(allianceKey(a, b));
   }
 
-  flagCapOf(p: Pick<PlayerSnapshot, 'tiles' | 'tech'>): number {
+  flagCapOf(p: Pick<PlayerSnapshot, 'tiles' | 'techMask'>): number {
     const base = constNum(this.config, 'FLAG_CAP_BASE', FLAG_CAP_BASE);
     const per = constNum(this.config, 'FLAG_TILES_PER_SLOT', FLAG_TILES_PER_SLOT);
     const max = constNum(this.config, 'FLAG_CAP_HARD_MAX', FLAG_CAP_HARD_MAX);
-    const bonus = constNum<readonly number[]>(this.config, 'MOB_SLOT_BONUS_BY_TIER', MOB_SLOT_BONUS_BY_TIER);
-    return Math.min(max, base + Math.floor(p.tiles / per) + bonus[p.tech[3]]);
+    const bonus = techStatsFor(this.config, p.techMask)[TECH_STAT.SLOT_BONUS]; // v4.3: MOB-3A +1
+    return Math.min(max, base + Math.floor(p.tiles / per) + bonus);
   }
 
   /** §8 troopCap = floor((100 + 12·tiles) × capPm / 1000), capPm = 영토 테크 */
-  troopCapOf(p: Pick<PlayerSnapshot, 'tiles' | 'tech'>): number {
+  troopCapOf(p: Pick<PlayerSnapshot, 'tiles' | 'techMask'>): number {
     const base = constNum(this.config, 'TROOP_CAP_BASE', TROOP_CAP_BASE);
     const per = constNum(this.config, 'TROOP_CAP_PER_TILE', TROOP_CAP_PER_TILE);
-    const capPm = constNum<readonly number[]>(this.config, 'TER_CAP_PERMILLE_BY_TIER', TER_CAP_PERMILLE_BY_TIER)[p.tech[2]];
+    const capPm = techStatsFor(this.config, p.techMask)[TECH_STAT.TROOP_CAP]; // v4.3: TER-2B/3B
     return Math.floor(((base + per * p.tiles) * capPm) / 1000);
   }
 
@@ -412,7 +421,7 @@ export class GameModel {
       for (const k of ['tiles', 'troops', 'gold', 'goldWeight', 'upkeepPm', 'flagCap', 'alive', 'connected'] as const) {
         if (m[k] !== p[k]) out.push(`player ${p.id}.${k} 모델 ${m[k]} / full ${p[k]}`);
       }
-      if (m.tech.join() !== p.tech.join()) out.push(`player ${p.id}.tech`);
+      if (m.techMask !== p.techMask) out.push(`player ${p.id}.techMask`);
     }
     const ids = new Set([...this.flags.keys(), ...f.flags.map((x) => x.id)]);
     for (const id of ids) {

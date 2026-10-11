@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ENDGAME_RUSH_TICK, POSTURE, TECH_AXIS, type Unit } from '@civwar/shared';
+import { ENDGAME_RUSH_TICK, POSTURE, techShallowPm, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -16,7 +16,7 @@ import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
-import { goldPerSecond } from './techInfo.js';
+import { goldPerSecond, techStatsOf } from './techInfo.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, TechPanel } from './panels.js';
 import { Help } from './Help.js';
 
@@ -205,7 +205,8 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
   };
   if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
   const viewer = store.viewerId;
-  const tier = viewer !== null ? (game.players.get(viewer)?.tech[TECH_AXIS.MOBILITY] ?? 0) : 0;
+  // v4.3: 얕은 물 이동배율 ‰ (보는 플레이어의 MOB-2B 반영)
+  const tier = techShallowPm(techStatsOf(viewer !== null ? (game.players.get(viewer)?.techMask ?? 0) : 0, game.config.constants));
   const t = ix.hoverTile;
   const b = game.bases.get(t);
   const o = ix.options;
@@ -364,7 +365,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const rushTick = (g.config.endgameRush?.tick as number | undefined) ?? ENDGAME_RUSH_TICK;
   const spectating = me === null || viewer !== me;
   const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
-  const income = p ? goldPerSecond(p.goldWeight, p.tech[1], p.upkeepPm, g.config.constants) : null;
+  const income = p ? goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants) : null;
   return (
     <div className="hud-top">
       {spectating && <span className="pill spectate-pill">{me !== null && g.players.get(me) && !g.players.get(me)!.alive ? '탈락 · 관전' : '관전'}{p ? ` · ${store.nicknameOf(p.id)}` : ''}</span>}
@@ -533,7 +534,7 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
   const p = g && me !== null ? g.players.get(me) : undefined;
   let gold: JSX.Element | null = null;
   if (g && p && me !== null) {
-    const inc = goldPerSecond(p.goldWeight, p.tech[TECH_AXIS.ECONOMY], p.upkeepPm, g.config.constants);
+    const inc = goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants);
     const upkeep = Math.max(0, inc.gross - inc.net);
     const rule = detectRule(g, me, p.upkeepPm);
     if (rule) lastRule.current = rule;

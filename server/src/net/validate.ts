@@ -2,7 +2,7 @@
  * 클라이언트 메시지 스키마 검증. 서버는 클라이언트를 신뢰하지 않는다.
  * 여기서는 "모양"만 본다(타입·정수·범위). 소유권·인접·자원 같은 게임 규칙 검증은 tick 1단계에서.
  */
-import { MAX_PLAYERS, NICKNAME_MAX_LEN, ROOM_CODE_LENGTH, type ClientMessage } from '@civwar/shared';
+import { MAX_PLAYERS, NICKNAME_MAX_LEN, ROOM_CODE_LENGTH, TECH_NODE_COUNT, type ClientMessage } from '@civwar/shared';
 
 export type ParseResult =
   | { ok: true; msg: ClientMessage }
@@ -96,9 +96,9 @@ export function parseClientMessage(raw: string): ParseResult {
       if (!inRange(m.posture, 0, 1)) return bad('posture must be 0|1');
       return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId, posture: m.posture as 0 | 1 } };
     case 'cmd_buy_tech':
-      if (!inRange(m.axis, 0, 3)) return bad('axis must be 0..3');
-      if (!inRange(m.tier, 1, 3)) return bad('tier must be 1..3');
-      return { ok: true, msg: { type, clientSeq: seq!, axis: m.axis as 0 | 1 | 2 | 3, tier: m.tier as 1 | 2 | 3 } };
+      // v4.3 [A-83]: { nodeId } (구 { axis, tier } 폐기)
+      if (!inRange(m.nodeId, 0, TECH_NODE_COUNT - 1)) return bad('nodeId must be 0..31');
+      return { ok: true, msg: { type, clientSeq: seq!, nodeId: m.nodeId } };
     case 'cmd_ally_propose':
       if (!inRange(m.targetPlayerId, 1, MAX_PLAYERS)) return bad('targetPlayerId');
       return { ok: true, msg: { type, clientSeq: seq!, targetPlayerId: m.targetPlayerId } };

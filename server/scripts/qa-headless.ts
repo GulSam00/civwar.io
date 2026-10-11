@@ -8,7 +8,7 @@
  * 실행: npx tsx server/scripts/qa-headless.ts [seed=777] [size=M] [N=10] [mix=HARD|NORMAL|EASY] [humanIdle=0]
  *   humanIdle=1 이면 playerId N 을 "끊긴 사람" 으로 시작 → 450 tick 뒤 bot_takeover
  */
-import { HARD_TIMEOUT_TICK, MAP_SIZE_PRESETS, MOB_SLOT_BONUS_BY_TIER, FLAG_CAP_BASE, FLAG_TILES_PER_SLOT, FLAG_CAP_HARD_MAX, type BotDifficultyName, type MapSizeClass, rleDecode } from '@civwar/shared';
+import { HARD_TIMEOUT_TICK, MAP_SIZE_PRESETS, TECH_STAT, techMaskWith, techStatValues, FLAG_CAP_BASE, FLAG_TILES_PER_SLOT, FLAG_CAP_HARD_MAX, type BotDifficultyName, type MapSizeClass, rleDecode } from '@civwar/shared';
 import { CivBot } from '../src/game/bot.js';
 import { createGameState, ledgerImbalance } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
@@ -59,7 +59,7 @@ const M = {
 };
 function loadFull(f: any): void {
   M.owners = rleDecode(f.owners, map.width * map.height);
-  M.players = new Map(f.players.map((p: any) => [p.id, { ...p, tech: [...p.tech] }]));
+  M.players = new Map(f.players.map((p: any) => [p.id, { ...p }]));
   M.flags = new Map(f.flags.map((x: any) => [x.id, { ...x }]));
   M.bases = new Map(f.bases.map((b: any) => [b.tileId, b.hpPct]));
   M.alliances = new Map(f.alliances.map((a: any) => [`${a.a}-${a.b}`, { ...a }]));
@@ -107,7 +107,9 @@ function applyEvent(e: any): void {
       break;
     case 'tech_purchased': {
       const p = M.players.get(e.playerId)!;
-      p.tech[e.axis] = e.tier;
+      p.techMask = techMaskWith(p.techMask, e.nodeId);
+      p.techCount += 1;
+      if (p.techMask !== e.techMask) recon.push(`t${e.tick} tech_purchased.techMask ${e.techMask} ≠ 모델 ${p.techMask}`);
       if (e.newFlagCap !== capOf(p)) recon.push(`t${e.tick} tech_purchased.newFlagCap ${e.newFlagCap} ≠ 문서식 ${capOf(p)}`);
       break;
     }
@@ -142,7 +144,7 @@ function applyEvent(e: any): void {
   }
 }
 function capOf(p: FM): number {
-  return Math.min(FLAG_CAP_HARD_MAX, FLAG_CAP_BASE + Math.floor(p.tiles / FLAG_TILES_PER_SLOT) + MOB_SLOT_BONUS_BY_TIER[p.tech[3]]);
+  return Math.min(FLAG_CAP_HARD_MAX, FLAG_CAP_BASE + Math.floor(p.tiles / FLAG_TILES_PER_SLOT) + techStatValues(p.techMask)[TECH_STAT.SLOT_BONUS]);
 }
 function applyDelta(d: any): void {
   for (const [t, o] of d.tileChanges) M.owners[t] = o;
@@ -181,7 +183,7 @@ function compareFull(f: any): void {
   for (const p of f.players) {
     const m = M.players.get(p.id)!;
     for (const k of ['tiles', 'troops', 'gold', 'goldWeight', 'upkeepPm', 'alive']) if (m[k] !== p[k]) noteRecon(`player.${k}`, `t${t} p${p.id} 모델 ${m[k]} / full ${p[k]}`);
-    if (JSON.stringify(m.tech) !== JSON.stringify(p.tech)) noteRecon('player.tech', `t${t} p${p.id}`);
+    if (m.techMask !== p.techMask || m.techCount !== p.techCount) noteRecon('player.techMask', `t${t} p${p.id}`);
     if (capOf(p) !== p.flagCap) noteRecon('player.flagCap(문서식)', `t${t} p${p.id} 문서식 ${capOf(p)} / full ${p.flagCap}`);
   }
   const ids = new Set([...M.flags.keys(), ...f.flags.map((x: any) => x.id)]);

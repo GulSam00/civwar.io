@@ -7,7 +7,7 @@
  * 출력: 콘솔 + QA_OUT(JSON)
  */
 import { writeFileSync } from 'node:fs';
-import type { ServerMessage } from '@civwar/shared';
+import { TECH_NODES, techOwned, techPrereqMet, type ServerMessage } from '@civwar/shared';
 import { startServer } from '../../server/src/net/server.js';
 import { ClientStore, type KeyValueStorage } from '../src/state/store.js';
 import { createTopologyView } from '../src/render/topology.js';
@@ -130,12 +130,12 @@ function act(p: Probe, step: number): void {
   const mine = g.flagsOf(me);
   // 테크: 클라이언트 계산으로 살 수 있으면 산다 → 서버가 INSUFFICIENT 면 불일치
   if (step % 5 === 0) {
-    for (let axis = 0; axis < 4; axis++) {
-      const tier = pl.tech[axis] + 1;
-      if (tier > 3) continue;
-      const cost = techCost(tier, pl.tech, g.config.constants);
+    // v4.3: 선행 충족·미보유 노드 중 id 오름차순 첫 번째
+    for (const n of TECH_NODES) {
+      if (techOwned(pl.techMask, n.id) || !techPrereqMet(pl.techMask, n.id)) continue;
+      const cost = techCost(n.tier, pl.techCount, g.config.constants);
       if (pl.gold >= cost) {
-        sendCmd(p, s.buyTech(axis as 0, tier as 1), 'cmd_buy_tech', 'OK', `gold ${pl.gold} cost ${cost} t${g.tick}`);
+        sendCmd(p, s.buyTech(n.id), 'cmd_buy_tech', 'OK', `gold ${pl.gold} cost ${cost} t${g.tick}`);
         break;
       }
     }

@@ -24,8 +24,8 @@ function model(flags: FlagSnapshot[] = [], upkeepPm = 0): GameModel {
   m.apply({
     type: 'snapshot_full', tick: 25, owners: rleEncode([0, 1, 1, 2, 0, 0, 0, 2]),
     players: [
-      { id: 1, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm, tech: [0, 0, 0, 0], flagCap: 5, alive: true, connected: true },
-      { id: 2, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 5, alive: true, connected: true },
+      { id: 1, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm, techMask: 0, techCount: 0, flagCap: 5, alive: true, connected: true },
+      { id: 2, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 5, alive: true, connected: true },
     ],
     flags, bases: [{ tileId: 1, ownerId: 1, hpPct: 80 }, { tileId: 7, ownerId: 2, hpPct: 100 }],
     alliances: [], allyProposals: [], allianceFreezeUntilTick: null, lockoutDissolveTick: null, thresholdPct: 60, ticksRemaining: 9575, endgameRushActive: false,
@@ -50,8 +50,9 @@ describe('지형 정보 툴팁', () => {
     expect(terrainInfo(model(), 5, 1, 0, nick)!.ownerName).toBe('중립');
     expect(terrainInfo(model(), 5, 1, 0, nick)!.mods).toContain('방어 ×1.60');
     expect(terrainInfo(model(), 0, 1, 0, nick)!.mods[0]).toContain('통행 불가');
-    expect(terrainInfo(model(), 6, 1, 0, nick)!.mods).toContain('이동 속도 ×0.20'); // 얕은 물 기동 0단계
-    expect(terrainInfo(model(), 6, 1, 3, nick)!.mods).toContain('이동 속도 ×0.40');
+    // v4.3: 인자 = 얕은 물 이동배율 ‰ (무테크 5000, MOB-2B 조선술 3500)
+    expect(terrainInfo(model(), 6, 1, 5000, nick)!.mods).toContain('이동 속도 ×0.20');
+    expect(terrainInfo(model(), 6, 1, 3500, nick)!.mods).toContain('이동 속도 ×0.29');
   });
 });
 

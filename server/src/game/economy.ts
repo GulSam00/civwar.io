@@ -2,27 +2,21 @@
  * 자원·성장 (GDD 3.2 / 3.3 / 3.4). 정수 산술만 — Math.sqrt 는 isqrt 보정 후 정수로만 사용.
  */
 import {
-  ECO_GOLD_PERMILLE_BY_TIER,
-  ECO_REGEN_PERMILLE_BY_TIER,
   FLAG_CAP_BASE,
   FLAG_CAP_HARD_MAX,
   FLAG_TILES_PER_SLOT,
   GARRISON_ESCALATE_MAX,
   GARRISON_UPKEEP_FREE_PERMILLE,
   GARRISON_UPKEEP_MAX_PERMILLE,
-  GARRISON_UPKEEP_PERMILLE,
-  UNIT_GARRISON_PERMILLE,
   GOLD_RATE_PERMILLE,
-  MOB_SLOT_BONUS_BY_TIER,
   POSTURE,
   REGEN_BASE_MILLI,
   REGEN_SQRT_COEF_PERMILLE,
-  TECH_AXIS,
-  TECH_BASE_COST,
-  TECH_PROGRESSIVE_COEF_PERMILLE,
-  TER_CAP_PERMILLE_BY_TIER,
+  TECH_STAT,
   TROOP_CAP_BASE,
   TROOP_CAP_PER_TILE,
+  techNodeCost,
+  techUpkeepWeight,
 } from '@civwar/shared';
 import type { Flag, GameState, PlayerState } from './state.js';
 
@@ -41,7 +35,7 @@ function divRound(a: number, b: number): number {
 }
 
 export function troopCap(p: Readonly<PlayerState>): number {
-  const capPm = TER_CAP_PERMILLE_BY_TIER[p.tech[TECH_AXIS.TERRITORY]];
+  const capPm = p.statPm[TECH_STAT.TROOP_CAP];
   return Math.floor(((TROOP_CAP_BASE + TROOP_CAP_PER_TILE * p.tiles) * capPm) / 1000);
 }
 
@@ -55,8 +49,8 @@ export function regenMilliPerTick(p: Readonly<PlayerState>): number {
   if (capMilli <= 0 || p.troopsMilli >= capMilli) return 0;
   const sqrtMilli = isqrt(p.tiles * 1_000_000);
   const baseMilli = REGEN_BASE_MILLI + Math.floor((REGEN_SQRT_COEF_PERMILLE * sqrtMilli) / 1000);
-  const regenPm = ECO_REGEN_PERMILLE_BY_TIER[p.tech[TECH_AXIS.ECONOMY]];
-  // 최대 ≈ 35000 × 1200 × 7.6e7 ≈ 3.2e15 < 2^53 (12인 맵 전 육지 + 영토 T3 기준)
+  const regenPm = p.statPm[TECH_STAT.REGEN];
+  // 최대 ≈ 35000 × 1060 × 7.6e7 ≈ 2.8e15 < 2^53 (12인 맵 전 육지 + 상한 ×1.14 기준)
   const num = baseMilli * regenPm * (capMilli - p.troopsMilli);
   const den = 1000 * capMilli;
   return divRound(num, den);
@@ -64,7 +58,7 @@ export function regenMilliPerTick(p: Readonly<PlayerState>): number {
 
 /** 그로스 골드 (milli/tick) = floor(goldWeight × GOLD_RATE × goldMult / 1e9) */
 export function grossGoldMilliPerTick(p: Readonly<PlayerState>): number {
-  const goldPm = ECO_GOLD_PERMILLE_BY_TIER[p.tech[TECH_AXIS.ECONOMY]];
+  const goldPm = p.statPm[TECH_STAT.GOLD];
   return Math.floor((p.goldWeight * GOLD_RATE_PERMILLE * goldPm) / 1_000_000_000);
 }
 
@@ -81,24 +75,25 @@ export function paysUpkeep(f: Readonly<Flag>): boolean {
 /**
  * 유지비 permille (GDD 4.4 a, v4.2 A-60 변경). 2단계에서 호출 → 1단계 명령 적용 후·4단계 이전 깃발 목록을 읽는다.
  * weight = Σ UNIT_GARRISON_PERMILLE[unit] (패주 제외 전 깃발) · escalate ≡ 1, billable = max(0, weight − 1000),
- * drainPm = min(700, floor(billable × 90 / 1000)). 상한 700 < 1000 → 순증 ≥ 그로스의 30% (순증 ≥ 0 보장 유지).
+ * drainPm = min(700, floor(billable × 90 / 1000)).
+ * v4.3: 가중치·계수는 플레이어 스탯 — UPKEEP_WEIGHT_<unit>(SPE-2A 450, CAV-3 1300), UPKEEP_COEF(ECO-2B 72). 상한 700 < 1000 → 순증 ≥ 그로스의 30% (순증 ≥ 0 보장 유지).
  */
 export function garrisonUpkeepPermille(state: Readonly<GameState>, p: Readonly<PlayerState>): number {
   let w = 0;
   for (const f of state.flags) {
     if (f.ownerId !== p.id || !paysUpkeep(f)) continue;
-    w += UNIT_GARRISON_PERMILLE[f.unit] * GARRISON_ESCALATE_MAX;
+    w += techUpkeepWeight(p.statPm, f.unit) * GARRISON_ESCALATE_MAX;
   }
   const billable = Math.max(0, w - GARRISON_UPKEEP_FREE_PERMILLE);
-  return Math.min(GARRISON_UPKEEP_MAX_PERMILLE, Math.floor((billable * GARRISON_UPKEEP_PERMILLE) / 1000));
+  return Math.min(GARRISON_UPKEEP_MAX_PERMILLE, Math.floor((billable * p.statPm[TECH_STAT.UPKEEP_COEF]) / 1000));
 }
 
 export function flagCap(p: Readonly<PlayerState>): number {
-  const bonus = MOB_SLOT_BONUS_BY_TIER[p.tech[TECH_AXIS.MOBILITY]];
+  const bonus = p.statPm[TECH_STAT.SLOT_BONUS]; // v4.3: 최대 +1 (MOB-3A)
   return Math.min(FLAG_CAP_HARD_MAX, FLAG_CAP_BASE + Math.floor(p.tiles / FLAG_TILES_PER_SLOT) + bonus);
 }
 
-/** cost(tier, purchasedCount) = floor(BASE[tier] × (1000 + 250 × count) / 1000) — 골드 정수 단위 */
+/** v4.3 [A-69]: cost(tier, purchasedCount) = floor(TECH_NODE_BASE_COST[tier-1] × (1000 + 60 × count) / 1000) — 골드 정수 단위 */
 export function techCost(tier: number, purchasedCount: number): number {
-  return Math.floor((TECH_BASE_COST[tier - 1] * (1000 + TECH_PROGRESSIVE_COEF_PERMILLE * purchasedCount)) / 1000);
+  return techNodeCost(tier, purchasedCount);
 }

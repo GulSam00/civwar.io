@@ -6,19 +6,17 @@ import {
   COMBAT_LOSS_FLOOR_BP,
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
-  COMBAT_WATER_VS_LAND_PERMILLE,
-  COMBAT_WATER_VS_WATER_PERMILLE,
   DISENGAGE_TICKS,
   DISENGAGE_VALUE_PERMILLE,
-  MIL_COMBAT_PERMILLE_BY_TIER,
   POSTURE,
+  TECH_STAT,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
   isClaimable,
+  techCombatPm,
 } from '@civwar/shared';
 import { beginReturn } from './flagops.js';
 import type { Outbox } from './outbox.js';
-import { militaryTier, mobilityTier } from './rules.js';
 import { isAlly, type Flag, type GameState } from './state.js';
 
 export interface CombatSidePlan {
@@ -83,7 +81,12 @@ function engagedPair(state: Readonly<GameState>, f: Readonly<Flag>, g: Readonly<
   return hostile(state, f.ownerId, g.ownerId) && (attackSide(f) || attackSide(g));
 }
 
-/** 실효 전투값 v(f) (4.15 d·e·g) — permille, 단계마다 floor, 최소 1 */
+/**
+ * 실효 전투값 v(f) (4.15 d·e·g) — permille, 단계마다 floor, 최소 1.
+ * v4.3: 테크 배율 = techCombatPm — 공격 태세 COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 COMBAT_DEF + COMBAT_DEF_<unit>
+ *   (구 MIL_COMBAT 은 공·방 동시였다). 최대 1300 × 1600/1000 × 1140/1000 = 2371.
+ * 물 위: 상대 편에 땅 위 적이 있으면 × LANDING_COMBAT(무테크 800, MOB-3B 950), 물 대 물은 ×1000 고정([A-75] 보너스 폐기).
+ */
 export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, group: readonly Readonly<Flag>[]): number {
   const terrain = state.map.terrain;
   let v: number;
@@ -93,11 +96,11 @@ export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, group: 
     v = Math.floor((UNIT_DEF_PERMILLE[f.unit] * td) / 1000);
   }
   const owner = state.players[f.ownerId];
-  v = Math.floor((v * MIL_COMBAT_PERMILLE_BY_TIER[militaryTier(owner)]) / 1000);
+  v = Math.floor((v * techCombatPm(owner.statPm, f.unit, f.posture === POSTURE.DEFEND)) / 1000);
   let wm = 1000;
   if (!isClaimable(terrain[f.posTileId])) {
     const vsLand = group.some((g) => hostile(state, f.ownerId, g.ownerId) && isClaimable(terrain[g.posTileId]));
-    wm = vsLand ? COMBAT_WATER_VS_LAND_PERMILLE[mobilityTier(owner)] : COMBAT_WATER_VS_WATER_PERMILLE[mobilityTier(owner)];
+    if (vsLand) wm = owner.statPm[TECH_STAT.LANDING_COMBAT];
   }
   v = Math.floor((v * wm) / 1000);
   if (f.disengageUntilTick !== null) v = Math.floor((v * DISENGAGE_VALUE_PERMILLE) / 1000);
@@ -152,7 +155,8 @@ export function stage4a_flagCombatPhaseA(state: Readonly<GameState>, _t: number)
   }
   const candidates = (f: Readonly<Flag>): Flag[] => {
     const out: Flag[] = [];
-    const tiles = [f.posTileId, ...state.graph.neighbors(f.posTileId)];
+    // 사용자 결정 2026-10-11: 깃발 접촉 = 8방향 (topology.contactNeighbors — 사각은 대각선 포함). 지형 무시(깃발은 깊은 물에 서지 않는다)
+    const tiles = [f.posTileId, ...state.graph.contactNeighbors(f.posTileId)];
     for (const t of tiles) for (const g of index.get(t) ?? []) if (g !== f && engagedPair(state, f, g)) out.push(g);
     return out;
   };

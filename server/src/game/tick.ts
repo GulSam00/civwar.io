@@ -35,7 +35,7 @@ import { compareQueued, stage1_drainInput, type QueuedCommand } from './commands
 import { removeFlag } from './flagops.js';
 import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 import { stage4_moveFlags } from './movement.js';
-import { destOf, fieldKey, mobilityTier } from './rules.js';
+import { destOf, fieldKey, shallowPmOf } from './rules.js';
 import { garrisonUpkeepPermille, grossGoldMilliPerTick, regenMilliPerTick, troopCap } from './economy.js';
 import { newOutbox, type Outbox } from './outbox.js';
 import { DeltaTracker, buildSnapshotFull } from './snapshot.js';
@@ -190,7 +190,7 @@ export function stage14_broadcast(state: GameState, t: number, tracker: DeltaTra
 function pruneFields(state: GameState): void {
   if (state.fields.size === 0) return;
   const used = new Set<string>();
-  for (const f of state.flags) used.add(fieldKey(destOf(f), mobilityTier(state.players[f.ownerId])));
+  for (const f of state.flags) used.add(fieldKey(destOf(f), shallowPmOf(state.players[f.ownerId])));
   for (const k of [...state.fields.keys()]) if (!used.has(k)) state.fields.delete(k);
 }
 

@@ -35,6 +35,8 @@ export const REJECT_TEXT: Record<CmdRejectReason, string> = {
   BAD_REQUEST: '잘못된 요청입니다',
   NOT_IN_GAME: '게임 중이 아닙니다',
   TECH_ORDER: '선행 테크가 필요합니다',
+  PREREQ_MISSING: '선행 테크가 필요합니다',
+  ALREADY_OWNED: '이미 보유한 테크입니다',
   RATE_LIMITED: '명령이 너무 빠릅니다',
   NOT_IMPLEMENTED: '아직 지원하지 않는 명령입니다',
   BAD_TARGET: '대상이 올바르지 않습니다',

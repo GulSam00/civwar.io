@@ -11,8 +11,8 @@ import {
   POSTURE,
   START_GOLD,
   START_TROOPS,
-  TECH_AXIS_COUNT,
   TERRAIN_GOLD_MILLI,
+  techStatValues,
   type FlagState,
   type Posture,
   type Unit,
@@ -49,8 +49,11 @@ export interface PlayerState {
   upkeepPm: number; // 직전 골드 정산의 주둔 유지비 permille (0..700)
 
   // 테크
-  tech: number[]; // 축별 구매 단계 0..3, 길이 4
-  techPurchased: number; // 누진비용용 총 구매 노드 수
+  /** v4.3: 보유 노드 비트마스크 (uint32, 비트 i = TECH_NODES[i]) */
+  techMask: number;
+  techPurchased: number; // 누진비용용 총 구매 노드 수 (= popcount(techMask))
+  /** v4.3 [A-71]: 스탯 캐시 (인덱스 = TECH_STAT) = techStatValues(techMask). 구매 시에만 갱신 — 계산식은 이것만 읽는다 */
+  statPm: number[];
 }
 
 /** GDD 4.2 깃발 상태 — 1차는 구조만. 이동·게이지·전투는 2차 */
@@ -271,8 +274,9 @@ export function createGameState(
       goldMilli: START_GOLD * 1000,
       goldEarnedMilli: 0,
       upkeepPm: 0,
-      tech: new Array(TECH_AXIS_COUNT).fill(0),
+      techMask: 0,
       techPurchased: 0,
+      statPm: techStatValues(0),
     };
   }
   const bases: BaseState[] = map.baseTiles.map((tileId) => ({

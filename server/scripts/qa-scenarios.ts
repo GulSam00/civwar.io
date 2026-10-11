@@ -131,19 +131,22 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   const rt = r.ev.find((e) => e.type === 'flag_retargeted');
   check('flag_retargeted resumeTick = t+15', rt?.resumeTick === rt?.tick + 15, JSON.stringify(rt));
 
-  // 테크
+  // 테크 (v4.3: nodeId — 0 MIL-1, 1 MIL-2A, 15 MOB-1, 5 ECO-1, 3 MIL-3A)
+  s.players[1].goldMilli = 100_000;
   r = stepWith(sim, [
-    [1, { type: 'cmd_buy_tech', axis: 0, tier: 2 }],
-    [1, { type: 'cmd_buy_tech', axis: 0, tier: 1 }],
+    [1, { type: 'cmd_buy_tech', nodeId: 1 }],
+    [1, { type: 'cmd_buy_tech', nodeId: 0 }],
   ]);
-  expect('테크 선행 미구매', r.acks[0], 'TECH_ORDER');
-  expect('테크 골드 부족(200 < 450)', r.acks[1], 'INSUFFICIENT');
+  expect('테크 선행(부모) 미보유', r.acks[0], 'PREREQ_MISSING');
+  expect('테크 골드 부족(100 < 160)', r.acks[1], 'INSUFFICIENT');
   s.players[1].goldMilli = 10_000_000;
-  r = stepWith(sim, [[1, { type: 'cmd_buy_tech', axis: 3, tier: 1 }], [1, { type: 'cmd_buy_tech', axis: 3, tier: 1 }], [1, { type: 'cmd_buy_tech', axis: 1, tier: 1 }]]);
+  r = stepWith(sim, [[1, { type: 'cmd_buy_tech', nodeId: 15 }], [1, { type: 'cmd_buy_tech', nodeId: 15 }], [1, { type: 'cmd_buy_tech', nodeId: 5 }], [1, { type: 'cmd_buy_tech', nodeId: 3 }]]);
   expect('테크 구매', r.acks[0], 'ACCEPT');
-  expect('이미 구매한 단계', r.acks[1], 'TECH_ORDER');
+  expect('이미 보유한 노드', r.acks[1], 'ALREADY_OWNED');
+  expect('T3 부모(MIL-2A) 미보유', r.acks[3], 'PREREQ_MISSING');
   const tp = r.ev.filter((e) => e.type === 'tech_purchased');
-  check('cost = floor(base × (1000 + 250×구매수)/1000): 450 → 562', tp[0]?.cost === 450 && tp[1]?.cost === 562, JSON.stringify(tp));
+  check('cost = floor(base × (1000 + 60×구매수)/1000): 160 → 169', tp[0]?.cost === 160 && tp[1]?.cost === 169, JSON.stringify(tp));
+  check('tech_purchased.nodeId·techMask', tp[0]?.nodeId === 15 && tp[1]?.techMask === ((1 << 15) | (1 << 5)), JSON.stringify(tp));
   check('cmd_buy_tech 성공 ack 에 flagId/posture 없음', r.acks[0] && !('flagId' in r.acks[0]), JSON.stringify(r.acks[0]));
 }
 

@@ -11,37 +11,32 @@ import {
   FLAG_SPEED_BASE_MILLI,
   FLAG_TILE_RATE_BASE,
   FRONT_RADIUS,
-  MIL_ATK_COST_PERMILLE_BY_TIER,
-  MIL_DEF_COST_PERMILLE_BY_TIER,
   MIN_TILE_COST,
-  MOB_SPEED_PERMILLE_BY_TIER,
   NEUTRAL_BASE,
   NEUTRAL_SQRT_COEF_PERMILLE,
   POSTURE,
   RETURN_SPEED_PERMILLE,
-  SHALLOW_MOVE_PERMILLE_BY_TIER,
-  SHALLOW_MOVE_PERMILLE_MIN,
-  SUPPLY_COEF_PERMILLE,
   SUPPLY_FREE_RADIUS,
   SUPPLY_MAX_MULT_PERMILLE,
   SUPPLY_NO_BASE_DIST,
-  TECH_AXIS,
-  TER_NEUTRAL_COST_PERMILLE_BY_TIER,
+  TECH_STAT,
   TERRAIN,
   TERRAIN_COST_PERMILLE,
   TERRAIN_MOVE_PERMILLE,
   UNIT_ASSAULT_PERMILLE,
-  UNIT_ATK_MULT_PERMILLE,
   UNIT_SPEED_PERMILLE,
   isClaimable,
+  techCaptureMultPm,
+  techShallowPm,
+  techSpeedPm,
 } from '@civwar/shared';
 import { isqrt } from './economy.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 
 const MICRO = 1_000_000;
 
-export const mobilityTier = (p: Readonly<PlayerState>): number => p.tech[TECH_AXIS.MOBILITY];
-export const militaryTier = (p: Readonly<PlayerState>): number => p.tech[TECH_AXIS.MILITARY];
+/** v4.3: 그 플레이어의 얕은 물 이동배율 ‰ (MOB-2B 조선술 3500, 무테크 5000). 거리장 캐시 키로도 쓴다 */
+export const shallowPmOf = (p: Readonly<PlayerState>): number => techShallowPm(p.statPm);
 
 export function claimable(state: Readonly<GameState>, t: number): boolean {
   return isClaimable(state.map.terrain[t]);
@@ -176,10 +171,14 @@ export function supplyPermille(state: Readonly<GameState>, p: Readonly<PlayerSta
     d = Infinity;
     for (const b of p.baseTiles) d = Math.min(d, state.graph.distance(b, X));
   }
-  return Math.min(SUPPLY_MAX_MULT_PERMILLE, 1000 + SUPPLY_COEF_PERMILLE * Math.max(0, d - SUPPLY_FREE_RADIUS));
+  // v4.3: 계수 = 플레이어 스탯 SUPPLY_COEF (무테크 SUPPLY_COEF_PERMILLE 20, TER-3A 도로망 15)
+  return Math.min(SUPPLY_MAX_MULT_PERMILLE, 1000 + p.statPm[TECH_STAT.SUPPLY_COEF] * Math.max(0, d - SUPPLY_FREE_RADIUS));
 }
 
-/** 공격자 f 기준 점령비용 (정수 AP) */
+/**
+ * 공격자 f 기준 점령비용 (정수 AP). v4.3: 테크 배율 = 플레이어 스탯 — 중립 NEUTRAL_COST, 적 땅 = 방어자 DEF_COST × 공격자 ATK_COST,
+ * 병종 배율 = 공격자 CAPTURE_MULT_<unit> (SWO-2B 검 950). 곱하는 순서·floor 위치는 v4.2 와 같다.
+ */
 export function tileCost(state: Readonly<GameState>, f: Readonly<Flag>, X: number): number {
   const p = state.players[f.ownerId];
   const o = state.owners[X];
@@ -187,15 +186,15 @@ export function tileCost(state: Readonly<GameState>, f: Readonly<Flag>, X: numbe
   if (o === NEUTRAL) {
     const sq = isqrt(p.tiles * 1_000_000); // milli
     v = (NEUTRAL_BASE * 1000 + Math.floor((NEUTRAL_SQRT_COEF_PERMILLE * sq) / 1000)) * 1000; // micro
-    v = Math.floor((v * TER_NEUTRAL_COST_PERMILLE_BY_TIER[p.tech[TECH_AXIS.TERRITORY]]) / 1000);
+    v = Math.floor((v * p.statPm[TECH_STAT.NEUTRAL_COST]) / 1000);
   } else {
     v = ENEMY_BASE * MICRO;
-    v = Math.floor((v * MIL_DEF_COST_PERMILLE_BY_TIER[militaryTier(state.players[o])]) / 1000);
-    v = Math.floor((v * MIL_ATK_COST_PERMILLE_BY_TIER[militaryTier(p)]) / 1000);
+    v = Math.floor((v * state.players[o].statPm[TECH_STAT.DEF_COST]) / 1000);
+    v = Math.floor((v * p.statPm[TECH_STAT.ATK_COST]) / 1000);
     v = Math.floor((v * (1000 + ADJACENCY_COEF_PERMILLE * sameOwnerNeighbors(state, X))) / 1000);
   }
   v = Math.floor((v * TERRAIN_COST_PERMILLE[state.map.terrain[X]]) / 1000);
-  v = Math.floor((v * UNIT_ATK_MULT_PERMILLE[f.unit]) / 1000);
+  v = Math.floor((v * techCaptureMultPm(p.statPm, f.unit)) / 1000);
   v = Math.floor((v * supplyPermille(state, p, X)) / 1000);
   if (state.endgameRushActive) v = Math.floor((v * ENDGAME_RUSH_COST_MULT_PERMILLE) / 1000);
   return Math.max(MIN_TILE_COST, ceilMicro(v));
@@ -213,13 +212,13 @@ export function maxProgress(f: Readonly<Flag>): number {
 
 export function moveCostPermille(state: Readonly<GameState>, p: Readonly<PlayerState>, t: number): number {
   const ter = state.map.terrain[t];
-  if (ter === TERRAIN.SHALLOW) return Math.max(SHALLOW_MOVE_PERMILLE_MIN, SHALLOW_MOVE_PERMILLE_BY_TIER[mobilityTier(p)]);
+  if (ter === TERRAIN.SHALLOW) return shallowPmOf(p);
   return TERRAIN_MOVE_PERMILLE[ter];
 }
 
 /**
  * speedMilli (4.4) — v4.2 [A-63]: RETURNING(패주 포함)이면 × RETURN_SPEED_PERMILLE / 1000 (같은 floor 안에서 곱한다 — 프로토콜 §10).
- * 최대 분자 140 × 1450 × 2000 × 1500 ≈ 6.1e11 < 2^53.
+ * v4.3: 테크 배율 = techSpeedPm(SPEED + SPEED_<unit>) — 최대 1400. 최대 분자 140 × 1450 × 1400 × 1500 ≈ 4.3e11 < 2^53.
  */
 export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: number): number {
   const p = state.players[f.ownerId];
@@ -227,18 +226,18 @@ export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: n
   return Math.max(
     1,
     Math.floor(
-      (FLAG_SPEED_BASE_MILLI * UNIT_SPEED_PERMILLE[f.unit] * MOB_SPEED_PERMILLE_BY_TIER[mobilityTier(p)] * ret) / (moveCostPermille(state, p, t) * 1_000_000),
+      (FLAG_SPEED_BASE_MILLI * UNIT_SPEED_PERMILLE[f.unit] * techSpeedPm(p.statPm, f.unit) * ret) / (moveCostPermille(state, p, t) * 1_000_000),
     ),
   );
 }
 
 /** 이진 힙 Dijkstra — 키 (dist ASC, tileId ASC). 정수 가중치 = 이동배율 permille */
-function buildField(state: Readonly<GameState>, dest: number, tier: number): Int32Array {
+function buildField(state: Readonly<GameState>, dest: number, shallowPm: number): Int32Array {
   const n = state.graph.tileCount();
   const INF = 0x7fffffff;
   const dist = new Int32Array(n).fill(INF);
   const terrain = state.map.terrain;
-  const shallow = Math.max(SHALLOW_MOVE_PERMILLE_MIN, SHALLOW_MOVE_PERMILLE_BY_TIER[tier]);
+  const shallow = shallowPm;
   // 힙: [dist, tile] 쌍을 평탄 배열로
   const hd: number[] = [];
   const ht: number[] = [];
@@ -302,16 +301,17 @@ function buildField(state: Readonly<GameState>, dest: number, tier: number): Int
   return dist;
 }
 
-export function fieldKey(dest: number, tier: number): string {
-  return `${dest}:${tier}`;
+/** v4.3: 키 = (목적지, 얕은 물 이동배율 ‰). 구 (목적지, 기동 단계) 대체 — 같은 배율이면 같은 거리장 */
+export function fieldKey(dest: number, shallowPm: number): string {
+  return `${dest}:${shallowPm}`;
 }
 
 /** 거리장 조회(없으면 생성해 캐시). 캐시는 결과에 영향이 없다 — 같은 입력이면 같은 배열 */
-export function getField(state: GameState, dest: number, tier: number): Int32Array {
-  const k = fieldKey(dest, tier);
+export function getField(state: GameState, dest: number, shallowPm: number): Int32Array {
+  const k = fieldKey(dest, shallowPm);
   let d = state.fields.get(k);
   if (!d) {
-    d = buildField(state, dest, tier);
+    d = buildField(state, dest, shallowPm);
     state.fields.set(k, d);
   }
   return d;
@@ -324,7 +324,7 @@ export function destOf(f: Readonly<Flag>): number {
 /** stepTarget(f) = argmin over neighbors of (dist[n], n). 목적지 위면 제자리 */
 export function stepToward(state: GameState, ownerId: number, from: number, dest: number): number {
   if (from === dest) return from;
-  const field = getField(state, dest, mobilityTier(state.players[ownerId]));
+  const field = getField(state, dest, shallowPmOf(state.players[ownerId]));
   let best = from;
   let bd = field[from];
   for (const n of state.graph.neighbors(from)) {

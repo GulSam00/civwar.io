@@ -47,24 +47,22 @@ import {
   FRONT_MAX_RANGE,
   FRONT_RADIUS,
   MAX_ALLIES_PER_PLAYER,
-  MOB_CONVERT_PERMILLE_BY_TIER,
   POSTURE,
-  TECH_AXIS,
-  TECH_AXIS_COUNT,
-  TECH_MAX_TIER,
+  TECH_NODES,
   TERRAIN,
   UNIT,
-  UNIT_CONVERT_PERMILLE,
   isClaimable,
+  techConvertPm,
+  techOwned,
+  techPrereqMet,
   type BotDifficultyParams,
   type C2S_GameCommand,
   type Posture,
-  type TechAxis,
   type Unit,
 } from '@civwar/shared';
 import { flagValue } from './combat.js';
 import { flagCap, techCost, troopCap } from './economy.js';
-import { guardContains, marchFrontCountAt, marchMatch, maxProgress, mobilityTier, pushing, threatened, tileCost } from './rules.js';
+import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 import type { BotBrain } from './tick.js';
 
@@ -96,17 +94,40 @@ export const BOT_PLOW_SPACING = 2;
 /** GDD 에 없어 정함 (§10): 소진 직전 회수 여유 tick (경계 = 40 + 쌓인 예산 + 누적률 × 이 값). 결정 주기 전체를 여유로 잡으면 큰 깃발을 너무 일찍 물려 손해(자가대전 측정) */
 export const BOT_EXHAUST_MARGIN_TICKS = 2;
 
-/** 8.5 테크 우선순위 [botIndex % 4] — (축, 단계) */
-const M = TECH_AXIS.MILITARY;
-const E = TECH_AXIS.ECONOMY;
-const T = TECH_AXIS.TERRITORY;
-const B = TECH_AXIS.MOBILITY;
-export const TECH_PRIORITY: readonly (readonly (readonly [TechAxis, number])[])[] = [
-  [[T, 1], [E, 1], [B, 1], [T, 2], [M, 1], [M, 2]], // 0 확장형
-  [[E, 1], [E, 2], [T, 1], [B, 1], [E, 3], [M, 1]], // 1 경제형
-  [[M, 1], [B, 2], [T, 1], [M, 2], [E, 1], [M, 3]], // 2 수비형
-  [[B, 1], [B, 2], [M, 1], [E, 1], [B, 3], [M, 2]], // 3 기동형
+/** 노드 코드 → id (TECH_NODES) */
+function nodeIdOf(code: string): number {
+  const n = TECH_NODES.find((x) => x.code === code);
+  if (!n) throw new Error(`TECH_PRIORITY: 없는 노드 ${code}`);
+  return n.id;
+}
+/**
+ * v4.3 8.5 테크 우선순위 [botIndex % 4] (01b 6.2, A-82) — 노드 코드 16개. 부모가 항상 자식보다 앞 (로드 시 검사).
+ * 규칙(6.1): 결정마다 목록에서 아직 안 산 첫 노드를 살 수 있으면 산다, 못 사면 기다린다(건너뛰지 않음).
+ */
+export const TECH_PRIORITY_CODES: readonly (readonly string[])[] = [
+  // 0 확장형
+  ['TER-1', 'CAV-1', 'MOB-1', 'TER-2A', 'ECO-1', 'TER-2B', 'MOB-2A', 'CAV-2A', 'ECO-2B', 'TER-3B', 'CAV-3', 'MIL-1', 'ECO-2A', 'MOB-3A', 'TER-3A', 'MIL-2A'],
+  // 1 경제형
+  ['ECO-1', 'TER-1', 'ECO-2A', 'ECO-2B', 'CAV-1', 'ECO-3A', 'MOB-1', 'CAV-2A', 'ECO-3B', 'SPE-1', 'MIL-1', 'MOB-2A', 'CAV-3', 'TER-2B', 'SPE-2A', 'MOB-3A'],
+  // 2 수비형
+  ['SPE-1', 'MIL-1', 'ECO-1', 'SPE-2A', 'MIL-2B', 'CAV-1', 'ECO-2B', 'SPE-3', 'MIL-3B', 'MOB-1', 'TER-1', 'TER-2B', 'MOB-2A', 'MOB-3A', 'SPE-2B', 'TER-3B'],
+  // 3 기동형
+  ['MOB-1', 'CAV-1', 'MOB-2A', 'CAV-2B', 'ECO-1', 'CAV-2A', 'MOB-3A', 'MIL-1', 'MIL-2A', 'MOB-2B', 'CAV-3', 'MIL-3A', 'ECO-2B', 'TER-1', 'MOB-3B', 'SWO-1'],
 ];
+/** 6.1 병종 치환 — 검병 고정 봇(EASY, fixedUnit = SWORD): 기병 노드를 부모 관계가 같은 자리의 검병 노드로 */
+export const TECH_SWORD_SWAP: Readonly<Record<string, string>> = { 'CAV-1': 'SWO-1', 'CAV-2A': 'SWO-2B', 'CAV-2B': 'SWO-2A', 'CAV-3': 'SWO-3' };
+export const TECH_PRIORITY: readonly (readonly number[])[] = TECH_PRIORITY_CODES.map((l) => l.map(nodeIdOf));
+export const TECH_PRIORITY_SWORD: readonly (readonly number[])[] = TECH_PRIORITY_CODES.map((l) => l.map((c) => nodeIdOf(TECH_SWORD_SWAP[c] ?? c)));
+/** 6.1 "부모가 항상 자식보다 앞" — 서버 시작 시 assert */
+for (const list of [...TECH_PRIORITY, ...TECH_PRIORITY_SWORD]) {
+  let mask = 0;
+  for (const id of list) {
+    if (!techPrereqMet(mask, id)) throw new Error(`TECH_PRIORITY: ${TECH_NODES[id].code} 의 부모가 앞에 없음`);
+    mask = (mask | (1 << id)) >>> 0;
+  }
+}
+/** 8.6 상륙 후보 조건 노드 (MOB-2B 조선술) */
+const MOB_SHIPBUILDING = nodeIdOf('MOB-2B');
 
 interface Anchor {
   /** 발령 앵커 = 깊은 앵커 (v4.2 [A-65]) */
@@ -218,16 +239,16 @@ function effOf(state: Readonly<GameState>, f: Readonly<Flag>): number {
   return Math.floor(f.troopsMilli / 1000) * flagValue(state, f, [f]);
 }
 
-/** 발령 가능 최대 병력 (풀 비용 = ceil(q × UNIT_CONVERT / 기동 환산효율)) */
+/** 발령 가능 최대 병력 (v4.3 풀 비용 = ceil(q × 편성비 CONVERT_<unit> / 1000) — flagops.issueFlag 와 같은 식) */
 function maxIssuable(p: Readonly<PlayerState>, pool: number, unit: Unit): number {
-  const eff = MOB_CONVERT_PERMILLE_BY_TIER[mobilityTier(p)];
-  let q = Math.floor((pool * eff) / UNIT_CONVERT_PERMILLE[unit]);
-  while (q > 0 && Math.ceil((q * UNIT_CONVERT_PERMILLE[unit]) / eff) > pool) q--;
+  const cv = techConvertPm(p.statPm, unit);
+  let q = Math.floor((pool * 1000) / cv);
+  while (q > 0 && Math.ceil((q * cv) / 1000) > pool) q--;
   return q;
 }
 
 function poolCostOf(p: Readonly<PlayerState>, q: number, unit: Unit): number {
-  return Math.ceil((q * UNIT_CONVERT_PERMILLE[unit]) / MOB_CONVERT_PERMILLE_BY_TIER[mobilityTier(p)]);
+  return Math.ceil((q * techConvertPm(p.statPm, unit)) / 1000);
 }
 
 /** issueFlag 기본 출발지 — 앵커에 가장 가까운 내 기지(없으면 수도) */
@@ -322,7 +343,7 @@ function scanBorder(ctx: Ctx): Map<number, number[]> {
 }
 
 /**
- * 8.6 상륙 후보 (기동 T2+): 내 해안에서 얕은 물만 밟아 BOT_LANDING_MAX_WATER 칸 안에 닿는 비내 육지 중
+ * 8.6 상륙 후보 (v4.3: MOB-2B 조선술 보유 — 구 "기동 T2+" 의 물 이동 단계에 대응, 프로토콜 §10): 내 해안에서 얕은 물만 밟아 BOT_LANDING_MAX_WATER 칸 안에 닿는 비내 육지 중
  * 내 땅과 인접하지 않은 칸. 주변(거리 ≤ 2)에 적 깃발이 있으면 제외(경로 위협 0인 해안).
  */
 function scanLanding(ctx: Ctx): Map<number, number[]> {
@@ -330,7 +351,7 @@ function scanLanding(ctx: Ctx): Map<number, number[]> {
   const res = new Map<number, number[]>();
   ctx.landing = res;
   const { state, me } = ctx;
-  if (mobilityTier(ctx.p) < 2) return res;
+  if (!techOwned(ctx.p.techMask, MOB_SHIPBUILDING)) return res;
   const owners = state.owners;
   const terrain = state.map.terrain;
   const n = owners.length;
@@ -410,13 +431,16 @@ function threatAt(state: Readonly<GameState>, items: ThreatItem[], baseTh: [numb
   return s;
 }
 
-/** 요격 앵커: 위협 깃발 e 에 거리 1(없으면 2) 인 내 땅 칸 중 (거리, tileId) 최소. 없으면 e 의 타깃 칸 */
+/**
+ * 요격 앵커: 위협 깃발 e 와 접촉하는(8방향, 2026-10-11) 내 땅 칸 중 tileId 최소, 없으면 접촉 밖 거리 2 칸 중 tileId 최소.
+ * 없으면 e 의 타깃 칸.
+ */
 function interceptTile(ctx: Ctx, e: Readonly<Flag>): number {
   const { state, me } = ctx;
-  for (const r of [1, 2]) {
-    for (const x of state.graph.disk(e.posTileId, r)) {
-      if (state.owners[x] === me && isClaimable(state.map.terrain[x]) && state.graph.distance(x, e.posTileId) === r) return x;
-    }
+  const ok = (x: number) => state.owners[x] === me && isClaimable(state.map.terrain[x]);
+  for (const x of state.graph.contactNeighbors(e.posTileId)) if (ok(x)) return x;
+  for (const x of state.graph.disk(e.posTileId, 2)) {
+    if (ok(x) && state.graph.distance(x, e.posTileId) === 2 && !state.graph.touching(x, e.posTileId)) return x;
   }
   return e.targetTileId!;
 }
@@ -698,24 +722,30 @@ function diplomacy(ctx: Ctx): void {
   }
 }
 
+/**
+ * v4.3 테크 (01b 6.1): 목록에서 아직 안 산 첫 노드 — 살 수 있으면 산다, 아니면 기다린다(건너뛰지 않음).
+ * 검병 고정 봇은 TECH_PRIORITY_SWORD. 목록 소진 후(16개 다 삼)엔 (티어, id) 오름차순으로 선행 충족 노드 (프로토콜 §10).
+ */
 function buyTech(ctx: Ctx): void {
   const p = ctx.p;
-  const order = TECH_PRIORITY[(ctx.me - 1) % 4];
-  let next: [number, number] | null = null;
-  for (const [axis, tier] of order) {
-    if (p.tech[axis] < tier) {
-      next = [axis, p.tech[axis] + 1]; // 선행 단계가 비었으면 그것부터 (TECH_ORDER 방지)
+  const lists = ctx.params.fixedUnit === UNIT.SWORD ? TECH_PRIORITY_SWORD : TECH_PRIORITY;
+  let next = -1;
+  for (const id of lists[(ctx.me - 1) % 4]) {
+    if (!techOwned(p.techMask, id)) {
+      next = id;
       break;
     }
   }
-  if (!next) {
-    // 목록 소진 후: (단계, 축) 오름차순으로 남은 노드
-    for (let tier = 1; tier <= TECH_MAX_TIER && !next; tier++)
-      for (let axis = 0; axis < TECH_AXIS_COUNT && !next; axis++) if (p.tech[axis] === tier - 1) next = [axis, tier];
+  if (next < 0) {
+    for (let tier = 1; tier <= 3 && next < 0; tier++)
+      for (const n of TECH_NODES) if (n.tier === tier && !techOwned(p.techMask, n.id) && techPrereqMet(p.techMask, n.id)) {
+        next = n.id;
+        break;
+      }
   }
-  if (!next) return;
-  if (p.goldMilli >= techCost(next[1], p.techPurchased) * 1000) {
-    push(ctx, { type: 'cmd_buy_tech', clientSeq: seq(ctx), axis: next[0] as TechAxis, tier: next[1] as 1 | 2 | 3 });
+  if (next < 0) return;
+  if (p.goldMilli >= techCost(TECH_NODES[next].tier, p.techPurchased) * 1000) {
+    push(ctx, { type: 'cmd_buy_tech', clientSeq: seq(ctx), nodeId: next });
   }
 }
 
@@ -795,14 +825,14 @@ function defend(ctx: Ctx): void {
   }
 }
 
-/** 전투 상대 (거리 ≤ 1, 적대, 둘 중 하나 ATTACK) */
+/** 전투 상대 (접촉 = 8방향, 적대, 둘 중 하나 ATTACK) — combat.ts 4a 와 같은 판정 */
 function combatFoes(ctx: Ctx, f: Readonly<Flag>): Flag[] {
   const { state, me } = ctx;
   const res: Flag[] = [];
   for (const g of state.flags) {
     if (g.routed || g.troopsMilli <= 0 || g.breakaway || !hostilePlayer(state, me, g.ownerId)) continue;
     if (f.posture !== POSTURE.ATTACK && g.posture !== POSTURE.ATTACK) continue;
-    if (state.graph.distance(g.posTileId, f.posTileId) <= 1) res.push(g);
+    if (state.graph.touching(g.posTileId, f.posTileId)) res.push(g);
   }
   return res;
 }
@@ -876,7 +906,7 @@ function maintain(ctx: Ctx): void {
     // ── 8.6.0 2. 차단 당하기 ──
     if (f.blocked) {
       let bEff = 0;
-      for (const g of state.flags) if (!g.routed && hostilePlayer(state, me, g.ownerId) && state.graph.distance(g.posTileId, f.posTileId) <= 1) bEff += effOf(state, g);
+      for (const g of state.flags) if (!g.routed && hostilePlayer(state, me, g.ownerId) && state.graph.touching(g.posTileId, f.posTileId)) bEff += effOf(state, g);
       const myEff = myTroops * valueAs(state, me, f.unit, POSTURE.ATTACK, f.posTileId);
       if (bEff * 1000 <= myEff * ctx.k.blockAttackRatioPermille && f.posture !== POSTURE.ATTACK && canPosture(ctx, f)) {
         posture(ctx, f, POSTURE.ATTACK);
@@ -941,10 +971,11 @@ function maintain(ctx: Ctx): void {
       let moved = false;
       for (const g of state.flags) {
         if (g.posture !== POSTURE.ATTACK || g.routed || !hostilePlayer(state, me, g.ownerId)) continue;
-        if (state.graph.distance(g.posTileId, f.posTileId) <= 1) continue;
+        if (state.graph.touching(g.posTileId, f.posTileId)) continue;
         if (state.graph.distance(g.posTileId, f.anchorTileId) > FRONT_RADIUS + 1) continue;
         let x = -1;
-        for (const n of state.graph.disk(g.posTileId, 1)) {
+        // 반격 칸 = 적 깃발과 접촉하는 칸 (8방향, 2026-10-11)
+        for (const n of [g.posTileId, ...state.graph.contactNeighbors(g.posTileId)].sort((a, b) => a - b)) {
           if (state.owners[n] === me && isClaimable(state.map.terrain[n]) && state.graph.distance(n, f.anchorTileId) <= FRONT_RADIUS) {
             x = n;
             break;
@@ -990,7 +1021,7 @@ function block(ctx: Ctx): void {
       const ter = state.map.terrain[x];
       if (state.owners[x] !== me || (ter !== TERRAIN.HILLS && ter !== TERRAIN.MOUNTAIN)) continue;
       const dg = state.graph.distance(x, g.posTileId);
-      if (dg < 2 || state.graph.distance(x, g.anchorTileId) + dg !== dTotal) continue;
+      if (dg < 2 || state.graph.touching(x, g.posTileId) || state.graph.distance(x, g.anchorTileId) + dg !== dTotal) continue; // 이미 접촉(대각선)인 칸 제외
       if (ctx.plannedDefend.includes(x)) continue;
       pick = x;
       break;

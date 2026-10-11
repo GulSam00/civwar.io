@@ -96,8 +96,8 @@ function bootstrap(): GameModel {
     tick: 25,
     owners: rleEncode([0, 0, 0, 0, 1, 1, 0, 2, 0, 0, 0, 0]),
     players: [
-      { id: 1, tiles: 2, troops: 150, gold: 200, goldWeight: 2000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 3, alive: true, connected: true },
-      { id: 2, tiles: 1, troops: 150, gold: 200, goldWeight: 1000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 3, alive: true, connected: true },
+      { id: 1, tiles: 2, troops: 150, gold: 200, goldWeight: 2000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 3, alive: true, connected: true },
+      { id: 2, tiles: 1, troops: 150, gold: 200, goldWeight: 1000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 3, alive: true, connected: true },
     ],
     flags: [],
     bases: [
@@ -161,7 +161,7 @@ describe('GameModel — 단위', () => {
       flagProgress: [[9, 37]],
       flagTargets: [[9, 8]],
       flagFlags: [[9, 0, FLAG_BIT.IN_COMBAT | FLAG_BIT.BLOCKED, 51]],
-      playerDeltas: [{ id: 1, tiles: 3, troops: 40, gold: 210, goldWeight: 4300, upkeepPm: 0 }],
+      playerDeltas: [{ id: 1, tiles: 3, troops: 40, gold: 210, goldWeight: 4300, upkeepPm: 0, techMask: 0 }],
     });
     const f = m.flags.get(9)!;
     expect([f.posTileId, f.troops, f.state, f.progressPct, f.targetTileId, f.postureCooldownUntilTick]).toEqual([5, 98, 'ENGAGED', 37, 8, 51]);
@@ -189,8 +189,9 @@ describe('GameModel — 단위', () => {
 
   it('tech_purchased·동맹·base_captured·tileChanges 의 기지 소유자', () => {
     const m = bootstrap();
-    m.apply({ type: 'tech_purchased', tick: 26, playerId: 1, axis: 3, tier: 1, cost: 450, newFlagCap: 3 });
-    expect(m.players.get(1)!.tech).toEqual([0, 0, 0, 1]);
+    // v4.3: nodeId 15 = MOB-1
+    m.apply({ type: 'tech_purchased', tick: 26, playerId: 1, nodeId: 15, cost: 160, newFlagCap: 3, techMask: 1 << 15 });
+    expect([m.players.get(1)!.techMask, m.players.get(1)!.techCount]).toEqual([1 << 15, 1]);
     m.apply({ type: 'ally_formed', tick: 26, a: 1, b: 2 });
     expect(m.isAlly(2, 1)).toBe(true);
     m.apply({ type: 'ally_break_started', tick: 330, a: 1, b: 2, byPlayerId: 1, breakAtTick: 480 });
@@ -204,9 +205,11 @@ describe('GameModel — 단위', () => {
 
   it('troopCap·flagCap 문서식 (§8)', () => {
     const m = bootstrap();
-    expect(m.troopCapOf({ tiles: 9, tech: [0, 0, 0, 0] })).toBe(208);
-    expect(m.troopCapOf({ tiles: 9, tech: [0, 0, 1, 0] })).toBe(228);
-    expect(m.flagCapOf({ tiles: 600, tech: [0, 0, 0, 3] })).toBe(7);
-    expect(m.flagCapOf({ tiles: 9, tech: [0, 0, 0, 2] })).toBe(4);
+    // v4.3: 10 TER-1, 12 TER-2B(상한 +6%), 15 MOB-1, 16 MOB-2A, 18 MOB-3A(슬롯 +1)
+    expect(m.troopCapOf({ tiles: 9, techMask: 0 })).toBe(208);
+    expect(m.troopCapOf({ tiles: 9, techMask: (1 << 10) | (1 << 12) })).toBe(220);
+    expect(m.flagCapOf({ tiles: 600, techMask: (1 << 15) | (1 << 16) | (1 << 18) })).toBe(6);
+    expect(m.flagCapOf({ tiles: 1200, techMask: 0xffffffff })).toBe(7);
+    expect(m.flagCapOf({ tiles: 9, techMask: (1 << 15) | (1 << 16) | (1 << 18) })).toBe(4);
   });
 });

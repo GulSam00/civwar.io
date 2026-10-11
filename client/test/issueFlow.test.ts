@@ -65,8 +65,8 @@ function setup(flags: FlagSnapshot[] = []) {
   store.onMessage({
     type: 'snapshot_full', tick: 25, owners: rleEncode(owners()),
     players: [
-      { id: 1, tiles: 24, troops: 1000, gold: 0, goldWeight: 1000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 3, alive: true, connected: true },
-      { id: 2, tiles: 12, troops: 1000, gold: 0, goldWeight: 1000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 3, alive: true, connected: true },
+      { id: 1, tiles: 24, troops: 1000, gold: 0, goldWeight: 1000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 3, alive: true, connected: true },
+      { id: 2, tiles: 12, troops: 1000, gold: 0, goldWeight: 1000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 3, alive: true, connected: true },
     ],
     flags,
     bases: [
@@ -97,7 +97,7 @@ describe('진격 경로 (서버 가중 경로 복제)', () => {
   it('서버와 같은 가중 Dijkstra — 산 1칸이 우회보다 싸면 지나가고, 깊은 물은 통과하지 않는다', () => {
     const topo = createTopologyView('square', W, H);
     const t = terrain();
-    const field = moveField(topo, t, id(2, 8), 0);
+    const field = moveField(topo, t, id(2, 8), 5000);
     const path = walkPath(topo, t, field, id(2, 3), id(2, 8));
     expect(path[0]).toBe(id(2, 3));
     expect(path.at(-1)).toBe(id(2, 8));
@@ -105,7 +105,7 @@ describe('진격 경로 (서버 가중 경로 복제)', () => {
     expect(path).toContain(id(2, 6));
     // 깊은 물로 막으면 경로 없음
     const t2 = t.map((x, i) => (i % W === 5 ? 0 : x));
-    const f2 = moveField(topo, t2, id(2, 8), 0);
+    const f2 = moveField(topo, t2, id(2, 8), 5000);
     const p2 = walkPath(topo, t2, f2, id(2, 3), id(2, 8));
     expect(p2.at(-1)).not.toBe(id(2, 8));
   });

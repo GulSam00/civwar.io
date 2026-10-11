@@ -7,7 +7,6 @@
  */
 import {
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
-  SHALLOW_MOVE_PERMILLE_BY_TIER,
   SHALLOW_MOVE_PERMILLE_MIN,
   TERRAIN,
   TERRAIN_COST_PERMILLE,
@@ -41,7 +40,7 @@ export interface TerrainInfo {
 const arr = (m: GameModel, k: string, d: readonly number[]): readonly number[] => (m.config.constants?.[k] as readonly number[] | undefined) ?? d;
 const x = (pm: number) => `×${(pm / 1000).toFixed(2)}`;
 
-export function terrainInfo(m: GameModel, tile: number, me: number | null, mobilityTier: number, nicknameOf: (id: number) => string): TerrainInfo | null {
+export function terrainInfo(m: GameModel, tile: number, me: number | null, shallowPm: number, nicknameOf: (id: number) => string): TerrainInfo | null {
   if (!m.terrain || tile < 0 || tile >= m.tileCount) return null;
   const ter = m.terrain[tile];
   const terrain = TERRAIN_NAME[ter] ?? `지형 ${ter}`;
@@ -53,9 +52,9 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, mobil
     add('terrain', '지형', terrain);
     let move = arr(m, 'TERRAIN_MOVE_PERMILLE', TERRAIN_MOVE_PERMILLE)[ter];
     if (ter === TERRAIN.SHALLOW) {
-      const byTier = arr(m, 'SHALLOW_MOVE_PERMILLE_BY_TIER', SHALLOW_MOVE_PERMILLE_BY_TIER);
+      // v4.3: shallowPm = 보는 플레이어의 얕은 물 이동배율 ‰ (techShallowPm)
       const min = (m.config.constants?.SHALLOW_MOVE_PERMILLE_MIN as number | undefined) ?? SHALLOW_MOVE_PERMILLE_MIN;
-      move = Math.max(min, byTier[Math.max(0, Math.min(byTier.length - 1, mobilityTier))]);
+      move = Math.max(min, shallowPm);
     }
     const def = arr(m, 'COMBAT_TERRAIN_DEF_POSTURE_PERMILLE', COMBAT_TERRAIN_DEF_POSTURE_PERMILLE)[ter];
     add('defense', '방어', x(def));

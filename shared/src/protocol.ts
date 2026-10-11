@@ -6,7 +6,7 @@
  * 정수 규칙: tileId/playerId/flagId/tick 은 정수. troops/gold 는 표시용 정수(내부 milli 의 floor).
  */
 
-import type { BotDifficultyName, MapSizeClass, Posture, Terrain, TechAxis, Unit } from './constants.js';
+import type { BotDifficultyName, MapSizeClass, Posture, Terrain, Unit } from './constants.js';
 
 // ─────────────────────────────── 공통 ───────────────────────────────
 
@@ -42,7 +42,12 @@ export type CmdRejectReason =
   // 백엔드 추가 (02_backend_protocol.md 「GDD와 다른 결정」)
   | 'BAD_REQUEST'
   | 'NOT_IN_GAME'
+  /** v4.3 부터 송신하지 않음 (PREREQ_MISSING / ALREADY_OWNED 로 분리 — 호환용으로 타입만 유지) */
   | 'TECH_ORDER'
+  /** v4.3: cmd_buy_tech — 부모 노드 미보유 */
+  | 'PREREQ_MISSING'
+  /** v4.3: cmd_buy_tech — 이미 보유한 노드 */
+  | 'ALREADY_OWNED'
   | 'RATE_LIMITED'
   /** 2차부터 송신하지 않음 (호환용으로 타입만 유지) */
   | 'NOT_IMPLEMENTED'
@@ -178,8 +183,8 @@ export interface C2S_CmdSetPosture {
 export interface C2S_CmdBuyTech {
   type: 'cmd_buy_tech';
   clientSeq: number;
-  axis: TechAxis;
-  tier: 1 | 2 | 3;
+  /** v4.3 [A-83]: TECH_NODES 의 id (0..31). 구 { axis, tier } 는 폐기 */
+  nodeId: number;
 }
 export interface C2S_CmdAllyPropose {
   type: 'cmd_ally_propose';
@@ -378,7 +383,10 @@ export interface PlayerSnapshot {
   gold: number;
   goldWeight: number;
   upkeepPm: number;
-  tech: [number, number, number, number]; // 축별 구매 단계 0..3
+  /** v4.3 [A-83]: 보유 테크 노드 비트마스크 (uint32, 비트 i = TECH_NODES[i] 보유). 구 tech[4] 는 폐기 */
+  techMask: number;
+  /** v4.3: 보유 노드 수 (= popcount(techMask) = 누진 가격의 n) */
+  techCount: number;
   flagCap: number;
   alive: boolean;
   connected: boolean;
@@ -474,6 +482,8 @@ export interface PlayerDelta {
   gold: number;
   goldWeight: number;
   upkeepPm: number;
+  /** v4.3: 보유 테크 마스크 (uint32) */
+  techMask: number;
 }
 
 export interface S2C_SnapshotDelta {
@@ -519,10 +529,12 @@ export interface S2C_TechPurchased {
   type: 'tech_purchased';
   tick: number;
   playerId: number;
-  axis: TechAxis;
-  tier: number;
+  /** v4.3: 산 노드 (TECH_NODES id). 구 axis/tier 는 폐기 */
+  nodeId: number;
   cost: number;
   newFlagCap: number;
+  /** v4.3: 구매 후 보유 마스크 (uint32) */
+  techMask: number;
 }
 export interface S2C_ThresholdUpdate {
   type: 'threshold_update';

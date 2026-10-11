@@ -87,8 +87,8 @@ function model(): GameModel {
   m.apply({
     type: 'snapshot_full', tick: 25, owners: rleEncode([0, 1, 1, 2, 0, 0, 0, 2]),
     players: [
-      { id: 1, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 5, alive: true, connected: true },
-      { id: 2, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, tech: [0, 0, 0, 0], flagCap: 5, alive: true, connected: true },
+      { id: 1, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 5, alive: true, connected: true },
+      { id: 2, tiles: 2, troops: 500, gold: 0, goldWeight: 2000, upkeepPm: 0, techMask: 0, techCount: 0, flagCap: 5, alive: true, connected: true },
     ],
     flags: [], bases: [{ tileId: 1, ownerId: 1, hpPct: 80 }, { tileId: 7, ownerId: 2, hpPct: 100 }],
     alliances: [], allyProposals: [], allianceFreezeUntilTick: null, lockoutDissolveTick: null, thresholdPct: 60, ticksRemaining: 9575, endgameRushActive: false,

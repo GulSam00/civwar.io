@@ -5,7 +5,7 @@
  *  - 나(또는 관전 중 따라가는 플레이어) 관련만: 전투 개시/종료, 패주, 깃발 종료, 정체, 진척도 감소로 0, 동맹 제안
  */
 import type { ServerMessage } from '@civwar/shared';
-import { TECH_NAME } from '../ui/techInfo.js';
+import { TECH_NODES } from '@civwar/shared';
 import { EMOTE_TEXT } from '../ui/text.js';
 
 export interface FeedEntry {
@@ -79,7 +79,7 @@ export function describeEvent(m: ServerMessage, c: FeedCtx): Draft | null {
     case 'threshold_update':
       return { kind: 'system', mine: false, text: `승리 기준 ${m.thresholdPct.toFixed(1)}%로 하락` };
     case 'tech_purchased':
-      return isMe(m.playerId) ? { kind: 'system', mine: true, text: `테크 구매: ${TECH_NAME[m.axis]} T${m.tier} (${m.cost} 골드)` } : null;
+      return isMe(m.playerId) ? { kind: 'system', mine: true, text: `테크 구매: ${TECH_NODES[m.nodeId]?.name ?? m.nodeId} (${m.cost} 골드)` } : null;
     case 'ally_proposed':
       if (isMe(m.toPlayerId)) return { kind: 'ally', mine: true, text: `${subj(m.fromPlayerId)} 동맹을 제안했습니다`, important: true, toast: true };
       if (isMe(m.fromPlayerId)) return { kind: 'ally', mine: true, text: `${who(m.toPlayerId)}에게 동맹 제안` };

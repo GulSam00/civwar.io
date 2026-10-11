@@ -11,7 +11,7 @@
  *
  * 표시 전용 — 서버 검증·명령을 대신하지 않는다. 토폴로지 이웃만 쓴다(좌표 식 없음).
  */
-import { SHALLOW_MOVE_PERMILLE_BY_TIER, SHALLOW_MOVE_PERMILLE_MIN, TERRAIN, TERRAIN_MOVE_PERMILLE, isClaimable } from '@civwar/shared';
+import { SHALLOW_MOVE_PERMILLE_MIN, TERRAIN, TERRAIN_MOVE_PERMILLE, isClaimable } from '@civwar/shared';
 import type { TopologyView } from '../render/topology.js';
 import type { GameModel } from '../state/gameModel.js';
 
@@ -22,14 +22,14 @@ function weightOf(terrain: number, shallow: number, table: readonly number[]): n
 }
 
 /** 서버 buildField 와 같은 정의의 거리장 (dest 에서 거꾸로) */
-export function moveField(topo: TopologyView, terrain: ArrayLike<number>, dest: number, mobilityTier: number, constants?: Record<string, unknown>): Int32Array {
+/** v4.3: shallowPm = 그 플레이어의 얕은 물 이동배율 ‰ (techShallowPm — 무테크 5000, MOB-2B 3500). 구 "기동 단계" 인자 대체 */
+export function moveField(topo: TopologyView, terrain: ArrayLike<number>, dest: number, shallowPm: number, constants?: Record<string, unknown>): Int32Array {
   const n = topo.tileCount;
   const dist = new Int32Array(n).fill(INF);
   if (dest < 0 || dest >= n || terrain[dest] === TERRAIN.DEEP) return dist;
   const table = (constants?.TERRAIN_MOVE_PERMILLE as readonly number[] | undefined) ?? TERRAIN_MOVE_PERMILLE;
-  const byTier = (constants?.SHALLOW_MOVE_PERMILLE_BY_TIER as readonly number[] | undefined) ?? SHALLOW_MOVE_PERMILLE_BY_TIER;
   const minS = (constants?.SHALLOW_MOVE_PERMILLE_MIN as number | undefined) ?? SHALLOW_MOVE_PERMILLE_MIN;
-  const shallow = Math.max(minS, byTier[Math.max(0, Math.min(byTier.length - 1, mobilityTier))]);
+  const shallow = Math.max(minS, shallowPm);
   // 이진 힙 — 키 (dist, tile)
   const hd: number[] = [];
   const ht: number[] = [];

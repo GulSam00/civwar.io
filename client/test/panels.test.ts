@@ -1,32 +1,31 @@
 /** 2차: 테크 표시·가격, 골드 수입, 판 길이 추정(서버 식과 동일), 이벤트 피드, 깃발 ETA */
 import { describe, expect, it } from 'vitest';
-import { MAP_SIZE_PRESETS, type MapSizeClass } from '@civwar/shared';
-import { goldPerSecond, techCost, techEffects } from '../src/ui/techInfo.js';
+import { MAP_SIZE_PRESETS, TECH_NODES, type MapSizeClass } from '@civwar/shared';
+import { goldPerSecond, techCost, techNodes } from '../src/ui/techInfo.js';
 import { estimatePacing, landOfRandom } from '../src/ui/pacing.js';
 import { describeEvent, type FeedCtx } from '../src/state/feed.js';
 import { GameModel } from '../src/state/gameModel.js';
 import { pacingNote, defaultPrivateSettings } from '../../server/src/room/settings.js';
 
 describe('테크', () => {
-  it('가격 = floor(BASE × (1000 + 250 × 총구매수) / 1000) (§4)', () => {
-    expect(techCost(1, [0, 0, 0, 0])).toBe(450);
-    expect(techCost(1, [1, 0, 0, 0])).toBe(562);
-    expect(techCost(2, [1, 1, 0, 0])).toBe(1650);
-    expect(techCost(3, [3, 2, 2, 2])).toBe(Math.floor((2600 * (1000 + 250 * 9)) / 1000));
+  // v4.3 (프로토콜 §19): 가격 = floor(TECH_NODE_BASE_COST[tier-1] × (1000 + 60 × 보유 노드 수) / 1000)
+  it('가격 = floor(BASE × (1000 + 60 × 총구매수) / 1000) (§19)', () => {
+    expect(techCost(1, 0)).toBe(160);
+    expect(techCost(1, 1)).toBe(169);
+    expect(techCost(2, 8)).toBe(532);
+    expect(techCost(3, 14)).toBe(1288);
   });
-  it('효과 문구: 군사 전투 보너스·기동 물 업그레이드 포함, 상수에서 생성', () => {
-    expect(techEffects(0, 1).join()).toContain('×1.025');
-    expect(techEffects(0, 3).join()).toContain('×0.78');
-    const mob = techEffects(3, 3).join(' ');
-    expect(mob).toContain('슬롯 +2');
-    expect(mob).toContain('물 위 이동');
-    expect(mob).toContain('0.4배');
-    expect(techEffects(3, 1, { MOB_SLOT_BONUS_BY_TIER: [0, 5, 5, 5] }).join()).toContain('+5'); // 서버 값 우선
+  it('노드 표는 match_config.constants.TECH_NODES 우선', () => {
+    expect(techNodes()).toBe(TECH_NODES);
+    const custom = [{ ...TECH_NODES[0], name: 'X' }];
+    expect(techNodes({ TECH_NODES: custom })[0].name).toBe('X');
   });
-  it('골드 수입 §8 (유지비 차감)', () => {
+  it('골드 수입 §8 (유지비 차감, ECO 노드 반영)', () => {
     const r = goldPerSecond(2700, 0, 0);
     expect(r.gross).toBeCloseTo((Math.floor((2700 * 2080 * 1000) / 1e9) * 5) / 1000, 9);
-    const u = goldPerSecond(100000, 1, 300);
+    const e = goldPerSecond(100000, 1 << 5, 0); // ECO-1 +8%
+    expect(e.gross).toBeCloseTo((Math.floor((100000 * 2080 * 1080) / 1e9) * 5) / 1000, 9);
+    const u = goldPerSecond(100000, 1 << 5, 300);
     expect(u.net).toBeLessThan(u.gross);
   });
 });

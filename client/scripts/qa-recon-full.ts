@@ -138,7 +138,7 @@ function run(cfg: Cfg) {
             if (calcSamples.length < 10) calcSamples.push(`t${t} troopCap p${p.id} c ${g.troopCapOf(mp)} s ${troopCap(p)}`);
           }
           calc.goldChecks++;
-          const gc = goldPerSecond(mp.goldWeight, mp.tech[1], mp.upkeepPm, g.config.constants);
+          const gc = goldPerSecond(mp.goldWeight, mp.techMask, mp.upkeepPm, g.config.constants);
           const sg = (grossGoldMilliPerTick(p) * 5) / 1000;
           if (Math.abs(gc.gross - sg) > 1e-9) {
             calc.goldMis++;
@@ -146,7 +146,7 @@ function run(cfg: Cfg) {
           }
           for (let tier = 1; tier <= 3; tier++) {
             calc.techChecks++;
-            if (cTechCost(tier, mp.tech, g.config.constants) !== sTechCost(tier, p.techPurchased)) calc.techMis++;
+            if (cTechCost(tier, mp.techCount, g.config.constants) !== sTechCost(tier, p.techPurchased)) calc.techMis++;
           }
         }
         if (t % 250 === 0) {

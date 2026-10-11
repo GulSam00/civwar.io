@@ -90,7 +90,7 @@ async function main() {
       check('clientSeq 없는 cmd_* → error BAD_MESSAGE (cmd_ack 불가)', e?.code === 'BAD_MESSAGE', JSON.stringify(e));
       const a = await c.req({ type: 'cmd_nope', clientSeq: 5 }, (m) => m.type === 'cmd_ack' || m.type === 'error');
       check('모르는 cmd_* + clientSeq → cmd_ack BAD_REQUEST', a?.type === 'cmd_ack' && a.reason === 'BAD_REQUEST', JSON.stringify(a));
-      const a2 = await c.req({ type: 'cmd_buy_tech', clientSeq: 6, axis: 0, tier: 1 }, (m) => m.type === 'cmd_ack');
+      const a2 = await c.req({ type: 'cmd_buy_tech', clientSeq: 6, nodeId: 0 }, (m) => m.type === 'cmd_ack');
       check('룸 없이 cmd → cmd_ack NOT_IN_GAME', a2?.reason === 'NOT_IN_GAME', JSON.stringify(a2));
       e = await c.err({ type: 'lobby_leave' });
       check('룸 없이 lobby_leave → NOT_IN_ROOM', e?.code === 'NOT_IN_ROOM', JSON.stringify(e));
@@ -238,7 +238,7 @@ async function main() {
     check('emote 1초 1회 + 범위 밖 무시', em.length === 1 && em[0].code === 3, JSON.stringify(em));
     // rate limit
     k = h.mark();
-    for (let i = 0; i < 25; i++) h.send({ type: 'cmd_buy_tech', clientSeq: 5000 + i, axis: 0, tier: 3 });
+    for (let i = 0; i < 25; i++) h.send({ type: 'cmd_buy_tech', clientSeq: 5000 + i, nodeId: 3 });
     await sleep(800);
     const rl = h.log.slice(k).filter((m) => m.type === 'cmd_ack' && m.clientSeq >= 5000 && m.clientSeq < 5025);
     const nRL = rl.filter((m) => m.reason === 'RATE_LIMITED').length;

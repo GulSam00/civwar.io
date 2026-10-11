@@ -4,6 +4,7 @@
 > 기준: **GDD v4.1 (사용자 승인 2026-10-09)** — v4.0 부록 A 재조정값 + v4.1 A-40~A-50. 타입 원본: `shared/src/protocol.ts`, 상수 원본: `shared/src/constants.ts`.
 > 작성: 2026-10-08, multiplayer-backend-engineer. 프로토콜 버전 `PROTOCOL_VERSION = 1`.
 > **2차 갱신(2026-10-08)**: 깃발·게이지·깃발 전투·태세·ZOC·상륙·기지 체력·동맹 구현. 1차 메시지·필드는 **하나도 바꾸지 않고 추가만** 했다(§12 변경 요약).
+> **v4.3 갱신(2026-10-11, 테크 트리 v4.3 — 사용자 승인 A-66~A-84 전부 ①, `01b_tech-tree-v4.3-proposal.md`)**: 테크 4축 × 3단계 → **7갈래 32노드**(노드당 부모 하나·스탯 하나, 효과는 덧셈). `cmd_buy_tech{nodeId}`, 스냅숏 `techMask`(uint32)·`techCount`, 델타 `playerDeltas[].techMask`, `tech_purchased.nodeId/techMask`, 거절 `PREREQ_MISSING`/`ALREADY_OWNED`, `match_config.constants.TECH_NODES`. **제거·의미 변경이 있다(구 `tech[4]`·`axis/tier`·`*_BY_TIER` 테크 상수 삭제) → §19 를 먼저 읽을 것.** 같은 날 **깃발 접촉(전투·ZOC·진척 유지) 8방향**(사용자 결정) — 메시지 변경 없음, 규칙만 → §20.
 > **v4.2 갱신(2026-10-10, GDD v4.2 승인본 + 사용자 A-60 변경)**: 공격 = 깃발 옆 칸(쟁기, `halted`), 앵커 원 공격·중립 자동 전환 폐기, 지정 기지 회수(`cmd_flag_recall.baseTileId`), 귀환 취소 불가·ZOC 무시·자동 이탈 대기·귀환 ×1.5, 유지비 = 출전 깃발 전부(패주 제외), `FLAG_SPEED_BASE_MILLI` 140. **메시지·필드는 추가만, 의미 변경이 있다 → §18 을 먼저 읽을 것.**
 > **3차-1 갱신(2026-10-09, GDD v4.1 승인본)**: 게이지 되돌리기 폐지 → 진척도 자동 감소(7c), 방 설정(맵 크기 S/M/L·공식 프리셋 맵·최대 인원 2~12·봇 수·봇 난이도), 프리셋 맵 로더·내보내기 스크립트. **제거·의미 변경이 있다 → §14 를 먼저 읽을 것.** 봇 AI 로직 자체는 3차-2.
 
@@ -62,6 +63,7 @@ civwar.io/
     protocol.ts           # 모든 C→S / S→C 메시지 타입
     terrain.ts            # isClaimable (게임 로직 유일 지형 판정)
     rle.ts                # rleEncode / rleDecode
+    tech.ts               # v4.3 테크 순수 함수 (스탯 합산·가격·선행) — 서버·클라 공용
   server/src/
     index.ts              # 진입점 (PORT, CIVWAR_SEED)
     net/server.ts         # ws 서버, hello/라우팅
@@ -233,13 +235,13 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 ```
 오류: `NOT_IN_ROOM`, `NOT_LOBBY`, `NOT_HOST`(start_now), **`NOT_ENOUGH_PLAYERS`**(v4.1, start_now — 사람 + 클램프된 봇 < 2). `ready`는 v4.1부터 표시용.
 
-### cmd_buy_tech — 1차 동작
+### cmd_buy_tech — v4.3 (§19)
 ```json
-{ "type": "cmd_buy_tech", "clientSeq": 12, "axis": 1, "tier": 1 }
+{ "type": "cmd_buy_tech", "clientSeq": 12, "nodeId": 15 }
 ```
-axis `0=MILITARY 1=ECONOMY 2=TERRITORY 3=MOBILITY`, tier 1..3.
-검증 순서: 플레이어 존재(`NOT_IN_GAME`) → 생존(`ELIMINATED`) → `tech[axis] == tier-1`(아니면 **`TECH_ORDER`**) → `gold ≥ cost`(`INSUFFICIENT`). 성공 시 골드 차감·즉시 발효 → `cmd_ack accepted` + 룸 `tech_purchased`.
-`cost = floor(TECH_BASE_COST[tier-1] × (1000 + 250 × 총구매수) / 1000)`.
+`nodeId` = `TECH_NODES[].id` (0..31, 정수). 구 `{ axis, tier }` 형식은 **v4.3 에서 폐기** — `nodeId` 가 없거나 범위 밖이면 `cmd_ack BAD_REQUEST`.
+검증 순서: 플레이어 존재(`NOT_IN_GAME`) → 생존(`ELIMINATED`) → `nodeId` 범위(`BAD_REQUEST`) → 이미 보유(**`ALREADY_OWNED`**) → 부모 미보유(**`PREREQ_MISSING`**, T1 은 부모 없음) → `gold ≥ cost`(`INSUFFICIENT` — 기존 코드 재사용). 성공 시 골드 차감·`techMask` 비트 세움·스탯 캐시 재계산(즉시 발효, 되돌릴 수 없음) → `cmd_ack accepted` + 룸 `tech_purchased`.
+`cost = floor(TECH_NODE_BASE_COST[tier-1] × (1000 + TECH_PROGRESSIVE_COEF_PERMILLE × n) / 1000)` = `floor([160,360,700][tier-1] × (1000 + 60 × n) / 1000)`, `n` = 그 플레이어가 지금까지 산 노드 수(갈래 무관, = `techCount`).
 
 ### 깃발 명령 (2차 — GDD 4.3 / 4.3a / 4.4 / 4.15 g)
 
@@ -256,7 +258,7 @@ axis `0=MILITARY 1=ECONOMY 2=TERRITORY 3=MOBILITY`, tier 1..3.
 
 | 명령 | 검증 순서 (먼저 걸린 코드 1개 회신) | 효과 |
 |---|---|---|
-| `cmd_flag_issue` | `ELIMINATED` → `BAD_REQUEST`(tileId 범위 밖·troops 비정수) → `NO_SLOT`(내 깃발 수 ≥ flagCap — 패주 귀환 중인 깃발도 슬롯 점유) → `BAD_UNIT` → `WATER`(DEEP·SHALLOW) → `OUT_OF_RANGE`(내 타일까지 거리 > 40) → `TOO_SMALL`(< 40) → `ALLIED`(앵커 소유자가 ACTIVE/BREAKING 동맹) → `NOT_BASE` / `NOT_OWNED_BASE`(originBaseTileId 지정 시) → `INSUFFICIENT` | 기본 태세: 내 땅 앵커 = DEFEND(`targetOwnerId = 254 ANY_HOSTILE`), 그 외 ATTACK(`targetOwnerId` = 앵커 소유자, 중립 0). 풀 차감 `ceil(troops × UNIT_CONVERT[unit] / MOB_CONVERT[기동 단계])`. 슬롯 = 최소 미사용 번호. 출발 = 지정 기지 / 앵커 최근접 내 기지 / (기지 없음) 수도 최근접 내 타일. → `flag_issued` |
+| `cmd_flag_issue` | `ELIMINATED` → `BAD_REQUEST`(tileId 범위 밖·troops 비정수) → `NO_SLOT`(내 깃발 수 ≥ flagCap — 패주 귀환 중인 깃발도 슬롯 점유) → `BAD_UNIT` → `WATER`(DEEP·SHALLOW) → `OUT_OF_RANGE`(내 타일까지 거리 > 40) → `TOO_SMALL`(< 40) → `ALLIED`(앵커 소유자가 ACTIVE/BREAKING 동맹) → `NOT_BASE` / `NOT_OWNED_BASE`(originBaseTileId 지정 시) → `INSUFFICIENT` | 기본 태세: 내 땅 앵커 = DEFEND(`targetOwnerId = 254 ANY_HOSTILE`), 그 외 ATTACK(`targetOwnerId` = 앵커 소유자, 중립 0). 풀 차감 `ceil(troops × CONVERT_<unit> / 1000)` (**v4.3**: 플레이어 스탯, 무테크 = `UNIT_CONVERT_PERMILLE` 1000/1000/1150, CAV-2A 기병 1070. 구 전 병종 편성 효율 `MOB_CONVERT` 폐기). 슬롯 = 최소 미사용 번호. 출발 = 지정 기지 / 앵커 최근접 내 기지 / (기지 없음) 수도 최근접 내 타일. → `flag_issued` |
 | `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 전투 중이어도 항상 거절** — QA I-2 수락 경로 폐기 [A-62]) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생(쿨타임 중·전투 중이면 현 태세 유지), `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
 | `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 항상 거절**, [A-62]) → (**v4.2** `baseTileId` 지정 시) `NOT_BASE`(기지 칸 아님·범위 밖) → `NOT_OWNED_BASE`(내 기지 아님) | `state=RETURNING`, `returnBaseTileId = baseTileId ?? null`, 귀환지 = recallTarget(지정 기지 우선). 깃발은 **실제로 걸어서** 귀환지까지 간다(속도 ×1.5, ZOC 무시). 도착 시 잔여 × 85% 풀 환급. **전투 중(비귀환)이면 이탈 대기**. → `flag_recalled` (+`flag_disengage_started{auto:false}`) |
 | `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2 추가** [A-62]) → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
@@ -361,7 +363,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 {
   "type": "snapshot_full", "tick": 25,
   "owners": [0,512,3,2,0,87,"..."],
-  "players": [{ "id": 1, "tiles": 9, "troops": 164, "gold": 200, "goldWeight": 2700, "upkeepPm": 0, "tech": [0,0,0,0], "flagCap": 3, "alive": true, "connected": true }],
+  "players": [{ "id": 1, "tiles": 9, "troops": 164, "gold": 200, "goldWeight": 2700, "upkeepPm": 0, "techMask": 0, "techCount": 0, "flagCap": 3, "alive": true, "connected": true }],
   "flags": [],
   "bases": [{ "tileId": 431, "ownerId": 0, "hpPct": 100 }],
   "alliances": [],
@@ -397,17 +399,17 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 }
 ```
 - **모든 배열 필드는 항상 존재**(비어 있을 수 있음). `thresholdPct`만 값이 바뀐 tick에 존재(옵셔널).
-- `playerDeltas`: `t % 5 == 0`일 때만, **표시값(`tiles,troops,gold,goldWeight,upkeepPm`)이 마지막 송신 이후 바뀐 플레이어만**. 항목 `{id,tiles,troops,gold,goldWeight,upkeepPm}`.
+- `playerDeltas`: `t % 5 == 0`일 때만, **표시값(`tiles,troops,gold,goldWeight,upkeepPm,techMask`)이 마지막 송신 이후 바뀐 플레이어만**. 항목 `{id,tiles,troops,gold,goldWeight,upkeepPm,techMask}` (**v4.3: `techMask` 추가** — 구매 즉시 반영은 `tech_purchased` 이벤트).
 - **골드 수입·유지비 표시 (v4.2 A-60 변경 — "초당 골드 소모")**: `upkeepPm`(0..700) = 이번 tick 골드 정산에 쓴 유지비 비율(그로스 대비 ‰). **v4.2: 출전한 깃발 전부(태세·상태 무관 — 행군·정지 점령·앵커·IDLE·귀환), 패주(`routed`) 깃발만 제외**가 과금 대상이다. 클라이언트 계산(서버와 같은 정수식, 상수는 `match_config.constants`):
   ```
-  ecoTier   = player.tech[1]                                        // 경제 축
-  grossMilli = floor(goldWeight × GOLD_RATE_PERMILLE × ECO_GOLD_PERMILLE_BY_TIER[ecoTier] / 1e9)   // milli 골드 / tick
+  goldPm    = techStatValues(player.techMask)[TECH_STAT.GOLD]       // v4.3 (§19) — 무테크 1000, ECO-1/2A/3A 합산
+  grossMilli = floor(goldWeight × GOLD_RATE_PERMILLE × goldPm / 1e9)   // milli 골드 / tick
   upkeepMilli = floor(grossMilli × upkeepPm / 1000)                 // 유지비 milli / tick
   netMilli    = grossMilli − upkeepMilli                            // 실제 골드 증가 milli / tick (≥ 그로스의 30%)
   골드/초 = milli/tick × (1000 / TICK_MS) / 1000 = milli/tick × 5 / 1000
      소모 골드/초 = upkeepMilli × 0.005,  순수입 골드/초 = netMilli × 0.005,  그로스 골드/초 = grossMilli × 0.005
   ```
-  `upkeepPm` 은 `goldWeight`·`tech` 와 같은 주기(델타 5 tick, 바뀐 때만 / full 5초)로 온다. 발령 전 미리보기("이 깃발을 내면 소모가 얼마")는 `w = Σ UNIT_GARRISON_PERMILLE[unit]`(내 비패주 깃발 전부 + 새 깃발), `upkeepPm' = min(700, floor(max(0, w − 1000) × 90 / 1000))` 로 같은 식에 넣으면 된다(§8).
+  `upkeepPm` 은 `goldWeight`·`techMask` 와 같은 주기(델타 5 tick, 바뀐 때만 / full 5초)로 온다. 발령 전 미리보기("이 깃발을 내면 소모가 얼마")는 `w = Σ UPKEEP_WEIGHT_<unit>`(내 비패주 깃발 전부 + 새 깃발), `upkeepPm' = min(700, floor(max(0, w − 1000) × UPKEEP_COEF / 1000))` 로 같은 식에 넣으면 된다(§8). **v4.3**: 가중치·계수는 플레이어 스탯(무테크 창 600·검 1000·기 1600 / 계수 90, SPE-2A 창 450, CAV-3 기 1300, ECO-2B 계수 72 — §19).
 - `flagMoves [flagId,posTileId]`: posTileId가 바뀐 깃발(매 tick). `flagStats [flagId,troops,state]`: `t % 5 == 0`, 바뀐 것만. `flagProgress [flagId,pct]`: **v4.2: `progressPct > 0` 인 깃발 전부 + ATTACK 태세 `ENGAGED`·`halted` 깃발(0 이어도) 매 tick, 그리고 0 이 된 tick 1회** — "목록에 없는 깃발 = 0" 규칙이 그대로 성립한다(v4.1 까지는 ATTACK·ENGAGED 만). `flagTargets [flagId,targetTileId|null]`: 바뀐 것만. `baseHp [tileId,hpPct]`: `t % 5 == 0`, 바뀐 기지만. `flagsGone [flagId]`.
 - 같은 tick에 `snapshot_delta` → `snapshot_full` 순으로 온다. full을 받으면 그 상태로 덮어쓰면 된다.
 - **2차 변경(추가만)**:
@@ -458,7 +460,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 | type | 예시 | 시점 |
 |---|---|---|
-| `tech_purchased` | `{ "type":"tech_purchased","tick":120,"playerId":1,"axis":1,"tier":1,"cost":450,"newFlagCap":3 }` | 구매 성공 tick |
+| `tech_purchased` | `{ "type":"tech_purchased","tick":120,"playerId":1,"nodeId":15,"cost":160,"newFlagCap":3,"techMask":32768 }` | 구매 성공 tick. **v4.3**: `axis`/`tier` 삭제 → `nodeId`, `techMask`(구매 후 보유 마스크) 추가 |
 | `threshold_update` | `{ "type":"threshold_update","tick":4800,"thresholdPct":60 }` | t ≥ 4800 이고 (t−4800) % 300 == 0, 바닥(45%) 도달 tick(7800)까지 = 총 11회 |
 | `endgame_rush` | `{ "type":"endgame_rush","tick":8400,"costMultPermille":750 }` | t == 8400, 1회. 이후 `snapshot_full.endgameRushActive = true` |
 | `player_eliminated` | `{ "type":"player_eliminated","tick":3000,"playerId":4,"byPlayerId":2 }` | tiles == 0. `byPlayerId` = 마지막으로 타일을 가져간 플레이어(없으면 null) |
@@ -511,10 +513,12 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 코드 | 의미 | 1차 발생 |
 |---|---|---|
 | `ELIMINATED` | 탈락자 명령 | ✅ |
-| `INSUFFICIENT` | 골드/병력 부족 | ✅(테크) |
+| `INSUFFICIENT` | 골드/병력 부족 (**v4.3 테크 골드 부족도 이 코드** — 별도 `NOT_ENOUGH_GOLD` 를 만들지 않았다) | ✅(테크) |
 | `BAD_REQUEST` | 형식 오류 (**백엔드 추가**) | ✅ |
 | `NOT_IN_GAME` | 인게임 멤버가 아님 (**추가**) | ✅ |
-| `TECH_ORDER` | 선행 단계 미구매 또는 이미 구매 (**추가** — GDD 거절 코드 목록에 테크용이 없음) | ✅ |
+| `TECH_ORDER` | ~~선행 단계 미구매 또는 이미 구매~~ — **v4.3 부터 송신하지 않음**(아래 둘로 분리, 타입만 호환용으로 유지) | ✗ |
+| `PREREQ_MISSING` | **v4.3** `cmd_buy_tech`: 부모 노드(`TECH_NODES[nodeId].parent`) 미보유 | ✅ |
+| `ALREADY_OWNED` | **v4.3** `cmd_buy_tech`: 이미 보유한 노드 | ✅ |
 | `RATE_LIMITED` | tick당 명령 초과 (**추가**) | ✅ |
 | `NOT_IMPLEMENTED` | 1차 미구현 명령 — **2차 소멸(송신 안 함)** | ✗ |
 | `NO_SLOT` `BAD_UNIT` `WATER` `ALLIED` `OUT_OF_RANGE` `TOO_SMALL` `NO_FLAG` `RETURNING` `LOCKED` `NOT_BASE` `NOT_OWNED_BASE` `ROUTED` `IN_COMBAT` `DISENGAGING` `POSTURE_COOLDOWN` `SAME_POSTURE` | GDD 7.2/7.3 (§4 표). **v4.2**: `RETURNING` = 귀환 중 깃발에 대한 재지정·회수·태세 전환 전부(전투 중 포함). `NOT_BASE`/`NOT_OWNED_BASE` = `cmd_flag_recall.baseTileId` 에도 사용 | ✅ 2차 |
@@ -570,28 +574,63 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | 14 브로드캐스트 | `stage14_broadcast` | ✅ |
 
 정수식:
+- **v4.3**: 아래 `capPm`·`regenPm`·`goldPm` 과 모든 테크 배율은 플레이어 스탯 `statPm = techStatValues(techMask)`(§19) 에서 읽는다 — 각각 `TROOP_CAP`·`REGEN`·`GOLD`
 - `troopCap = floor((100 + 12·tiles) × capPm / 1000)`
 - `regenMilli = round_half_up( (800 + floor(500 × isqrt(tiles·10⁶) / 1000)) × regenPm × (capMilli − troopsMilli) / (1000 × capMilli) )`, 이후 `troopsMilli = min(troopsMilli + regen, capMilli)`
 - `goldMilli/tick = floor(goldWeight × 2080 × goldPm / 10⁹)`, `net = gross − floor(gross × upkeepPm / 1000)`
-- `flagCap = min(7, 3 + floor(tiles/300) + MOB_SLOT_BONUS[tier])`
+- `flagCap = min(7, 3 + floor(tiles/300) + SLOT_BONUS)` — **v4.3**: `SLOT_BONUS` = MOB-3A 보유 시 1, 아니면 0 (최대 +1)
 - `thresholdScaled(t) = clamp(12000 − floor(max(0, t−4800) × 1500 × 200 / (1000 × 300)), 9000, 12000)`; 승리 ⇔ `tiles × 100 × 200 ≥ thresholdScaled × totalLandTiles`
 
 2차 정수식 (클라이언트 예측용 — 서버와 같은 값을 내려면 이 순서 그대로):
-- `tileCost`: micro(1e-6) 고정소수점 `v`. 중립 `v = (7000 + floor(750 × isqrt(tiles·10⁶) / 1000)) × 1000 → ×TER_NEUTRAL`, 적 `v = 11·10⁶ → ×MIL_DEF(소유자) → ×MIL_ATK(공격자) → ×(1000 + 150·n)`; 공통 `→ ×TERRAIN_COST → ×UNIT_ATK_MULT → ×supply → (러시 중이면 ×750)`. 각 `×pm` 은 `v = floor(v × pm / 1000)`. 결과 `max(4, ceil(v / 10⁶))`. `n` = 이동 그래프 이웃 중 그 타일 소유자와 같은 수. supply = `min(1600, 1000 + 20 × max(0, d − 10))`, d = 공격자 기지까지 최소 거리(기지 없으면 40)
+- `tileCost`: micro(1e-6) 고정소수점 `v`. 중립 `v = (7000 + floor(750 × isqrt(tiles·10⁶) / 1000)) × 1000 → ×NEUTRAL_COST(공격자)`, 적 `v = 11·10⁶ → ×DEF_COST(소유자) → ×ATK_COST(공격자) → ×(1000 + 150·n)`; 공통 `→ ×TERRAIN_COST → ×CAPTURE_MULT_<unit>(공격자) → ×supply → (러시 중이면 ×750)` (**v4.3**: 배율 이름은 `TECH_STAT`, 값은 각 플레이어 스탯 — 무테크면 v4.2 와 같은 값). 각 `×pm` 은 `v = floor(v × pm / 1000)`. 결과 `max(4, ceil(v / 10⁶))`. `n` = 이동 그래프 이웃 중 그 타일 소유자와 같은 수. supply = `min(1600, 1000 + SUPPLY_COEF × max(0, d − 10))`, d = 공격자 기지까지 최소 거리(기지 없으면 40). **v4.3**: `SUPPLY_COEF` = 공격자 스탯(무테크 20, TER-3A 15)
 - ~~`defRefCost`~~, ~~`undoPerAP`~~ — **v4.1 삭제**
 - 진척도 감소: 밀지 않는 tick 마다 `progressMilli = max(0, progressMilli − 20)` (유지 조건 위 7c). `progressPct = floor(progressMilli / 10)` 그대로
 - `availAP = floor(min(spendBudgetMilli, troopsMilli) / 1000)`, 예산 `+initialTroops × 15`/tick, 상한 `initialTroops × 15 × 25`
 - `adv = min(floor(AP × 1000 / cost), 2 × UNIT_ASSAULT)`, 지출 `ceil(adv × cost / 1000)`
-- `speedMilli = max(1, floor(140 × UNIT_SPEED × MOB_SPEED × RET / (moveCost(pos) × 10⁶)))` — **v4.2: `FLAG_SPEED_BASE_MILLI` 120 → 140 [A-64]**, `RET` = RETURNING(패주 포함)이면 `RETURN_SPEED_PERMILLE`(1500) 아니면 1000 (같은 floor 안). 예: 검병·평원·무테크 행군 140, 귀환 210 milli/tick. moveCost = 얕은 물이면 `max(2000, SHALLOW_MOVE_BY_TIER[기동])`, 아니면 `TERRAIN_MOVE`
+- `speedMilli = max(1, floor(140 × UNIT_SPEED × speedPm × RET / (moveCost(pos) × 10⁶)))`, **v4.3** `speedPm = SPEED + SPEED_<unit>`(무테크 1000, MOB-1/2A 각 +150, CAV-1·SPE-2B 해당 병종 +100) — **v4.2: `FLAG_SPEED_BASE_MILLI` 120 → 140 [A-64]**, `RET` = RETURNING(패주 포함)이면 `RETURN_SPEED_PERMILLE`(1500) 아니면 1000 (같은 floor 안). 예: 검병·평원·무테크 행군 140, 귀환 210 milli/tick. moveCost = 얕은 물이면 `max(2000, SHALLOW_MOVE)`(**v4.3** 스탯: 무테크 5000, MOB-2B 3500), 아니면 `TERRAIN_MOVE`
 - **v4.2 공격 대상 `marchFront(f)`** = 깃발 현재 칸 `neighbors`(이동 그래프 이웃) 중 `isClaimable ∧ owner ≠ 나 ∧ ¬isAlly(나, owner)`(중립 포함). `selectAttackTargetRO`: 현 `targetTileId` 가 `marchFront` 안이면 유지(sticky), 아니면 `(MARCHING 이고 경로 다음 칸이면 0 아니면 1, distance(t, anchor), tileCost, tileId)` 최소. 쟁기 미리보기: 직선 경로면 걸음당 새 칸 3개(앞·좌·우) = 폭 3 회랑, 출발 칸에서는 뒤 칸까지 4개
-- 거리장: 목적지에서 역방향 Dijkstra, 간선 가중치 = 들어가는 칸의 moveCost, 키 `(dist, tileId)`. 다음 칸 = 이웃 중 `(dist, tileId)` 최소. 캐시 키 `(목적지, 기동 단계)`
-- 노출 소모: 내 땅·동맹 땅이 아니면 `max(1000, floor(troopsMilli × 5 / 10000))`, 물 위면 `max(1000, floor(a × WATER_EXPOSURE[기동] / 1000))`
+- **깃발 접촉 (2026-10-11 사용자 결정, §20)**: 깃발 대 깃발 전투 후보·편 묶기, ZOC, 진척도 유지 판정은 `touching(a, b)` / `contactNeighbors(t)` — 사각 = 체비셰프 거리 ≤ 1(8방향, 대각선 포함). 땅 점령(`marchFront`)·guard·이동 경로·발령 사거리는 4방향/맨해튼 그대로
+- 거리장: 목적지에서 역방향 Dijkstra, 간선 가중치 = 들어가는 칸의 moveCost, 키 `(dist, tileId)`. 다음 칸 = 이웃 중 `(dist, tileId)` 최소. 캐시 키 `(목적지, 얕은 물 이동배율 SHALLOW_MOVE)` (**v4.3**)
+- 노출 소모: 내 땅·동맹 땅이 아니면 `max(1000, floor(troopsMilli × 5 / 10000))` — **v4.3 [A-75]**: 물 위 감소 테크 폐기, 땅·물 같은 식
+- 깃발 전투값 `v(f)` (**v4.3**): 공격 태세 `v = floor(UNIT_ATK[u] × (COMBAT_ATK + COMBAT_ATK_<u>) / 1000)`, 방어 태세 `v = floor(floor(UNIT_DEF[u] × terrainDef / 1000) × (COMBAT_DEF + COMBAT_DEF_<u>) / 1000)`. 물 위 깃발이 땅 위 적과 같은 무리면 `× LANDING_COMBAT / 1000`(무테크 800, MOB-3B 950), 물 대 물 ×1000. 이탈 대기 ×500. 최소 1
 - 깃발 전투: GDD 4.15 c·d 그대로 (`L`, `T = N_sides × L`, `inv = floor(10⁹ / W)`, 잔여 milli 는 sideKey ASC 로 1씩, 편 내부는 병력 비례 floor + 잔여를 (troopsMilli DESC, flagId ASC) 로 1씩)
-- 유지비: **v4.2 [A-60 변경]** `w = Σ UNIT_GARRISON_PERMILLE[unit]` (**내 깃발 중 `routed` 가 아닌 것 전부** — 태세·상태 무관. 창 600 / 검 1000 / 기병 1600), `drainPm = min(700, floor(max(0, w − 1000) × 90 / 1000))` → `players[].upkeepPm`. 순증 = 그로스 − floor(그로스 × drainPm / 1000) ≥ 그로스의 30% (상한 700 유지). 예: 검 1 = 0‰, 검 2 = 90‰, 검 3 = 180‰, 기병 7 = 700‰(상한). 골드/초 계산은 §5 snapshot_delta
+- 유지비: **v4.2 [A-60 변경]** `w = Σ UPKEEP_WEIGHT_<unit>` (**내 깃발 중 `routed` 가 아닌 것 전부** — 태세·상태 무관. 무테크 창 600 / 검 1000 / 기병 1600, **v4.3** SPE-2A 창 450·CAV-3 기병 1300), `drainPm = min(700, floor(max(0, w − 1000) × UPKEEP_COEF / 1000))` (무테크 90, **v4.3** ECO-2B 72) → `players[].upkeepPm`. 순증 = 그로스 − floor(그로스 × drainPm / 1000) ≥ 그로스의 30% (상한 700 유지). 예: 검 1 = 0‰, 검 2 = 90‰, 검 3 = 180‰, 기병 7 = 700‰(상한). 골드/초 계산은 §5 snapshot_delta
 
 ---
 
 ## 9. 테스트·스모크 결과
+
+### v4.3 (2026-10-11, 테크 트리 v4.3 — 사용자 승인 A-66~A-84 ① + 깃발 접촉 8방향)
+- `npm run typecheck` 통과(shared·server·client). `npm test`: **18 파일 232 테스트 전부 통과**(서버 9 파일 167 — 신규 `tech.test.ts` 21, `flags.test.ts` 8방향 묶음 5, 클라이언트 9 파일 65). 클라이언트는 빌드 유지용 최소 수정(§19 "클라이언트").
+- **교체한 기존 테스트**: economy(상한 TER-2B/3B·골드 ECO-1/3A·누진 160/169/403/868·슬롯 MOB-3A) / tick(구매 수락·`PREREQ_MISSING`·`ALREADY_OWNED`·`INSUFFICIENT`, 입력 큐 정렬) / flags(m-10 봇 ack — nodeId) / protocol(nodeId 범위·구 axis/tier 형식 거절) / bot(상태 해시에 techMask, **요격 칸 기대값 "맨해튼 ≤ 1" → `touching`** — 8방향 규칙으로 대각선 칸이 요격 칸이 될 수 있다).
+- **신규 8방향 테스트 (flags.test.ts `깃발 접촉 = 8방향` 5)**: 토폴로지(`contactNeighbors` 8개·`touching` 체비셰프·이동 이웃 4방향 그대로) / **대각선 접촉 → 전투 개시** / **대각선 ZOC 로 행군 정지**(방어↔방어, 현재 칸이 대각선 접촉) / 대각선 적 깃발 → 진척도 유지 / **marchFront 는 4방향 그대로**(대각선 적 칸으로는 재점화 안 함, 4방향 적 칸이 생기면 재점화).
+- **신규 `server/test/tech.test.ts` (21)**: 노드 표 불변식(32·7갈래·부모 = 같은 갈래 한 티어 아래·uint32 비트 31) / 스탯 매핑 / 전부 보유 시 최대치(01b 2.4) / **가격식 n = 0·8·14** (`[160,360,700]`·`[236,532,1036]`·`[294,662,1288]`) + 서버 구매 경로 15회 가격열 / **선행 거절**(T2·T3, 형제 불필요) / **이미 보유 거절**(골드 차감 없음) / 골드 부족·범위 밖 / **구매 순서 3가지 → statPm·techMask 동일** / 노드 하나 = 스탯 하나 / **유지비 노드 실제 적용**(ECO-2B 342→273‰, CAV-3 261‰, 둘 다 208‰, SPE-2A 126→72‰, 골드 정산 tick 의 `upkeepPm`) / **속도 노드 실제 적용**(검·기·창 140/203/105 → MOB-1 161/233/120 → MOB-1+2A+CAV-1+SPE-2B 182/284/147) / 얕은 물 5000→3500 / **슬롯 MOB-3A +1, 전부 사도 +1** / 상한·재생 / 점령비용(MIL-1·3A·2B·TER·SWO-2B·TER-3A 보급선) / 전투값 태세 분리(검 공격 1000→1140, 창 방어 1300→1482) / 편성비 CAV-2A 115→107 / 스냅숏·델타 `techMask`·`match_config.constants.TECH_NODES` / 봇 목록 4×16 부모 순서·EASY 기병 노드 없음.
+- `smoke`: v4.3 테크 단계로 교체 — 시작 골드 200 으로 MIL-1(160) 수락 → `tech_purchased{nodeId 0, cost 160, techMask 1}` → 재구매 `ALREADY_OWNED` → MIL-3A `PREREQ_MISSING` → ECO-1 `INSUFFICIENT` → nodeId 32 `BAD_REQUEST` → `snapshot_full.players[].techMask/techCount`. `SMOKE PASSED`.
+- 위 smoke·qa 결과는 8방향 적용 후 재실행해도 같다(smoke PASSED, qa:ws 78/78, qa:scenarios 86/87, qa:headless 불일치 0).
+- `qa:ws` **78/78**, 스키마 위반 0. `qa:headless`: **재구성 불일치 0종, 회계 위반 0, 스키마 위반 0, 순서 위반 0**(모델이 `tech_purchased.nodeId` 로 마스크를 재구성해 full 과 비교). `qa:scenarios` **86/87** — 남은 1건은 기존 m-13(GDD #7 예시 수치, 서버 결함 아님 — 744/772 그대로). 테크 시나리오는 nodeId·새 거절 코드·가격 160→169 로 교체. `qa-schema.ts`: `players[].techMask/techCount`, `playerDeltas[].techMask`, `tech_purchased{nodeId, techMask}`, 거절 코드 `PREREQ_MISSING`/`ALREADY_OWNED` (`TECH_ORDER` 제거).
+- **자가대전** (`npm run selfplay -w @civwar/server -- 10 1000 M 10`, 전원 NORMAL, 시드 1000~1009, `CIVWAR_SELFPLAY_LEDGER=1` 매 tick 회계 검사 — 두 실행 모두 위반 0). **A** = 테크 v4.3 만, **B** = 테크 v4.3 + 깃발 접촉 8방향(최종 코드).
+
+| 지표 | 직전 (081dc6d, 오케스트레이터 제공) | A: 테크만 | **B: 테크 + 8방향 (최종)** | 제안서 추정 |
+|---|---|---|---|---|
+| 종료 평균 / 분포 | 32.0분 (전부 32.0) | 32.0 (전부 32.0) | **32.0분 (전부 32.0)** | 표준 29.5~29.6분 (봇 판 재현 불가 — 01b 3.4) |
+| 종료 사유 | timeout 10 | timeout 10 | **timeout 10** | — |
+| 1위 점유율 @30분 | 22.4% | 19.0% | **22.1%** | — |
+| 1위 점유율 @5/10/15/20/25/30분·종료 | — | 4.9/10.0/13.8/15.2/17.4/19.0·20.3 | 4.9/9.8/13.6/15.6/18.7/22.1·23.7 | — |
+| 공격 깃발 시간 — 걷기/정지 점령/앵커/**교전**/귀환/IDLE % | — (v4.2 문서 40.3/22.8/0.7/17.6/16.7/1.9) | 41.8/22.6/0.6/**15.9**/17.3/1.7 | 40.6/20.9/0.6/**18.3**/17.9/1.7 | — |
+| 병력 소멸 노출/전투/공격 지출 % | — | 3.3/35.4/61.2 | 3.4/**39.6**/57.1 | — |
+| 테크 구매/플레이어 (종료) | 3.3 | 8.8 (@15분 4.6) | **8.6** (@15분 4.6) | 중위 8~10 |
+| 종료 시 테크 수 — 1위(타일) / 생존 중앙 / 탈락자 | — | 11.2 / 8.5 / 3.0 (4판) | **12.2 / 9.7 / 3.5** (9판) | 선두 14 / 중위 9 / 조기 탈락 5 |
+| 구매 티어 분포 T1 / T2 / T3 | — | 48.6 / 39.1 / 12.3% | **48.8 / 39.2 / 12.0%** (플레이어당 4.22 / 3.39 / 1.04) | 선두는 T3 3~4개 |
+| 평균 유지비 upkeepPm | — (v4.2 문서 265‰) | 238‰ | 232‰ | — |
+| 방어 슬롯 비중 | — (v4.2 문서 47%대) | 47.2% | 45.0% | — |
+| 공격 발령 병종 창/검/기 | — | 0/4.5/95.5 | 0/4.0/96.0 | — |
+| 탈락/판 · 플레이어 기지 함락/판(수도) | — | 0.4 · 27.9 (18.0) | **1.0** · 26.3 (14.9) | — |
+| 종료 시 고립지 칸 비율 | — | 17.3% | 12.4% | — |
+| 봇 거절률 / APM | — | 0% / 7.0 | 0% / 7.3 | — |
+| tick ms 평균/최대 · 봇 ms/tick 평균/최대 | — | 0.27/21.4 · 0.05/10.4 | 0.29/22.6 · 0.05/13.0 | — |
+
+  - **노드별 구매율 (B, 플레이어-판 %)**: MIL-1 54 · MIL-2A 13 · MIL-2B 19 · MIL-3A **0** · MIL-3B 7 · ECO-1 92 · ECO-2A 30 · ECO-2B 60 · ECO-3A 24 · ECO-3B 15 · TER-1 65 · TER-2A 25 · TER-2B 33 · TER-3A **0** · TER-3B 13 · MOB-1 79 · MOB-2A 54 · MOB-2B 9 · MOB-3A 17 · MOB-3B **0** · SPE-1 35 · SPE-2A 21 · SPE-2B **0** · SPE-3 10 · SWO-1~3 **0** (NORMAL 봇 목록엔 SWO-1 하나뿐, 16번째) · CAV-1 97 · CAV-2A 56 · CAV-2B 19 · CAV-3 18. 0% 노드는 봇 목록 후반(12~16번째)이거나 목록에 없는 노드 — 봇이 판당 8~12개에서 멈추기 때문(B-24 관측 대상).
+  - **해석 (상수 불변)**: 테크 구매는 3.3 → 8.6 으로 제안서 방향대로 늘었지만 **추정치보다 적다**(1위 12.2 vs 14, 탈락자 3.5 vs 5 — 중앙 9.7 은 추정 9 와 비슷). 테크만 바꾼 A 에서는 30분 1위 점유율이 22.4% → 19.0% 로 내려갔다(이동속도 천장 하향 — 구 기동 T1 ×1.45 → MOB-1 ×1.15, 기병 MOB-1+CAV-1 ×1.25 — 이 쟁기 점령 속도를 늦춘 몫으로 보인다). **8방향 접촉(B)** 은 교전 시간 비중 15.9 → 18.3%, 전투 소멸 35.4 → 39.6%, 탈락 0.4 → 1.0/판으로 교전을 늘렸고 30분 1위 점유율을 22.1% 로 되돌렸다(직전 22.4% 와 비슷). 하드 타임아웃 10/10 은 세 실행 모두 같아 **판 길이는 바뀌지 않았다**. **수치는 바꾸지 않았다** — game-designer 판단 필요(§13-9).
 
 ### v4.2 (2026-10-10, GDD v4.2 + A-60 변경 + 봇 기지 공격)
 - `npm run typecheck` 통과(shared·server·client). `npm test`: **서버 8 파일 전부 통과**(flags 42·bot 12 포함). 루트 `npm test` 의 실패 1건은 **클라이언트** `m-4 engageEtaTick` 테스트(표본 수 > 100 요구, `flag_engaged` 를 실측 기준으로 씀) — v4.2 에서 공격 깃발의 `flag_engaged` 는 앵커 칸 도착 때만 나오므로 표본이 줄었다. 서버 동작은 의도대로이며 클라이언트 테스트의 기준 이벤트를 "첫 `HALTED` 비트 또는 `flag_engaged`" 로 바꿔야 한다(§18).
@@ -753,12 +792,12 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 52. **최소 방어선** (8.2 3) "인접 적 수 최대 국경 구간" = 적 플레이어 땅과 맞닿은 내 칸 중 거리 ≤ 2 적 칸 수 최대 (동률 tileId 최소), 기존 방어 관할 원 밖. 병력 = 풀 × 40%, 상한 풀 − 예비.
 53. **주둔 해제**: `engagedSinceTick` 이 없어 `calmTicks` (주둔 ∧ 비위협 연속 tick) ≥ 900 으로 판정. 제자리 반격 (위협 0, 병력 ≥ 70%, 쿨타임 없음) 은 front (ANY_HOSTILE) 가 있고 반격 후에도 최소 방어선이 유지될 때만.
 54. **앵커 중복 방지**: 같은 소유자를 노리는 내 공격 앵커 (계획 포함) 와 거리 ≤ 6 인 국경 칸은 후보에서 뺀다 (GDD 식은 같은 소유자 두 깃발이 같은 앵커를 고름). `tileCost` 비교는 검병 기준. 재지정 점수의 `march` 는 기지가 아닌 **깃발 현재 위치**에서 잰다 (발령은 originFor = 최근접 기지).
-55. **경로 위험 (8.6) 은 근사**: 거리장 경로를 만들지 않고 앵커 거리 ≤ 2 의 적 깃발 실효력 합 × 0.9 와 비교. **상륙 후보** (기동 T2+): 내 해안에서 얕은 물만 12칸 BFS 로 닿는, 내 땅과 비인접·적 깃발 거리 > 2 인 육지 — 점수 ×0.8. **차단 쓰기**: 내 땅을 노리는 적 행군 깃발과 그 앵커 사이 맨해튼 최단 경로 위 (깃발에서 2~6칸) 내 언덕·산 칸, 빈 슬롯 ≥ 2, 창병 = max(40, 요격 필요 병력). 결정당 1회.
+55. **경로 위험 (8.6) 은 근사**: 거리장 경로를 만들지 않고 앵커 거리 ≤ 2 의 적 깃발 실효력 합 × 0.9 와 비교. **상륙 후보** (기동 T2+ → **v4.3: MOB-2B 조선술 보유**, §10-99): 내 해안에서 얕은 물만 12칸 BFS 로 닿는, 내 땅과 비인접·적 깃발 거리 > 2 인 육지 — 점수 ×0.8. **차단 쓰기**: 내 땅을 노리는 적 행군 깃발과 그 앵커 사이 맨해튼 최단 경로 위 (깃발에서 2~6칸) 내 언덕·산 칸, 빈 슬롯 ≥ 2, 창병 = max(40, 요격 필요 병력). 결정당 1회.
 56. **추격**: 기병 공격 깃발 거리 ≤ 6 에 이탈 대기 적 깃발이 있고 그 칸이 적·중립 육지면 그 칸으로 재지정.
 57. **공격 깃발 최소 병력 = 3 × FLAG_MIN_TROOPS** (cap − 예비가 작은 소국은 2× 까지): GDD 식 `clamp(풀×45%, 40, …)` 은 40 근처 깃발을 반복 발령 → 몇 AP 쓰고 소진 (잔여 전액 소멸) → 소국이 영원히 못 자라는 함정이 있었다 (실측 10분에 소진 802회).
 58. **소진 직전 회수**: ENGAGED 공격 깃발 병력 < 40 + 쌓인 예산 + 누적률 × 2 tick 이고, 그 경계 × 15% < 20 (회수 손실이 소진 손실 상한의 절반 미만) 일 때만 회수. 큰 깃발은 그냥 소진시키는 편이 손실·슬롯 점유가 적다 (측정).
 59. **슬롯 재활용**: 슬롯이 꽉 찼고 새 깃발 예상 병력 (풀 × 35%, 풀 − 예비 이내) ≥ 2 × 최소 공격 병력이면, 병력 × 4 ≤ 그 값인 가장 약한 비전투 깃발 (공격, 또는 위협 없는 방어) 1개를 회수.
-60. **테크**: `botIndex = playerId − 1`. 수비형 `[군사T1, 기동T2, …]` 처럼 선행 단계가 빠진 항목은 선행부터 산다 (TECH_ORDER 거절 방지). 결정당 1개, 못 사면 기다린다 (건너뛰지 않음). 목록 6개 소진 후엔 (단계, 축) 오름차순.
+60. ~~**테크**~~ (**v4.3 에서 대체 — §10-99**): `botIndex = playerId − 1`. 수비형 `[군사T1, 기동T2, …]` 처럼 선행 단계가 빠진 항목은 선행부터 산다 (TECH_ORDER 거절 방지). 결정당 1개, 못 사면 기다린다 (건너뛰지 않음). 목록 6개 소진 후엔 (단계, 축) 오름차순.
 61. **외교**: 8.5 그대로 — 제안 수신 시 제안자 타일 ≥ 내 타일 × 1.2 ∧ 내 동맹 < 2 → 수락, 아니면 거절. 먼저 제안 안 함. 파기 = 내 타일 ≥ 동맹 × 2 ∧ t > 7500 ∧ 최소 유지 경과.
 62. **기지 위협 가중** `(BASE_HP_MAX_MILLI − hp) × 3` — GDD 식의 `/1000` 은 hpMilli 단위와 맞지 않아 (최대 45, 트리거 3000 대비 무의미) 뺐다.
 63. **명령 적용 시점 보정**: 봇 명령은 다음 tick 1단계에 적용되므로 경직 (`lockUntilTick`)·태세 쿨타임을 `t+1` 기준으로 본다. `clientSeq = t × 64 + 순번` (무상태·결정론). 한 결정에서 같은 깃발에 명령 2개를 내지 않는다.
@@ -808,6 +847,21 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 89. **봇 v4.2 기타**: 모든 봇 회수에 가장 가까운 내 기지를 `baseTileId` 로 지정(GDD 는 IDLE 약한 깃발만 명시). IDLE 깃발(공격·방어) 병력 ≥ 200 → 깊은 앵커 재지정, 아니면 지정 회수(`BOT_IDLE_REDEPLOY_MIN_TROOPS`). "ENGAGED 인데 front < 2 → 재지정" 규칙 삭제(앵커 칸 ENGAGED 는 옆 칸만 밀고 IDLE). 새 공격 후보 국경 칸이 내 공격 깃발 위치 거리 ≤ 2 면 제외(`BOT_PLOW_SPACING`, 회랑 중복 방지). 공격 병종: 국경 칸이 적 방어 관할 원 안이면 검, 아니면 기병(8.7 3a "기병 비중 상향" — NORMAL·HARD, EASY 는 검 고정). 제자리 반격은 지금 칸 옆에 적 플레이어 칸이 있을 때만. 슬롯 재활용 대상에서 쟁기 중·노선으로 가는 공격 깃발 제외(IDLE 공격·위협 없는 방어만). 위협·선점 후보 = `pushing`.
 90. **봇 기지 공격 (사용자 확정 2026-10-10)**: `bestAnchor` 에 내 땅에서 `BOT_BASE_ATTACK_RANGE`(6) 안의 **적(비동맹 플레이어) 기지마다 별도 후보** — 앵커 = 기지 칸(깊은 앵커 없음). 점수 = 8.3 식 × `BOT_BASE_ATTACK_WEIGHT_PERMILLE`(2500) × 관할 원 밖이면 `BOT_BASE_UNGUARDED_PERMILLE`(1500, **에이전트 선택**) × 수도면 `BOT_BASE_CAPITAL_PERMILLE`(1500, **에이전트 선택**) × 체력 절반 미만 1.4(기존 8.3 항, 합침). 같은 소유자 2깃발 제한·이미 그 기지를 노리는 깃발 있으면 제외·회피(8.6) 그대로. 병종: 관할 원 안 = 검, 아니면 기병. 병력 = 풀 × `BOT_COMMIT_BASE_PERMILLE`(500), 최소 공격·예비 규칙 그대로. 중립 기지는 후보 아님(기존 국경 후보로만). 상수는 `shared/constants.ts`(→ `match_config.constants` 에도 보임, 추가만).
 91. **로비(체크리스트 10)**: 26b357c 구현분 확인 — 공개 방 방장 `lobby_start_now` 허용, 방 찾기는 GDD 7.3 의 `lobby_join_public{roomId}`/`lobby_spectate{roomId}` 대신 기존 **`lobby_join_listed{roomId, spectate?}`** 하나로 구현돼 있다(§4). `room_list` 필드도 §5 가 정본(GDD 7.3 의 `players`·`mapLabel`·`elapsedTick` 이름과 다름). 이번에 바꾸지 않았다.
+
+### v4.3 (테크 트리, 사용자 승인 2026-10-11)에서 정한 것 — **에이전트 선택**
+
+92. **거절 코드**: 새 코드는 `PREREQ_MISSING`·`ALREADY_OWNED` 둘. 골드 부족은 기존 **`INSUFFICIENT` 재사용**(`NOT_ENOUGH_GOLD` 신설 안 함 — 오케스트레이터 지시 "기존 코드가 있으면 재사용"). `TECH_ORDER` 는 송신 중단, `CmdRejectReason` 타입에만 호환용으로 남김(`NOT_IMPLEMENTED` 와 같은 처리). 검사 순서 `BAD_REQUEST → ALREADY_OWNED → PREREQ_MISSING → INSUFFICIENT` (이미 산 노드는 선행 여부와 무관하게 "이미 보유"가 더 정확한 안내).
+93. **스탯 표현**: `TECH_STAT` 32칸(`shared/constants.ts`). 제안서가 "그 플레이어의 상수 값"으로 적은 효과(ECO-2B 유지비 계수 90→72, TER-3A 보급선 계수 20→15, MOB-2B 얕은 물 5000→3500, MOB-3B 상륙, SPE-2A/CAV-3 유지비 가중치, CAV-2A 편성비, SWO-2B 점령 배율)는 **'set'(덮어쓰기)** 노드로, 나머지는 **'add'(permille 증분)** 로 표현. ECO-2B 는 "−20%" 를 곱하지 않고 값 72 로 덮어쓴다(같은 값, 상수 변경 시 노드 값도 같이 봐야 함). 한 스탯에 set 노드 하나·set/add 혼용 금지는 `shared/tech.ts` 가 로드 시 검사.
+94. **병종 전투 노드 = 공통 1000 에 더하는 증분**: `combatPm = COMBAT_ATK + COMBAT_ATK_<unit>`(방어는 DEF). SPE-1 "UNIT_DEF 1300 → 1365" 는 `1300 × 1050 / 1000` 으로 구현 — MIL-3B 와 같은 배율 안에서 더해진다(01b 2.2 "permille 증분을 더한다"). **MIL-2A·병종 ATK 노드는 공격 태세에만, MIL-3B·병종 DEF 노드는 방어 태세에만** 적용(구 `MIL_COMBAT` 은 공·방 동시였다 — 01b 4.1 "둘로 나눈다").
+95. **상륙 (MOB-3B)**: 제안서 "상륙 교전 손실 배율 1.25 → 1.05" 를 기존 식의 **물 위 전투값 배율 800 → 950** 으로 구현(1000/800 = 1.25, 1000/950 ≈ 1.053 — 구 기동 T2 값). `COMBAT_WATER_VS_LAND_PERMILLE` 은 배열 → 스칼라 800(무테크 값). 물 대 물은 1000 고정(`COMBAT_WATER_VS_WATER_PERMILLE` 삭제).
+96. **노출 소모**: 물 위 감소 단계(`WATER_EXPOSURE_PERMILLE_BY_TIER`) 삭제 — 무테크 값이 1000 이었으므로 식에서 항 자체를 뺐다.
+97. **거리장 캐시 키** `(목적지, 기동 단계)` → `(목적지, 얕은 물 이동배율)`. 같은 배율 플레이어끼리 거리장을 공유.
+98. **직렬화**: `snapshot_full.players[]` 에 `techMask` + `techCount`(= popcount, 누진 가격의 n), `playerDeltas[]` 에 `techMask`(5 tick 주기 변경분 키에 포함), `tech_purchased` 에 `nodeId`·`techMask`. `techMask` 는 JSON 숫자(0..4294967295, 비트 31 = CAV-3 도 양수 — 서버는 `>>> 0`).
+99. **봇 테크**(01b 6.1·6.2 그대로 + 정한 것): 목록은 노드 코드 16개 × 4(`bot.ts TECH_PRIORITY_CODES`), 서버 시작 시 "부모가 앞" assert. 성향 = `(playerId − 1) % 4`(구 규칙 유지). EASY 치환은 난이도 이름이 아니라 **`fixedUnit === SWORD`** 로 판정(`TECH_PRIORITY_SWORD`). 16개 소진 후엔 (티어, id) 오름차순으로 선행 충족 노드(구 규칙과 같은 꼴). **상륙 후보 탐색 조건 "기동 T2+" → "MOB-2B 조선술 보유"**(구 T2 = 얕은 물 3000, 새 MOB-2B = 3500 이 대응). 봇 판단의 전투값 비교는 전부 `flagValue` 경유라 별도 수정 없이 새 태세별 배율을 쓴다. 발령 가능 병력·풀 비용은 `CONVERT_<unit>/1000`.
+100. **스탯 캐시 갱신**: 구매 시 `statPm = techStatValues(techMask)` 를 처음부터 다시 계산(증분 갱신 아님) — 마스크만의 함수라 순서·재접속·봇 인계와 무관하게 같다.
+101. **`TECH_NODES[].tier` = 가격 티어**(별도 `costTier` 필드 없음). 노드 항목 = `{ id, code, branch, tier, parent, stat, op: 'add'|'set', value, name, desc }` — `desc` 는 짧은 한국어 효과 문구(UI 한 줄). 아이콘은 프론트 몫(01b 2.3 아이콘 열 참고).
+102. **구 상수 처리**: `TECH_AXIS`·`TECH_AXIS_COUNT`·`TECH_MAX_TIER`·`TECH_BASE_COST`·`MIL_*`·`ECO_*`·`TER_*`·`MOB_*`·`SHALLOW_MOVE_PERMILLE_BY_TIER`·`WATER_EXPOSURE_PERMILLE_BY_TIER`·`COMBAT_WATER_VS_WATER_PERMILLE` **export 삭제**(값은 `constants.ts` 주석에 "폐기" 로 기록). `match_config.constants` 에서도 빠진다. `SHALLOW_MOVE_PERMILLE_MIN`(2000) 은 유지.
+103. **깃발 접촉 8방향 (사용자 결정 2026-10-11) — 구현에서 정한 것**: 토폴로지 인터페이스에 `contactNeighbors(t)`(자기 제외, tileId 오름차순)·`touching(a, b)`(a = b 포함) 추가, 사각 = 체비셰프 ≤ 1. **지형 무시**(깃발은 깊은 물에 서지 않으므로 v4.2 의 "이동 그래프 이웃" 과 차이는 대각선뿐 — 깊은 물 모서리를 사이에 둔 대각선도 접촉). `PROGRESS_HOLD_RANGE`(1)·`FLAG_ENGAGE_RANGE`(1) 값은 그대로 두고 "1 = 접촉" 으로 해석(`gauge.ts` 는 1 이 아니면 예외). 봇: `combatFoes`·차단 당하기 실효력 합·주둔 반격 칸(적 깃발 접촉 칸)·**요격 칸 = 적 깃발과 접촉하는 내 땅(대각선 포함, tileId 최소)**, 없으면 접촉 밖 맨해튼 2 칸. 차단 쓰기 칸 후보에서 이미 접촉(대각선) 칸 제외. 위협·관할 원·`FRONT_RADIUS`·앵커 거리 계산은 맨해튼 그대로.
 
 ---
 
@@ -862,6 +916,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 6. ~~1차 §10-5 (본문 구값 37/42분)~~ → **해소**: GDD 3.1 표가 28/32분으로 정리됨 (QA m-11).
 7. **(봇, 3차-2)** 8.1 기지 위협 식 `/1000` 단위 오류 (§10-62). 8.2 "방어는 항상 창병" vs 8.6 요격 "가장 빠른 병종 (기병 우선)" 충돌 (§10-46). 8.2 정체 (갈아타기/회수) vs 8.6.0 굳히기 (→ DEFEND) 충돌 — 8.6.0 우선 + 방어 상한 (§10-51). `engagedSinceTick` 미정의 (§10-53). 같은 소유자 다중 깃발이 같은 앵커를 고르는 문제 (§10-54). 수비형 빌드의 `기동T2` 선행 누락 (§10-60). 공격 깃발 하한 40 의 소진 함정 (§10-57). 8.6.0 차단 쓰기의 "적 재배치 경로" 정의 없음 (§10-55 근사).
 8. **(봇 페이싱)** 5.2 `u = 0.7` 가정과 `BOT_RESERVE_RATIO 0.30` 의 모순, 5.1 "깃발 메커니즘 비병목" 가정이 봇 실측과 다름, 2.8 g 레버만으로 HARD/NORMAL 차등이 작음 — §11 페이싱 관찰. **자가대전 9/10 판 하드 타임아웃**. 게임 상수는 바꾸지 않았다 (game-designer 판단 필요).
+9. **(v4.3 테크, game-designer 확인 요청)** 자가대전 테크 구매 수가 제안서 추정보다 적다(최종: 1위 12.2 / 중앙 9.7 / 탈락 3.5 vs 14 / 9 / 5). 테크만 바꾸면 30분 1위 점유율 22.4% → 19.0%, 8방향 접촉까지 넣으면 22.1%. NORMAL 봇은 검병 노드를 거의 안 사고(SWO 0%), 목록 후반 노드(MIL-3A·TER-3A·MOB-3B·SPE-2B) 구매율 0% (§9 v4.3). 수치는 바꾸지 않았다.
 
 ## 14. 3차-1 프로토콜 변경 요약 (GDD v4.1 — 프론트 영향, **제거 포함**)
 
@@ -929,3 +984,127 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | **동맹** | 동맹 칸은 공격 대상 아님. 동맹 성립으로 IDLE(allied)된 깃발도 옆에 비동맹 칸이 있으면 같은 tick 재점화 |
 | 불변 | 깃발 전투 수치(대표 전투 표 그대로), 방어 태세·ZOC(귀환 제외)·게이지 레이스·기지 체력, 로비·방 찾기 메시지 |
 
+## 19. v4.3 테크 트리 변경 요약 (프론트 영향 — 2026-10-11, A-66~A-84 승인본)
+
+**이 절만 보고 새 테크 화면을 만들 수 있게 썼다. 구 테크 필드·메시지·상수는 삭제됐다 — 기존 클라이언트 테크 UI 는 그대로는 동작하지 않는다(빌드 유지용 임시 수정만 해 두었다, 아래 "클라이언트").**
+
+### 19.1 메시지
+
+| 구분 | 내용 |
+|---|---|
+| **C→S 변경** | `cmd_buy_tech { clientSeq, nodeId }` — `nodeId` = `TECH_NODES[].id` (0..31). **구 `{ axis, tier }` 삭제**(보내면 `BAD_REQUEST`) |
+| **거절** | `BAD_REQUEST`(nodeId 없음·범위 밖) → `ALREADY_OWNED`(이미 보유) → `PREREQ_MISSING`(부모 미보유) → `INSUFFICIENT`(골드 < 가격). `TECH_ORDER` 는 더 이상 오지 않는다 |
+| **snapshot_full 변경** | `players[].tech: [n,n,n,n]` **삭제** → `players[].techMask: number`(uint32, 비트 i = 노드 i 보유) + `players[].techCount: number`(보유 수 = 누진 가격의 n) |
+| **snapshot_delta 추가** | `playerDeltas[].techMask` (5 tick 주기, 다른 표시값과 함께 바뀐 플레이어만) |
+| **tech_purchased 변경** | `{ tick, playerId, nodeId, cost, newFlagCap, techMask }` — **`axis`·`tier` 삭제**, `nodeId`·`techMask`(구매 후) 추가. 받으면 `techMask` 로 덮어쓰고 `techCount = popcount` |
+| **match_config.constants 추가** | `TECH_NODES`(32 항목), `TECH_STAT`, `TECH_STAT_COUNT`, `TECH_STAT_BASE`, `TECH_NODE_BASE_COST` [160,360,700], `TECH_PROGRESSIVE_COEF_PERMILLE` 60(구 250), `TECH_NODE_COUNT` 32, `TECH_BRANCH`, `TECH_BRANCH_COUNT`, `TECH_BRANCH_NAME` |
+| **match_config.constants 삭제** | `TECH_AXIS`, `TECH_AXIS_COUNT`, `TECH_MAX_TIER`, `TECH_BASE_COST`, `MIL_ATK_COST_PERMILLE_BY_TIER`, `MIL_DEF_COST_PERMILLE_BY_TIER`, `MIL_COMBAT_PERMILLE_BY_TIER`, `ECO_GOLD_PERMILLE_BY_TIER`, `ECO_REGEN_PERMILLE_BY_TIER`, `TER_NEUTRAL_COST_PERMILLE_BY_TIER`, `TER_CAP_PERMILLE_BY_TIER`, `MOB_SPEED_PERMILLE_BY_TIER`, `MOB_SLOT_BONUS_BY_TIER`, `MOB_CONVERT_PERMILLE_BY_TIER`, `SHALLOW_MOVE_PERMILLE_BY_TIER`, `WATER_EXPOSURE_PERMILLE_BY_TIER`, `COMBAT_WATER_VS_WATER_PERMILLE` |
+| **match_config.constants 의미 변경** | `COMBAT_WATER_VS_LAND_PERMILLE` 배열 → **스칼라 800**(무테크 상륙 전투값 배율) |
+
+예시:
+```json
+{ "type": "cmd_buy_tech", "clientSeq": 7, "nodeId": 16 }
+{ "type": "cmd_ack", "clientSeq": 7, "accepted": false, "reason": "PREREQ_MISSING" }
+{ "type": "tech_purchased", "tick": 410, "playerId": 3, "nodeId": 15, "cost": 169, "newFlagCap": 4, "techMask": 32800 }
+{ "id": 3, "tiles": 210, "troops": 900, "gold": 41, "goldWeight": 190000, "upkeepPm": 90, "techMask": 32800, "techCount": 2, "flagCap": 3, "alive": true, "connected": true }
+```
+
+### 19.2 노드 표 `TECH_NODES` (원본 `shared/src/constants.ts`, 서버가 `match_config.constants` 로 보냄)
+
+항목: `{ id, code, branch, tier, parent, stat, op, value, name, desc }`. `branch` 0 군사 MIL · 1 경제 ECO · 2 영토 TER · 3 기동 MOB · 4 창병 SPE · 5 검병 SWO · 6 기병 CAV. `parent` = 선행 노드 id(T1 = null, 부모는 같은 갈래 한 티어 아래). `op` 'add' = 스탯에 더함 / 'set' = 스탯을 그 값으로.
+
+| id | code | 이름 | T | 부모 | stat | op · value | 효과 |
+|---|---|---|---|---|---|---|---|
+| 0 | MIL-1 | 훈련장 | 1 | — | ATK_COST | add −40 | 적 땅 점령비용 −4% |
+| 1 | MIL-2A | 공격 교리 | 2 | 0 | COMBAT_ATK | add +30 | 공격 태세 전투 공격력 +3% |
+| 2 | MIL-2B | 성벽 보강 | 2 | 0 | DEF_COST | add +60 | 내 땅 피점령비용 +6% |
+| 3 | MIL-3A | 공성 전술 | 3 | 1 | ATK_COST | add −50 | 적 땅 점령비용 −5% 추가 |
+| 4 | MIL-3B | 방어 교리 | 3 | 2 | COMBAT_DEF | add +40 | 방어 태세 전투 방어력 +4% |
+| 5 | ECO-1 | 세금 징수 | 1 | — | GOLD | add +80 | 골드 +8% |
+| 6 | ECO-2A | 시장 | 2 | 5 | GOLD | add +100 | 골드 +10% |
+| 7 | ECO-2B | 병참 | 2 | 5 | UPKEEP_COEF | set 72 | 유지비 계수 90 → 72 (−20%) |
+| 8 | ECO-3A | 조폐국 | 3 | 6 | GOLD | add +120 | 골드 +12% |
+| 9 | ECO-3B | 곡창 | 3 | 7 | REGEN | add +60 | 병력 재생 +6% |
+| 10 | TER-1 | 개척민 | 1 | — | NEUTRAL_COST | add −60 | 중립 점령비용 −6% |
+| 11 | TER-2A | 측량 | 2 | 10 | NEUTRAL_COST | add −80 | 중립 점령비용 −8% |
+| 12 | TER-2B | 징병소 | 2 | 10 | TROOP_CAP | add +60 | 병력 상한 +6% |
+| 13 | TER-3A | 도로망 | 3 | 11 | SUPPLY_COEF | set 15 | 보급선 계수 20 → 15 |
+| 14 | TER-3B | 상비군 | 3 | 12 | TROOP_CAP | add +80 | 병력 상한 +8% |
+| 15 | MOB-1 | 행군로 | 1 | — | SPEED | add +150 | 이동속도 +15% (전 병종) |
+| 16 | MOB-2A | 강행군 | 2 | 15 | SPEED | add +150 | 이동속도 +15% (전 병종) |
+| 17 | MOB-2B | 조선술 | 2 | 15 | SHALLOW_MOVE | set 3500 | 얕은 물 이동배율 5.00 → 3.50 |
+| 18 | MOB-3A | 참모부 | 3 | 16 | SLOT_BONUS | add +1 | 깃발 슬롯 +1 (최대 +1) |
+| 19 | MOB-3B | 상륙정 | 3 | 17 | LANDING_COMBAT | set 950 | 상륙 전투값 ×0.80 → ×0.95 (손실 1.25 → 1.05) |
+| 20 | SPE-1 | 장창 대열 | 1 | — | COMBAT_DEF_SPEAR | add +50 | 창병 방어력 +5% |
+| 21 | SPE-2A | 주둔 진지 | 2 | 20 | UPKEEP_WEIGHT_SPEAR | set 450 | 창병 유지비 가중치 600 → 450 |
+| 22 | SPE-2B | 행군 장화 | 2 | 20 | SPEED_SPEAR | add +100 | 창병 이동속도 +10% |
+| 23 | SPE-3 | 고슴도치 진 | 3 | 21 | COMBAT_DEF_SPEAR | add +50 | 창병 방어력 +5% 추가 |
+| 24 | SWO-1 | 검술 | 1 | — | COMBAT_ATK_SWORD | add +50 | 검병 공격력 +5% |
+| 25 | SWO-2A | 사슬 갑옷 | 2 | 24 | COMBAT_DEF_SWORD | add +50 | 검병 방어력 +5% |
+| 26 | SWO-2B | 돌격 보병 | 2 | 24 | CAPTURE_MULT_SWORD | set 950 | 검병 점령비용 배율 1000 → 950 |
+| 27 | SWO-3 | 정예 보병 | 3 | 26 | COMBAT_ATK_SWORD | add +60 | 검병 공격력 +6% 추가 |
+| 28 | CAV-1 | 군마 | 1 | — | SPEED_CAVALRY | add +100 | 기병 이동속도 +10% |
+| 29 | CAV-2A | 마구간 | 2 | 28 | CONVERT_CAVALRY | set 1070 | 기병 편성비 1150 → 1070 |
+| 30 | CAV-2B | 기병창 | 2 | 28 | COMBAT_ATK_CAVALRY | add +50 | 기병 공격력 +5% |
+| 31 | CAV-3 | 역참 | 3 | 29 | UPKEEP_WEIGHT_CAVALRY | set 1300 | 기병 유지비 가중치 1600 → 1300 |
+
+### 19.3 클라이언트 계산식 (서버와 같은 정수식 — `@civwar/shared` 의 함수를 그대로 써도 된다)
+
+```
+owned(mask, i)      = ((mask >>> i) & 1) == 1
+canBuy(mask, i)     = !owned(mask, i) && (parent(i) == null || owned(mask, parent(i)))       // techPrereqMet
+cost(i, n)          = floor(TECH_NODE_BASE_COST[tier(i)-1] × (1000 + 60 × n) / 1000)          // techNodeCost, n = techCount
+stat = techStatValues(mask):  v = TECH_STAT_BASE.slice()
+                               for 보유 'set' 노드: v[stat] = value
+                               for 보유 'add' 노드: v[stat] += value                        // 순서 무관
+```
+| 쓰는 곳 | 식 (`v` = 위 스탯) | 무테크 |
+|---|---|---|
+| 골드 그로스 | `floor(goldWeight × 2080 × v[GOLD] / 1e9)` milli/tick | 1000 |
+| 병력 상한 / 재생 | `v[TROOP_CAP]` / `v[REGEN]` (§8) | 1000 / 1000 |
+| 슬롯 | `flagCap = min(7, 3 + floor(tiles/300) + v[SLOT_BONUS])` | 0 |
+| 이동속도 | `floor(140 × UNIT_SPEED[u] × (v[SPEED] + v[SPEED_SPEAR+u]) × RET / (moveCost × 1e6))` | 1000 + 0 |
+| 얕은 물 | `moveCost = max(2000, v[SHALLOW_MOVE])`, 경로 거리장도 이 값 | 5000 |
+| 유지비 (발령 미리보기) | `w = Σ v[UPKEEP_WEIGHT_SPEAR+u]`, `min(700, floor(max(0, w − 1000) × v[UPKEEP_COEF] / 1000))` | 600/1000/1600, 90 |
+| 풀 차감 (발령) | `ceil(troops × v[CONVERT_SPEAR+u] / 1000)` | 1000/1000/1150 |
+| 점령비용 | §8 `tileCost` — 중립 × `v[NEUTRAL_COST]`, 적 × 방어자 `v[DEF_COST]` × 공격자 `v[ATK_COST]`, 병종 × `v[CAPTURE_MULT_SPEAR+u]`, 보급선 계수 `v[SUPPLY_COEF]` | 1000, 1150/1000/850, 20 |
+| 깃발 전투값 | 공격 태세 `UNIT_ATK[u] × (v[COMBAT_ATK] + v[COMBAT_ATK_SPEAR+u]) / 1000`, 방어 태세 `… × (v[COMBAT_DEF] + v[COMBAT_DEF_SPEAR+u]) / 1000`, 상륙 `× v[LANDING_COMBAT] / 1000` | 1000 + 0, 800 |
+
+`TECH_STAT` 인덱스: 0 ATK_COST · 1 DEF_COST · 2 COMBAT_ATK · 3 COMBAT_DEF · 4 GOLD · 5 UPKEEP_COEF · 6 REGEN · 7 NEUTRAL_COST · 8 TROOP_CAP · 9 SUPPLY_COEF · 10 SPEED · 11 SHALLOW_MOVE · 12 SLOT_BONUS · 13 LANDING_COMBAT · 14–16 COMBAT_ATK_(창·검·기) · 17–19 COMBAT_DEF_* · 20–22 SPEED_* · 23–25 UPKEEP_WEIGHT_* · 26–28 CONVERT_* · 29–31 CAPTURE_MULT_*.
+상세 패널의 "지금 / 구매 후" 값(01b 5.1)은 `techStatValues(mask)` 와 `techStatValues(mask | 1<<i)` 를 비교하면 된다.
+
+### 19.4 의미 변경 (규칙)
+
+| 항목 | v4.2 | v4.3 |
+|---|---|---|
+| 군사 전투 보너스 | `MIL_COMBAT` 공·방 동시 ×1.025/1.05/1.075 | MIL-2A 공격 태세만 +3%, MIL-3B 방어 태세만 +4%, 병종 노드는 그 병종 깃발만 |
+| 물 위 노출 소모 | 기동 T2+ ×0.5 | 감소 없음 (항상 ×1.0) |
+| 물 대 물 교전 | 기동 단계별 ×1.0~1.1 | 항상 ×1.0 |
+| 전 병종 편성 효율 | 기동 단계별 ÷1.08~1.22 | 없음 — 기병만 CAV-2A |
+| 슬롯 보너스 | 최대 +2 | 최대 +1 (MOB-3A) |
+| 테크 가격 | 450/1100/2600, +25%/구매 | 160/360/700, +6%/구매 |
+| 유지비·보급선 | 전역 상수 | 플레이어별 스탯(ECO-2B·SPE-2A·CAV-3·TER-3A) |
+
+### 19.5 서버 코드
+
+`shared/src/constants.ts`(노드 표·스탯), **신규 `shared/src/tech.ts`**(`techStatValues`, `techNodeCost`, `techPrereqMet`, `techOwned`, `techMaskWith`, `techCount`, `techCombatPm`, `techSpeedPm`, `techShallowPm`, `techUpkeepWeight`, `techConvertPm`, `techCaptureMultPm` — 클라이언트도 import 가능), `shared/src/protocol.ts`, `server/src/game/{state,commands,economy,rules,combat,movement,flagops,tick,snapshot,bot}.ts`, `server/src/net/validate.ts`. 플레이어 상태 `techMask`·`techPurchased`·`statPm`(구매 시 갱신). 정수 연산만, 결정론 유지(봇 결정론 테스트·자가대전 매 tick 회계 통과).
+
+### 19.6 클라이언트 (빌드 유지용 최소 수정 — 프론트가 다시 만들 것)
+
+`npm run typecheck`·클라이언트 테스트를 통과시키려고 다음만 고쳤다: `ui/techInfo.ts`(4축 문구 삭제 → `techStatsOf`/`techCost(tier, techCount)`/`goldPerSecond(goldWeight, techMask, …)`/`techNodes`), `ui/panels.tsx` 테크 패널(갈래별 노드 버튼 목록 — **임시**, 01b 5장 격자·아이콘·상세 패널 아님), `state/store.ts buyTech(nodeId)`, `state/gameModel.ts`(`techMask`·`tech_purchased`·상한/슬롯 식), `state/feed.ts`(노드 이름), `input/controller.ts`·`input/route.ts`·`ui/terrainInfo.ts`·`ui/GameScreen.tsx`(구 "기동 단계" 인자 → 얕은 물 이동배율 ‰, 편성비 스탯), `ui/text.ts`(새 거절 문구 2개), `scripts/qa-e2e-full.ts`·`scripts/qa-recon-full.ts`, 테스트 5개(`gameModel`·`panels`·`hoverUpkeep`·`issueFlow`·`options` — 리터럴 `tech` → `techMask/techCount`, 테크 기대값을 v4.3 식으로). **`moveField`·`terrainInfo` 의 넷째 인자는 이제 "얕은 물 이동배율 ‰"(무테크 5000)** 이다.
+
+## 20. 깃발 접촉 8방향 (프론트 영향 — 2026-10-11, 사용자 결정)
+
+**메시지·필드·상수 값 변경 없음. 규칙(판정 범위)만 바뀐다.**
+
+| 판정 | v4.2 / v4.3 이전 | 지금 |
+|---|---|---|
+| 깃발 대 깃발 전투 개시·편 묶기 (`combat_started`, `inCombat`) | 같은 칸 + 상하좌우 이웃 | 같은 칸 + **8방향(대각선 포함)** |
+| ZOC (`flag_blocked`, `blocked` 비트) — 다음 칸과 현재 칸이 모두 적대 방어 태세 깃발과 접촉 | 맨해튼 ≤ 1 | **체비셰프 ≤ 1** |
+| 진척도 유지 (적 깃발이 붙어 있으면 `progressPct` 감소 정지) | 맨해튼 ≤ 1 | **체비셰프 ≤ 1** |
+| 귀환 깃발 붙잡힘 → 자동 이탈 대기 (`flag_disengage_started{auto:true}`) | 전투 판정 따름 | 전투 판정 따름 (= 8방향) |
+| 땅 점령 `marchFront`(정지 점령·앵커 점령·재점화)·방어 관할 원·이동 경로·발령 사거리 | 4방향/맨해튼 | **변경 없음** (4방향/맨해튼) |
+
+- 서버 구현: `server/src/topology/topology.ts`(`contactNeighbors`·`touching` 인터페이스), `square.ts`(체비셰프 1), `combat.ts`(4a 후보), `movement.ts`(`zocBy`), `gauge.ts`(`holdProgress`), `bot.ts`(전투 판단·요격·차단). 육각 토폴로지로 바꾸면 `contactNeighbors` = 일반 이웃.
+- 클라이언트가 전투·ZOC 를 미리 그리거나 예측한다면 같은 판정(사각 = `|Δrow| ≤ 1 ∧ |Δcol| ≤ 1`)으로 바꿔야 한다. 현재 클라이언트 코드에는 이 판정이 없어 수정하지 않았다(전투·차단 상태는 서버 `inCombat`·`blocked` 비트를 그대로 그린다). 교전 연결선·검/방패 아이콘(같은 날 사용자 결정)은 프론트 작업.
+- 대표 전투 표(4.15)·`duels.ts` 수치는 불변(1:1 교전의 손실식은 그대로, 붙는 범위만 넓어짐).

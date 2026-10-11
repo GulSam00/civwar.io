@@ -93,7 +93,8 @@ function playerSnap(p: Readonly<PlayerState>): PlayerSnapshot {
     gold: Math.floor(p.goldMilli / 1000),
     goldWeight: p.goldWeight,
     upkeepPm: p.upkeepPm,
-    tech: [p.tech[0], p.tech[1], p.tech[2], p.tech[3]],
+    techMask: p.techMask,
+    techCount: p.techPurchased,
     flagCap: flagCap(p),
     alive: p.alive,
     connected: p.connected,
@@ -108,6 +109,7 @@ function playerDelta(p: Readonly<PlayerState>): PlayerDelta {
     gold: Math.floor(p.goldMilli / 1000),
     goldWeight: p.goldWeight,
     upkeepPm: p.upkeepPm,
+    techMask: p.techMask,
   };
 }
 

@@ -6,8 +6,6 @@ import {
   FLAG_IDLE_TIMEOUT,
   FLAG_RECALL_REFUND_PERMILLE,
   POSTURE,
-  WATER_EXPOSURE_PERMILLE_BY_TIER,
-  isClaimable,
 } from '@civwar/shared';
 import { combatEligible, hostile } from './combat.js';
 import { removeFlag } from './flagops.js';
@@ -18,7 +16,6 @@ import {
   destOf,
   guardCount,
   marchFrontCount,
-  mobilityTier,
   recallTarget,
   returnBaseValid,
   speedMilliAt,
@@ -31,10 +28,8 @@ export function applyExposureAttrition(state: GameState, f: Flag, t: number, out
   if (f.routed) return false;
   const o = state.owners[f.posTileId];
   if (o === f.ownerId || isAlly(state, f.ownerId, o)) return false;
+  // v4.3 [A-75]: 물 위 노출 감소 테크 폐기 — 땅·물 모두 같은 식
   let a = Math.max(1000, Math.floor((f.troopsMilli * FLAG_EXPOSED_ATTRITION_BP) / 10000));
-  if (!isClaimable(state.map.terrain[f.posTileId])) {
-    a = Math.max(1000, Math.floor((a * WATER_EXPOSURE_PERMILLE_BY_TIER[mobilityTier(state.players[f.ownerId])]) / 1000));
-  }
   a = Math.min(a, f.troopsMilli);
   f.troopsMilli -= a;
   state.ledger.exposure += a;
@@ -101,7 +96,7 @@ export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void
   for (const g of state.flags) if (g.posture === POSTURE.DEFEND && combatEligible(g)) zoc.push({ id: g.id, ownerId: g.ownerId, pos: g.posTileId });
   const zocBy = (f: Flag, tile: number): number[] => {
     const ids: number[] = [];
-    for (const g of zoc) if (hostile(state, f.ownerId, g.ownerId) && state.graph.distance(tile, g.pos) <= 1) ids.push(g.id);
+    for (const g of zoc) if (hostile(state, f.ownerId, g.ownerId) && state.graph.touching(tile, g.pos)) ids.push(g.id); // 2026-10-11: ZOC = 8방향 접촉
     return ids;
   };
   state.zocBlocked = new Map();

@@ -15,6 +15,14 @@ export interface Topology {
   isBorder(t: number): boolean;
   /** distance(center, t) <= r 인 모든 타일 (지형 무시), tileId 오름차순 */
   disk(center: number, r: number): readonly number[];
+  /**
+   * 사용자 결정 2026-10-11: 깃발 "접촉"(깃발 대 깃발 전투·ZOC·진척 유지·봇 전투 판단) 이웃 — 자기 자신 제외, tileId 오름차순.
+   * 사각 = 8방향(체비셰프 거리 1, 대각선 포함), 육각이면 일반 이웃. 지형 무시.
+   * 땅 점령(marchFront)·guard·이동 경로는 이것을 쓰지 않는다 — adjacent()/neighbors() (사각 4방향) 그대로.
+   */
+  contactNeighbors(t: number): readonly number[];
+  /** a, b 가 접촉하는가 (a === b 포함) = a === b ∨ b ∈ contactNeighbors(a) */
+  touching(a: number, b: number): boolean;
 }
 
 /**
@@ -28,4 +36,8 @@ export interface MapGraph {
   neighbors(t: number): readonly number[];
   /** distance(center, t) <= r 인 모든 타일 (지형 무시, 캐시), tileId 오름차순 */
   disk(center: number, r: number): readonly number[];
+  /** Topology.contactNeighbors (깃발 접촉 — 사각 8방향). 지형 무시 */
+  contactNeighbors(t: number): readonly number[];
+  /** Topology.touching */
+  touching(a: number, b: number): boolean;
 }

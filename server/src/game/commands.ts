@@ -4,8 +4,12 @@
  * 모든 cmd_* 는 반드시 cmd_ack 로 회신한다.
  */
 import {
-  TECH_AXIS_COUNT,
-  TECH_MAX_TIER,
+  TECH_NODE_COUNT,
+  TECH_NODES,
+  techMaskWith,
+  techOwned,
+  techPrereqMet,
+  techStatValues,
   type C2S_CmdBuyTech,
   type C2S_GameCommand,
   type CmdRejectReason,
@@ -75,18 +79,22 @@ function applyCommand(state: GameState, q: QueuedCommand, t: number, out: Outbox
   }
 }
 
+/**
+ * v4.3 테크 구매 (01b 4.4, A-66·A-69). 검증 순서: nodeId 범위(BAD_REQUEST) → 이미 보유(ALREADY_OWNED)
+ * → 부모 미보유(PREREQ_MISSING) → 골드(INSUFFICIENT). 성공 = 골드 차감·마스크 갱신·스탯 캐시 재계산(즉시 발효).
+ */
 function buyTech(state: GameState, playerId: number, msg: C2S_CmdBuyTech, t: number, out: Outbox): void {
   const p = state.players[playerId];
-  const { axis, tier } = msg;
-  if (!Number.isInteger(axis) || axis < 0 || axis >= TECH_AXIS_COUNT || !Number.isInteger(tier) || tier < 1 || tier > TECH_MAX_TIER) {
-    return ack(out, playerId, msg.clientSeq, 'BAD_REQUEST');
-  }
-  if (p.tech[axis] !== tier - 1) return ack(out, playerId, msg.clientSeq, 'TECH_ORDER');
-  const cost = techCost(tier, p.techPurchased);
+  const { nodeId } = msg;
+  if (!Number.isInteger(nodeId) || nodeId < 0 || nodeId >= TECH_NODE_COUNT) return ack(out, playerId, msg.clientSeq, 'BAD_REQUEST');
+  if (techOwned(p.techMask, nodeId)) return ack(out, playerId, msg.clientSeq, 'ALREADY_OWNED');
+  if (!techPrereqMet(p.techMask, nodeId)) return ack(out, playerId, msg.clientSeq, 'PREREQ_MISSING');
+  const cost = techCost(TECH_NODES[nodeId].tier, p.techPurchased);
   if (p.goldMilli < cost * 1000) return ack(out, playerId, msg.clientSeq, 'INSUFFICIENT');
   p.goldMilli -= cost * 1000;
-  p.tech[axis] = tier;
+  p.techMask = techMaskWith(p.techMask, nodeId);
   p.techPurchased += 1;
+  p.statPm = techStatValues(p.techMask);
   ack(out, playerId, msg.clientSeq);
-  out.broadcast.push({ type: 'tech_purchased', tick: t, playerId, axis, tier, cost, newFlagCap: flagCap(p) });
+  out.broadcast.push({ type: 'tech_purchased', tick: t, playerId, nodeId, cost, newFlagCap: flagCap(p), techMask: p.techMask });
 }

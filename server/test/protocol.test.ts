@@ -17,11 +17,14 @@ describe('입력 검증', () => {
     expect(parseClientMessage('{"type":"nope"}').ok).toBe(false);
   });
   it('cmd_* 형식 오류는 clientSeq 를 돌려줘 BAD_REQUEST ack 가 가능', () => {
-    const r = parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 7, axis: 9, tier: 1 }));
+    const r = parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 7, nodeId: 32 }));
     expect(r).toMatchObject({ ok: false, clientSeq: 7 });
   });
   it('정상/비정상 메시지', () => {
-    expect(parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 1, axis: 0, tier: 1 })).ok).toBe(true);
+    expect(parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 1, nodeId: 31 })).ok).toBe(true);
+    // v4.3: 구 { axis, tier } 형식은 nodeId 가 없어 BAD_REQUEST
+    expect(parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 1, axis: 0, tier: 1 })).ok).toBe(false);
+    expect(parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 1, nodeId: -1 })).ok).toBe(false);
     expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', targetPlayers: 8 })).ok).toBe(true);
     // v4.1: 방 설정 값 검증은 room/settings.ts (error BAD_ROOM_OPTIONS) — 파서는 모양만 본다
     expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', maxPlayers: 4, botCount: 2, map: { kind: 'random', size: 'S' } })).ok).toBe(true);

@@ -130,11 +130,22 @@ async function main(): Promise<void> {
     const d1 = await a.wait('snapshot_delta', (m) => m.tick === 1);
     ok(Array.isArray(d1.tileChanges) && Array.isArray(d1.flagMoves), 'snapshot_delta tick 1');
 
-    a.send({ type: 'cmd_buy_tech', clientSeq: 1, axis: 0, tier: 1 });
+    // v4.3 테크: 시작 골드 200 → MIL-1(160) 구매, 재구매 ALREADY_OWNED, MIL-3A(부모 MIL-2A 없음) PREREQ_MISSING, ECO-1(169) 골드 부족
+    a.send({ type: 'cmd_buy_tech', clientSeq: 1, nodeId: 0 });
     const ack1 = await a.wait('cmd_ack', (m) => m.clientSeq === 1);
-    ok(!ack1.accepted && ack1.reason === 'INSUFFICIENT', 'cmd_buy_tech 골드 부족 → cmd_ack INSUFFICIENT');
-    a.send({ type: 'cmd_buy_tech', clientSeq: 2, axis: 7, tier: 1 });
-    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 2)).reason === 'BAD_REQUEST', '형식 오류 → cmd_ack BAD_REQUEST');
+    ok(ack1.accepted === true, 'cmd_buy_tech{nodeId 0} 수락 (160 ≤ 200)');
+    const tp1 = await a.wait('tech_purchased', (m) => m.playerId === 1);
+    ok(tp1.nodeId === 0 && tp1.cost === 160 && tp1.techMask === 1, 'tech_purchased {nodeId, cost 160, techMask 1}');
+    a.send({ type: 'cmd_buy_tech', clientSeq: 101, nodeId: 0 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 101)).reason === 'ALREADY_OWNED', '이미 보유 → ALREADY_OWNED');
+    a.send({ type: 'cmd_buy_tech', clientSeq: 102, nodeId: 3 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 102)).reason === 'PREREQ_MISSING', '부모 미보유 → PREREQ_MISSING');
+    a.send({ type: 'cmd_buy_tech', clientSeq: 103, nodeId: 5 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 103)).reason === 'INSUFFICIENT', '골드 부족 → INSUFFICIENT');
+    a.send({ type: 'cmd_buy_tech', clientSeq: 2, nodeId: 32 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 2)).reason === 'BAD_REQUEST', '형식 오류(nodeId 32) → cmd_ack BAD_REQUEST');
+    const sfT = await a.wait('snapshot_full', (m) => m.tick > tp1.tick);
+    ok(sfT.players.find((p) => p.id === 1)?.techMask === 1 && sfT.players.find((p) => p.id === 1)?.techCount === 1, 'snapshot_full.players[].techMask/techCount');
     a.send({ type: 'cmd_flag_issue', clientSeq: 3, unit: 1, troops: 50, anchorTileId: 0 });
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 3)).reason === 'WATER', 'cmd_flag_issue 물 앵커 → WATER');
 
@@ -191,7 +202,7 @@ async function main(): Promise<void> {
 
     const sf25 = await a.wait('snapshot_full', (m) => m.tick >= 25, 15000);
     const me = sf25.players.find((p) => p.id === 1)!;
-    ok(me.gold >= 200, `snapshot_full tick ${sf25.tick} (troops ${me.troops}, gold ${me.gold})`);
+    ok(me.gold >= 200 - 160 && me.techMask === 1, `snapshot_full tick ${sf25.tick} (troops ${me.troops}, gold ${me.gold} = 200 − MIL-1 160 + 수입, techMask ${me.techMask})`);
 
     // 관전자
     const c = new Client('C');
