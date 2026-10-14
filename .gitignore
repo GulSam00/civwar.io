@@ -3,3 +3,6 @@ dist/
 *.log
 # export-map.ts 기본 출력 (공식 맵 후보 — 채택분만 server/maps/official/ 로 옮긴다)
 server/maps/candidates/
+
+# AI 관전 녹화 (용량 큼)
+_workspace/ai-match/**/video/
