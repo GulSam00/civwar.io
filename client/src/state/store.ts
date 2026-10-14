@@ -297,6 +297,14 @@ export class ClientStore {
     return this.command({ type: 'cmd_flag_retarget', flagId, anchorTileId });
   }
   /**
+   * 선택 부대 우클릭 = "이동" (2026-10-14 사용자 결정). 내 기지·내 땅 = 그 자리로 가서 방어, 적·중립 = 공격 —
+   * 태세는 서버가 도착지로 정한다(cmd_flag_retarget 의 기본 태세 재파생, 프로토콜 §4).
+   * TODO(§21): 백엔드가 이동 명령(기지 위 방어 등)을 확정하면 이 함수 하나만 바꾼다. 호출부는 controller.rightClickTile 뿐.
+   */
+  moveFlag(flagId: number, tileId: number): number {
+    return this.retarget(flagId, tileId);
+  }
+  /**
    * 회수. baseTileId 가 있으면 그 내 기지로 귀환(GDD v4.2 7.2 `cmd_flag_recall{ clientSeq, flagId, baseTileId? }`, A-61).
    * 서버가 이 필드를 아직 모르면 검증기가 버리고 기존 자동 귀환지로 회수한다 — 어느 쪽이든 회수는 된다.
    * (shared 타입에 필드가 생기기 전이라 객체를 넓혀서 보낸다)

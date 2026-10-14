@@ -372,12 +372,23 @@ kbd {
   opacity: 0.45;
   text-decoration: line-through;
 }
-.command-bar {
+/* 하단 독: 내 부대 칩(위) + 병력 바(아래) — 2026-10-14 */
+.bottom-dock {
   position: absolute;
   left: 50%;
   bottom: 10px;
   transform: translateX(-50%);
   max-width: calc(100% - 500px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.bottom-dock > * {
+  pointer-events: auto;
+}
+.command-bar {
   flex-wrap: wrap;
   justify-content: center;
   display: flex;
@@ -421,11 +432,12 @@ kbd {
   .cmd-hint {
     display: none;
   }
-  .command-bar {
+  .bottom-dock {
     left: 216px;
     transform: none;
     max-width: calc(100% - 460px);
     min-width: 0;
+    align-items: flex-start;
   }
 }
 .flag-panel {
@@ -980,7 +992,7 @@ kbd {
   z-index: 20;
   align-items: flex-start;
   padding: 24px 12px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .lobby .help-overlay {
   position: fixed;
@@ -992,6 +1004,8 @@ kbd {
   padding: 20px 24px;
   max-width: 760px;
   width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
   line-height: 1.6;
   font-size: 14px;
 }
@@ -1750,4 +1764,165 @@ kbd {
 .tw-narrow .tw-detail {
   width: auto;
   margin-top: 8px;
+}
+
+/* ══════════ 2026-10-14 UI: 드래그 창 · 내 부대 칩 · 선택 부대 버튼 · 전투값 · 출처 내역 ══════════ */
+/* 제목 줄 = 드래그 손잡이 (좁은 화면은 data-drag-handle 이 없어 커서도 그대로) */
+[data-drag-handle] {
+  cursor: move;
+  touch-action: none;
+}
+[data-drag-handle] button,
+[data-drag-handle] input {
+  cursor: pointer;
+}
+
+.unit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.unit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(18, 26, 36, 0.92);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.unit-chip:hover {
+  border-color: var(--muted);
+}
+.unit-chip:focus-visible {
+  outline: 2px solid #ffd600;
+  outline-offset: 1px;
+}
+.unit-chip.on {
+  border-color: #ffd600;
+  box-shadow: 0 0 0 1px #ffd600 inset;
+}
+.unit-chip.fighting {
+  border-color: var(--atk);
+}
+.unit-chip.returning {
+  border-style: dashed;
+}
+.unit-chip.routed {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.posture-atk {
+  color: var(--atk);
+}
+.posture-def {
+  color: var(--primary-hi);
+}
+
+.flag-actions-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  z-index: 2; /* 테크·외교 창(3~4)·대화상자 아래 */
+}
+.flag-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fa-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  background: rgba(18, 26, 36, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.fa-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.fa-cd {
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+}
+
+.combat-stats {
+  margin-top: 6px !important;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.cs-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  opacity: 0.75;
+}
+.cs-row.now {
+  opacity: 1;
+}
+.cs-row b {
+  font-variant-numeric: tabular-nums;
+}
+.cs-row.now b {
+  font-size: 15px;
+}
+.cs-note {
+  margin-top: 2px;
+}
+
+/* 병력·골드 hover 출처 내역 (§21 예정 — 레이아웃만) */
+.stat.has-breakdown {
+  position: relative;
+  pointer-events: auto;
+  cursor: help;
+}
+.source-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  background: rgba(16, 23, 32, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  z-index: 6;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.stat.has-breakdown:hover .source-tip,
+.stat.has-breakdown:focus-within .source-tip {
+  display: block;
+}
+.source-tip-head {
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.source-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 0;
+}
+.source-row.capital .source-name {
+  color: #ffe9a8;
+}
+.source-row.other {
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.source-amt {
+  font-variant-numeric: tabular-nums;
 }

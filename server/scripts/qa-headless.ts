@@ -50,6 +50,8 @@ const M = {
   players: new Map<number, FM>(),
   flags: new Map<number, FM>(),
   bases: new Map<number, number>(), // tileId → hpPct
+  baseProd: new Map<number, number>(), // v4.4 tileId → prodPm
+  production: new Map<number, string>(), // v4.4 playerId → JSON(PlayerProduction)
   alliances: new Map<string, FM>(),
   proposals: new Map<number, FM>(),
   freeze: null as number | null,
@@ -62,6 +64,8 @@ function loadFull(f: any): void {
   M.players = new Map(f.players.map((p: any) => [p.id, { ...p }]));
   M.flags = new Map(f.flags.map((x: any) => [x.id, { ...x }]));
   M.bases = new Map(f.bases.map((b: any) => [b.tileId, b.hpPct]));
+  M.baseProd = new Map(f.bases.map((b: any) => [b.tileId, b.prodPm]));
+  M.production = new Map(f.production.map((pp: any) => [pp.playerId, JSON.stringify(pp)]));
   M.alliances = new Map(f.alliances.map((a: any) => [`${a.a}-${a.b}`, { ...a }]));
   M.proposals = new Map(f.allyProposals.map((p: any) => [p.proposalId, { ...p }]));
   M.freeze = f.allianceFreezeUntilTick;
@@ -69,11 +73,11 @@ function loadFull(f: any): void {
   M.threshold = f.thresholdPct;
   M.rush = f.endgameRushActive;
 }
-const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16, STALLED: 32, HALTED: 64 };
+const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16, STALLED: 32, HALTED: 64, POSTURE_PENDING: 128 };
 function applyEvent(e: any): void {
   switch (e.type) {
     case 'flag_issued':
-      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
+      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, pendingPosture: null });
       break;
     case 'flag_retargeted': {
       const f = M.flags.get(e.flagId);
@@ -155,12 +159,14 @@ function applyDelta(d: any): void {
   for (const f of M.flags.values()) f.progressPct = prog.get(f.id) ?? 0; // 문서 v4.2: progressPct > 0 깃발 전부 → 없으면 0 으로 본다
   for (const [id, tt] of d.flagTargets) { const f = M.flags.get(id); if (f) f.targetTileId = tt; }
   for (const [tile, hp] of d.baseHp) M.bases.set(tile, hp);
+  for (const [tile, pm] of d.baseProd) M.baseProd.set(tile, pm); // v4.4 §21
+  for (const pp of d.production) M.production.set(pp.playerId, JSON.stringify(pp)); // v4.4 §21
   for (const id of d.flagsGone) M.flags.delete(id);
   if (d.thresholdPct !== undefined) M.threshold = d.thresholdPct;
   for (const [id, posture, bits, cd] of d.flagFlags) {
     const f = M.flags.get(id);
     if (!f) { recon.push(`t${d.tick} flagFlags 모르는 깃발 ${id}`); continue; }
-    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED) });
+    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED), pendingPosture: bits & BIT.POSTURE_PENDING ? 1 - posture : null });
   }
   for (const [id, rb] of d.flagReturnBase ?? []) {
     const f = M.flags.get(id);
@@ -196,7 +202,9 @@ function compareFull(f: any): void {
   for (const b of f.bases) {
     if (M.bases.get(b.tileId) !== b.hpPct) noteRecon('base.hpPct', `t${t} base ${b.tileId} 모델 ${M.bases.get(b.tileId)} / full ${b.hpPct}`);
     if (M.owners[b.tileId] !== b.ownerId) noteRecon('base.ownerId', `t${t}`);
+    if (M.baseProd.get(b.tileId) !== b.prodPm) noteRecon('base.prodPm', `t${t} base ${b.tileId} 모델 ${M.baseProd.get(b.tileId)} / full ${b.prodPm}`);
   }
+  for (const pp of f.production) if (M.production.get(pp.playerId) !== JSON.stringify(pp)) noteRecon('production', `t${t} p${pp.playerId}`);
   const al = [...M.alliances.values()].sort((x, y) => x.a - y.a || x.b - y.b);
   if (JSON.stringify(al) !== JSON.stringify(f.alliances)) noteRecon('alliances', `t${t} 모델 ${JSON.stringify(al)} / full ${JSON.stringify(f.alliances)}`);
   const pr = [...M.proposals.values()].sort((x, y) => x.proposalId - y.proposalId);

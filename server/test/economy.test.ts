@@ -7,7 +7,7 @@ import { meetsThreshold, thresholdScaled } from '../src/game/victory.js';
 function player(over: Partial<PlayerState> = {}): PlayerState {
   return {
     id: 1, isBot: false, botControlled: false, botDifficulty: 'NORMAL', bot: BOT_DIFFICULTY.NORMAL, connected: true, disconnectedSinceTick: null, alive: true,
-    eliminatedTick: null, lastLostTo: null, homeTileId: 0, tiles: 9, goldWeight: 0, baseTiles: [],
+    eliminatedTick: null, lastLostTo: null, lastBaseLostTo: null, conqueredBy: null, homeTileId: 0, tiles: 9, goldWeight: 0, baseTiles: [],
     troopsMilli: 150_000, goldMilli: 200_000, goldEarnedMilli: 0, upkeepPm: 0, techMask: 0, techPurchased: 0, statPm: techStatValues(0),
     ...over,
   };

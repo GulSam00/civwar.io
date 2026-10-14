@@ -137,6 +137,18 @@ export const BASE_HP_REGEN_MILLI = 35; // [A-39] ×1.5 (23 → 35, 완전 회복
 export const BASE_REGEN_DELAY_TICK = 50;
 export const BASE_CAPTURE_LOCK_TICK = 25;
 
+// ══ v4.4 기지 생산력·기지 방어 (사용자 2026-10-14, 프로토콜 §21) ══
+/** 방어 태세 깃발이 내 기지 칸 위에 서 있으면 지형 보정 대신 이 값 (곱하지 않고 대체) — 사용자 확정 */
+export const COMBAT_BASE_DEF_PERMILLE = 1500;
+/** 기지 생산력 시작값·상한 (‰). 중립 기지도 1000 에서 시작 — 사용자 확정 */
+export const BASE_PROD_MAX_PERMILLE = 1000;
+/** 점령될 때마다 현재 생산력 × 이 값 / 1000 (×0.5 → 연속 두 번 = 25%) — 사용자 확정 */
+export const BASE_PROD_CAPTURE_PERMILLE = 500;
+/** [A-85] 생산력 회복 속도 — 선형, 분당 +167‰ (50% → 100% 약 3분, 25% → 100% 약 4.5분). 에이전트 선택 */
+export const BASE_PROD_RECOVER_PER_MIN_PERMILLE = 167;
+/** 생산 지역 표(production) 델타 주기 — 1초 */
+export const PRODUCTION_DELTA_INTERVAL = 5;
+
 // ══ 시작값 ══
 export const START_TROOPS = 150;
 export const START_GOLD = 200;

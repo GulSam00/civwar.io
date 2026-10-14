@@ -8,7 +8,7 @@ import {
   POSTURE,
 } from '@civwar/shared';
 import { combatEligible, hostile } from './combat.js';
-import { removeFlag } from './flagops.js';
+import { applyPendingPosture, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import {
   attackReady,
@@ -91,6 +91,7 @@ function settle(state: GameState, f: Flag, t: number, out: Outbox): boolean {
  *  RETURNING: 귀환지 재평가(지정 기지 우선 [A-61], 잃으면 폴백 + returnBaseTileId = null), × RETURN_SPEED, ZOC 무시 [A-62][A-63].
  */
 export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void {
+  applyPendingPosture(state, t, out); // v4.4 (§21): 재지정 대기 태세 — ZOC 스냅숏·settle 전에
   // ZOC 는 tick 시작 위치 스냅숏 기준 (flagId 처리 순서와 무관) [A-30]
   const zoc: ZocSource[] = [];
   for (const g of state.flags) if (g.posture === POSTURE.DEFEND && combatEligible(g)) zoc.push({ id: g.id, ownerId: g.ownerId, pos: g.posTileId });

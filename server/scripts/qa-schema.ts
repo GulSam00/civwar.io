@@ -84,6 +84,12 @@ const flagSnap = obj({
   targetOwnerId: (v, p, e) => { if (!isInt(v) || !((v as number) <= 12 || v === 254)) e.push(`${p}: 0..12|254 기대 ${v}`); },
   state: FLAG_STATE, targetTileId: 'int|null', progressPct: range(0, 99), stalled: 'bool', inCombat: 'bool', routed: 'bool', blocked: 'bool',
   disengaging: 'bool', postureCooldownUntilTick: 'int', disengageUntilTick: 'int|null', breakaway: 'bool', halted: 'bool', returnBaseTileId: 'int|null',
+  pendingPosture: (v, p, e) => { if (v !== null && v !== 0 && v !== 1) e.push(`${p}: 0|1|null 기대 ${v}`); }, // v4.4 §21
+});
+/** v4.4 §21 */
+const production = obj({
+  playerId: range(1, 12),
+  regions: arr(obj({ baseTileId: 'int|null', tiles: 'int', prodPm: range(0, 1000), troopsPerSecMilli: 'int', goldGrossPerSecMilli: 'int', goldNetPerSecMilli: 'int' })),
 });
 
 export const DOC_SCHEMA: Record<string, Shape> = {
@@ -116,24 +122,27 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     thresholdCurve: obj({ startPct: 'num', decayStartTick: 'int', decayPerMinPermille: 'int', floorPct: 'num', scale: 'int' }),
     mapSource: ['enum', 'random', 'preset'], 'mapId?': 'str', botDifficulty: DIFF, constants: (v, p, e) => { if (typeof v !== 'object' || !v) e.push(`${p}: object`); },
   },
-  map_init: { terrain: arr('int'), spawns: arr(obj({ playerId: 'int', tileId: 'int', homeTileId: 'int' })), bases: arr('int') },
+  map_init: { terrain: arr('int'), spawns: arr(obj({ playerId: 'int', tileId: 'int', homeTileId: 'int' })), bases: arr('int'), baseNames: arr('str') },
   snapshot_full: {
     tick: 'int', owners: arr('int'),
     players: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: range(0, 700), techMask: range(0, 0xffffffff), techCount: range(0, 32), flagCap: range(3, 7), alive: 'bool', connected: 'bool' })),
     flags: arr(flagSnap),
-    bases: arr(obj({ tileId: 'int', ownerId: 'int', hpPct: range(0, 100) })),
+    bases: arr(obj({ tileId: 'int', ownerId: 'int', hpPct: range(0, 100), prodPm: range(0, 1000) })),
     alliances: arr(obj({ a: 'int', b: 'int', state: ['enum', 'ACTIVE', 'BREAKING'], sinceTick: 'int', breakAtTick: 'int|null' })),
     thresholdPct: 'num', ticksRemaining: 'int', endgameRushActive: 'bool',
     allyProposals: arr(obj({ proposalId: 'int', fromPlayerId: 'int', toPlayerId: 'int', expireTick: 'int' })),
     allianceFreezeUntilTick: 'int|null', lockoutDissolveTick: 'int|null',
+    production: arr(production),
   },
   snapshot_delta: {
     tick: 'int', tileChanges: arr(tuple('int', 'int')),
     playerDeltas: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: 'int', techMask: range(0, 0xffffffff) })),
     flagMoves: arr(tuple('int', 'int')), flagStats: arr(tuple('int', 'int', FLAG_STATE)), flagProgress: arr(tuple('int', range(0, 99))),
     flagTargets: arr(tuple('int', 'int|null')), baseHp: arr(tuple('int', range(0, 100))), flagsGone: arr('int'), 'thresholdPct?': 'num',
-    flagFlags: arr(tuple('int', POSTURE, range(0, 127), 'int')),
+    flagFlags: arr(tuple('int', POSTURE, range(0, 255), 'int')),
     flagReturnBase: arr(tuple('int', 'int|null')),
+    baseProd: arr(tuple('int', range(0, 1000))),
+    production: arr(production),
   },
   cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE },
   error: { code: ['enum', ...DOC_ERROR], message: 'str' },
@@ -141,7 +150,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   tech_purchased: { tick: 'int', playerId: 'int', nodeId: range(0, 31), cost: 'int', newFlagCap: range(3, 7), techMask: range(0, 0xffffffff) },
   threshold_update: { tick: 'int', thresholdPct: 'num' },
   endgame_rush: { tick: 'int', costMultPermille: 'int' },
-  player_eliminated: { tick: 'int', playerId: 'int', byPlayerId: 'int|null' },
+  player_eliminated: { tick: 'int', playerId: 'int', byPlayerId: 'int|null', annexedTiles: 'int' },
   bot_takeover: { tick: 'int', playerId: 'int' },
   player_reconnected: { tick: 'int', playerId: 'int' },
   emote_broadcast: { tick: 'int', playerId: 'int', code: range(0, 15) },
@@ -162,7 +171,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   flag_unblocked: { tick: 'int', flagId: 'int' },
   flag_disengage_started: { tick: 'int', flagId: 'int', untilTick: 'int', auto: 'bool' },
   flag_disengaged: { tick: 'int', flagId: 'int', reason: ['enum', 'broke_away', 'combat_over'] },
-  base_captured: { tick: 'int', tileId: 'int', fromPlayerId: 'int', toPlayerId: 'int', newHpPct: 'int' },
+  base_captured: { tick: 'int', tileId: 'int', fromPlayerId: 'int', toPlayerId: 'int', newHpPct: 'int', newProdPm: range(0, 1000) },
   ally_proposed: { tick: 'int', proposalId: 'int', fromPlayerId: 'int', toPlayerId: 'int', expireTick: 'int' },
   ally_proposal_closed: { tick: 'int', proposalId: 'int', reason: ['enum', 'declined', 'expired', 'formed', 'invalidated'] },
   ally_formed: { tick: 'int', a: 'int', b: 'int' },

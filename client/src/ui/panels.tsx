@@ -9,6 +9,7 @@ import type { GameInputController } from '../input/controller.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { fmtClock } from './text.js';
+import { useDraggableWindow } from './draggable.js';
 
 function constOf<T>(g: GameModel, name: string, fallback: T): T {
   const v = g.config.constants?.[name];
@@ -33,6 +34,8 @@ function relation(g: GameModel, me: number, other: number): { rel: Rel; proposal
 
 export function DiplomacyPanel({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
   usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 200);
+  // 2026-10-14: 제목 줄 드래그 (외교 창은 넓은 화면에서만 열린다)
+  const drag = useDraggableWindow<HTMLDivElement>('ally');
   const g = store.game;
   const me = store.myPlayerId;
   if (!g || ctl.ix.panel !== 'ally') return null;
@@ -45,8 +48,8 @@ export function DiplomacyPanel({ store, ctl }: { store: ClientStore; ctl: GameIn
   const canAct = ctl.canCommand();
   const others = [...g.players.values()].filter((p) => p.id !== me && p.alive).sort((a, b) => b.tiles - a.tiles);
   return (
-    <div className="side-panel ally-panel">
-      <div className="side-head">
+    <div ref={drag.ref} className="side-panel ally-panel" style={drag.style}>
+      <div className="side-head drag-handle" {...drag.handleProps}>
         <b>외교</b>
         <span className="muted small">
           {' '}

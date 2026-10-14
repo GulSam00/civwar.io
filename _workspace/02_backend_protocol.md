@@ -4,6 +4,7 @@
 > 기준: **GDD v4.1 (사용자 승인 2026-10-09)** — v4.0 부록 A 재조정값 + v4.1 A-40~A-50. 타입 원본: `shared/src/protocol.ts`, 상수 원본: `shared/src/constants.ts`.
 > 작성: 2026-10-08, multiplayer-backend-engineer. 프로토콜 버전 `PROTOCOL_VERSION = 1`.
 > **2차 갱신(2026-10-08)**: 깃발·게이지·깃발 전투·태세·ZOC·상륙·기지 체력·동맹 구현. 1차 메시지·필드는 **하나도 바꾸지 않고 추가만** 했다(§12 변경 요약).
+> **v4.4 갱신(2026-10-14, 사용자 결정 — `design-decisions.md` 2026-10-14)**: 기지 방어(깃발이 내 기지 칸 위에 서서 방어, 방어 태세면 지형 대신 ×1.5), 우클릭 = 항상 이동(`cmd_flag_retarget` 태세 = 도착지, 못 바꾸면 `pendingPosture`), **기지를 모두 잃으면 즉시 멸망 + 남은 땅 전부 합병**, 기지 생산력(점령 시 ×0.5, 선형 회복)·생산 지역 내역(`production`), 기지 지명(`map_init.baseNames`). **메시지·필드는 추가만, 규칙 의미 변경이 있다(탈락 조건·내 기지 클릭) → §21 을 먼저 읽을 것.**
 > **v4.3 갱신(2026-10-11, 테크 트리 v4.3 — 사용자 승인 A-66~A-84 전부 ①, `01b_tech-tree-v4.3-proposal.md`)**: 테크 4축 × 3단계 → **7갈래 32노드**(노드당 부모 하나·스탯 하나, 효과는 덧셈). `cmd_buy_tech{nodeId}`, 스냅숏 `techMask`(uint32)·`techCount`, 델타 `playerDeltas[].techMask`, `tech_purchased.nodeId/techMask`, 거절 `PREREQ_MISSING`/`ALREADY_OWNED`, `match_config.constants.TECH_NODES`. **제거·의미 변경이 있다(구 `tech[4]`·`axis/tier`·`*_BY_TIER` 테크 상수 삭제) → §19 를 먼저 읽을 것.** 같은 날 **깃발 접촉(전투·ZOC·진척 유지) 8방향**(사용자 결정) — 메시지 변경 없음, 규칙만 → §20.
 > **v4.2 갱신(2026-10-10, GDD v4.2 승인본 + 사용자 A-60 변경)**: 공격 = 깃발 옆 칸(쟁기, `halted`), 앵커 원 공격·중립 자동 전환 폐기, 지정 기지 회수(`cmd_flag_recall.baseTileId`), 귀환 취소 불가·ZOC 무시·자동 이탈 대기·귀환 ×1.5, 유지비 = 출전 깃발 전부(패주 제외), `FLAG_SPEED_BASE_MILLI` 140. **메시지·필드는 추가만, 의미 변경이 있다 → §18 을 먼저 읽을 것.**
 > **3차-1 갱신(2026-10-09, GDD v4.1 승인본)**: 게이지 되돌리기 폐지 → 진척도 자동 감소(7c), 방 설정(맵 크기 S/M/L·공식 프리셋 맵·최대 인원 2~12·봇 수·봇 난이도), 프리셋 맵 로더·내보내기 스크립트. **제거·의미 변경이 있다 → §14 를 먼저 읽을 것.** 봇 AI 로직 자체는 3차-2.
@@ -74,11 +75,13 @@ civwar.io/
     topology/topology.ts  # Topology / MapGraph 인터페이스
     topology/square.ts    # 사각 구현 (row*width+col, 맨해튼은 여기만), isPassable, TerrainGraph
     map/rng.ts            # mulberry32
+    map/placeNames.ts     # v4.4 지명 풀 120 + 시드 셔플 배정 (§21.5)
     map/generate.ts       # 맵 생성 + 불변식. v4.1: generateMap(seed, W, H, N, cfg) / generateMapForSize / generateMapForPlayers(테스트용)
     map/presets.ts        # v4.1: 공식 프리셋 맵 스키마 검증·checksum·MapCatalog·mapFromPreset·presetFromMap
     room/settings.ts      # v4.1: 방 설정 검증(applyRoomOptions)·room_state.settings 에코·pacingNote
     game/state.ts         # GameState / PlayerState / Flag(4.2 전 필드) / BaseState, setTileOwner
     game/economy.ts       # troopCap, regen, gold, flagCap, techCost, (upkeep 자리)
+    game/production.ts    # v4.4 생산 지역(내 땅 BFS)·기지 생산력 반영 정산·분배 (§21.4)
     game/victory.ts       # thresholdScaled, judgeVictory
     game/commands.ts      # 1단계 입력 큐 드레인·명령 라우팅
     game/flagops.ts       # 2차: 발령·재지정·회수·태세 전환, applyPosture/beginReturn/removeFlag
@@ -259,7 +262,7 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 | 명령 | 검증 순서 (먼저 걸린 코드 1개 회신) | 효과 |
 |---|---|---|
 | `cmd_flag_issue` | `ELIMINATED` → `BAD_REQUEST`(tileId 범위 밖·troops 비정수) → `NO_SLOT`(내 깃발 수 ≥ flagCap — 패주 귀환 중인 깃발도 슬롯 점유) → `BAD_UNIT` → `WATER`(DEEP·SHALLOW) → `OUT_OF_RANGE`(내 타일까지 거리 > 40) → `TOO_SMALL`(< 40) → `ALLIED`(앵커 소유자가 ACTIVE/BREAKING 동맹) → `NOT_BASE` / `NOT_OWNED_BASE`(originBaseTileId 지정 시) → `INSUFFICIENT` | 기본 태세: 내 땅 앵커 = DEFEND(`targetOwnerId = 254 ANY_HOSTILE`), 그 외 ATTACK(`targetOwnerId` = 앵커 소유자, 중립 0). 풀 차감 `ceil(troops × CONVERT_<unit> / 1000)` (**v4.3**: 플레이어 스탯, 무테크 = `UNIT_CONVERT_PERMILLE` 1000/1000/1150, CAV-2A 기병 1070. 구 전 병종 편성 효율 `MOB_CONVERT` 폐기). 슬롯 = 최소 미사용 번호. 출발 = 지정 기지 / 앵커 최근접 내 기지 / (기지 없음) 수도 최근접 내 타일. → `flag_issued` |
-| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 전투 중이어도 항상 거절** — QA I-2 수락 경로 폐기 [A-62]) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생(쿨타임 중·전투 중이면 현 태세 유지), `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
+| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 전투 중이어도 항상 거절** — QA I-2 수락 경로 폐기 [A-62]) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생 — **v4.4 (§21.2): 태세 = 도착지(내 땅·내 기지 = DEFEND, 적·중립 = ATTACK). 쿨타임 중·전투 중이면 `pendingPosture` 로 미뤘다가 자동 적용. 내 기지 칸도 "그 기지 위로 가서 방어"(회수 아님)**, `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
 | `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 항상 거절**, [A-62]) → (**v4.2** `baseTileId` 지정 시) `NOT_BASE`(기지 칸 아님·범위 밖) → `NOT_OWNED_BASE`(내 기지 아님) | `state=RETURNING`, `returnBaseTileId = baseTileId ?? null`, 귀환지 = recallTarget(지정 기지 우선). 깃발은 **실제로 걸어서** 귀환지까지 간다(속도 ×1.5, ZOC 무시). 도착 시 잔여 × 85% 풀 환급. **전투 중(비귀환)이면 이탈 대기**. → `flag_recalled` (+`flag_disengage_started{auto:false}`) |
 | `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2 추가** [A-62]) → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
 
@@ -357,6 +360,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 { "type": "map_init", "terrain": [0,91,6,3,1,2, "..."], "spawns": [{ "playerId": 1, "tileId": 2412, "homeTileId": 2412 }], "bases": [431, 980, "... tileId 오름차순, 2N개"] }
 ```
 `spawns[].tileId == homeTileId`(수도). 기지·지형은 매치 동안 불변.
+**v4.4 `baseNames: string[]`(추가, 항상 존재)** — `bases` 와 같은 순서·같은 길이의 지명(수도 포함, 매치 안 고유). §21.5.
 
 ### snapshot_full (룸: t % 25 == 0, 그리고 시작 tick 0 / 개인: 입장·재접속·관전 시)
 ```json
@@ -384,6 +388,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 - `alliances[]` 항목: `{ a, b, state:"ACTIVE|BREAKING", sinceTick, breakAtTick|null }` (a<b, (a,b) ASC).
 - **2차 추가 최상위 필드**: `allyProposals: [{ proposalId, fromPlayerId, toPlayerId, expireTick }]`(proposalId ASC), `allianceFreezeUntilTick: number|null`, `lockoutDissolveTick: number|null`.
 - `hpPct = floor(hpMilli × 100 / 15000)`.
+- **v4.4 추가 (§21)**: `bases[].prodPm`(기지 생산력 ‰), `flags[].pendingPosture`(0|1|null), 최상위 `production: PlayerProduction[]`(플레이어별 생산 지역 내역).
 
 ### snapshot_delta (룸, 매 tick)
 ```json
@@ -416,6 +421,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
   - `flagStats`는 `t % 5 == 0`의 변경분에 더해 **교전 중(`inCombat`) 깃발은 매 tick**, **새 깃발은 첫 tick 즉시** 실린다(GDD 7.3 "교전 깃발은 매 tick 병력 필드").
   - **`flagFlags: [flagId, posture, bits, postureCooldownUntilTick][]`** — 태세·비트·쿨타임 중 하나라도 바뀐 깃발만, 매 tick. 항상 존재(빈 배열 가능).
     `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32 | HALTED 64`(**v4.2 추가** — 값 범위 0..127).
+  - **v4.4 (§21) 추가, 항상 존재**: `baseProd: [tileId, prodPm][]`(5 tick 마다 바뀐 기지만), `production: PlayerProduction[]`(5 tick 마다 내역이 바뀐 플레이어만 — 그 플레이어 내역 전체 교체), `flagFlags` 비트 **`POSTURE_PENDING 128`**(값 범위 0..255).
   - **`flagReturnBase: [flagId, returnBaseTileId|null][]` (v4.2 추가, 항상 존재)** — 지정 귀환 기지가 바뀐 깃발만(지정 회수 수락 tick, 지정 기지 상실로 null 이 된 tick). 새 깃발은 `null` 이 기본이라 싣지 않는다. 귀환 화살표: `returnBaseTileId ?? flag_recalled/flag_routed.returnTileId`.
   - 새 깃발은 `flag_issued` 이벤트 + 같은 tick 델타의 `flagMoves`/`flagStats`/`flagFlags`(첫 등장)로 알 수 있다. 사라진 깃발은 `flagsGone` + `flag_ended`.
 
@@ -463,7 +469,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `tech_purchased` | `{ "type":"tech_purchased","tick":120,"playerId":1,"nodeId":15,"cost":160,"newFlagCap":3,"techMask":32768 }` | 구매 성공 tick. **v4.3**: `axis`/`tier` 삭제 → `nodeId`, `techMask`(구매 후 보유 마스크) 추가 |
 | `threshold_update` | `{ "type":"threshold_update","tick":4800,"thresholdPct":60 }` | t ≥ 4800 이고 (t−4800) % 300 == 0, 바닥(45%) 도달 tick(7800)까지 = 총 11회 |
 | `endgame_rush` | `{ "type":"endgame_rush","tick":8400,"costMultPermille":750 }` | t == 8400, 1회. 이후 `snapshot_full.endgameRushActive = true` |
-| `player_eliminated` | `{ "type":"player_eliminated","tick":3000,"playerId":4,"byPlayerId":2 }` | tiles == 0. `byPlayerId` = 마지막으로 타일을 가져간 플레이어(없으면 null) |
+| `player_eliminated` | `{ "type":"player_eliminated","tick":3000,"playerId":4,"byPlayerId":2,"annexedTiles":312 }` | **v4.4 (§21)**: 기지(수도 포함)를 모두 잃은 tick(12단계 — 그 tick 의 `base_captured` 뒤). `byPlayerId` = 마지막 기지를 점령해 **남은 땅 전부를 합병한** 플레이어(없으면 null → 땅은 중립). `annexedTiles`(추가) = 넘어간 칸 수, 칸 변경은 같은 tick `snapshot_delta.tileChanges` |
 | `bot_takeover` | `{ "type":"bot_takeover","tick":900,"playerId":2 }` | 끊긴 지 450 tick |
 | `player_reconnected` | `{ "type":"player_reconnected","tick":910,"playerId":2 }` | 끊긴 플레이어가 토큰으로 복귀 |
 | `emote_broadcast` | `{ "type":"emote_broadcast","tick":77,"playerId":1,"code":3 }` | 수신 즉시(현재 tick 표기) |
@@ -496,7 +502,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `flag_blocked` / `flag_unblocked` | `{"type":"flag_blocked","tick":5,"flagId":2,"byFlagIds":[1]}` / `{"type":"flag_unblocked","tick":31,"flagId":2}` | 대치(ZOC 정지) 비트가 바뀐 tick (4b 끝). `byFlagIds` = 다음 칸에 ZOC 를 거는 적 방어 태세 깃발 |
 | `flag_disengage_started` | `{"type":"flag_disengage_started","tick":2,"flagId":2,"untilTick":17,"auto":false}` | 전투 중 재지정·회수 수락(`auto:false`) / **v4.2 `auto:true`(필드 추가, 항상 존재)**: 귀환(RETURNING·비패주) 깃발이 전투에 붙잡혀 서버가 자동 개시 — "귀환 중 붙잡힘, 3초 뒤 이탈" 표시 |
 | `flag_disengaged` | `{"type":"flag_disengaged","tick":17,"flagId":2,"reason":"broke_away"}` | `broke_away`(대기 완료 → breakaway) / `combat_over`(대기 중 무리 소멸) |
-| `base_captured` | `{"type":"base_captured","tick":3,"tileId":1290,"fromPlayerId":0,"toPlayerId":1,"newHpPct":50}` | 기지 체력 0 → 함락 |
+| `base_captured` | `{"type":"base_captured","tick":3,"tileId":1290,"fromPlayerId":0,"toPlayerId":1,"newHpPct":50,"newProdPm":500}` | 기지 체력 0 → 함락. **v4.4 `newProdPm`(추가)** = 함락 직후 생산력 ‰(직전 값 × 0.5, §21) |
 | `ally_proposed` | `{"type":"ally_proposed","tick":1,"proposalId":1,"fromPlayerId":1,"toPlayerId":2,"expireTick":151}` | 제안 생성 |
 | `ally_proposal_closed` ⟵ **백엔드 추가** | `{"type":"ally_proposal_closed","tick":2,"proposalId":1,"reason":"formed"}` | `declined` / `expired` / `formed` / `invalidated`(탈락·lockout) |
 | `ally_formed` | `{"type":"ally_formed","tick":2,"a":1,"b":2}` | 성립 (a<b) |
@@ -599,6 +605,29 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ---
 
 ## 9. 테스트·스모크 결과
+
+### v4.4 (2026-10-14, 기지 방어·우클릭 이동·멸망·합병·기지 생산력·지명 — 사용자 결정, §21)
+- `npm run typecheck` 통과(shared·server·client). `npm test`: **22 파일 297 테스트 전부 통과**. 신규 `server/test/v44.test.ts` **16**: 내 수도 앵커 발령 → 그 칸에서 ENGAGED·소멸 안 함 / **×1.5 가 지형을 대체**(언덕 수도 위 창 = 1950, 남의 기지가 되면 지형, 공격 태세 무관) / 기지 위 수비 깃발이 있으면 체력 피해 0 + 기병 공격 패주 / 재지정 태세 = 도착지(내 기지 → DEFEND·기지 위로 이동·회수 아님, 중립 → ATTACK) / 쿨타임 중 재지정 → `pendingPosture`·비트 128·full 필드 → 쿨타임 끝 tick 자동 적용(`flag_posture_changed auto`) / 회수가 대기 태세 삭제 / **유일 기지(수도) 함락 → 같은 tick `player_eliminated{byPlayerId, annexedTiles}` + 고립 칸 포함 전 영토 이전 + 깃발 소멸 + 델타 `tileChanges`** / 수도를 잃어도 기지가 남으면 생존·같은 tick 연쇄 합병(멸망한 합병 대상 → 그를 멸망시킨 쪽) / **생산력 1000 → 500 → 250 → 1분 뒤 417 → 1000 상한**, `base_captured.newProdPm`·full `prodPm` / **지역 합 = 총 생산**(봇 1500 tick, 50 tick 마다 전원: 칸·병력·그로스·순골드, 생산력 전부 1000 이면 기존 `regenMilliPerTick`·`grossGoldMilliPerTick` 과 같음, full `production` = 직전 정산 × 5) / 생산력 50% 지역만 감소 / `distribute` / **지명 풀 ≥ 100·중복 없음·한글 2~3음절, 시드 결정론·고유·`baseNames` 길이** / 봇: 마지막 기지 위협 → 그 기지 앵커 창병 발령, 마지막 아닌 기지는 체력이 깎일 때만. 모든 시뮬레이션 테스트 매 tick `ledgerImbalance == 0`.
+- 기존 테스트 수정: `economy.test.ts` PlayerState 리터럴에 새 필드 2개(값 null). 클라이언트 `gameModel.test.ts`(재구성 불일치 0)는 `client/src/state/gameModel.ts` 에 `pendingPosture` 비트 해석 2줄을 넣어 통과 유지.
+- `smoke` **SMOKE PASSED**. `qa:ws` **78/78**, 스키마 위반 0. `qa:headless`: **재구성 불일치 0종(`bases[].prodPm`·`production` 비교 추가), 회계 위반 0, 스키마 위반 0, 순서 위반 0**. `qa:scenarios` **86/87**(남은 1건은 기존 m-13 — GDD #7 예시 수치, 744/772 그대로). `qa-schema.ts`: `map_init.baseNames`, `bases[].prodPm`, `flags[].pendingPosture`, full·델타 `production`, 델타 `baseProd`, `flagFlags` 비트 0..255, `player_eliminated.annexedTiles`, `base_captured.newProdPm`.
+- **자가대전** (`npm run selfplay -w @civwar/server -- 10 1000 M 10`, 전원 NORMAL, 시드 1000~1009, 최종본은 `CIVWAR_SELFPLAY_LEDGER=1` 매 tick 회계 위반 0). 직전 = 15dc6aa 를 같은 스크립트(기지 함락 전체 수 지표 추가본)로 다시 돌린 값(오케스트레이터 제공 수치와 같음 — 30분 22.1%, 탈락 1.0). 봇 수비 범위만 바꾼 비교 실행 3개를 함께 적는다(규칙은 전부 같다).
+
+| 지표 | 직전 15dc6aa | 규칙만 (봇 수비 없음) | 봇: 마지막 기지만 | **최종: 마지막 기지 + 공격받는 기지** | 봇: 위협받는 기지 전부 |
+|---|---|---|---|---|---|
+| 종료 / 사유 | 32.0분 timeout 10/10 | 32.0 timeout 10 | 32.0 timeout 10 | **32.0분 timeout 10/10** | 32.0 timeout 10 |
+| 1위 점유율 @30분 | 22.1% | 26.1% | 22.7% | **22.9%** | 22.4% |
+| 1위 점유율 @5/10/15/20/25/30·종료 | 4.9/9.8/13.6/15.6/18.7/22.1·23.7 | 4.9/9.9/14.3/19.5/22.7/26.1·27.9 | 4.9/9.8/13.4/16.8/19.6/22.7·23.4 | **4.9/9.8/13.5/17.2/21.2/22.9·25.0** | 4.9/10.0/12.8/16.2/19.2/22.4·23.4 |
+| 탈락/판 | 1.0 | **3.8** | 0.9 | **1.2** | 1.1 |
+| 기지 함락/판 (전체, 중립 포함) | 33.0 | 27.7 | 26.0 | **20.5** | 14.4 |
+| 플레이어 기지 함락/판 (수도) | 26.3 (14.9) | 19.9 (10.0) | 18.4 (6.4) | **12.6 (4.2)** | 6.9 (3.2) |
+| 방어 슬롯 비중 | 45.0% | 42.6% | 51.4% | 51.9% | 52.5% |
+| 공격 깃발 교전 시간 % | 18.3 | 14.6 | 11.4 | 10.8 | 10.2 |
+| 병력 소멸 노출/전투/공격 지출 % | 3.4/39.6/57.1 | 3.2/36.8/60.0 | 2.9/32.4/64.6 | 2.9/32.6/64.5 | 2.8/32.5/64.7 |
+| tick ms 평균/최대 | 0.28/28.3 | — | — | 0.38/33.8 | 0.33/21.8 |
+
+  - 다른 시드(2000~2009)로 "마지막 기지만" / "전부" 를 다시 돌려도 같은 경향(기지 함락 26.7 / 17.8, 탈락 0.8 / 1.0, 30분 1위 23.6 / 21.2%).
+  - **L 108×66 · 12인** (시드 3000·3001, 최종본): 둘 다 timeout, tick 평균 0.44~0.53ms / 최대 24.9ms(예산 200ms), 봇 ms/tick 평균 0.05~0.08.
+  - **해석 (상수 불변)**: ① 판 길이는 그대로(10/10 하드 타임아웃). ② **규칙만**(봇이 기지를 지키지 않으면) 탈락이 1.0 → 3.8/판으로 늘고 30분 1위가 26.1% 로 오른다 — 합병이 눈덩이를 만든다. ③ 봇이 **마지막 기지를 지키면** 탈락이 ~1/판으로 돌아온다(최종 1.2). ④ **기지 함락 빈도는 줄었다**(전체 33.0 → 20.5/판, 플레이어 기지 26.3 → 12.6) — 기지 위 창 방어 ×1.5(실효 1950 vs 기병 공격 1180) + 수비 깃발이 있는 동안 체력 피해 0 이라, 공격받는 기지에 수비대를 세우면 거의 함락되지 않는다. 봇 수비 범위가 넓을수록 함락이 준다(전부 지키면 14.4). 최종본은 "마지막 기지 + 체력이 깎이는 기지" 로 중간을 골랐다(§10-111). 생산력 ×0.5 가 "점령의 득" 을 줄이는 몫도 있다. **수치는 바꾸지 않았다** — 기지 함락을 더 자주 원하면 레버는 `COMBAT_BASE_DEF_PERMILLE`(사용자 확정값)·봇 수비 범위(`BOT_BASE_GUARD_*`)·봇 기지 공격 병력(`BOT_COMMIT_BASE_PERMILLE`) — game-designer·사용자 판단(§13).
 
 ### v4.3 (2026-10-11, 테크 트리 v4.3 — 사용자 승인 A-66~A-84 ① + 깃발 접촉 8방향)
 - `npm run typecheck` 통과(shared·server·client). `npm test`: **18 파일 232 테스트 전부 통과**(서버 9 파일 167 — 신규 `tech.test.ts` 21, `flags.test.ts` 8방향 묶음 5, 클라이언트 9 파일 65). 클라이언트는 빌드 유지용 최소 수정(§19 "클라이언트").
@@ -863,6 +892,19 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 102. **구 상수 처리**: `TECH_AXIS`·`TECH_AXIS_COUNT`·`TECH_MAX_TIER`·`TECH_BASE_COST`·`MIL_*`·`ECO_*`·`TER_*`·`MOB_*`·`SHALLOW_MOVE_PERMILLE_BY_TIER`·`WATER_EXPOSURE_PERMILLE_BY_TIER`·`COMBAT_WATER_VS_WATER_PERMILLE` **export 삭제**(값은 `constants.ts` 주석에 "폐기" 로 기록). `match_config.constants` 에서도 빠진다. `SHALLOW_MOVE_PERMILLE_MIN`(2000) 은 유지.
 103. **깃발 접촉 8방향 (사용자 결정 2026-10-11) — 구현에서 정한 것**: 토폴로지 인터페이스에 `contactNeighbors(t)`(자기 제외, tileId 오름차순)·`touching(a, b)`(a = b 포함) 추가, 사각 = 체비셰프 ≤ 1. **지형 무시**(깃발은 깊은 물에 서지 않으므로 v4.2 의 "이동 그래프 이웃" 과 차이는 대각선뿐 — 깊은 물 모서리를 사이에 둔 대각선도 접촉). `PROGRESS_HOLD_RANGE`(1)·`FLAG_ENGAGE_RANGE`(1) 값은 그대로 두고 "1 = 접촉" 으로 해석(`gauge.ts` 는 1 이 아니면 예외). 봇: `combatFoes`·차단 당하기 실효력 합·주둔 반격 칸(적 깃발 접촉 칸)·**요격 칸 = 적 깃발과 접촉하는 내 땅(대각선 포함, tileId 최소)**, 없으면 접촉 밖 맨해튼 2 칸. 차단 쓰기 칸 후보에서 이미 접촉(대각선) 칸 제외. 위협·관할 원·`FRONT_RADIUS`·앵커 거리 계산은 맨해튼 그대로.
 
+### v4.4 (사용자 결정 2026-10-14 — 기지 방어·우클릭·멸망·합병·생산력·지명)에서 정한 것 — **에이전트 선택 [A]**
+
+104. **[A-85] 생산력 회복 = 선형, 분당 +167‰**(`BASE_PROD_RECOVER_PER_MIN_PERMILLE`) — 50% → 100% 약 3.0분, 25% → 100% 약 4.5분. 사용자 예시("약 3분에 100%")에 맞춘 값. 비례(지수) 회복 대신 선형을 고른 이유: 바가 일정한 속도로 차올라 읽기 쉽고 정수 누적이 단순하다(`‰ × 300` 정수에 tick 당 +167). **항상 회복**(공격받는 중·중립 기지 포함 — 회복 정지 조건은 두지 않았다). 점령 시 `floor(‰ × 500 / 1000)` 은 사용자 확정.
+105. **[A-86] 생산 지역 = 내 땅만 밟는 4방향 그래프 거리로 가장 가까운 내 기지**(수도 포함), 동률 = 기지 tileId 작은 쪽. 맨해튼(지형 무시) 대신 "내 땅 경로" 를 고른 이유: 사용자 표현 "graph distance" + **"기타" 지역이 의미를 갖게**(기지가 하나라도 있으면 맨해튼 기준으로는 모든 칸에 최근접 기지가 있어 "기타" 가 늘 비게 된다). 내 기지와 내 땅으로 이어지지 않은 칸(고립지·월경지) = "기타", 생산력 1000. 다중 출발 BFS 1회(기지 tileId ASC 투입 → 같은 층은 출발 순서로 묶여 동률이 작은 tileId 로 간다), **소유권이 바뀐 뒤 첫 2단계에서만 재계산**(`regionsDirty` — 칸 점령이 거의 매 tick 있으니 사실상 매 tick, 비용은 타일 수 비례: M 10인 tick 평균 0.28 → 0.38ms, L 12인 0.44~0.53ms).
+106. **[A-87] 생산 적용** = "지역 몫 × 생산력" (§21.4 식). 병력: 기존 재생 R(√tiles·로지스틱)을 그대로 두고 `R × Σ(tiles_r × pm_r) / (tiles × 1000)` — √ 안에 유효 칸 수를 넣는 방식(감소가 √ 로 약해짐) 대신 선형을 골랐다(사용자 "지역 생산에 그 기지 배율"). 병력 **상한은 생산력과 무관**(전체 칸 수). 골드: 지역 골드 가중치(지형 가중) × 생산력. 유지비는 총 그로스에 한 번(기존 정수식 그대로). 지역별 몫은 floor 분배 + 잔여는 가중치 최대 지역 → **지역 합 = 총합 정확히**, 생산력이 전부 1000 이면 기존 값과 비트 단위로 같다. 플레이어 `goldWeight` 필드는 원값 유지(의미 변경 없음).
+107. **[A-88] 기지 위 수비 깃발이 있는 동안 기지 체력 피해 0** — "공격자는 먼저 깃발 전투를 이겨야 한다". 현 전투 모델에서 이미 성립(기지를 미는 공격 깃발은 기지 칸과 4방향 인접 ⇒ 8방향 접촉 ⇒ 4a 전투 ⇒ `pushing` 아님)하므로 새 규칙이 아니라 귀결이다. 6단계에 같은 조건(`baseOccupiedByHostile`: 기지 칸 위에 공격자와 적대인 `combatEligible` 깃발)을 명시 검사로 추가해 불변식으로 고정했다. 기지 주인의 **동맹** 깃발이 서 있어도 막는다(공격자와 적대이므로 어차피 전투). 패주한 수비 깃발은 막지 못한다.
+108. **×1.5 적용 범위**: 방어 태세 + **내** 기지 칸(수도 포함)만. 동맹 기지 위는 지형 보정(사용자 문구 "its own base"). 서 있는 동안 기지가 넘어가면 그 tick 부터 지형 보정. 공격 태세는 기지 위라도 기존 값.
+109. **[A-90] 재지정 태세 대기(`pendingPosture`)**: 사용자 결정 "태세는 도착지로" 를 쿨타임·전투 중에도 지키기 위해, 즉시 못 바꾸면 미뤘다가 자동 적용. 전투 중 즉시 전환을 허용하지 않은 이유: 공격 태세로 싸우다 내 땅으로 재지정하면 방어↔방어가 되어 **이탈 대기(3초, ×0.5) 없이 전투가 끊기는 탈출구**가 생긴다. 직렬화는 full 필드 + 델타 비트 128(대기 태세는 항상 현재의 반대라 1비트로 충분 — `flagFlags` 튜플 모양 유지). 적용 시 ENGAGED·IDLE 깃발은 MARCHING 으로 돌려 같은 tick settle 이 새 태세로 다시 판정(공격 태세로 바뀐 방어 주둔 깃발이 엉뚱한 칸에서 밀지 않게). `postureManual = false`.
+110. **[A-91] 멸망·합병 세부**: 합병 대상 = `lastBaseLostTo`(그 플레이어 기지를 마지막으로 가져간 플레이어 — `setTileOwner` 가 기지 칸 소유 변경 때 기록, 없으면 `lastLostTo`). 같은 tick 연쇄는 playerId ASC 처리 + `conqueredBy` 추적(합병 대상이 이미 멸망 → 그를 멸망시킨 쪽, 끝내 없으면 중립). 풀 병력·골드·테크·유지 중 동맹은 넘기지 않는다(소멸 — 회계 `eliminated`). 대량 칸 이전은 `setTileOwner` 경유 → 같은 tick 델타 `tileChanges`(별도 full 강제 송신 없음 — 최악 수천 쌍 × 1회). `player_eliminated` 에 `annexedTiles` 추가.
+111. **봇 기지 수비 (§11, 사용자 "적당히")**: `guardBases` — 결정당 1회, `defend`(요격)보다 먼저. 대상 = **마지막 기지**(적대 공격 깃발이 `BOT_LAST_BASE_GUARD_RADIUS` 8 안) **+ 마지막이 아닌 기지는 최근 `BOT_BASE_GUARD_DAMAGE_WINDOW` 25 tick 안에 체력이 깎인 것**(`BOT_BASE_GUARD_RADIUS` 4 안 위협). 우선순위 = 위협 실효력 합 큰 순. 이미 기지 위(또는 가는 중) 수비대 실효력 ≥ 위협 × `BOT_INTERCEPT_RATIO`(1.25) 면 건너뜀. 수단 ① 창병 발령(앵커 = 기지 → 출발도 그 기지라 즉시 자리), 필요 병력 = 위협 × 1.25 ÷ 기지 위 창 방어값(1950), 최소 풀 40% — **마지막 기지는 필요량에 못 미쳐도 가진 만큼** ② 슬롯·병력이 없고 마지막 기지면 가장 가까운 비전투 깃발을 기지로 재지정(→ DEFEND). 수비대는 주둔 반격·제자리 공격 전환을 하지 않고, 위협 없이 `BOT_GARRISON_PATIENCE`(3분)가 지나면 회수, 위협 중엔 슬롯 재활용 대상에서 빠진다. **범위 선택 근거 = 자가대전 비교(§9 v4.4)**: 위협받는 기지 전부를 지키면 기지 함락이 33.0 → 14.4/판으로 반 이하, 마지막 기지만 지키면 26.0 이지만 일반 기지 방어를 전혀 안 쓴다 → 중간("공격받는 기지")을 골랐다(20.5/판, 탈락 1.2/판). 봇 기지 공격 점수(마지막 기지 가산 등)는 **바꾸지 않았다**.
+112. **[A-92] 지명**: 풀 120개(고유어풍 80 + 판타지풍 40, 한글 2~3음절)를 서버에 두고, **룸 시드**(무작위 맵 = 맵 시드 / 프리셋 맵 = 룸이 뽑은 시드 — 봇 성향 시드와 같은 값)로 Mulberry32 Fisher–Yates 셔플 → 기지 tileId 순서로 배정. 프리셋 맵에 맵 시드(파일 `origin.seed`, 없으면 0)를 쓰면 공식 맵마다 이름이 늘 같아져서 룸 시드를 골랐다. 풀보다 기지가 많으면(현 상한 24 라 발생 안 함) `"이름 2"` 접미사로 고유성 유지. 전송 = `map_init.baseNames`(bases 와 평행 배열).
+113. **`production` 직렬화**: 단위 milli/초(=milli/tick × 5) 정수, 델타는 5 tick 마다 바뀐 플레이어만 통째(지역 수가 적어 부분 갱신보다 단순), full 은 전원. 기지 생산력 델타 `baseProd` 는 `baseHp` 와 같은 5 tick 주기·변경분만. 새 필드는 TS 상 optional(구 클라이언트 리터럴 호환, v4.2 `halted` 와 같은 처리) — 서버는 항상 싣는다.
+
 ---
 
 ## 11. 봇 (3차-2 완료 — 중간 보고)
@@ -892,6 +934,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 5. **난이도**: 중반이 슬롯 병목이라 reserve 레버가 거의 안 먹고, minDef 25%/30% 는 슬롯 4~5개에서 같은 개수로 올림 → **HARD ≈ NORMAL** (HARD 1 vs NORMAL 9 승률 30%). B-19 목표 (사람 승률 HARD ≤ 15%) 를 4 레버만으로 만들기 어렵다.
 
 **v4.2 봇 (8.7, §10-88~90)**: 결정 순서 동일. 4번 깃발 정비에서 IDLE → (병력 ≥ 200) 깊은 앵커 재지정 / 지정 기지 회수, 7번 채우기의 앵커 = 깊은 앵커 또는 **적 기지**(풀 50%). RETURNING 깃발에는 명령을 내지 않는다(거절률 0% 유지). 측정은 §9 v4.2.
+
+**v4.4 봇 (사용자 2026-10-14, §10-111)**: 결정 순서 3번 앞에 **기지 수비 `guardBases`**(결정당 1회) — 마지막 기지(반경 8 안 적 공격 깃발) + 마지막이 아닌 기지는 최근 25 tick 안에 체력이 깎일 때(반경 4) 그 기지를 앵커로 창병 발령(기지 위 방어 ×1.5), 마지막 기지는 병력이 모자라도 가진 만큼·슬롯이 없으면 가장 가까운 비전투 깃발을 기지로 재지정. 기지 수비대는 주둔 반격·제자리 공격 전환·위협 중 재활용·요격 재배치 대상에서 빠진다. 공격 쪽(기지 후보 점수)은 바꾸지 않았다.
 
 ## 12. 2차 프로토콜 변경 요약 (프론트 영향)
 
@@ -1108,3 +1152,108 @@ stat = techStatValues(mask):  v = TECH_STAT_BASE.slice()
 - 서버 구현: `server/src/topology/topology.ts`(`contactNeighbors`·`touching` 인터페이스), `square.ts`(체비셰프 1), `combat.ts`(4a 후보), `movement.ts`(`zocBy`), `gauge.ts`(`holdProgress`), `bot.ts`(전투 판단·요격·차단). 육각 토폴로지로 바꾸면 `contactNeighbors` = 일반 이웃.
 - 클라이언트가 전투·ZOC 를 미리 그리거나 예측한다면 같은 판정(사각 = `|Δrow| ≤ 1 ∧ |Δcol| ≤ 1`)으로 바꿔야 한다. 현재 클라이언트 코드에는 이 판정이 없어 수정하지 않았다(전투·차단 상태는 서버 `inCombat`·`blocked` 비트를 그대로 그린다). 교전 연결선·검/방패 아이콘(같은 날 사용자 결정)은 프론트 작업.
 - 대표 전투 표(4.15)·`duels.ts` 수치는 불변(1:1 교전의 손실식은 그대로, 붙는 범위만 넓어짐).
+
+## 21. v4.4 기지 방어 · 우클릭 이동 · 멸망·합병 · 기지 생산력 · 지명 (프론트 영향 — 2026-10-14, 사용자 결정)
+
+근거: `_workspace/00_input/design-decisions.md` 2026-10-14 항목. **메시지·필드는 추가만**(제거·이름 변경 없음). **규칙 의미가 바뀐 곳**: ① 탈락 조건(타일 0 → **기지 0**) + 합병 ② 내 기지 칸으로의 재지정 = 그 기지 위에서 방어(지금까지 UI 는 "내 기지 클릭 = 회수"였다 — A-61 UI 매핑 대체) ③ 재지정 태세가 쿨타임·전투 때문에 미뤄질 수 있다(`pendingPosture`).
+**프론트 재작업 필요**: 내 기지 클릭 동작, 대기 태세 표시, 멸망 시 대량 칸 이전, 생산력 바·생산 내역 hover, 지명 표시. 아래 21.1~21.5 가 전부다.
+
+### 21.1 기지 방어 — 깃발이 내 기지 칸 위에 선다
+
+- 깃발은 **내 기지(수도 포함) 칸으로 발령·재지정**할 수 있고, 도착하면 그 칸 위에서 `ENGAGED`(방어 태세)로 선다. 서버는 원래 막지 않았다(막혀 있던 것은 UI 매핑 "내 기지 클릭 = 회수" 하나) — 발령 앵커 검증·도착 판정(`defendArrived`: 앵커 칸 도달)·경로(거리장)·settle 모두 기지 칸을 일반 칸으로 다룬다. 발령 앵커가 내 기지면 출발지도 그 기지(앵커 최근접 내 기지)라 **발령 직후 4단계에서 바로 그 칸에 선다**.
+- **방어 태세 깃발이 내 기지 칸 위에 있으면 실효 전투값의 지형 항 = `COMBAT_BASE_DEF_PERMILLE` 1500**(지형 보정을 **대체** — 곱하지 않는다. 기지가 언덕이어도 1300 × 1500 이 아니라 1500). 공격 태세·남의 기지 칸(서 있는 동안 함락된 경우 포함)은 기존 지형 보정.
+  `v(방어) = floor(UNIT_DEF[unit] × (내 기지 칸 ? 1500 : COMBAT_TERRAIN_DEF_POSTURE[지형]) / 1000)` → 이후 테크·상륙·이탈 배율은 기존과 같다. 예: 창 방어 1300 → **1950**, 검 1500, 기병 1050.
+- **기지 체력 전투와의 관계 [A-88]**: 기지 칸 위에 **공격자와 적대(동맹 아님)인 전투 가능 깃발**(패주·breakaway 아님, 병력 > 0)이 서 있으면 공격 깃발은 **기지 체력을 깎지 못한다 — 먼저 그 깃발을 이겨야 한다**. 기지를 미는 공격 깃발은 기지 칸에 4방향으로 붙어 있으므로 기지 위 깃발과 항상 접촉(8방향 ⊃ 4방향) → 4a 에서 이미 전투 중이라 밀지 않는다(현 전투 모델의 귀결). 서버는 6단계에 같은 조건을 명시 검사로도 둔다(`gauge.ts baseOccupiedByHostile`). 수비 깃발이 패주하면 그 다음 tick 부터 체력 피해가 다시 들어간다. 기지 주인의 동맹 깃발이 기지 위에 서 있어도 같다.
+- 새 메시지·필드 없음. 부대 정보의 공격력·방어력("지형 보정 제외" — 사용자 결정)을 계산한다면 기지 ×1.5 도 지형 보정의 일부로 보고 빼면 된다.
+
+### 21.2 우클릭 = 항상 이동 — 태세는 도착지로
+
+**프론트 호출법 (사용자 결정 2026-10-14 UI)**
+
+| 조작 | 보낼 명령 |
+|---|---|
+| 내 부대 선택 + **우클릭(아무 칸)** | `{ "type":"cmd_flag_retarget", "clientSeq":n, "flagId":f, "anchorTileId":t }` — **내 기지 칸도 이것**(회수 아님) |
+| 선택 부대 위 **귀환 버튼** | `{ "type":"cmd_flag_recall", "clientSeq":n, "flagId":f }` (자동 귀환지) — 특정 기지로 보내려면 `baseTileId` (v4.2 그대로) |
+| 선택 부대 위 **태세 버튼** | `{ "type":"cmd_set_posture", "clientSeq":n, "flagId":f, "posture":p }` (v4.1 그대로) |
+
+- 재지정 태세 = **도착지 소유자로 결정**: 내 땅(내 기지 포함) = `DEFEND`, 적·중립 = `ATTACK`. 물(`WATER`)·동맹 땅(`ALLIED`)·사거리 밖(`OUT_OF_RANGE`)·경직(`LOCKED`)·귀환 중(`RETURNING`) 등 거절은 기존과 같다(§4 표).
+- 지금 태세를 바꿀 수 있으면(쿨타임 경과 ∧ 비전투) 같은 tick 에 바꾸고 `flag_posture_changed{auto:true}`. **바꿀 수 없으면**(태세 쿨타임 중이거나 **전투 중** — 전투 중 재지정은 이탈 대기로 빠져나가는 중이라, 그 사이 태세를 바꾸면 방어↔방어가 되어 이탈 비용 없이 싸움이 끊긴다) **`pendingPosture` 에 도착지 태세를 두고**, 조건이 풀리는 첫 tick 4단계 첫머리에서 서버가 자동 적용 → `flag_posture_changed{auto:true}` [A-90]. 이미 멈춰 있던(ENGAGED·IDLE) 깃발은 그 tick MARCHING 으로 되돌려 새 태세로 다시 도착 판정한다(`flag_engaged`/`flag_idle` 이 다시 올 수 있다).
+- `cmd_ack.posture` 는 **처리 직후의 현재 태세**(대기 중이면 아직 이전 태세). 대기 태세는 `snapshot_full.flags[].pendingPosture`(0|1|null) / 델타 `flagFlags` 비트 **`POSTURE_PENDING 128`**(대기 태세 = 현재 태세의 반대 — 같으면 대기가 없다).
+- `pendingPosture` 를 지우는 것: 적용됨 / 수동 `cmd_set_posture` 수락 / 회수·IDLE 자동 귀환·패주(귀환 시작) / 현재와 같은 태세가 되는 재지정.
+
+```json
+{ "type":"cmd_flag_retarget","clientSeq":7,"flagId":3,"anchorTileId":2316 }
+{ "type":"cmd_ack","clientSeq":7,"accepted":true,"flagId":3,"posture":0 }
+{ "type":"snapshot_delta","tick":131,"flagFlags":[[3,0,128,140]],"…":"…" }
+{ "type":"flag_posture_changed","tick":140,"flagId":3,"posture":1,"cooldownUntilTick":165,"auto":true,"targetOwnerId":254 }
+```
+(2316 = 내 기지, 태세 쿨타임이 140 까지 → 그동안 ATTACK + 대기 비트, 140 에 DEFEND 로 자동 전환)
+
+### 21.3 멸망·합병 — 기지를 모두 잃으면 즉시 멸망
+
+- **탈락 조건 변경**: 기지(수도 포함)를 **모두** 잃은 tick 의 12단계에서 즉시 멸망(구 조건 "타일 0" 은 여기에 포함된다 — 타일 0 ⇒ 기지 0). 수도를 잃어도 다른 기지가 하나라도 있으면 산다.
+- **합병**: 멸망한 플레이어의 남은 칸 **전부** → 멸망시킨 플레이어(= 그의 **마지막 기지를 점령한** 플레이어). 깃발은 전부 소멸(`flag_ended{reason:"eliminated"}`, 환불 없음), 동맹·제안 즉시 해제(기존). 풀 병력·골드·테크는 넘어가지 않는다(소멸 — 회계는 기존 `eliminated` 항목).
+- **같은 tick 연쇄 [A-91]**: playerId ASC 로 처리. 합병 받을 플레이어가 이미(같은 tick 앞 순번에서) 멸망했으면 그를 멸망시킨 플레이어로 거슬러 올라간다. 생존자를 못 찾으면 남은 칸은 중립(`byPlayerId:null`, `annexedTiles:0`). 마지막 기지를 잃은 기록이 없는 경우(이론상)는 마지막으로 칸을 가져간 플레이어.
+- **이벤트·스냅숏 정합**: 한 tick 안에서 `base_captured`(마지막 기지, 7단계) → `flag_ended`×n → `ally_broken`… → **`player_eliminated{playerId, byPlayerId, annexedTiles}`**(12단계) → **같은 tick `snapshot_delta.tileChanges` 에 넘어간 칸 전부 `[tileId, byPlayerId]`**(대량 — 큰 나라는 수백~천여 쌍. full 강제 송신 없음) → 이후 `playerDeltas`(5 tick 주기)·`production`. 늦게 붙는 클라이언트는 `snapshot_full.owners` 에 이미 반영돼 있다. `room_state` 의 `ELIMINATED_SPECTATING` 전환은 기존과 같다.
+- `last_standing`(생존자 1) · `threshold`(합병으로 넘는 경우 포함, 같은 tick 13단계 판정) · `timeout` 판정은 기존과 같다.
+
+```json
+{ "type":"base_captured","tick":4012,"tileId":2412,"fromPlayerId":4,"toPlayerId":2,"newHpPct":50,"newProdPm":500 }
+{ "type":"flag_ended","tick":4012,"flagId":88,"reason":"eliminated","refunded":0 }
+{ "type":"player_eliminated","tick":4012,"playerId":4,"byPlayerId":2,"annexedTiles":311 }
+{ "type":"snapshot_delta","tick":4012,"tileChanges":[[2412,2],[2301,2],[2302,2]],"…":"(311 + 1 쌍)" }
+```
+
+### 21.4 기지 생산력 · 생산 지역
+
+**생산력** (기지마다 정수 ‰, 0..1000):
+- 시작 1000(중립 기지 포함). **점령될 때마다 `floor(현재 ‰ × 500 / 1000)`**(중립 → 플레이어 포함): 1000 → 500 → 250.
+- **회복 [A-85]**: 매 tick 선형, **분당 +`BASE_PROD_RECOVER_PER_MIN_PERMILLE` 167‰**, 상한 1000 — 50% → 100% 약 3.0분, 25% → 100% 약 4.5분. 소유·피해와 무관하게 항상 회복(중립 기지도). 서버 내부는 `‰ × 300` 정수로 누적하고 표시·계산은 `floor(÷ 300)`.
+- 송신: `snapshot_full.bases[].prodPm`, 델타 `baseProd: [tileId, prodPm][]`(5 tick 마다 바뀐 기지만 — 회복 중이면 거의 매번), `base_captured.newProdPm`. **바 그리기**: `prodPm / 1000`. 사이 값을 보간하려면 `+167/300 ‰ / tick`.
+
+**생산 지역 [A-86]**: 플레이어의 각 칸은 **내 땅만 밟는 4방향 그래프 거리**로 가장 가까운 내 기지(수도 포함)에 속한다. 동률은 기지 tileId 가 작은 쪽. 내 기지와 내 땅으로 이어지지 않은 칸(고립지·월경지) = **"기타" 지역**(생산력 1000 고정). 기지 칸 자체는 항상 자기 지역이다. 소유권이 바뀐 뒤 처음 정산할 때만 다시 계산(전 맵 다중 출발 BFS 1회 — 타일 수 비례).
+
+**생산 적용 [A-87]** — "지역 r 의 생산 = 기존 공식의 그 지역 몫 × prodPm_r / 1000" (정수·결정론):
+```
+R        = 기존 병력 재생 milli/tick (0.8 + 0.5·√tiles, 로지스틱, 테크 — 생산력 무관. 병력 상한도 그대로 전체 칸 수)
+R'       = floor(R × Σ_r(tiles_r × pm_r) / (tiles × 1000))      // 실제 재생
+troops_r = R' 를 가중치 tiles_r × pm_r 로 분배
+effGW_r  = floor(goldWeight_r × pm_r / 1000)                     // 지역 골드 가중치(지형 가중 합) × 생산력
+gross    = floor(Σ effGW_r × GOLD_RATE_PERMILLE × goldPm / 1e9)   // 기존 식에 effGW 합을 넣은 것
+gross_r  = gross 를 effGW_r 로 분배
+net      = gross − floor(gross × upkeepPm / 1000)                  // 유지비는 총액에 한 번 (기존과 같다)
+net_r    = net 를 gross_r 로 분배
+분배     = 각 몫 floor(total × w / Σw), 잔여는 가중치가 가장 큰 지역(동률 = 앞)에 → 지역 합 = 총합 (정확히)
+```
+생산력이 전부 1000 이면 기존 값과 정확히 같다. 플레이어 `goldWeight`(델타·full)는 **생산력 반영 전** 원값 그대로 — §5 의 "그로스 = goldWeight × …" 클라이언트 계산은 이제 생산력이 깎인 기지가 있으면 과대 추정이므로 **수입 표시는 `production` 합을 쓸 것**.
+
+**`production` 형식** — `snapshot_full.production` = id ASC 전원(탈락자 `regions: []`) / 델타 `production` = 5 tick 마다 바뀐 플레이어만(그 플레이어 내역 통째 교체):
+```json
+{ "playerId": 2, "regions": [
+  { "baseTileId": 1290, "tiles": 214, "prodPm": 1000, "troopsPerSecMilli": 4120, "goldGrossPerSecMilli": 2950, "goldNetPerSecMilli": 2270 },
+  { "baseTileId": 2412, "tiles": 88,  "prodPm": 500,  "troopsPerSecMilli": 845,  "goldGrossPerSecMilli": 610,  "goldNetPerSecMilli": 470 },
+  { "baseTileId": null, "tiles": 6,   "prodPm": 1000, "troopsPerSecMilli": 115,  "goldGrossPerSecMilli": 80,   "goldNetPerSecMilli": 61 } ] }
+```
+- `regions` 순서 = 내 기지 tileId ASC, "기타"(`baseTileId: null`)는 칸이 있을 때만 맨 끝. 단위 = **milli / 초**(서버 milli/tick × 1000 / `TICK_MS`) — 병력/초 = `troopsPerSecMilli / 1000`, 순골드/초 = `goldNetPerSecMilli / 1000`.
+- 값 = **그 tick 2단계가 실제로 적용한 정산**(병력 상한에서 잘리는 양은 반영 전). hover "병력·골드 출처(기지별 + 기타)" 는 이 표를 그대로 쓰면 된다. 유지비 줄 = `Σ gross − Σ net`.
+
+### 21.5 지명
+
+- `map_init.baseNames: string[]` — `bases`(tileId ASC, 수도 포함 2N개)와 같은 순서·같은 길이. 매치 안 고유.
+- 이름 풀: `server/src/map/placeNames.ts` 120개(한국 고유어풍 80 + 판타지풍 40, 한글 2~3음절, 중복 없음). 매치 시작 시 **룸 시드**(무작위 맵 = 맵 시드, 프리셋 맵 = 룸이 뽑은 시드 — 봇 성향 시드와 같은 값)로 결정론 셔플 후 기지 순서대로 배정 [A-92]. 같은 시드면 같은 이름.
+- 수도 지명 = `baseNames[bases.indexOf(spawns[i].homeTileId)]`.
+
+### 21.6 상수 (`match_config.constants` 에 자동 포함)
+
+| 상수 | 값 | |
+|---|---|---|
+| `COMBAT_BASE_DEF_PERMILLE` | 1500 | 사용자 확정 |
+| `BASE_PROD_MAX_PERMILLE` | 1000 | 사용자 확정 (시작값·상한) |
+| `BASE_PROD_CAPTURE_PERMILLE` | 500 | 사용자 확정 (점령 시 ×0.5) |
+| `BASE_PROD_RECOVER_PER_MIN_PERMILLE` | 167 | **[A-85] 에이전트 선택** |
+| `PRODUCTION_DELTA_INTERVAL` | 5 | 델타 `production` 주기 |
+| `FLAG_BIT.POSTURE_PENDING` | 128 | 델타 비트 |
+
+### 21.7 서버 코드
+
+`shared/src/constants.ts`·`protocol.ts`(타입 `ProductionRegion`·`PlayerProduction`. 새 필드는 TS 상 optional — 구 클라이언트 리터럴 호환, 서버는 항상 싣는다), `server/src/game/production.ts`(신규 — 생산 지역·분배), `state.ts`(`BaseState.prodScaled`, `PlayerState.lastBaseLostTo/conqueredBy`, `Flag.pendingPosture`, `GameState.baseNames/regions/yields`), `tick.ts`(2단계 생산·8단계 생산력 회복·12단계 멸망·합병), `gauge.ts`(기지 점령 생산력 ×0.5, `baseOccupiedByHostile`), `combat.ts`(`flagValue` 기지 ×1.5), `flagops.ts`(재지정 태세·`applyPendingPosture`), `movement.ts`(4단계 첫머리 대기 태세), `snapshot.ts`(직렬화), `server/src/map/placeNames.ts`(신규), `bot.ts`(기지 수비 — §10-111). 클라이언트는 `client/src/state/gameModel.ts` 에 `pendingPosture` 비트 해석 2줄만 넣었다(재구성 모델 테스트 유지용 — 나머지 UI 는 프론트 몫).

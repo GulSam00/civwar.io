@@ -4,6 +4,8 @@
  */
 import {
   BASE_HP_INIT_MILLI,
+  BASE_PROD_MAX_PERMILLE,
+  TICKS_PER_MIN,
   BOT_DIFFICULTY,
   BOT_DIFFICULTY_DEFAULT,
   type BotDifficultyName,
@@ -18,6 +20,7 @@ import {
   type Unit,
 } from '@civwar/shared';
 import type { GeneratedMap } from '../map/generate.js';
+import { assignPlaceNames } from '../map/placeNames.js';
 import type { MapGraph } from '../topology/topology.js';
 
 export const NEUTRAL = 0;
@@ -35,6 +38,10 @@ export interface PlayerState {
   alive: boolean;
   eliminatedTick: number | null;
   lastLostTo: number | null; // 탈락 판정용: 마지막으로 내 타일을 가져간 플레이어
+  /** v4.4 (§21): 마지막으로 내 기지를 가져간 플레이어 — 기지를 모두 잃으면 이 플레이어가 합병한다 */
+  lastBaseLostTo: number | null;
+  /** v4.4 (§21): 나를 멸망시켜 합병한 플레이어 (같은 tick 연쇄 멸망 시 합병 대상 추적용) */
+  conqueredBy: number | null;
   homeTileId: number;
 
   // 파생 (O(1) 증분 — onTileOwnerChange 만 갱신)
@@ -93,6 +100,8 @@ export interface Flag {
   halted: boolean;
   /** v4.2 [A-61]: cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 기존 recallTarget 순서 */
   returnBaseTileId: number | null;
+  /** v4.4 (§21): 재지정이 정한 도착지 태세 — 전투·이탈 대기·쿨타임 때문에 아직 못 바꿨으면 여기 두고 4단계 첫머리에서 적용 */
+  pendingPosture: Posture | null;
 }
 
 export interface BaseState {
@@ -101,6 +110,30 @@ export interface BaseState {
   lastDamageTick: number;
   lockUntilTick: number;
   damagedThisTick: boolean; // 7단계가 쓰고 8단계가 읽는 tick 로컬 플래그
+  /** v4.4 (§21): 생산력 × TICKS_PER_MIN (정수 선형 회복용). 표시·계산 ‰ = floor(prodScaled / TICKS_PER_MIN) — baseProdPm() */
+  prodScaled: number;
+}
+
+/** v4.4 (§21): 기지 생산력 ‰ (0..1000) */
+export function baseProdPm(b: Readonly<BaseState>): number {
+  return Math.floor(b.prodScaled / TICKS_PER_MIN);
+}
+
+/** v4.4 (§21): 생산 지역 (production.ts 가 소유권이 바뀐 뒤 처음 읽을 때 다시 계산) */
+export interface RegionStat {
+  /** 기지 tileId, -1 = 기타 */
+  baseTileId: number;
+  tiles: number;
+  goldWeight: number;
+}
+/** v4.4 (§21): 2단계가 실제로 적용한 지역별 생산 (milli / tick). 스냅숏 production 의 원천 */
+export interface RegionYield {
+  baseTileId: number; // -1 = 기타
+  tiles: number;
+  prodPm: number;
+  troopsMilli: number;
+  goldGrossMilli: number;
+  goldNetMilli: number;
 }
 
 export type AllianceState = 'ACTIVE' | 'BREAKING';
@@ -157,6 +190,14 @@ export interface TickChanges {
 
 export interface GameState {
   readonly map: GeneratedMap;
+  /** v4.4 (§21): 기지 지명 — map.baseTiles 와 같은 순서 */
+  readonly baseNames: readonly string[];
+  /** v4.4 (§21): 생산 지역 캐시. setTileOwner 가 regionsDirty = true 로 무효화 */
+  regionsDirty: boolean;
+  /** index = playerId */
+  regions: RegionStat[][];
+  /** index = playerId — 직전 2단계 정산 내역 */
+  yields: RegionYield[][];
   /** v4.1: 방 봇 난이도 (match_config.botDifficulty) */
   readonly botDifficulty: BotDifficultyName;
   readonly graph: MapGraph;
@@ -266,6 +307,8 @@ export function createGameState(
       alive: true,
       eliminatedTick: null,
       lastLostTo: null,
+      lastBaseLostTo: null,
+      conqueredBy: null,
       homeTileId: spawn.homeTileId,
       tiles: 0,
       goldWeight: 0,
@@ -285,12 +328,17 @@ export function createGameState(
     lastDamageTick: 0,
     lockUntilTick: 0,
     damagedThisTick: false,
+    prodScaled: BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN,
   }));
   const baseIndexOf = new Map<number, number>();
   bases.forEach((b, i) => baseIndexOf.set(b.tileId, i));
 
   const state: GameState = {
     map,
+    baseNames: assignPlaceNames(aggressionSeed, map.baseTiles.length),
+    regionsDirty: true,
+    regions: [],
+    yields: [],
     botDifficulty,
     graph: map.graph,
     tick: 0,
@@ -341,6 +389,7 @@ export function setTileOwner(state: GameState, tileId: number, to: number, recor
   const from = state.owners[tileId];
   if (from === to) return;
   const w = TERRAIN_GOLD_MILLI[state.map.terrain[tileId]];
+  state.regionsDirty = true;
   if (from !== NEUTRAL) {
     const p = state.players[from];
     p.tiles -= 1;
@@ -357,6 +406,7 @@ export function setTileOwner(state: GameState, tileId: number, to: number, recor
       const arr = state.players[from].baseTiles;
       const i = arr.indexOf(tileId);
       if (i >= 0) arr.splice(i, 1);
+      if (to !== NEUTRAL) state.players[from].lastBaseLostTo = to;
     }
     if (to !== NEUTRAL) {
       const arr = state.players[to].baseTiles;
@@ -396,6 +446,7 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     calmTicks: 0,
     halted: false,
     returnBaseTileId: null,
+    pendingPosture: null,
     ...partial,
   };
 }

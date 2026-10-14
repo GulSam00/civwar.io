@@ -9,9 +9,10 @@
  *   1/2/3        삼각 메뉴가 떠 있을 때 병종 선택 (창/검/기)
  *   바깥 클릭 · 우클릭 · Esc = 출전 취소
  *   Q/E, [/]     발령 비율 −/+10% (하단 바)
- *   좌클릭 깃발   선택 (내 깃발이면 조작 가능)
- *   깃발 선택 + 내 기지 클릭 = 그 기지로 귀환 (cmd_flag_recall.baseTileId, A-61) · 적/중립 기지 클릭 = 재지정
- *   깃발 선택 + 우클릭 = 재지정 · 다른 곳 클릭 = 선택 해제
+ *   좌클릭 깃발   선택 (내·적·동맹 모두 — 우측 정보 패널에 공격력·방어력). 병력 바 위 내 부대 칩 클릭 = 선택 + 카메라 이동
+ *   내 깃발 선택 + 우클릭 = 항상 이동 (2026-10-14): 내 기지·내 땅 = 그 자리로 가서 방어, 적·중립 = 공격 — 태세는 서버가 도착지로 정한다
+ *                 (예전 "선택 + 내 기지 좌클릭 = 귀환"은 폐기 — 귀환은 선택 부대 옆 [귀환] 버튼 / R)
+ *   깃발 선택 중 맵 좌클릭 = 선택 해제 (출전 메뉴는 열지 않는다)
  *   F          선택 깃발 태세 전환      R  선택 깃발 회수(자동 귀환지)      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
  *   T 테크 · P 외교 · O 옵션 창 · C 색각 보조 · V 이동 방향 화살표(모두→내 것만→숨김) · ? 도움말 (React 패널 — Interaction 플래그)
@@ -404,7 +405,7 @@ export class GameInputController {
 
   /**
    * 좌클릭 (드래그 아님) — 테스트에서도 직접 호출. alt = Alt+클릭 (깃발이 겹친 내 기지를 출전 기지로 고를 때)
-   * 우선순위: 삼각 메뉴(캔버스 클릭 = 바깥 = 취소) > 기지→커서 화살표(지점 확정) > 선택한 내 깃발 + 기지(귀환/재지정)
+   * 우선순위: 삼각 메뉴(캔버스 클릭 = 바깥 = 취소) > 기지→커서 화살표(지점 확정) > Alt+내 기지(출전 기지)
    *          > 깃발 선택 > 선택 해제 > 내 기지(화살표 시작) > 지점(최근접 기지 + 삼각 메뉴)
    */
   click(sx: number, sy: number, alt = false): void {
@@ -417,21 +418,8 @@ export class GameInputController {
       if (alt && this.isMyBase(tile)) return this.beginAim(tile); // Alt+다른 내 기지 = 출발 기지 바꾸기
       return this.beginPick(tile, is.base);
     }
-    const g = this.store.game;
     const sel = this.ix.selectedFlagId;
-    if (!alt && tile >= 0 && g?.bases.has(tile) && this.myFlag(sel) && this.canCommand()) {
-      const f = g.flags.get(sel!)!;
-      if (f.state === 'RETURNING') {
-        this.store.toast('귀환 중 — 취소할 수 없습니다', 'info', 1800);
-        return;
-      }
-      // 내 기지 = 그 기지로 귀환(A-61), 적·중립 기지 = 재지정 (GDD v4.2 프론트 체크리스트 4)
-      if (this.isMyBase(tile)) this.store.recall(sel!, tile);
-      else this.store.retarget(sel!, tile);
-      this.ix.selectedFlagId = null;
-      this.ix.bump();
-      return;
-    }
+    // 2026-10-14: 선택 깃발 + 기지 좌클릭(귀환/재지정)은 폐기 — 이동은 우클릭(moveSelectedTo), 귀환은 [귀환] 버튼·R
     if (alt && this.isMyBase(tile)) return this.beginAim(tile);
     const hit = this.renderer.flagAt(sx, sy);
     if (hit !== null) {
@@ -451,12 +439,58 @@ export class GameInputController {
 
   private onContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    if (this.ix.issue) return this.cancelIssue();
+    if (this.ix.issue) return this.cancelIssue(); // 출전 중 우클릭 = 취소
     const p = this.local(e);
-    const tile = this.pixelToTileId(p.x, p.y);
-    if (tile >= 0 && this.myFlag(this.ix.selectedFlagId) && this.canCommand()) {
-      this.store.retarget(this.ix.selectedFlagId!, tile);
+    this.rightClickTile(this.pixelToTileId(p.x, p.y));
+  }
+
+  /**
+   * 우클릭 라우팅 (테스트에서도 직접 호출). 내 깃발이 선택돼 있으면 어디든 "이동" — 내 기지도 귀환이 아니라 기지 위 방어.
+   * 반환: 보낸 명령 종류 (없으면 null)
+   */
+  rightClickTile(tile: number): 'move' | null {
+    if (this.ix.issue) {
+      this.cancelIssue();
+      return null;
     }
+    const id = this.ix.selectedFlagId;
+    if (tile < 0 || !this.myFlag(id) || !this.canCommand()) return null;
+    const f = this.store.game!.flags.get(id!)!;
+    if (f.state === 'RETURNING') {
+      this.store.toast('귀환 중 — 취소할 수 없습니다', 'info', 1800);
+      return null;
+    }
+    this.store.moveFlag(id!, tile);
+    return 'move';
+  }
+
+  /** 깃발 선택 + 카메라를 그 깃발로 (병력 바 위 내 부대 칩) */
+  focusFlag(id: number): void {
+    const g = this.store.game;
+    const f = g?.flags.get(id);
+    if (!f) return;
+    this.ix.selectedFlagId = id;
+    if (this.ix.issue) this.ix.issue = null;
+    const topo = this.renderer.topo;
+    const w = this.renderer.flagWorld.get(id) ?? topo?.tileCenter(f.posTileId);
+    if (w) {
+      this.store.setFollowSilently(null);
+      this.renderer.camera.cx = w.x;
+      this.renderer.camera.cy = w.y;
+      this.clamp();
+    }
+    this.ix.bump();
+  }
+
+  /** 선택한 깃발의 화면 위치 (보간 위치 — 떠 있는 [귀환]/[태세 변경] 버튼 자리). 없으면 null */
+  selectedFlagScreenPos(): { x: number; y: number } | null {
+    const id = this.ix.selectedFlagId;
+    if (id === null) return null;
+    const f = this.store.game?.flags.get(id);
+    const topo = this.renderer.topo;
+    if (!f || !topo) return null;
+    const w = this.renderer.flagWorld.get(id) ?? topo.tileCenter(f.posTileId);
+    return worldToScreen(this.renderer.camera, w.x, w.y);
   }
 
   private onWheel(e: WheelEvent): void {

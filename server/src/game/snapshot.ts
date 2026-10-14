@@ -9,6 +9,7 @@ import {
   ENDGAME_RUSH_TICK,
   HARD_TIMEOUT_TICK,
   PLAYER_DELTA_INTERVAL,
+  PRODUCTION_DELTA_INTERVAL,
   POSTURE,
   THRESHOLD_DECAY_PER_MIN_PERMILLE,
   THRESHOLD_DECAY_START,
@@ -20,6 +21,7 @@ import {
   type FlagSnapshot,
   type FlagState,
   type PlayerDelta,
+  type PlayerProduction,
   type PlayerSnapshot,
   type S2C_MapInit,
   type S2C_MatchConfig,
@@ -28,7 +30,7 @@ import {
 } from '@civwar/shared';
 import * as SHARED from '@civwar/shared';
 import { flagCap } from './economy.js';
-import type { Flag, GameState, PlayerState } from './state.js';
+import { baseProdPm, type Flag, type GameState, type PlayerState } from './state.js';
 import { thresholdPct } from './victory.js';
 
 export function hpPct(hpMilli: number): number {
@@ -82,6 +84,26 @@ export function buildMapInit(state: Readonly<GameState>): S2C_MapInit {
     terrain: rleEncode(m.terrain),
     spawns: m.spawns.map((s) => ({ playerId: s.playerId, tileId: s.tileId, homeTileId: s.homeTileId })),
     bases: m.baseTiles.slice(),
+    baseNames: state.baseNames.slice(),
+  };
+}
+
+/** v4.4 (§21): milli/tick → milli/초 (TICK_MS 200 → ×5) */
+const perSec = (milliPerTick: number): number => Math.floor((milliPerTick * 1000) / TICK_MS);
+
+/** v4.4 (§21): 플레이어 생산 내역 (직전 2단계 정산 state.yields). 탈락자·아직 정산 전 = regions [] */
+export function playerProduction(state: Readonly<GameState>, id: number): PlayerProduction {
+  const ys = state.players[id]?.alive ? (state.yields[id] ?? []) : [];
+  return {
+    playerId: id,
+    regions: ys.map((y) => ({
+      baseTileId: y.baseTileId >= 0 ? y.baseTileId : null,
+      tiles: y.tiles,
+      prodPm: y.prodPm,
+      troopsPerSecMilli: perSec(y.troopsMilli),
+      goldGrossPerSecMilli: perSec(y.goldGrossMilli),
+      goldNetPerSecMilli: perSec(y.goldNetMilli),
+    })),
   };
 }
 
@@ -137,6 +159,7 @@ function flagSnap(f: Readonly<Flag>): FlagSnapshot {
     breakaway: f.breakaway,
     halted: f.halted,
     returnBaseTileId: f.returnBaseTileId,
+    pendingPosture: f.pendingPosture,
   };
 }
 
@@ -148,7 +171,7 @@ export function buildSnapshotFull(state: Readonly<GameState>): S2C_SnapshotFull 
     owners: rleEncode(state.owners),
     players: state.players.filter(Boolean).map(playerSnap),
     flags: state.flags.map(flagSnap),
-    bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b.hpMilli) })),
+    bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b.hpMilli), prodPm: baseProdPm(b) })),
     alliances: state.alliances.map((a) => ({ a: a.a, b: a.b, state: a.state, sinceTick: a.sinceTick, breakAtTick: a.breakAtTick })),
     thresholdPct: thresholdPct(t),
     ticksRemaining: Math.max(0, HARD_TIMEOUT_TICK - t),
@@ -156,6 +179,7 @@ export function buildSnapshotFull(state: Readonly<GameState>): S2C_SnapshotFull 
     allyProposals: state.proposals.map((p) => ({ proposalId: p.id, fromPlayerId: p.from, toPlayerId: p.to, expireTick: p.expireTick })),
     allianceFreezeUntilTick: state.allianceFreezeUntilTick,
     lockoutDissolveTick: state.lockoutDissolveTick,
+    production: state.players.filter(Boolean).map((p) => playerProduction(state, p.id)),
   };
 }
 
@@ -167,7 +191,8 @@ export function flagBits(f: Readonly<Flag>): number {
     (f.disengageUntilTick !== null ? FLAG_BIT.DISENGAGING : 0) |
     (f.breakaway ? FLAG_BIT.BREAKAWAY : 0) |
     (f.stalled ? FLAG_BIT.STALLED : 0) |
-    (f.halted ? FLAG_BIT.HALTED : 0)
+    (f.halted ? FLAG_BIT.HALTED : 0) |
+    (f.pendingPosture !== null ? FLAG_BIT.POSTURE_PENDING : 0)
   );
 }
 
@@ -185,6 +210,8 @@ export class DeltaTracker {
   private flagProg = new Map<number, number>();
   private flagRetBase = new Map<number, number | null>();
   private baseHp = new Map<number, number>();
+  private baseProd = new Map<number, number>();
+  private production = new Map<number, string>();
   private threshold = -1;
 
   constructor(state: Readonly<GameState>) {
@@ -211,6 +238,10 @@ export class DeltaTracker {
     }
     this.baseHp.clear();
     for (const b of state.bases) this.baseHp.set(b.tileId, hpPct(b.hpMilli));
+    this.baseProd.clear();
+    for (const b of state.bases) this.baseProd.set(b.tileId, baseProdPm(b));
+    this.production.clear();
+    for (const p of state.players) if (p) this.production.set(p.id, JSON.stringify(playerProduction(state, p.id)));
     this.threshold = thresholdPct(state.tick);
   }
 
@@ -229,6 +260,8 @@ export class DeltaTracker {
       flagsGone: state.changes.flagsGone.slice(),
       flagFlags: [],
       flagReturnBase: [],
+      baseProd: [],
+      production: [],
     };
     if (t % PLAYER_DELTA_INTERVAL === 0) {
       for (const p of state.players) {
@@ -288,6 +321,26 @@ export class DeltaTracker {
         if (this.baseHp.get(b.tileId) !== pct) {
           this.baseHp.set(b.tileId, pct);
           d.baseHp.push([b.tileId, pct]);
+        }
+      }
+    }
+    if (t % BASE_HP_DELTA_INTERVAL === 0) {
+      for (const b of state.bases) {
+        const pm = baseProdPm(b);
+        if (this.baseProd.get(b.tileId) !== pm) {
+          this.baseProd.set(b.tileId, pm);
+          d.baseProd!.push([b.tileId, pm]);
+        }
+      }
+    }
+    if (t % PRODUCTION_DELTA_INTERVAL === 0) {
+      for (const p of state.players) {
+        if (!p) continue;
+        const pp = playerProduction(state, p.id);
+        const key = JSON.stringify(pp);
+        if (this.production.get(p.id) !== key) {
+          this.production.set(p.id, key);
+          d.production!.push(pp);
         }
       }
     }

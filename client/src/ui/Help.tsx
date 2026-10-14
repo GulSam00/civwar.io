@@ -19,6 +19,7 @@ import {
   TICK_MS,
 } from '@civwar/shared';
 import { UnitIcon } from './unitIcons.js';
+import { isNarrowScreen, useDraggableWindow } from './draggable.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
@@ -34,11 +35,12 @@ export function Help({ onClose }: { onClose: () => void }) {
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
   }, [onClose]);
+  const drag = useDraggableWindow<HTMLElement>('help', !isNarrowScreen());
   const decaySec = Math.round((1000 / PROGRESS_DECAY_MILLI_PER_TICK) * TICK_MS / 1000);
   return (
     <div className="overlay help-overlay" onClick={onClose}>
-      <article className="help" onClick={(e) => e.stopPropagation()}>
-        <header className="help-head">
+      <article ref={drag.ref} style={drag.style} className="help" onClick={(e) => e.stopPropagation()}>
+        <header className="help-head drag-handle" {...drag.handleProps}>
           <h2>규칙 도움말</h2>
           <button className="btn" onClick={onClose}>
             닫기 <kbd>Esc</kbd>
@@ -66,7 +68,12 @@ export function Help({ onClose }: { onClose: () => void }) {
             <li>
               <kbd>Q</kbd>/<kbd>E</kbd>(하단 바)로 보낼 병력 비율을 바꿉니다. 공격 깃발은 가는 길 옆의 적·중립 칸을 모두 먹으며 나아갑니다(붉은 음영이 미리 보여 줍니다).
             </li>
-            <li>깃발을 클릭해 선택한 뒤 우클릭하면 목적지를 바꾸고(재지정), <kbd>R</kbd>로 회수합니다. 깃발을 선택한 채 내 기지를 클릭하면 그 기지로 귀환합니다(귀환은 취소할 수 없음). 회수하면 남은 병력의 {FLAG_RECALL_REFUND_PERMILLE / 10}%가 돌아옵니다.</li>
+            <li>
+              깃발(내 것·적·동맹 모두)을 클릭하면 노란 고리로 선택되고, 오른쪽 아래 정보 창에 <b>공격력·방어력</b>(병종 기본 × 테크, 지형 보정 제외)이 나옵니다. 출전한 내 부대는 하단 병력 바 위에 칩(병종·병력·태세)으로 보이고, 칩을 누르면 그 부대를 선택하고 화면을 옮깁니다(<kbd>Tab</kbd>도 같음).
+            </li>
+            <li>
+              내 부대를 선택한 채 <b>우클릭하면 그곳으로 이동</b>합니다. 내 땅·내 기지면 그 자리로 가서 방어하고, 적·중립 땅이면 공격합니다 — 태세는 도착 지점으로 자동으로 정해집니다. 선택한 부대 옆에 뜨는 <b>[귀환]</b>(<kbd>R</kbd>, 가까운 내 기지로 — 취소할 수 없음)·<b>[태세 변경]</b>(<kbd>F</kbd>, 쿨타임 표시) 버튼으로도 명령합니다. 회수하면 남은 병력의 {FLAG_RECALL_REFUND_PERMILLE / 10}%가 돌아옵니다.
+            </li>
             <li>
               <b><UnitIcon unit={0} withName /></b>(창)은 느리지만 방어에 강하고, <b><UnitIcon unit={2} withName /></b>(말굽)은 빠르고 공격에 강하지만 방어에 약합니다. <b><UnitIcon unit={1} withName /></b>(검)은 그 사이입니다. 맵의 깃발 표식 가운데에도 같은 아이콘이 그려집니다.
             </li>
@@ -125,7 +132,7 @@ export function Help({ onClose }: { onClose: () => void }) {
         <section>
           <h3>기지</h3>
           <p>
-            사각형 표식이 기지입니다(이중 테두리 = 수도). 기지는 깃발의 출발점이고 보급선 기준입니다. 기지 칸은 바로 점령되지 않고 체력(위쪽 바)을 깎아야 함락됩니다.
+            칸을 꽉 채운 사각형이 기지입니다(십자 = 일반 기지, 금색 테두리 + 별 = 수도). 영토 한가운데에는 그 플레이어의 이름이 떠 있습니다. 기지는 깃발의 출발점이고 보급선 기준입니다. 기지 칸은 바로 점령되지 않고 체력(위쪽 바)을 깎아야 함락됩니다.
             함락되면 체력 절반으로 새 주인에게 넘어갑니다.
           </p>
         </section>
@@ -168,8 +175,8 @@ export function Help({ onClose }: { onClose: () => void }) {
         <section>
           <h3>조작 요약</h3>
           <p className="keys">
-            지점(또는 기지 → 지점) 클릭 → 삼각 메뉴 병종(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>) 출전 · 깃발 선택 + 내 기지 클릭 귀환 · <kbd>Q</kbd>/<kbd>E</kbd> 비율 · 깃발 클릭 선택 · 우클릭 재지정 · <kbd>F</kbd> 태세 ·{' '}
-            <kbd>R</kbd> 회수 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크(노드 클릭 → 상세 → 구매, <kbd>Esc</kbd> 닫기) · <kbd>P</kbd> 외교 · <kbd>O</kbd> 옵션(톱니 버튼) · <kbd>C</kbd> 색각 보조 · <kbd>V</kbd> 이동 방향 화살표(모두 → 내 깃발만 → 숨김) · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
+            지점(또는 기지 → 지점) 클릭 → 삼각 메뉴 병종(<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>) 출전 · <kbd>Q</kbd>/<kbd>E</kbd> 비율 · 깃발 클릭(또는 병력 바 위 칩) 선택 · 내 부대 선택 + 우클릭 이동 · <kbd>F</kbd> 태세 ·{' '}
+            <kbd>R</kbd> 귀환 · 창 제목 줄 드래그 = 창 옮기기 · <kbd>Tab</kbd> 내 깃발 · <kbd>T</kbd> 테크(노드 클릭 → 상세 → 구매, <kbd>Esc</kbd> 닫기) · <kbd>P</kbd> 외교 · <kbd>O</kbd> 옵션(톱니 버튼) · <kbd>C</kbd> 색각 보조 · <kbd>V</kbd> 이동 방향 화살표(모두 → 내 깃발만 → 숨김) · <kbd>H</kbd> 수도 · <kbd>0</kbd> 전체 지도 · 드래그/WASD 이동 · 휠 확대 · 미니맵 클릭 이동
           </p>
         </section>
       </article>

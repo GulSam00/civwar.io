@@ -2,6 +2,7 @@
  * 깃발 대 깃발 전투 (GDD 4.15) — 4a(Phase A, 읽기 전용) / 4b(Phase B, flagId ASC 적용).
  */
 import {
+  COMBAT_BASE_DEF_PERMILLE,
   COMBAT_LOSS_BP,
   COMBAT_LOSS_FLOOR_BP,
   COMBAT_MIN_LOSS_MILLI,
@@ -83,6 +84,7 @@ function engagedPair(state: Readonly<GameState>, f: Readonly<Flag>, g: Readonly<
 
 /**
  * 실효 전투값 v(f) (4.15 d·e·g) — permille, 단계마다 floor, 최소 1.
+ * v4.4: 방어 태세 지형 항 = 내 기지 칸이면 1500, 아니면 COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[지형].
  * v4.3: 테크 배율 = techCombatPm — 공격 태세 COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 COMBAT_DEF + COMBAT_DEF_<unit>
  *   (구 MIL_COMBAT 은 공·방 동시였다). 최대 1300 × 1600/1000 × 1140/1000 = 2371.
  * 물 위: 상대 편에 땅 위 적이 있으면 × LANDING_COMBAT(무테크 800, MOB-3B 950), 물 대 물은 ×1000 고정([A-75] 보너스 폐기).
@@ -92,7 +94,14 @@ export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, group: 
   let v: number;
   if (f.posture === POSTURE.ATTACK) v = UNIT_ATK_PERMILLE[f.unit];
   else {
-    const td = isClaimable(terrain[f.posTileId]) ? COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[terrain[f.posTileId]] : 1000;
+    // v4.4 (§21, 사용자 2026-10-14): 내 기지 칸(수도 포함) 위 방어 태세 = 지형 보정 대신 COMBAT_BASE_DEF_PERMILLE (대체, 곱하지 않음)
+    const pos = f.posTileId;
+    const td =
+      state.map.isBase[pos] && state.owners[pos] === f.ownerId
+        ? COMBAT_BASE_DEF_PERMILLE
+        : isClaimable(terrain[pos])
+          ? COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[terrain[pos]]
+          : 1000;
     v = Math.floor((UNIT_DEF_PERMILLE[f.unit] * td) / 1000);
   }
   const owner = state.players[f.ownerId];

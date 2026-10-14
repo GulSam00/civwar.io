@@ -16,6 +16,8 @@ import {
   BASE_HP_MAX_MILLI,
   BASE_HP_REGEN_MILLI,
   BASE_REGEN_DELAY_TICK,
+  BASE_PROD_MAX_PERMILLE,
+  BASE_PROD_RECOVER_PER_MIN_PERMILLE,
   DISCONNECT_GRACE_TICK,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENDGAME_RUSH_TICK,
@@ -36,11 +38,12 @@ import { removeFlag } from './flagops.js';
 import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 import { stage4_moveFlags } from './movement.js';
 import { destOf, fieldKey, shallowPmOf } from './rules.js';
-import { garrisonUpkeepPermille, grossGoldMilliPerTick, regenMilliPerTick, troopCap } from './economy.js';
+import { troopCap } from './economy.js';
+import { computeProduction } from './production.js';
 import { newOutbox, type Outbox } from './outbox.js';
 import { DeltaTracker, buildSnapshotFull } from './snapshot.js';
 import { compareRank, judgeVictory, thresholdPct, thresholdScaled } from './victory.js';
-import type { GameState } from './state.js';
+import { NEUTRAL, setTileOwner, type GameState } from './state.js';
 
 // Phase A 결과 타입은 각 모듈에 있다: FlagCombatPlan(combat.ts) / PushPlan(gauge.ts)
 export type { FlagCombatPlan } from './combat.js';
@@ -63,13 +66,21 @@ export const IdleBot: BotBrain = { decide: () => [] };
 
 // ───────────────────── 단계 함수 ─────────────────────
 
-/** 2. 자원 생산 — playerId ASC. 병력(√tiles) / 골드(그로스 → 유지비 차감 → 순증) */
+/**
+ * 2. 자원 생산 — playerId ASC. 병력(√tiles) / 골드(그로스 → 유지비 차감 → 순증).
+ * v4.4 (§21): 생산 지역별 기지 생산력을 곱한다 (production.ts — 생산력이 전부 1000 이면 기존 값과 같다). 내역은 state.yields 에.
+ */
 export function stage2_produce(state: GameState): void {
   for (let id = 1; id < state.players.length; id++) {
     const p = state.players[id];
-    if (!p.alive) continue;
+    if (!p.alive) {
+      state.yields[id] = [];
+      continue;
+    }
+    const prod = computeProduction(state, p);
+    state.yields[id] = prod.yields;
     // 병력 (3.2) — troops = min(troops + regen, cap). cap 초과분(환급·영토 상실)은 잘리고 장부 capClamp 로 기록
-    const regen = regenMilliPerTick(p);
+    const regen = prod.regenMilli;
     p.troopsMilli += regen;
     state.ledger.regen += regen;
     const capMilli = troopCap(p) * 1000;
@@ -78,10 +89,8 @@ export function stage2_produce(state: GameState): void {
       p.troopsMilli = capMilli;
     }
     // 골드 (3.3) — 유지비는 9단계(직전 tick)의 주둔 상태를 읽는다
-    const gross = grossGoldMilliPerTick(p);
-    const upkeepPm = garrisonUpkeepPermille(state, p);
-    const net = gross - Math.floor((gross * upkeepPm) / 1000);
-    p.upkeepPm = upkeepPm;
+    const net = prod.netMilli;
+    p.upkeepPm = prod.upkeepPm;
     p.goldMilli += net;
     p.goldEarnedMilli += net;
   }
@@ -112,6 +121,10 @@ export function stage3_timers(state: GameState, t: number, out: Outbox): void {
 /** 8. 기지 체력 회복 — tileId ASC. 이번 tick 피해 없음 + 지연 경과한 기지만 */
 export function stage8_baseRegen(state: GameState, t: number): void {
   for (const b of state.bases) {
+    // v4.4 [A-85]: 생산력 선형 회복 (피해·소유와 무관, 매 tick)
+    if (b.prodScaled < BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN) {
+      b.prodScaled = Math.min(BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN, b.prodScaled + BASE_PROD_RECOVER_PER_MIN_PERMILLE);
+    }
     if (b.damagedThisTick) {
       b.damagedThisTick = false;
       continue;
@@ -135,13 +148,28 @@ export function stage11_bots(state: GameState, t: number, brain: BotBrain): { pl
   return res;
 }
 
-/** 12. 탈락 판정 (4.14) */
+/**
+ * 12. 탈락 판정 (4.14) — v4.4 (§21, 사용자 2026-10-14): **기지(수도 포함)를 모두 잃으면 즉시 멸망**하고,
+ * 남은 영토 전부를 멸망시킨 플레이어(마지막 기지를 점령한 쪽 = lastBaseLostTo)가 합병한다. 깃발은 전부 소멸(환불 없음).
+ * 구 규칙(타일 0 → 탈락)은 이 규칙에 포함된다(타일 0 ⇒ 기지 0). playerId ASC.
+ * 합병 대상이 이미 멸망했으면 그를 멸망시킨 플레이어로 거슬러 올라가고(같은 tick 연쇄), 끝내 생존자가 없으면 중립으로 돌린다.
+ */
 export function stage12_elimination(state: GameState, t: number, out: Outbox): void {
   for (let id = 1; id < state.players.length; id++) {
     const p = state.players[id];
-    if (!p.alive || p.tiles !== 0) continue;
+    if (!p.alive || (p.baseTiles.length > 0 && p.tiles > 0)) continue;
+    const by = resolveConqueror(state, id, p.lastBaseLostTo ?? p.lastLostTo);
+    // 합병: 남은 칸 전부 (기지는 이미 없다). setTileOwner 경유 → tileChanges 델타·파생값·생산 지역 무효화
+    let annexed = 0;
+    const to = by ?? NEUTRAL;
+    for (let tile = 0; tile < state.owners.length; tile++) {
+      if (state.owners[tile] !== id) continue;
+      setTileOwner(state, tile, to);
+      if (by !== null) annexed++;
+    }
     p.alive = false;
     p.eliminatedTick = t;
+    p.conqueredBy = by;
     state.ledger.eliminated += p.troopsMilli;
     p.troopsMilli = 0;
     p.goldMilli = 0;
@@ -154,8 +182,21 @@ export function stage12_elimination(state: GameState, t: number, out: Outbox): v
     }
     // 모든 동맹·제안 즉시 해제 (쿨다운 없이)
     dropPlayerDiplomacy(state, id, t, out);
-    out.broadcast.push({ type: 'player_eliminated', tick: t, playerId: id, byPlayerId: p.lastLostTo });
+    out.broadcast.push({ type: 'player_eliminated', tick: t, playerId: id, byPlayerId: by, annexedTiles: annexed });
   }
+}
+
+/** 합병 받을 생존 플레이어 — 후보가 멸망했으면 conqueredBy 를 따라간다. 없으면 null */
+function resolveConqueror(state: GameState, victim: number, cand: number | null): number | null {
+  let c = cand;
+  for (let guard = 0; c !== null && guard < state.players.length; guard++) {
+    if (c === victim || c === NEUTRAL) return null;
+    const q = state.players[c];
+    if (!q) return null;
+    if (q.alive) return c;
+    c = q.conqueredBy;
+  }
+  return null;
 }
 
 /** 13. 승리 판정 (6.1). game_over 메시지는 14단계 스냅샷 뒤에 송신되도록 반환만 한다 */

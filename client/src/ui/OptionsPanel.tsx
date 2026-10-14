@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import type { GameInputController } from '../input/controller.js';
 import { DIRECTION_MODE_NAME, TOOLTIP_FIELDS, TOOLTIP_FIELD_NAME, type DirectionMode } from './options.js';
 import { usePolled } from './hooks.js';
+import { isNarrowScreen, useDraggableWindow } from './draggable.js';
 
 export function OptionsLayer({ ctl }: { ctl: GameInputController }) {
   usePolled(() => ctl.ix.version, 120);
@@ -21,11 +22,12 @@ function OptionsPanel({ ctl, onClose }: { ctl: GameInputController; onClose: () 
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
   }, [onClose]);
+  const drag = useDraggableWindow<HTMLDivElement>('options', !isNarrowScreen());
   const o = ctl.ix.options;
   return (
     <div className="overlay options-overlay" onMouseDown={onClose}>
-      <div className="options" role="dialog" aria-modal="true" aria-labelledby="options-title" onMouseDown={(e) => e.stopPropagation()}>
-        <header className="options-head">
+      <div ref={drag.ref} style={drag.style} className="options" role="dialog" aria-modal="true" aria-labelledby="options-title" onMouseDown={(e) => e.stopPropagation()}>
+        <header className="options-head drag-handle" {...drag.handleProps}>
           <h2 id="options-title">옵션</h2>
           <button className="btn btn-sm" onClick={onClose}>
             닫기 <kbd>Esc</kbd>

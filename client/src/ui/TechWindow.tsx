@@ -4,7 +4,7 @@
  * 노드 상태 5종(techTree.ts)은 색 + 테두리 모양 + 기호로 구분(색각 보조). 구매는 상세 패널의 버튼으로만(cmd_buy_tech{nodeId}).
  * 보는 플레이어 = store.viewerId (관전·탈락·종료 후 따라가기 대상의 트리도 볼 수 있다, 구매는 나만·명령 가능할 때만).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TECH_BRANCH_COUNT, TECH_BRANCH_NAME, type TechNodeDef, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameInputController } from '../input/controller.js';
@@ -13,6 +13,7 @@ import { goldPerSecond, techNodes } from './techInfo.js';
 import { fmtWait, secondsToAfford, techAncestors, techDetailRows, techLayout, techNodeViews, techPriceInfo, techScopeText, purchasableByBranch, type TechNodeState, type TechNodeView } from './techTree.js';
 import { StateGlyph, TechIcon } from './techIcons.js';
 import { UnitIcon } from './unitIcons.js';
+import { useDraggableWindow } from './draggable.js';
 
 /** 갈래 색 (어두운 패널 #1c2733 위 대비 4.5:1 이상). 병종 3갈래는 공통 강철 회색 + 병종 미니 기호 (01b 5.1) */
 export const TECH_BRANCH_COLOR = ['#e8826a', '#e6b93f', '#62c472', '#62aef2', '#aab7c5', '#aab7c5', '#aab7c5'] as const;
@@ -36,7 +37,9 @@ function closeTech(ctl: GameInputController): void {
 
 export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputController; narrow: boolean }) {
   usePolled(() => ctl.ix.version * 1_000_003 + (store.game?.version ?? 0) * 31 + store.pendingTechNodes().size + store.getVersion() * 7, 150);
-  const rootRef = useRef<HTMLDivElement>(null);
+  // 2026-10-14: 제목 줄 드래그 (좁은 화면 시트는 고정)
+  const drag = useDraggableWindow<HTMLDivElement>('tech', !narrow);
+  const rootRef = drag.ref;
   const [hover, setHover] = useState<number | null>(null);
   const open = ctl.ix.panel === 'tech';
 
@@ -74,7 +77,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
   const nodes = techNodes(consts);
 
   const head = (
-    <div className="tw-head">
+    <div className="tw-head drag-handle" {...drag.handleProps}>
       <b>테크</b>
       {viewer && !mine && <span className="tw-who">{store.nicknameOf(viewer.id)}의 트리 · 보기 전용</span>}
       {viewer && mine && !canBuy && <span className="tw-who">{over ? '게임 종료 · 보기 전용' : '보기 전용'}</span>}
@@ -93,7 +96,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
 
   if (!viewer) {
     return (
-      <div ref={rootRef} className={`tech-window ${narrow ? 'tw-narrow' : ''}`} role="dialog" aria-label="테크">
+      <div ref={rootRef} className={`tech-window ${narrow ? 'tw-narrow' : ''}`} style={drag.style} role="dialog" aria-label="테크">
         {head}
         <p className="muted">순위표에서 플레이어 이름을 누르면 그 플레이어의 테크 트리가 보입니다.</p>
       </div>
@@ -122,7 +125,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
   );
 
   return (
-    <div ref={rootRef} className={`tech-window ${narrow ? 'tw-narrow' : ''}`} role="dialog" aria-label="테크 트리">
+    <div ref={rootRef} className={`tech-window ${narrow ? 'tw-narrow' : ''}`} style={drag.style} role="dialog" aria-label="테크 트리">
       {head}
       {narrow ? (
         <NarrowTree views={views} nodes={nodes} ctl={ctl} techCount={viewer.techCount} selectedId={selected?.node.id ?? null} onPick={pick} />

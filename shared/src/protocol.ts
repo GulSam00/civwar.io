@@ -374,6 +374,11 @@ export interface S2C_MapInit {
   terrain: Rle; // 값 도메인 0..6 (Terrain)
   spawns: SpawnInfo[];
   bases: number[]; // tileId 오름차순
+  /**
+   * v4.4 (§21, 추가만): 기지 지명 — bases 와 같은 순서·같은 길이(baseNames[i] = bases[i] 의 이름). 수도 포함, 매치 안에서 고유.
+   * 서버는 항상 싣는다 (TS 타입만 optional — 구 클라이언트 리터럴 호환)
+   */
+  baseNames?: string[];
 }
 
 export interface PlayerSnapshot {
@@ -422,12 +427,39 @@ export interface FlagSnapshot {
   halted?: boolean;
   /** v4.2 [A-61] (추가만): cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 자동. 서버는 항상 싣는다 */
   returnBaseTileId?: number | null;
+  /**
+   * v4.4 (§21, 추가만): 재지정이 정한 도착지 태세가 아직 적용되지 않았으면 그 태세(전투·이탈 대기·태세 쿨타임 중), 아니면 null.
+   * 조건이 풀리는 첫 tick 에 서버가 자동 적용(flag_posture_changed auto:true). 델타는 flagFlags 비트 POSTURE_PENDING(128). 서버는 항상 싣는다
+   */
+  pendingPosture?: Posture | null;
 }
 
 export interface BaseSnapshot {
   tileId: number;
   ownerId: number;
   hpPct: number;
+  /** v4.4 (§21, 추가만): 기지 생산력 ‰ (0..1000). 점령 시 ×0.5, 이후 선형 회복. 서버는 항상 싣는다 */
+  prodPm?: number;
+}
+
+/** v4.4 (§21): 생산 지역 하나 — 플레이어 땅 중 가장 가까운(내 땅만 밟는 그래프 거리) 내 기지에 속한 칸들 */
+export interface ProductionRegion {
+  /** 지역의 기지 tileId. null = "기타"(내 기지와 내 땅으로 이어지지 않은 칸) */
+  baseTileId: number | null;
+  tiles: number;
+  /** 적용된 생산력 ‰ (기타 = 1000) */
+  prodPm: number;
+  /** 이 지역 병력 재생 (milli 병력 / 초) — 병력/초 = 값 / 1000 */
+  troopsPerSecMilli: number;
+  /** 이 지역 그로스 골드 (milli 골드 / 초, 유지비 차감 전) */
+  goldGrossPerSecMilli: number;
+  /** 이 지역 순골드 (milli 골드 / 초, 유지비 차감 후) */
+  goldNetPerSecMilli: number;
+}
+/** v4.4 (§21): 플레이어별 생산 내역. regions = 기지 tileId 오름차순, "기타"(칸 있을 때만) 맨 끝. 지역 합 = 플레이어 총 생산 (정확히) */
+export interface PlayerProduction {
+  playerId: number;
+  regions: ProductionRegion[];
 }
 
 export interface AllianceSnapshot {
@@ -456,6 +488,8 @@ export interface S2C_SnapshotFull {
   allianceFreezeUntilTick: number | null;
   /** 2차 추가: lockout 카운트다운 중이면 강제 해제 tick */
   lockoutDissolveTick: number | null;
+  /** v4.4 (§21, 추가만): 플레이어별 생산 내역 (id ASC 전원, 탈락자는 regions []). 직전 2단계 정산값. 서버는 항상 싣는다 */
+  production?: PlayerProduction[];
 }
 export interface AllyProposalSnapshot {
   proposalId: number;
@@ -473,6 +507,8 @@ export const FLAG_BIT = {
   STALLED: 32,
   /** v4.2 (4.4a): 행군 중 정지 점령 */
   HALTED: 64,
+  /** v4.4 (§21): 재지정의 도착지 태세가 대기 중 (pendingPosture != null — 값은 현재 태세의 반대) */
+  POSTURE_PENDING: 128,
 } as const;
 
 export interface PlayerDelta {
@@ -502,6 +538,10 @@ export interface S2C_SnapshotDelta {
   flagFlags: [number, Posture, number, number][];
   /** v4.2 [A-61] (추가만): [flagId, returnBaseTileId|null] — 값이 바뀐 깃발만. 서버는 항상 싣는다(빈 배열 가능) */
   flagReturnBase?: [number, number | null][];
+  /** v4.4 (§21, 추가만): [tileId, prodPm] — BASE_HP_DELTA_INTERVAL(5) 마다 바뀐 기지만. 서버는 항상 싣는다(빈 배열 가능) */
+  baseProd?: [number, number][];
+  /** v4.4 (§21, 추가만): PRODUCTION_DELTA_INTERVAL(5) 마다 내역이 바뀐 플레이어만 (전체 교체). 서버는 항상 싣는다(빈 배열 가능) */
+  production?: PlayerProduction[];
 }
 
 export interface S2C_CmdAck {
@@ -550,7 +590,10 @@ export interface S2C_PlayerEliminated {
   type: 'player_eliminated';
   tick: number;
   playerId: number;
+  /** v4.4 (§21): 멸망시킨 플레이어 = 마지막 기지를 점령한 플레이어(합병 받는 쪽). 없으면 null (남은 땅은 중립) */
   byPlayerId: number | null;
+  /** v4.4 (§21, 추가만): byPlayerId 에게 넘어간 칸 수 (중립으로 돌아갔으면 0). 칸 변경 자체는 같은 tick snapshot_delta.tileChanges. 서버는 항상 싣는다 */
+  annexedTiles?: number;
 }
 export interface S2C_BotTakeover {
   type: 'bot_takeover';
@@ -726,6 +769,8 @@ export interface S2C_BaseCaptured {
   fromPlayerId: number;
   toPlayerId: number;
   newHpPct: number;
+  /** v4.4 (§21, 추가만): 점령 직후 생산력 ‰ (= 직전 값 × 0.5). 서버는 항상 싣는다 */
+  newProdPm?: number;
 }
 export interface S2C_AllyProposed {
   type: 'ally_proposed';

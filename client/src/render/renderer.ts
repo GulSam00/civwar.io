@@ -19,6 +19,17 @@ import type { RoutePreview } from '../input/route.js';
 import { drawGlyphParts, drawUnitGlyph } from './unitGlyphs.js';
 import { SHIELD_GLYPH, SWORD_GLYPH, combatPairs, declutter, glyphOf, pairGlyphKind, type CombatPair } from './combatPairs.js';
 import { UNIT_SHORT } from '../ui/text.js';
+import { layoutTerritoryLabels, territoryAnchors, type TerritoryAnchor } from './territoryLabels.js';
+
+/**
+ * 기지 부가 정보 (프로토콜 §21 예정 — 백엔드 작업 후 연결). 지금은 GameScreen 이 아무것도 넘기지 않아 그려지지 않는다.
+ *  productivityPct: 기지 생산력 0..100 (점령 직후 비었다가 차오르는 바 — 기지 칸 아래)
+ *  name: 지명 (수도·기지 아래 라벨)
+ */
+export interface BaseExtra {
+  productivityPct?: number;
+  name?: string;
+}
 
 export interface RenderView {
   me: number | null;
@@ -39,6 +50,8 @@ export interface RenderView {
   emotes: readonly { playerId: number; code: number; at: number }[];
   emoteText(code: number): string;
   nicknameOf(id: number): string;
+  /** §21 예정: 기지 생산력·지명 (없으면 생략) */
+  baseExtra?(tile: number): BaseExtra | undefined;
 }
 
 interface FlagScreen {
@@ -76,6 +89,10 @@ export class GameRenderer {
   private previewPathKey = '';
   private previewPath: Path2D | null = null;
   private dpr = 1;
+  /** 영토 이름 기준점 — 영토가 바뀌었을 때만, 최대 LABEL_REFRESH_MS 에 한 번 다시 계산 */
+  private labelAnchors: TerritoryAnchor[] = [];
+  private labelsDirty = true;
+  private labelsAt = -Infinity;
   /** 마지막 프레임에 화면에 보인 깃발 위치 (미니맵·따라가기) */
   readonly flagWorld = new Map<number, Pt>();
 
@@ -90,6 +107,9 @@ export class GameRenderer {
     this.bordersDirty = true;
     this.interp.clear();
     this.progress.clear();
+    this.labelAnchors = [];
+    this.labelsDirty = true;
+    this.labelsAt = -Infinity;
     const cam = this.camera;
     const home = me !== null ? model.spawns.find((s) => s.playerId === me) : undefined;
     if (home) {
@@ -177,10 +197,58 @@ export class GameRenderer {
     }
     ctx.restore();
 
+    this.drawTerritoryNames(ctx, model, topo, view, now);
     this.drawBases(ctx, model, topo, view);
     this.drawRouteArrow(ctx, topo, view);
     this.drawFlags(ctx, model, topo, view, now);
     this.drawEmotes(ctx, model, topo, view);
+  }
+
+  /**
+   * 영토 이름 (2026-10-14) — 영토 한가운데(무게중심에 가장 가까운 자기 칸). 기준점 계산은 영토가 바뀌었을 때 최대 1초에 한 번,
+   * 화면 배치·겹침 정리는 매 프레임(플레이어 수만큼). 색각 보조면 플레이어 번호를 앞에 붙인다.
+   */
+  private drawTerritoryNames(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView, now: number): void {
+    if (this.labelsDirty && now - this.labelsAt >= LABEL_REFRESH_MS) {
+      this.labelAnchors = territoryAnchors(model.owners, topo.tileCount, (t) => topo.tileCenter(t), (t) => model.isLand(t));
+      this.labelsDirty = false;
+      this.labelsAt = now;
+    }
+    if (!this.labelAnchors.length) return;
+    const cam = this.camera;
+    const font = (size: number) => `800 ${size}px system-ui, "Malgun Gothic", sans-serif`;
+    // 기준점이 기지(대개 수도) 칸이거나 그 옆이면 이름을 기지 아이콘 아래로 내린다 (아이콘에 가리지 않게)
+    const s = baseIconSize(cam.zoom);
+    const baseCenters = model.baseTiles.map((t) => topo.tileCenter(t));
+    const placed = layoutTerritoryLabels(
+      this.labelAnchors.filter((a) => model.players.get(a.owner)?.alive ?? true),
+      (id) => (view.colorblind ? `${id}. ${view.nicknameOf(id)}` : view.nicknameOf(id)),
+      (x, y) => {
+        const p = worldToScreen(cam, x, y);
+        const nearBase = baseCenters.some((c) => Math.abs(c.x - x) <= 1.01 && Math.abs(c.y - y) <= 1.01);
+        return nearBase ? { x: p.x, y: p.y + s * 1.5 + 12 } : p;
+      },
+      cam.zoom,
+      (text, size) => {
+        ctx.font = font(size);
+        return ctx.measureText(text).width;
+      },
+      { w: cam.viewW, h: cam.viewH },
+    );
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    for (const l of placed) {
+      ctx.font = font(l.size);
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = Math.max(3, l.size * 0.22);
+      ctx.strokeStyle = 'rgba(8,12,18,0.8)';
+      ctx.strokeText(l.text, l.x, l.y);
+      ctx.fillStyle = l.owner === view.me ? '#ffffff' : '#eef2f6';
+      ctx.fillText(l.text, l.x, l.y);
+    }
+    ctx.restore();
   }
 
   /** 이모트 말풍선 — 그 플레이어의 수도(스폰) 위, 4초 동안 서서히 사라진다 */
@@ -227,10 +295,12 @@ export class GameRenderer {
       this.layerOwnersVersion = model.ownersVersion;
       model.dirtyTiles.length = 0;
       this.bordersDirty = true;
+      this.labelsDirty = true;
     } else if (model.dirtyTiles.length) {
       for (const t of model.dirtyTiles) layer.setColor(t, tileRgba(terrain[t], model.owners[t]));
       model.dirtyTiles.length = 0;
       this.bordersDirty = true;
+      this.labelsDirty = true;
     }
     layer.flush();
     if (this.bordersDirty && now - this.bordersBuiltAt > 180) {
@@ -399,13 +469,13 @@ export class GameRenderer {
     const cam = this.camera;
     const o = topo.tileCenter(view.issueBase);
     const bp = worldToScreen(cam, o.x, o.y);
-    const s = Math.max(8, Math.min(22, cam.zoom * 0.8));
+    const s = baseIconSize(cam.zoom);
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 180);
     ctx.save();
     ctx.strokeStyle = '#ffd600';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(bp.x, bp.y, s * 0.9 + 4 + pulse * 3, 0, Math.PI * 2);
+    ctx.arc(bp.x, bp.y, s * 0.75 + 5 + pulse * 3, 0, Math.PI * 2);
     ctx.stroke();
     const r = view.route;
     if (r && r.path.length > 1) {
@@ -455,54 +525,84 @@ export class GameRenderer {
     ctx.restore();
   }
 
+  /**
+   * 기지 (2026-10-14: 칸을 꽉 채운다). 일반 기지 = 소유자 색 칸 + 검은 테두리 + 십자,
+   * 수도 = 금색 바깥 테두리 + 안쪽 사각 + 별 (칸이 커도 한눈에 구분). 위 = 체력 바.
+   * §21 예정: 아래 = 생산력 바(baseExtra.productivityPct), 그 아래 = 지명(baseExtra.name).
+   */
   private drawBases(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
     const cam = this.camera;
-    const s = Math.max(8, Math.min(22, cam.zoom * 0.8));
+    const s = baseIconSize(cam.zoom);
     for (const tile of model.baseTiles) {
       const b = model.bases.get(tile);
       if (!b) continue;
       const c = topo.tileCenter(tile);
       const p = worldToScreen(cam, c.x, c.y);
-      if (p.x < -40 || p.y < -40 || p.x > cam.viewW + 40 || p.y > cam.viewH + 40) continue;
+      if (p.x < -s - 40 || p.y < -s - 40 || p.x > cam.viewW + s + 40 || p.y > cam.viewH + s + 40) continue;
       const capital = model.capitalTiles.has(tile);
+      const x0 = p.x - s / 2;
+      const y0 = p.y - s / 2;
       if (view.issueBase !== null && view.me !== null && b.ownerId === view.me && tile !== view.issueBase) {
         // 출전 중: 다른 내 기지(Alt+클릭으로 출발 기지 변경 가능)
         ctx.beginPath();
-        ctx.arc(p.x, p.y, s * 0.95, 0, Math.PI * 2);
+        ctx.rect(x0 - 4, y0 - 4, s + 8, s + 8);
         ctx.strokeStyle = 'rgba(255,214,0,0.55)';
         ctx.lineWidth = 2;
         ctx.stroke();
       }
+      const lw = Math.max(1.5, Math.min(3, s * 0.08));
       ctx.fillStyle = b.ownerId ? playerColor(b.ownerId) : '#f5f1e6';
+      ctx.fillRect(x0, y0, s, s);
+      ctx.lineWidth = lw;
       ctx.strokeStyle = '#111';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.rect(p.x - s / 2, p.y - s / 2, s, s);
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = b.ownerId ? 'rgba(255,255,255,0.9)' : '#555';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      if (capital) ctx.rect(p.x - s / 2 + 3, p.y - s / 2 + 3, s - 6, s - 6);
-      else {
-        ctx.moveTo(p.x - s / 4, p.y);
-        ctx.lineTo(p.x + s / 4, p.y);
-        ctx.moveTo(p.x, p.y - s / 4);
-        ctx.lineTo(p.x, p.y + s / 4);
+      ctx.strokeRect(x0, y0, s, s);
+      const mark = b.ownerId ? 'rgba(255,255,255,0.92)' : '#555';
+      if (capital) {
+        // 금색 바깥 테두리 (칸 밖으로 살짝) + 안쪽 사각 + 별
+        ctx.lineWidth = Math.max(2, lw);
+        ctx.strokeStyle = '#ffd54f';
+        ctx.strokeRect(x0 - lw, y0 - lw, s + lw * 2, s + lw * 2);
+        const k = Math.max(2.5, s * 0.16);
+        ctx.lineWidth = Math.max(1.2, lw * 0.7);
+        ctx.strokeStyle = mark;
+        ctx.strokeRect(x0 + k, y0 + k, s - 2 * k, s - 2 * k);
+        if (s >= 14) {
+          starPath(ctx, p.x, p.y, s * 0.24, s * 0.1);
+          ctx.fillStyle = b.ownerId ? '#ffd54f' : '#8a7a3a';
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+          ctx.stroke();
+        }
+      } else {
+        ctx.lineWidth = Math.max(1.5, s * 0.1);
+        ctx.strokeStyle = mark;
+        ctx.beginPath();
+        ctx.moveTo(p.x - s * 0.28, p.y);
+        ctx.lineTo(p.x + s * 0.28, p.y);
+        ctx.moveTo(p.x, p.y - s * 0.28);
+        ctx.lineTo(p.x, p.y + s * 0.28);
+        ctx.stroke();
       }
-      ctx.stroke();
-      const bw = Math.max(s * 1.4, 18);
-      const bh = 4;
+      const bw = Math.max(s, 18);
+      const bh = s >= 28 ? 5 : 4;
       const bx = p.x - bw / 2;
-      const by = p.y - s / 2 - bh - 3;
+      const by = y0 - bh - (capital ? 4 + lw : 3);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
       ctx.fillStyle = b.ownerId ? playerColor(b.ownerId) : '#ddd';
       ctx.fillRect(bx, by, (bw * Math.max(0, Math.min(100, b.hpPct))) / 100, bh);
-      if (capital && b.ownerId && cam.zoom >= 9) {
-        const name = view.colorblind ? `${b.ownerId}. ${view.nicknameOf(b.ownerId)}` : view.nicknameOf(b.ownerId);
-        this.label(ctx, name, p.x, p.y + s / 2 + 11, 11, '#fff');
+      // §21 예정 — 데이터가 오면 그린다 (지금은 baseExtra 가 없다)
+      const extra = view.baseExtra?.(tile);
+      let below = y0 + s + (capital ? 4 + lw : 3);
+      if (extra?.productivityPct !== undefined) {
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(bx - 1, below - 1, bw + 2, bh + 2);
+        ctx.fillStyle = '#ffd54f';
+        ctx.fillRect(bx, below, (bw * Math.max(0, Math.min(100, extra.productivityPct))) / 100, bh);
+        below += bh + 3;
       }
+      if (extra?.name && cam.zoom >= 9) this.label(ctx, extra.name, p.x, below + 7, 11, capital ? '#ffe9a8' : '#fff');
     }
   }
 
@@ -776,10 +876,20 @@ export class GameRenderer {
       ctx.stroke();
     }
     if (selected) {
+      // 선택 강조 (2026-10-14): 어두운 바탕 고리 + 노란 고리 + 천천히 퍼지는 바깥 고리
+      const pulse = (now % 1200) / 1200;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 6 + pulse * 8, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,214,0,${0.7 * (1 - pulse)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
       ctx.beginPath();
       ctx.arc(x, y, r + 5, 0, Math.PI * 2);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.lineWidth = 5.5;
+      ctx.stroke();
+      ctx.strokeStyle = '#ffd600';
+      ctx.lineWidth = 3;
       ctx.stroke();
     }
     ctx.beginPath();
@@ -938,6 +1048,28 @@ export class GameRenderer {
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
   }
+}
+
+/** 영토 이름 기준점 재계산 최소 간격 (ms) */
+export const LABEL_REFRESH_MS = 1000;
+
+/** 기지 아이콘 한 변 (화면 px) — 칸(zoom px)을 꽉 채운다. 아주 작은 줌에서도 10px 은 유지 */
+export function baseIconSize(zoom: number): number {
+  return Math.max(10, Math.min(64, zoom));
+}
+
+/** 다섯 꼭짓점 별 경로 */
+function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, outer: number, inner: number): void {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 === 0 ? outer : inner;
+    const px = cx + Math.cos(a) * rr;
+    const py = cy + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
 }
 
 function rank(f: FlagSnapshot, view: RenderView): number {

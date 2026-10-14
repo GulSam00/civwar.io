@@ -246,3 +246,34 @@ WS URL: `?ws=` 쿼리 → `VITE_WS_URL` → `ws(s)://<host>/ws`(Vite 프록시).
 - 테스트: `client/test/techTree.test.ts`(상태 5종·배지 수·가격·대기 시간·상세 수치 01b 예시 1365→1430 포함·격자 배치·아이콘 32개), `client/test/combatPairs.test.ts`(체비셰프 접촉·대각선 쌍·동맹/같은 주인/비전투 제외·2대1·같은 칸·아이콘 종류·겹침 제거).
 - 스크린샷: `_workspace/screenshots/v43-tech-tree-grid.jpg`, `v43-tech-detail-panel.jpg`, `v43-tech-phone-tabs.jpg`, `v43-combat-diagonal-sword-shield.jpg`, `v43-combat-zoomed-out-colorblind.jpg` (서버 8092 / Vite 5182, 봇 9 공개 방).
 - 프로토콜 불일치 의심 없음. 참고: 교전은 1~3초 안에 끝나는 경우가 많아 실제 화면에서 아이콘이 잠깐만 보인다(스크린샷은 클라이언트 수신을 잠시 멈춰 찍음).
+
+## 14. 2026-10-14 UI 요청 — 드래그 창 · 부대 공격력/방어력 · 내 부대 칩 · 우클릭 = 이동 · 큰 기지 · 영토 이름
+
+server/·shared/ 는 손대지 않았다 (백엔드 §21 병행 작업 중). 새 메시지·필드 없음.
+
+### 구현
+- **창 드래그** (`ui/draggable.ts` `useDraggableWindow(id, enabled)`): 테크·외교·옵션·도움말 창의 제목 줄(`data-drag-handle`)을 끌면 `translate(dx,dy)` 오프셋만 더한다(원래 CSS 배치 유지). `clampOffset` 으로 부모(.game / 오버레이) 안에 가둔다 — 창이 더 크면 왼쪽·위쪽 정렬. 렌더마다·창 크기 변경 시 다시 자른다. 위치는 `localStorage['civwar.windowPos.v1']`(try/catch, 실패 = 이번 세션만). 드래그를 바깥에서 놓아도 "바깥 클릭 = 닫기"가 안 되게 이어지는 click 한 번을 삼킨다. 좁은 화면(모바일)은 비활성 — 테크 시트·도움말 배치 그대로. 도움말은 창 안에서 스크롤하도록 바꿨다(`.help` max-height 100%, 오버레이 스크롤 제거 — 자르기 계산이 성립하게).
+- **부대 공격력·방어력** (`ui/techInfo.ts` `unitCombatStats`): 서버 `flagValue` 와 같은 단계별 floor — `floor(UNIT_ATK_PERMILLE[u] × techCombatPm(stat,u,공격)/1000)`, 방어는 `UNIT_DEF_PERMILLE` + `techCombatPm(…,방어)`. 지형·상륙·이탈 대기 배율 제외. 상수는 match_config.constants 우선. 우측 아래 정보 패널(FlagPanel)에 내·적·동맹 모든 깃발에 대해 "공격력 ×0.87 / 방어력 ×1.30 (기본 · 테크)" + 설명 한 줄, 지금 태세 값은 굵게. 테크는 **그 깃발 주인**의 techMask.
+- **내 부대 칩** (`ui/unitChips.ts` `myUnitChips`, GameScreen `UnitChips`): 병력 바 위(`.bottom-dock` = 칩 줄 + 기존 `.command-bar`), 슬롯 순, 병종 아이콘 + 병력 + 태세 아이콘(공격 = 검, 방어 = 방패 — `PostureIcon`). 선택 = 노란 테두리, 전투 중 = 붉은 테두리, 귀환·패주 = 점선. 클릭 = `ctl.focusFlag(id)`(선택 + 카메라 이동 + 관전 따라가기 해제 + 출전 메뉴 닫기).
+- **선택 강조**: 맵 깃발 선택 고리를 흰 고리 → 검은 바탕 + 노란 고리 + 퍼지는 바깥 고리로.
+- **우클릭 = 항상 이동** (`controller.rightClickTile` → `store.moveFlag`): 내 깃발 선택 중 우클릭은 어디든 `cmd_flag_retarget{flagId, anchorTileId}` — 내 기지도 귀환이 아니라 기지 위로 이동(태세는 서버가 앵커로 재파생: 내 땅 = 방어). 귀환 중이면 토스트만. 출전 메뉴가 떠 있으면 우클릭 = 출전 취소(기존). **이동 명령은 `ClientStore.moveFlag()` 한 함수에 격리** — §21 에서 호출 방식이 정해지면 그 함수만 바꾼다.
+- **예전 "깃발 선택 + 기지 좌클릭 = 귀환(cmd_flag_recall.baseTileId) / 재지정" 폐기** — 이제 선택 중 맵 좌클릭은 선택 해제만(Alt+내 기지 = 출전 기지 고르기는 유지). `store.recall(flagId, baseTileId?)` 함수는 남겨 둠(지금 호출부는 `baseTileId` 없이만 씀).
+- **떠 있는 버튼** (GameScreen `FlagActions`, 위치는 rAF 에서 `positionFlagActions` — 깃발 보간 위치 오른쪽): [귀환] = `cmd_flag_recall{flagId}`(자동 귀환지, R), [태세 변경] = `cmd_set_posture`(F, 바꿀 태세 아이콘 + 쿨타임 n초). 비활성 조건은 `flagActionState` — 서버 거절 순서(패주 > 귀환 > 이탈 대기 > 전투 중 > 쿨타임)와 같다. z-index 2 (테크·외교 창 아래). 좁은 화면·출전 메뉴 중·남의 깃발이면 숨김.
+- **큰 기지** (`renderer.drawBases`, `baseIconSize(zoom)` = 줌 px, 최소 10 최대 64): 칸을 꽉 채운다. 일반 = 소유자 색 + 검은 테두리 + 십자, 수도 = 금색 바깥 테두리 + 안쪽 사각 + 별(14px 이상). 체력 바는 칸 위. 예전 수도 아래 닉네임 라벨은 영토 이름으로 대체해 뺐다.
+- **영토 이름** (`render/territoryLabels.ts`): `territoryAnchors` = 소유 칸 무게중심에 가장 가까운 자기 칸(오목·섬 영토도 자기 땅 위). 영토가 바뀌었을 때만, 최대 1초에 한 번 다시 계산(`LABEL_REFRESH_MS`). `layoutTerritoryLabels` = 매 프레임 화면 배치: 글자 = √칸 수 × 0.32 × 줌, 화면 11~30px, 큰 영토부터, 겹치면 11px 로 줄여 보고 그래도 겹치면 생략, 화면 밖 생략. 기준점이 기지 칸(대개 수도)이거나 그 옆이면 아이콘 아래로 내린다. 탈락자 제외, 색각 보조면 "번호. 이름".
+- 툴팁 문구: 선택 중 내 기지 = "우클릭 = 이 기지로 이동해 방어", 적 기지 = "…이동해 공격", 그 외 "우클릭 = 이동 → …". 도움말·컨트롤러 머리 주석 갱신.
+
+### §21 연결 대기 (구조만 — 데이터 없으면 그리지 않음)
+- 기지 생산력 바·지명: `RenderView.baseExtra?(tile) → { productivityPct?, name? }`. 생산력 바 = 기지 칸 **아래**(체력 바와 같은 폭, 금색), 지명 = 그 아래 라벨(줌 9 이상, 수도는 연금색). GameScreen 이 아직 `baseExtra` 를 넘기지 않는다 — §21 필드가 오면 GameModel 에 저장하고 여기서 넘기면 된다.
+- 병력·골드 hover 출처: `Stat` 의 `breakdown` prop + `SourceTip`(제목 줄 → 기지 행(수도 ★, 많은 순) → 구분선 → 기타) + `sourceBreakdown(total, perBase)`(기타 = 합계 − Σ기지, 음수면 0). HUD 병력·골드 Stat 에 아직 연결 안 함.
+- 우클릭 이동: `store.moveFlag` 교체.
+
+### 검증
+- `npm run typecheck` 통과, `npm test` 22 파일 295개 통과, `npm run build:client` 통과.
+- 테스트: `client/test/uiOct14.test.ts`(드래그 자르기 6, 공격력/방어력 = 서버 식·상수 우선 3, 칩 2, 버튼 상태 3, 영토 이름 위치·크기·배치 6, 기지 크기 1, 출처 내역 2), `client/test/issueFlow.test.ts`(기존 "선택 + 기지 클릭 = 귀환" 테스트를 폐기 동작으로 교체, 우클릭 라우팅 — 내 기지·적 기지·중립·내 땅 모두 `cmd_flag_retarget` + `store.moveFlag` 경유·남의 깃발/선택 없음/맵 밖/출전 중 = 명령 없음, 귀환 중 우클릭 무시, 칩 focusFlag).
+- 브라우저(서버 8092 / Vite 5182, 봇 9 비공개 방, 1400×860): 칩 클릭 → 선택 + 카메라 이동 + 노란 고리 + 떠 있는 버튼 + 공격력/방어력 패널, [태세 변경] → 공격으로 바뀌고 "5초" 쿨타임 표시, 내 수도 우클릭 → 툴팁 "이 기지로 이동해 방어" → 서버 수락(행군·방어, 귀환 아님), 테크·외교·옵션·도움말 창 드래그 + 좌상단·우하단 자르기 + 새로고침 후 위치 유지, 모바일(375×812) = 테크 시트 그대로·드래그 손잡이/칩/떠 있는 버튼 없음. 콘솔 오류 없음.
+- 스크린샷 `_workspace/screenshots/2026-10-14_*`: `drag-tech-window`, `drag-tech-window_clamped-top-left`, `drag-diplomacy_clamped-bottom-right`, `drag-options-window`, `drag-help-window`, `unit-select_stats-panel_floating-buttons_chip`, `unit-stats-panel_zoom`, `floating-buttons_posture-cooldown`, `rightclick-own-base_move-defend`, `big-base-icons_territory-name`, `territory-names_full-map`.
+
+### 메모 / 확인 필요
+- 쿨타임 중 내 기지로 우클릭 이동했을 때 서버가 태세를 방어로 바꿨다(프로토콜 §4 표는 "쿨타임 중·전투 중이면 현 태세 유지"). 그 시점 쿨타임이 막 끝났을 수도 있어 확정은 못 함 — integration-qa 확인 요망.
+- 개발 중 HMR 로 GameScreen 이 다시 마운트되면 `usePolled` 가 첫 렌더의 클로저(옛 컨트롤러)를 계속 읽어 옵션 창 등이 안 뜰 수 있다(새로고침하면 정상). 기존 동작이며 배포 빌드와 무관.

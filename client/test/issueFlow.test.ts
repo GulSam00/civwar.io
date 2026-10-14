@@ -193,34 +193,88 @@ describe('출전 UI 상태기계', () => {
     expect(ix.issue).toEqual({ phase: 'aim', base: BASE_A });
   });
 
-  it('깃발 선택 + 내 기지 클릭 = 그 기지로 귀환 (cmd_flag_recall.baseTileId), 적 기지 = 재지정, 다른 곳 = 선택 해제', () => {
+  it('2026-10-14: 깃발 선택 + 기지 좌클릭은 명령이 아니다 (예전 귀환/재지정 폐기) — 선택 해제만', () => {
     const { ctl, ix, cmds, setFlagHit } = setup([flag({ id: 7 })]);
     setFlagHit(7);
     ctl.click(id(2, 5), 0);
     expect(ix.selectedFlagId).toBe(7);
     setFlagHit(null);
-    ctl.click(BASE_B, 0);
-    expect(cmds().at(-1)).toEqual({ type: 'cmd_flag_recall', flagId: 7, baseTileId: BASE_B, clientSeq: expect.any(Number) });
+    ctl.click(BASE_B, 0); // 내 기지 좌클릭
+    expect(cmds()).toHaveLength(0);
     expect(ix.selectedFlagId).toBeNull();
-    expect(ix.issue).toBeNull(); // 귀환이지 출전이 아님
+    expect(ix.issue).toBeNull(); // 출전도 아님
     ix.selectedFlagId = 7;
-    ctl.click(ENEMY_BASE, 0);
-    expect(cmds().at(-1)).toMatchObject({ type: 'cmd_flag_retarget', flagId: 7, anchorTileId: ENEMY_BASE });
+    ctl.click(ENEMY_BASE, 0); // 적 기지 좌클릭
+    expect(cmds()).toHaveLength(0);
+    expect(ix.selectedFlagId).toBeNull();
     ix.selectedFlagId = 7;
     ctl.click(id(0, 6), 0); // 빈 땅 = 선택 해제만 (출전 메뉴 안 뜸)
     expect(ix.selectedFlagId).toBeNull();
     expect(ix.issue).toBeNull();
-    // R = 자동 귀환지 회수 (baseTileId 없음 — 기존 동작)
+    // R = 자동 귀환지 회수 (baseTileId 없음)
     ix.selectedFlagId = 7;
     key(ctl, 'r');
     expect(cmds().at(-1)).toEqual({ type: 'cmd_flag_recall', flagId: 7, clientSeq: expect.any(Number) });
   });
 
-  it('귀환 중 깃발은 기지 클릭으로 명령하지 않는다 (A-62 취소 불가)', () => {
+  it('2026-10-14 우클릭 라우팅: 내 부대 선택 + 우클릭 = 항상 이동 (내 기지 = 귀환 아님, 기지 위로 이동해 방어)', () => {
+    const { store, ctl, ix, cmds } = setup([flag({ id: 7 }), flag({ id: 8, ownerId: 2, slotIndex: 0, posTileId: id(2, 8) })]);
+    const moves: [number, number][] = [];
+    const orig = store.moveFlag.bind(store);
+    store.moveFlag = (f: number, t: number) => (moves.push([f, t]), orig(f, t));
+    ix.selectedFlagId = 7;
+    // 내 기지 → 이동 (cmd_flag_retarget, 귀환 cmd_flag_recall 아님) — 태세는 서버가 도착지로 정한다
+    expect(ctl.rightClickTile(BASE_B)).toBe('move');
+    expect(cmds().at(-1)).toEqual({ type: 'cmd_flag_retarget', flagId: 7, anchorTileId: BASE_B, clientSeq: expect.any(Number) });
+    // 적 기지 · 중립 땅 · 내 땅 모두 같은 이동 명령
+    expect(ctl.rightClickTile(ENEMY_BASE)).toBe('move');
+    expect(ctl.rightClickTile(id(0, 5))).toBe('move');
+    expect(ctl.rightClickTile(id(3, 2))).toBe('move');
+    expect(cmds().every((m) => m.type === 'cmd_flag_retarget')).toBe(true);
+    expect(cmds().map((m) => m.anchorTileId)).toEqual([BASE_B, ENEMY_BASE, id(0, 5), id(3, 2)]);
+    // 이동 명령은 store.moveFlag 한 곳을 거친다 (§21 확정 후 이 함수만 교체)
+    expect(moves).toEqual([[7, BASE_B], [7, ENEMY_BASE], [7, id(0, 5)], [7, id(3, 2)]]);
+    // 선택 유지 (연속 지시 가능)
+    expect(ix.selectedFlagId).toBe(7);
+    // 남의 깃발 선택 · 선택 없음 · 맵 밖 = 아무 명령 없음
+    const n = cmds().length;
+    ix.selectedFlagId = 8;
+    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
+    ix.selectedFlagId = null;
+    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
+    ix.selectedFlagId = 7;
+    expect(ctl.rightClickTile(-1)).toBeNull();
+    expect(cmds()).toHaveLength(n);
+    // 출전 메뉴가 떠 있으면 우클릭 = 출전 취소 (이동 아님)
+    ix.selectedFlagId = null;
+    ctl.click(id(2, 5), 0);
+    expect(ix.issue).not.toBeNull();
+    ix.selectedFlagId = 7;
+    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
+    expect(ix.issue).toBeNull();
+    expect(cmds()).toHaveLength(n);
+  });
+
+  it('귀환 중 깃발은 기지 클릭·우클릭으로 명령하지 않는다 (A-62 취소 불가)', () => {
     const { ctl, ix, cmds } = setup([flag({ id: 7, state: 'RETURNING' })]);
     ix.selectedFlagId = 7;
     ctl.click(BASE_B, 0);
+    ix.selectedFlagId = 7;
+    expect(ctl.rightClickTile(BASE_B)).toBeNull();
     expect(cmds()).toHaveLength(0);
+  });
+
+  it('내 부대 칩 클릭(focusFlag) = 선택 + 카메라를 그 부대로, 출전 메뉴는 닫는다', () => {
+    const { ctl, ix } = setup([flag({ id: 7, posTileId: id(4, 5) })]);
+    ctl.click(id(2, 5), 0);
+    expect(ix.issue).not.toBeNull();
+    ctl.focusFlag(7);
+    expect(ix.selectedFlagId).toBe(7);
+    expect(ix.issue).toBeNull();
+    const cam = ctl.renderer.camera;
+    expect({ x: cam.cx, y: cam.cy }).toEqual({ x: 5.5, y: 4.5 }); // 칸 (4,5) 중심
+    ctl.focusFlag(999); // 없는 깃발 = 무시
+    expect(ix.selectedFlagId).toBe(7);
   });
 
   it('관전·탈락이면 출전 메뉴를 열지 않는다', () => {

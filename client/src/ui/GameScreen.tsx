@@ -11,12 +11,13 @@ import type { RoutePreview } from '../input/route.js';
 import { terrainInfo, visibleTipRows } from './terrainInfo.js';
 import { TOOLTIP_FIELDS, loadOptions } from './options.js';
 import { OptionsLayer, GearIcon } from './OptionsPanel.js';
-import { UnitIcon } from './unitIcons.js';
+import { PostureIcon, UnitIcon } from './unitIcons.js';
 import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
-import { goldPerSecond, techStatsOf } from './techInfo.js';
+import { fmtPm, goldPerSecond, techStatsOf, unitCombatStats } from './techInfo.js';
+import { flagActionState, myUnitChips, type SourceRow } from './unitChips.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard } from './panels.js';
 import { TechWindow } from './TechWindow.js';
 import { purchasableCount } from './techTree.js';
@@ -63,8 +64,11 @@ export function GameScreen({ store }: { store: ClientStore }) {
   const tipRef = useRef<HTMLDivElement>(null);
   const radialRef = useRef<HTMLDivElement>(null);
   const terrainRef = useRef<HTMLDivElement>(null);
+  const flagActRef = useRef<HTMLDivElement>(null);
   const [ctl, setCtl] = useState<GameInputController | null>(null);
   const narrow = useNarrow();
+  const narrowRef = useRef(narrow);
+  narrowRef.current = narrow;
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -133,6 +137,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       if (miniRef.current) renderer.drawMinimap(miniRef.current, game, store.viewerId);
       updateTooltip(tipRef.current, preview, ix, controller, route);
       positionRadial(radialRef.current, controller);
+      positionFlagActions(flagActRef.current, controller, narrowRef.current);
       updateTerrainTip(terrainRef.current, game, ix, store);
       frame = requestAnimationFrame(loop);
     };
@@ -163,6 +168,9 @@ export function GameScreen({ store }: { store: ClientStore }) {
       <div ref={terrainRef} className="terrain-tip" aria-hidden="true" />
       <div ref={radialRef} className="radial-anchor">
         {ctl && <IssueRadial store={store} ctl={ctl} />}
+      </div>
+      <div ref={flagActRef} className="flag-actions-anchor">
+        {ctl && !narrow && <FlagActions store={store} ctl={ctl} />}
       </div>
       <canvas ref={miniRef} className="minimap" onPointerDown={onMini} onPointerMove={onMini} title="클릭해 이동" />
       {ctl && <Hud store={store} ctl={ctl} narrow={narrow} />}
@@ -271,6 +279,27 @@ function positionRadial(el: HTMLDivElement | null, ctl: GameInputController): vo
   el.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
 }
 
+/**
+ * 선택한 내 부대 옆 [귀환]/[태세 변경] 버튼 — 깃발 보간 위치를 매 프레임 따라간다 (2026-10-14).
+ * 내 깃발이 아니거나 명령할 수 없거나 좁은 화면이면 숨긴다. 삼각 메뉴가 떠 있으면 겹치지 않게 숨긴다.
+ */
+function positionFlagActions(el: HTMLDivElement | null, ctl: GameInputController, narrow: boolean): void {
+  if (!el) return;
+  const p = !narrow && !ctl.ix.issue && ctl.myFlag(ctl.ix.selectedFlagId) && ctl.canCommand() ? ctl.selectedFlagScreenPos() : null;
+  if (!p) {
+    if (el.style.display !== 'none') el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  // 깃발 오른쪽 위 (화면 오른쪽 끝이면 왼쪽으로)
+  const parent = el.parentElement;
+  const w = el.offsetWidth || 120;
+  let x = p.x + 24;
+  if (parent && x + w > parent.clientWidth - 8) x = p.x - 24 - w;
+  const y = Math.max(64, p.y - 34);
+  el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+
 function routeText(route: RoutePreview | null, kind: string | undefined): string {
   if (!route) return '';
   if (!route.reachable) return ' · 갈 수 있는 경로 없음';
@@ -291,13 +320,14 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
     } else if (p) text = `클릭 = 병종 선택 · ${p.label}${routeText(route, p.kind)}`;
   } else if (ctl.canCommand() && g >= 0) {
     const myFlag = ctl.myFlag(ix.selectedFlagId);
+    // 2026-10-14: 선택 부대 우클릭 = 항상 이동 (내 기지 = 기지 위로 가서 방어, 태세는 서버가 도착지로 정한다)
     if (myFlag && ctl.isMyBase(g)) {
-      text = '클릭 = 이 기지로 귀환';
+      text = '우클릭 = 이 기지로 이동해 방어';
       kind = 'defend';
-    } else if (myFlag && ctl.isBaseTile(g)) {
-      text = '클릭 = 이 기지로 재지정';
+    } else if (myFlag && ctl.isBaseTile(g) && p?.kind !== 'blocked') {
+      text = '우클릭 = 이 기지로 이동해 공격';
       kind = 'attack';
-    } else if (myFlag && p && p.kind !== 'blocked') text = `우클릭 재지정 → ${p.label}`;
+    } else if (myFlag && p && p.kind !== 'blocked') text = `우클릭 = 이동 → ${p.label}`;
     else if (myFlag && p) text = p.label;
     else if (!myFlag && ix.selectedFlagId === null && ctl.isMyBase(g)) {
       text = '클릭 = 이 기지에서 출전 (목적지를 고르세요)';
@@ -527,11 +557,36 @@ function HudBtn({ on, k, label, onClick, badge = 0, techToggle = false }: { on: 
   );
 }
 
-function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+function Stat({ label, value, warn, breakdown }: { label: string; value: string; warn?: boolean; breakdown?: { title: string; unit: string; rows: SourceRow[] } | null }) {
   return (
-    <div className={`stat ${warn ? 'warn' : ''}`}>
+    <div className={`stat ${warn ? 'warn' : ''} ${breakdown ? 'has-breakdown' : ''}`} tabIndex={breakdown ? 0 : undefined}>
       <span className="stat-label">{label}</span>
       <span className="stat-value">{value}</span>
+      {breakdown && <SourceTip {...breakdown} />}
+    </div>
+  );
+}
+
+/**
+ * 병력·골드 hover 출처 내역 (프로토콜 §21 예정 — 기지별 + 기타 합산). 레이아웃만 먼저 둔다:
+ * 제목 줄 → 기지 행(수도 별표, 이름, 초당 양 — 많은 순) → 구분선 → 기타. 데이터(sourceBreakdown 입력)는 §21 이후 연결.
+ */
+function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: SourceRow[] }) {
+  return (
+    <div className="source-tip" role="tooltip">
+      <div className="source-tip-head">{title}</div>
+      {rows.map((r) => (
+        <div key={r.key} className={`source-row ${r.key === 'other' ? 'other' : ''} ${r.capital ? 'capital' : ''}`}>
+          <span className="source-name">
+            {r.capital ? '★ ' : ''}
+            {r.label}
+          </span>
+          <span className="source-amt">
+            +{r.amount.toFixed(1)}
+            {unit}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -581,7 +636,9 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
     );
   }
   return (
-    <div className="command-bar">
+    <div className="bottom-dock">
+      <UnitChips store={store} ctl={ctl} />
+      <div className="command-bar">
       <label className="ratio">
         <span>
           보낼 병력 비율 <b>{Math.round(ix.ratio * 100)}%</b> <kbd>Q</kbd>/<kbd>E</kbd>
@@ -589,6 +646,61 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
         <input type="range" min={10} max={100} step={10} value={Math.round(ix.ratio * 100)} onChange={(e) => ctl.setRatio(Number(e.target.value) / 100)} />
       </label>
       {gold}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 병력 바 위 내 출전 부대 칩 (2026-10-14) — 병종 아이콘 + 병력 + 태세 아이콘. 누르면 선택 + 카메라 이동.
+ */
+function UnitChips({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
+  const g = store.game;
+  if (!g) return null;
+  const chips = myUnitChips(g, store.myPlayerId, ctl.ix.selectedFlagId);
+  if (!chips.length) return null;
+  return (
+    <div className="unit-chips" role="toolbar" aria-label="출전한 내 부대">
+      {chips.map((c) => (
+        <button
+          key={c.id}
+          className={`unit-chip ${c.selected ? 'on' : ''} ${c.routed ? 'routed' : ''} ${c.returning ? 'returning' : ''} ${c.inCombat ? 'fighting' : ''}`}
+          onClick={() => ctl.focusFlag(c.id)}
+          title={`깃발 #${c.slotIndex + 1} · ${UNIT_NAME[c.unit]} ${c.troops}명 · ${POSTURE_NAME[c.posture]}${c.routed ? ' · 패주' : c.returning ? ' · 귀환 중' : c.inCombat ? ' · 전투 중' : ''} — 눌러서 선택`}
+          aria-pressed={c.selected}
+        >
+          <UnitIcon unit={c.unit} size={15} />
+          <b>{c.troops}</b>
+          <PostureIcon posture={c.posture} size={13} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 선택한 내 부대 옆 떠 있는 버튼 — [귀환](cmd_flag_recall, 자동 귀환지) · [태세 변경](cmd_set_posture, 쿨타임 표시) */
+function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
+  usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
+  const g = store.game;
+  const id = ctl.ix.selectedFlagId;
+  const f = id !== null ? g?.flags.get(id) : undefined;
+  if (!g || !f || !ctl.myFlag(f.id) || !ctl.canCommand()) return null;
+  const st = flagActionState(f, g.tick, g.config.tickMs);
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className="flag-actions" onMouseDown={stop} onContextMenu={(e) => e.preventDefault()}>
+      <button className="btn btn-sm fa-btn" disabled={!!st.recallBlocked} onClick={() => ctl.recallSelected()} title={st.recallBlocked ?? '가까운 내 기지로 귀환 (R) — 귀환은 취소할 수 없습니다'}>
+        <kbd>R</kbd> 귀환
+      </button>
+      <button
+        className="btn btn-sm fa-btn"
+        disabled={!!st.postureBlocked}
+        onClick={() => ctl.togglePosture()}
+        title={st.postureBlocked ?? `${POSTURE_NAME[st.nextPosture]} 태세로 바꾸기 (F) — 진척도가 0이 됩니다`}
+      >
+        <kbd>F</kbd> 태세 변경 <PostureIcon posture={st.nextPosture} size={12} />
+        {st.cooldownSec > 0 && <span className="fa-cd">{st.cooldownSec}초</span>}
+      </button>
     </div>
   );
 }
@@ -613,6 +725,10 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
     .filter(Boolean)
     .join(' · ');
   const returning = f.state === 'RETURNING'; // v4.2 A-62: 귀환 중엔 모든 명령 거절
+  // 2026-10-14: 공격력·방어력 (병종 기본 × 테크, 지형 보정 제외) — 그 깃발 주인의 테크
+  const owner = g.players.get(f.ownerId);
+  const cs = unitCombatStats(f.unit, owner?.techMask ?? 0, g.config.constants);
+  const atkNow = f.posture === POSTURE.ATTACK;
   const postureBlocked = returning || f.routed || f.inCombat || f.disengaging || cd > 0;
   return (
     <div className="flag-panel">
@@ -629,6 +745,23 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           {cd > 0 && <span className="muted"> (전환 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
         </div>
         <div className="muted">{status}</div>
+        <div className="combat-stats" aria-label="전투값">
+          <div className={`cs-row ${atkNow ? 'now' : ''}`}>
+            <PostureIcon posture={POSTURE.ATTACK} size={13} /> 공격력 <b>{fmtPm(cs.atk)}</b>
+            <span className="muted small">
+              {' '}
+              기본 {fmtPm(cs.atkBase)} · 테크 {fmtPm(cs.atkTechPm)}
+            </span>
+          </div>
+          <div className={`cs-row ${!atkNow ? 'now' : ''}`}>
+            <PostureIcon posture={POSTURE.DEFEND} size={13} /> 방어력 <b>{fmtPm(cs.def)}</b>
+            <span className="muted small">
+              {' '}
+              기본 {fmtPm(cs.defBase)} · 테크 {fmtPm(cs.defTechPm)}
+            </span>
+          </div>
+          <div className="muted small cs-note">병종 기본 × 테크(군사·병종) · 지형 보정 제외 · 지금 태세 = 굵게</div>
+        </div>
         {f.state === 'MARCHING' && eta !== undefined && <div>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 <span className="muted small">(영토 변화·대치·전투 제외)</span></div>}
         {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div>진척도 {f.progressPct}%</div>}
       </div>
@@ -638,9 +771,9 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
             <kbd>F</kbd> {f.posture === POSTURE.ATTACK ? '방어로' : '공격으로'}
           </button>
           <button className="btn" disabled={f.routed || returning} onClick={() => ctl.recallSelected()} title="단축키 R">
-            <kbd>R</kbd> 회수
+            <kbd>R</kbd> 귀환
           </button>
-          <span className="muted small">{returning ? '귀환 중 — 취소 불가' : '우클릭 = 재지정 · 내 기지 클릭 = 그 기지로 귀환'}</span>
+          <span className="muted small">{returning ? '귀환 중 — 취소 불가' : '우클릭 = 이동 (내 땅·기지 = 방어, 적·중립 = 공격)'}</span>
         </div>
       )}
     </div>

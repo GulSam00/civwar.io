@@ -91,6 +91,14 @@ export const BOT_DEEP_MIN = 4;
 export const BOT_DEEP_MAX = 20;
 /** GDD 에 없어 정함 (§10 v4.2): 새 공격 앵커 후보(국경 칸)가 내 공격 깃발 현재 위치에서 이 거리 이내면 건너뛴다 (같은 회랑 중복 방지) */
 export const BOT_PLOW_SPACING = 2;
+/**
+ * v4.4 기지 방어 (사용자 2026-10-14, §10-104·105 에이전트 선택): 적대 공격 깃발이 내 기지에서 이 거리 안이면 그 기지에 방어 깃발을 세운다.
+ * 마지막 기지(멸망·합병 직결)는 더 넓게 본다.
+ */
+export const BOT_BASE_GUARD_RADIUS = 4;
+export const BOT_LAST_BASE_GUARD_RADIUS = 8;
+/** v4.4: 마지막 기지가 아닌 기지는 최근 이 tick 안에 체력 피해를 받았을 때만 수비대를 세운다 (8.1 기지 위협의 25 tick 과 같은 눈금) */
+export const BOT_BASE_GUARD_DAMAGE_WINDOW = 25;
 /** GDD 에 없어 정함 (§10): 소진 직전 회수 여유 tick (경계 = 40 + 쌓인 예산 + 누적률 × 이 값). 결정 주기 전체를 여유로 잡으면 큰 깃발을 너무 일찍 물려 손해(자가대전 측정) */
 export const BOT_EXHAUST_MARGIN_TICKS = 2;
 
@@ -749,6 +757,79 @@ function buyTech(ctx: Ctx): void {
   }
 }
 
+/** v4.4: 내 기지 칸 위(또는 그 칸으로 가는) 방어 태세 깃발 — 기지 수비대 */
+function isBaseGuard(ctx: Ctx, f: Readonly<Flag>): boolean {
+  if (!isLive(f) || !ctx.state.map.isBase[f.anchorTileId] || ctx.state.owners[f.anchorTileId] !== ctx.me) return false;
+  const def = f.posture === POSTURE.DEFEND || f.pendingPosture === POSTURE.DEFEND;
+  return def && (f.posTileId === f.anchorTileId || f.state === 'MARCHING');
+}
+
+/**
+ * v4.4 기지 방어 (사용자 2026-10-14) — 결정당 1회. 위협받는 내 기지에 방어 깃발을 세운다(기지 칸 위 방어 = 지형 대신 ×1.5).
+ * 위협 = 적대·비귀환·비패주 공격 태세 깃발의 실효력 합 (기지에서 BOT_BASE_GUARD_RADIUS, 마지막 기지는 BOT_LAST_BASE_GUARD_RADIUS 안).
+ * 마지막 기지는 위협만으로, 나머지 기지는 최근 BOT_BASE_GUARD_DAMAGE_WINDOW tick 안에 체력이 깎였을 때만 대상.
+ * 우선순위: 마지막 기지 → 위협 큰 순(동률 tileId). 이미 수비대 실효력 ≥ 위협 × BOT_INTERCEPT_RATIO 면 건너뛴다.
+ * 수단: ① 새 창병 발령(앵커 = 기지 → 출발도 그 기지라 즉시 자리 잡음) ② 슬롯·병력이 없고 마지막 기지면 가장 가까운 비전투 깃발을 기지로 재지정.
+ */
+function guardBases(ctx: Ctx): void {
+  const { state, me, p } = ctx;
+  if (!p.baseTiles.length) return;
+  const last = p.baseTiles.length === 1;
+  const radius = last ? BOT_LAST_BASE_GUARD_RADIUS : BOT_BASE_GUARD_RADIUS;
+  const cands: { b: number; threat: number; guard: number }[] = [];
+  for (const b of p.baseTiles) {
+    let threat = 0;
+    for (const g of state.flags) {
+      if (g.posture !== POSTURE.ATTACK || !isLive(g) || !hostilePlayer(state, me, g.ownerId)) continue;
+      if (state.graph.distance(g.posTileId, b) > radius) continue;
+      threat += effOf(state, g);
+    }
+    if (threat === 0) continue;
+    // 마지막 기지가 아니면 실제로 체력이 깎이는 중일 때만 (자가대전 비교 — 모든 위협 기지를 지키면 기지 함락이 절반 이하로 준다, §9 v4.4)
+    if (!last) {
+      const bs = state.bases[state.baseIndexOf.get(b)!];
+      if (ctx.t - bs.lastDamageTick >= BOT_BASE_GUARD_DAMAGE_WINDOW || bs.hpMilli >= BASE_HP_MAX_MILLI) continue;
+    }
+    let guard = 0;
+    for (const f of ctx.mine) if (f.anchorTileId === b && isBaseGuard(ctx, f)) guard += Math.floor(f.troopsMilli / 1000) * valueAs(state, me, f.unit, POSTURE.DEFEND, b);
+    if (guard * 1000 >= threat * BOT_INTERCEPT_RATIO_PERMILLE) continue;
+    cands.push({ b, threat, guard });
+  }
+  if (!cands.length) return;
+  cands.sort((x, y) => y.threat - x.threat || x.b - y.b);
+  const { b, threat, guard } = cands[0];
+  if (ctx.plannedDefend.includes(b)) return;
+  // ① 새 창병 — 기지 칸 위 방어 실효값으로 필요 병력 산정
+  if (ctx.slots < ctx.cap) {
+    const vU = valueAs(state, me, UNIT.SPEAR, POSTURE.DEFEND, b);
+    const need = Math.ceil((threat * BOT_INTERCEPT_RATIO_PERMILLE - guard * 1000) / (vU * 1000));
+    const maxQ = maxIssuable(p, ctx.pool, UNIT.SPEAR);
+    const q = Math.min(maxQ, Math.max(need, Math.floor((ctx.pool * BOT_DEFEND_COMMIT_PERMILLE) / 1000), FLAG_MIN_TROOPS));
+    // 마지막 기지는 필요량에 못 미쳐도 가진 만큼 세운다 (지면 멸망)
+    if (q >= FLAG_MIN_TROOPS && (q >= need || last)) {
+      issue(ctx, UNIT.SPEAR, q, b);
+      ctx.plannedDefend.push(b);
+      return;
+    }
+  }
+  // ② 마지막 기지: 가장 가까운 비전투 깃발을 기지로 (재지정 = 도착지 내 기지 → 방어 태세)
+  if (!last) return;
+  let pick: Flag | null = null;
+  let pd = Infinity;
+  for (const f of ctx.mine) {
+    if (!isLive(f) || f.inCombat || ctx.touched.has(f.id) || !canRetarget(ctx, f) || f.anchorTileId === b) continue;
+    const d = state.graph.distance(f.posTileId, b);
+    if (d < pd) {
+      pick = f;
+      pd = d;
+    }
+  }
+  if (pick) {
+    retarget(ctx, pick, b);
+    ctx.plannedDefend.push(b);
+  }
+}
+
 /** 8.2 (1) + 8.6 요격 — 결정당 방어 행동 1회 */
 function defend(ctx: Ctx): void {
   const { state, me } = ctx;
@@ -774,7 +855,7 @@ function defend(ctx: Ctx): void {
       let pick: Flag | null = null;
       let pd = Infinity;
       for (const f of ctx.mine) {
-        if (f.posture !== POSTURE.DEFEND || f.inCombat || ctx.touched.has(f.id) || !canRetarget(ctx, f)) continue;
+        if (f.posture !== POSTURE.DEFEND || f.inCombat || ctx.touched.has(f.id) || !canRetarget(ctx, f) || isBaseGuard(ctx, f)) continue;
         const d = state.graph.distance(f.posTileId, anchor);
         if (d > 2 * FRONT_RADIUS || d >= pd) continue;
         const vU = valueAs(state, me, f.unit, POSTURE.DEFEND, anchor);
@@ -835,6 +916,15 @@ function combatFoes(ctx: Ctx, f: Readonly<Flag>): Flag[] {
     if (state.graph.touching(g.posTileId, f.posTileId)) res.push(g);
   }
   return res;
+}
+
+/** v4.4: 기지 b 근처(마지막 기지면 더 넓게)에 적대 공격 깃발이 있는가 — guardBases 와 같은 반경 */
+function baseThreatNear(ctx: Ctx, b: number): boolean {
+  const r = ctx.p.baseTiles.length === 1 ? BOT_LAST_BASE_GUARD_RADIUS : BOT_BASE_GUARD_RADIUS;
+  for (const g of ctx.state.flags) {
+    if (g.posture === POSTURE.ATTACK && isLive(g) && hostilePlayer(ctx.state, ctx.me, g.ownerId) && ctx.state.graph.distance(g.posTileId, b) <= r) return true;
+  }
+  return false;
 }
 
 function hostileTilesNear(ctx: Ctx, center: number, r: number): boolean {
@@ -966,6 +1056,11 @@ function maintain(ctx: Ctx): void {
 
     // DEFEND
     if (f.state !== 'ENGAGED' || anchorOwner !== me) continue;
+    // v4.4: 기지 수비대는 반격·제자리 공격 전환 없이 자리를 지킨다. 위협 없이 BOT_GARRISON_PATIENCE 가 지나면 회수(아래 규칙과 같다)
+    if (isBaseGuard(ctx, f) && f.posTileId === f.anchorTileId) {
+      if (!threatened(state, f) && f.calmTicks >= BOT_GARRISON_PATIENCE && !baseThreatNear(ctx, f.anchorTileId)) recall(ctx, f);
+      continue;
+    }
     // 8.6.0 1. 주둔 반격: 적 공격 깃발이 관할 원 국경 칸 옆에 붙음 + 내 실효력 ≥ 적 × 1.2 → 그 칸으로 재지정
     if (canRetarget(ctx, f)) {
       let moved = false;
@@ -1068,6 +1163,7 @@ function recycle(ctx: Ctx): void {
   for (const f of ctx.mine) {
     if (!isLive(f) || f.inCombat || f.disengageUntilTick !== null || ctx.touched.has(f.id)) continue;
     if (f.posture === POSTURE.DEFEND && threatened(state, f)) continue;
+    if (isBaseGuard(ctx, f) && baseThreatNear(ctx, f.anchorTileId)) continue; // v4.4: 위협받는 기지 수비대는 재활용 안 함
     // v4.2 (§10): 쟁기 중(정지 점령·앵커 점령)이거나 노선으로 가는 공격 깃발은 회수하지 않는다 — 병력이 땅으로 바뀌는 중이다
     if (f.posture === POSTURE.ATTACK && f.state !== 'IDLE') continue;
     if (Math.floor(f.troopsMilli / 1000) * BOT_RECYCLE_RATIO > newQ) continue;
@@ -1160,6 +1256,7 @@ export function decideBot(state: Readonly<GameState>, me: number, t: number, par
   };
   diplomacy(ctx);
   buyTech(ctx);
+  guardBases(ctx); // v4.4: 기지 수비 (마지막 기지 우선) — 요격보다 먼저
   defend(ctx);
   maintain(ctx);
   block(ctx);

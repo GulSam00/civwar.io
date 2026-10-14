@@ -77,6 +77,8 @@ export interface GameReport {
   /** v4.2 기지 함락 수 (전체 / 그중 수도) */
   baseCaps: number;
   capitalCaps: number;
+  /** v4.4: 중립 기지 함락 포함 전체 base_captured 수 */
+  allBaseCaps: number;
   /** 병력 소멸 경로 비율 % (노출 / 전투 / 공격 지출) */
   sinks: Record<string, number>;
 }
@@ -132,6 +134,7 @@ function playGame(seed: number, k: number): GameReport {
   const techNodes = new Array(TECH_NODES.length).fill(0);
   let baseCaps = 0;
   let capitalCaps = 0;
+  let allBaseCaps = 0;
   const capitals = new Set(state.players.filter(Boolean).map((p) => p.homeTileId));
   while (!sim.finished && state.tick < HARD_TIMEOUT_TICK + 10) {
     const t0 = performance.now();
@@ -159,7 +162,7 @@ function playGame(seed: number, k: number): GameReport {
         techTiers[TECH_NODES[m.nodeId].tier - 1]++;
         techNodes[m.nodeId]++;
       }
-      else if (m.type === 'base_captured' && m.fromPlayerId !== 0) {
+      else if (m.type === 'base_captured' && (allBaseCaps++, m.fromPlayerId !== 0)) {
         baseCaps++;
         if (capitals.has(m.tileId)) capitalCaps++;
       }
@@ -243,6 +246,7 @@ function playGame(seed: number, k: number): GameReport {
     techEnd: techBuys / N,
     baseCaps,
     capitalCaps,
+    allBaseCaps,
     enclavePct: Math.round((encl * 1000) / Math.max(1, ownAll)) / 10,
     sinks: { exposure: Math.round((L.exposure * 1000) / sinkTot) / 10, combat: Math.round((L.combat * 1000) / sinkTot) / 10, spentAP: Math.round((L.spentAP * 1000) / sinkTot) / 10 },
   };
@@ -303,7 +307,7 @@ console.log(`defense-slot share (DEFEND flags / all flags, sampled every 15 tick
     console.log(`v4.3 tech tiers bought: T1 ${((tt[0] * 100) / tT).toFixed(1)}% / T2 ${((tt[1] * 100) / tT).toFixed(1)}% / T3 ${((tt[2] * 100) / tT).toFixed(1)}% (per player ${(tt[0] / reports.length / N).toFixed(2)} / ${(tt[1] / reports.length / N).toFixed(2)} / ${(tt[2] / reports.length / N).toFixed(2)})`);
     console.log(`v4.3 node buy rate (% of player-games): ${TECH_NODES.map((n) => `${n.code} ${((nn[n.id] * 100) / (reports.length * N)).toFixed(0)}`).join(', ')}`);
   }
-  console.log(`v4.2 player-base captures/game ${avg((r) => r.baseCaps)} (capitals ${avg((r) => r.capitalCaps)}), eliminations/game ${avg((r) => r.finalShares.filter((x) => !x.alive).length)}`);
+  console.log(`v4.2 player-base captures/game ${avg((r) => r.baseCaps)} (capitals ${avg((r) => r.capitalCaps)}), all base captures incl. neutral/game ${avg((r) => r.allBaseCaps)}, eliminations/game ${avg((r) => r.finalShares.filter((x) => !x.alive).length)}`);
   console.log(`v4.2 troop sinks %: exposure ${avg((r) => r.sinks.exposure)}, combat ${avg((r) => r.sinks.combat)}, spentAP ${avg((r) => r.sinks.spentAP)}`);
 }
 {

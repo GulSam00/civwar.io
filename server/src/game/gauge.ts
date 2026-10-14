@@ -7,6 +7,8 @@ import {
   BASE_CAPTURE_LOCK_TICK,
   BASE_HP_MAX_MILLI,
   BASE_HP_CAPTURE_MILLI,
+  BASE_PROD_CAPTURE_PERMILLE,
+  TICKS_PER_MIN,
   FLAG_IDLE_TIMEOUT,
   FLAG_MIN_TROOPS,
   FLAG_SPEND_BUDGET_CAP_TICKS,
@@ -18,10 +20,10 @@ import {
 } from '@civwar/shared';
 import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
-import type { FlagPresence } from './combat.js';
+import { combatEligible, type FlagPresence } from './combat.js';
 import { isGarrison } from './economy.js';
 import { availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
-import { isAlly, setTileOwner, type Flag, type GameState } from './state.js';
+import { baseProdPm, isAlly, setTileOwner, type Flag, type GameState } from './state.js';
 
 // ───────────────────────── 5. AP 예산 누적 ─────────────────────────
 
@@ -66,12 +68,24 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
     if (state.map.isBase[X]) {
       const b = state.bases[state.baseIndexOf.get(X)!];
       if (t < b.lockUntilTick) continue;
+      // v4.4 (§21) [A-88]: 기지 칸 위에 적대 깃발(전투 가능)이 서 있으면 체력을 깎지 못한다 — 먼저 그 깃발을 이겨야 한다.
+      // (기지에 붙은 공격 깃발은 기지 칸과 항상 접촉 → 4a 에서 이미 전투 중이라 pushing 이 아니다. 이 검사는 그 불변식의 명시판)
+      if (baseOccupiedByHostile(state, X, f.ownerId)) continue;
       baseHits.push({ flagId: f.id, tileId: X, cost: c, dmg: adv });
     } else {
       pushes.push({ flagId: f.id, tileId: X, cost: c, adv });
     }
   }
   return { pushes, baseHits };
+}
+
+/** v4.4: 기지 칸 X 위에 ownerId 와 적대인 전투 가능 깃발(패주·소진·이탈 직후 아님)이 있는가 */
+export function baseOccupiedByHostile(state: Readonly<GameState>, X: number, ownerId: number): boolean {
+  for (const g of state.flags) {
+    if (g.posTileId !== X || !combatEligible(g)) continue;
+    if (g.ownerId !== ownerId && !isAlly(state, ownerId, g.ownerId)) return true;
+  }
+  return false;
 }
 
 // ───────────────────────── 7. Phase B (쓰기) ─────────────────────────
@@ -198,8 +212,19 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
     setTileOwner(state, B, winner.ownerId);
     base.hpMilli = BASE_HP_CAPTURE_MILLI;
     base.lockUntilTick = t + BASE_CAPTURE_LOCK_TICK;
+    // v4.4 (§21): 생산력 = 현재 값 × 0.5 (중립 기지 포함). 이후 8단계가 선형 회복
+    const prodPm = Math.floor((baseProdPm(base) * BASE_PROD_CAPTURE_PERMILLE) / 1000);
+    base.prodScaled = prodPm * TICKS_PER_MIN;
     for (const f of hitters) f.targetTileId = null;
-    out.broadcast.push({ type: 'base_captured', tick: t, tileId: B, fromPlayerId: from, toPlayerId: winner.ownerId, newHpPct: Math.floor((BASE_HP_CAPTURE_MILLI * 100) / BASE_HP_MAX_MILLI) });
+    out.broadcast.push({
+      type: 'base_captured',
+      tick: t,
+      tileId: B,
+      fromPlayerId: from,
+      toPlayerId: winner.ownerId,
+      newHpPct: Math.floor((BASE_HP_CAPTURE_MILLI * 100) / BASE_HP_MAX_MILLI),
+      newProdPm: prodPm,
+    });
   }
 }
 
