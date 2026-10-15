@@ -299,7 +299,8 @@ export class ClientStore {
   /**
    * 선택 부대 우클릭 = "이동" (2026-10-14 사용자 결정). 내 기지·내 땅 = 그 자리로 가서 방어, 적·중립 = 공격 —
    * 태세는 서버가 도착지로 정한다(cmd_flag_retarget 의 기본 태세 재파생, 프로토콜 §4).
-   * TODO(§21): 백엔드가 이동 명령(기지 위 방어 등)을 확정하면 이 함수 하나만 바꾼다. 호출부는 controller.rightClickTile 뿐.
+   * 프로토콜 §21.2 표 그대로: 내 기지 칸도 cmd_flag_retarget(회수 아님). 태세를 바로 못 바꾸면 서버가 pendingPosture 에 두고
+   * 조건이 풀릴 때 자동 적용한다(델타 flagFlags 비트 POSTURE_PENDING 128). 호출부는 controller.rightClickTile 뿐.
    */
   moveFlag(flagId: number, tileId: number): number {
     return this.retarget(flagId, tileId);
@@ -362,7 +363,7 @@ export class ClientStore {
   private feedFrom(m: ServerMessage): void {
     const g = this.game;
     if (!g || !g.ready) return;
-    const e = describeEvent(m, { me: this.viewerId, nick: (id) => this.nicknameOf(id), flagOwner: (id) => g.flags.get(id)?.ownerId ?? null, tickMs: g.config.tickMs, proposal: (id) => g.proposals.get(id) });
+    const e = describeEvent(m, { me: this.viewerId, nick: (id) => this.nicknameOf(id), flagOwner: (id) => g.flags.get(id)?.ownerId ?? null, tickMs: g.config.tickMs, proposal: (id) => g.proposals.get(id), baseName: (t) => g.baseNames.get(t), isCapital: (t) => g.capitalTiles.has(t) });
     if (!e) return;
     this.feed = [...this.feed, { ...e, id: ++this.feedSeq, tick: 'tick' in m ? (m as { tick: number }).tick : g.tick }].slice(-40);
     this.feedVersion++;

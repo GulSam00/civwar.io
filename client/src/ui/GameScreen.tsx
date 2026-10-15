@@ -17,7 +17,8 @@ import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
 import { fmtPm, goldPerSecond, techStatsOf, unitCombatStats } from './techInfo.js';
-import { flagActionState, myUnitChips, type SourceRow } from './unitChips.js';
+import { flagActionState, myUnitChips } from './unitChips.js';
+import { incomeOf, productionRows, type SourceRow } from './production.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard } from './panels.js';
 import { TechWindow } from './TechWindow.js';
 import { purchasableCount } from './techTree.js';
@@ -131,6 +132,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
           emotes: store.emotes,
           emoteText: (c) => EMOTE_TEXT[c] ?? `#${c}`,
           nicknameOf: (id) => store.nicknameOf(id),
+          // §21: 지명 + 생산력(회복 중일 때만 바 — 가득 차면 숨김). tick 사이를 회복 속도로 보간해 부드럽게 차오른다
+          baseExtra: game?.ready ? baseExtraOf(game, game.renderTick(now)) : undefined,
         },
         now,
       );
@@ -221,7 +224,7 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
   const b = game.bases.get(t);
   const o = ix.options;
   const fieldsKey = TOOLTIP_FIELDS.map((f) => (o.tooltipFields[f] ? 1 : 0)).join('');
-  const key = `${t}:${game.owners[t]}:${b ? Math.round(b.hpPct) : ''}:${tier}:${fieldsKey}`;
+  const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${tier}:${fieldsKey}`;
   if (el.dataset.key !== key) {
     const info = terrainInfo(game, t, store.myPlayerId, tier, (id) => store.nicknameOf(id));
     const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields) : [];
@@ -265,6 +268,14 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
   if (y < 64) y = ix.hoverY + 40; // 위쪽 HUD 와 겹치면 커서 아래로
   if (parent) x = Math.min(x, parent.clientWidth - w - 4);
   el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+
+/** 렌더러용 기지 부가 정보 (§21.4 생산력 · §21.5 지명). 생산력 바는 회복 중(< 100%)일 때만 */
+export function baseExtraOf(g: GameModel, tickFloat: number): (tile: number) => { productivityPct?: number; name?: string } {
+  return (tile) => {
+    const pm = g.baseProdPm(tile, tickFloat);
+    return { name: g.baseNames.get(tile), productivityPct: pm !== null && pm < 1000 ? pm / 10 : undefined };
+  };
 }
 
 /** 삼각 메뉴를 확정 지점 화면 위치로 (카메라 이동을 매 프레임 따라감) */
@@ -397,7 +408,15 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const rushTick = (g.config.endgameRush?.tick as number | undefined) ?? ENDGAME_RUSH_TICK;
   const spectating = me === null || viewer !== me;
   const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
-  const income = p ? goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants) : null;
+  // §21.4: 수입 = production 합 (없으면 예전 식). hover = 기지별 + 기타
+  const income = p ? incomeOf(g, p.id) : null;
+  const regions = p ? g.production.get(p.id) : undefined;
+  const nameOf = (t: number) => g.baseNames.get(t);
+  const isCap = (t: number) => g.capitalTiles.has(t);
+  const troopTip = regions?.length ? { title: `병력 재생 +${(income?.troops ?? 0).toFixed(1)}/초 — 출처`, unit: '/초', rows: productionRows(regions, 'troops', nameOf, isCap) } : null;
+  const goldTip = regions?.length
+    ? { title: `골드 순수입 +${(income?.net ?? 0).toFixed(1)}/초 — 출처${income && income.gross > income.net ? ` (유지비 −${(income.gross - income.net).toFixed(1)} 반영)` : ''}`, unit: '/초', rows: productionRows(regions, 'gold', nameOf, isCap) }
+    : null;
   // 테크 버튼 배지 = 지금 살 수 있는 노드 수 (내가 명령할 수 있을 때만)
   const mineP = me !== null ? g.players.get(me) : undefined;
   const techBadge = mineP && ctl.canCommand() ? purchasableCount(mineP, g.config.constants) : 0;
@@ -411,11 +430,12 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       {spectating && <span className="pill spectate-pill">{me !== null && g.players.get(me) && !g.players.get(me)!.alive ? '탈락 · 관전' : '관전'}{p ? ` · ${store.nicknameOf(p.id)}` : ''}</span>}
       {p && (
         <>
-          <Stat label="병력" value={`${p.troops.toLocaleString()} / ${g.troopCapOf(p).toLocaleString()}`} />
+          <Stat label="병력" value={`${p.troops.toLocaleString()} / ${g.troopCapOf(p).toLocaleString()}`} breakdown={troopTip} />
           <Stat
             label={p.upkeepPm > 0 ? `골드 · 유지비 −${(p.upkeepPm / 10).toFixed(0)}%` : '골드'}
             value={`${p.gold.toLocaleString()}${income ? ` +${income.net.toFixed(1)}/초` : ''}`}
             warn={p.upkeepPm >= 300}
+            breakdown={goldTip}
           />
           {!narrow && <Stat label="타일" value={p.tiles.toLocaleString()} />}
           <Stat label="점유율" value={`${share(p.tiles).toFixed(1)}%`} />
@@ -568,8 +588,8 @@ function Stat({ label, value, warn, breakdown }: { label: string; value: string;
 }
 
 /**
- * 병력·골드 hover 출처 내역 (프로토콜 §21 예정 — 기지별 + 기타 합산). 레이아웃만 먼저 둔다:
- * 제목 줄 → 기지 행(수도 별표, 이름, 초당 양 — 많은 순) → 구분선 → 기타. 데이터(sourceBreakdown 입력)는 §21 이후 연결.
+ * 병력·골드 hover 출처 내역 (§21.4 production — 기지별 + 기타). 제목 줄(총합) → 기지 행(수도 ★, 지명, 칸 수, 생산력 %, 초당 양 — 많은 순)
+ * → 구분선 → 기타(고립지·월경지, 생산력 고정). 행 합 = 총합.
  */
 function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: SourceRow[] }) {
   return (
@@ -580,9 +600,17 @@ function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: S
           <span className="source-name">
             {r.capital ? '★ ' : ''}
             {r.label}
+            <span className="source-tiles muted"> {r.tiles}칸</span>
           </span>
+          {r.prodPct !== null ? (
+            <span className={`source-prod ${r.prodPct < 100 ? 'low' : ''}`} title="기지 생산력">
+              {r.prodPct}%
+            </span>
+          ) : (
+            <span className="source-prod muted">—</span>
+          )}
           <span className="source-amt">
-            +{r.amount.toFixed(1)}
+            +{r.amount.toFixed(r.amount < 10 ? 2 : 1)}
             {unit}
           </span>
         </div>
@@ -606,7 +634,8 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
   const p = g && me !== null ? g.players.get(me) : undefined;
   let gold: JSX.Element | null = null;
   if (g && p && me !== null) {
-    const inc = goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants);
+    // §21.4: production 합 (생산력이 깎인 기지 반영). 없으면 예전 식
+    const inc = incomeOf(g, me) ?? goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants);
     const upkeep = Math.max(0, inc.gross - inc.net);
     const rule = detectRule(g, me, p.upkeepPm);
     if (rule) lastRule.current = rule;
@@ -701,6 +730,11 @@ function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputControl
         <kbd>F</kbd> 태세 변경 <PostureIcon posture={st.nextPosture} size={12} />
         {st.cooldownSec > 0 && <span className="fa-cd">{st.cooldownSec}초</span>}
       </button>
+      {st.pendingPosture !== null && (
+        <span className="fa-pending" role="status" title="이동 명령의 도착지 태세 — 쿨타임·전투가 끝나면 자동으로 바뀝니다">
+          태세 전환 대기 → <PostureIcon posture={st.pendingPosture} size={12} /> {POSTURE_NAME[st.pendingPosture]}
+        </span>
+      )}
     </div>
   );
 }
@@ -729,6 +763,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   const owner = g.players.get(f.ownerId);
   const cs = unitCombatStats(f.unit, owner?.techMask ?? 0, g.config.constants);
   const atkNow = f.posture === POSTURE.ATTACK;
+  const pending = flagActionState(f, g.tick, g.config.tickMs).pendingPosture;
   const postureBlocked = returning || f.routed || f.inCombat || f.disengaging || cd > 0;
   return (
     <div className="flag-panel">
@@ -744,6 +779,12 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           태세 <b className={f.posture === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[f.posture]}</b>
           {cd > 0 && <span className="muted"> (전환 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
         </div>
+        {pending !== null && (
+          <div className="fa-pending-row">
+            태세 전환 대기 → <b className={pending === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[pending]}</b>
+            <span className="muted small"> (쿨타임·전투가 끝나면 자동)</span>
+          </div>
+        )}
         <div className="muted">{status}</div>
         <div className="combat-stats" aria-label="전투값">
           <div className={`cs-row ${atkNow ? 'now' : ''}`}>

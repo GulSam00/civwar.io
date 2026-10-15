@@ -1891,7 +1891,9 @@ kbd {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  min-width: 200px;
+  min-width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
   background: rgba(16, 23, 32, 0.97);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1909,10 +1911,26 @@ kbd {
   margin-bottom: 4px;
 }
 .source-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 10px;
   padding: 1px 0;
+}
+.source-tiles {
+  font-size: 11px;
+}
+.source-prod {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 34px;
+}
+.source-prod.low {
+  color: var(--warn);
+}
+.source-amt {
+  text-align: right;
+  min-width: 52px;
 }
 .source-row.capital .source-name {
   color: #ffe9a8;
@@ -1925,4 +1943,21 @@ kbd {
 }
 .source-amt {
   font-variant-numeric: tabular-nums;
+}
+
+/* §21.2 대기 태세 */
+.fa-pending {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: rgba(18, 26, 36, 0.94);
+  border: 1px dashed var(--warn);
+  color: var(--warn);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.fa-pending-row {
+  color: var(--warn);
 }

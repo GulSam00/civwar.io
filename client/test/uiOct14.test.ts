@@ -2,7 +2,7 @@
  * 2026-10-14 UI 요청 — 순수 함수 검증:
  *  창 드래그 자르기(clampOffset) · 공격력/방어력(unitCombatStats, 서버 flagValue 와 같은 식·지형 제외) ·
  *  내 부대 칩(myUnitChips) · 떠 있는 버튼 상태(flagActionState) · 영토 이름 위치(territoryAnchors/layoutTerritoryLabels) ·
- *  기지 아이콘 크기(baseIconSize) · 출처 내역 구조(sourceBreakdown, §21 예정)
+ *  기지 아이콘 크기(baseIconSize). §21 연결분은 uiOct14b.test.ts
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,7 +18,7 @@ import {
 } from '@civwar/shared';
 import { clampOffset } from '../src/ui/draggable.js';
 import { fmtPm, unitCombatStats } from '../src/ui/techInfo.js';
-import { flagActionState, myUnitChips, sourceBreakdown } from '../src/ui/unitChips.js';
+import { flagActionState, myUnitChips } from '../src/ui/unitChips.js';
 import { LABEL_MAX_PX, LABEL_MIN_PX, labelSizePx, layoutTerritoryLabels, territoryAnchors } from '../src/render/territoryLabels.js';
 import { baseIconSize } from '../src/render/renderer.js';
 import { createTopologyView } from '../src/render/topology.js';
@@ -153,7 +153,7 @@ describe('병력 바 위 내 부대 칩', () => {
 describe('선택 부대 떠 있는 버튼 [귀환]/[태세 변경] 상태', () => {
   it('평상시: 둘 다 가능, 바꿀 태세 = 반대', () => {
     const st = flagActionState(flag({ posture: POSTURE.ATTACK }), 100, 200);
-    expect(st).toEqual({ recallBlocked: null, postureBlocked: null, cooldownSec: 0, nextPosture: POSTURE.DEFEND });
+    expect(st).toEqual({ recallBlocked: null, postureBlocked: null, cooldownSec: 0, nextPosture: POSTURE.DEFEND, pendingPosture: null });
   });
 
   it('쿨타임: 남은 초(올림) 표시 + 태세 변경만 막힘', () => {
@@ -251,25 +251,5 @@ describe('기지 아이콘 = 칸을 꽉 채운다', () => {
     expect(baseIconSize(30)).toBe(30);
     expect(baseIconSize(4)).toBe(10);
     expect(baseIconSize(200)).toBe(64);
-  });
-});
-
-describe('병력·골드 출처 내역 구조 (§21 예정)', () => {
-  it('기지 많은 순 + 기타 = 합계 − Σ 기지', () => {
-    const rows = sourceBreakdown(10, [
-      { tile: 5, name: '한성', amount: 2.5 },
-      { tile: 9, name: '평양', amount: 4, capital: true },
-    ]);
-    expect(rows.map((r) => [r.label, r.amount])).toEqual([
-      ['평양', 4],
-      ['한성', 2.5],
-      ['기타', 3.5],
-    ]);
-    expect(rows[0].capital).toBe(true);
-  });
-
-  it('기지 합이 합계를 넘으면 기타 0, 기지 없으면 기타 = 합계', () => {
-    expect(sourceBreakdown(1, [{ tile: 1, name: 'a', amount: 2 }]).at(-1)!.amount).toBe(0);
-    expect(sourceBreakdown(7, [])).toEqual([{ key: 'other', label: '기타', amount: 7 }]);
   });
 });

@@ -277,3 +277,35 @@ server/·shared/ 는 손대지 않았다 (백엔드 §21 병행 작업 중). 새
 ### 메모 / 확인 필요
 - 쿨타임 중 내 기지로 우클릭 이동했을 때 서버가 태세를 방어로 바꿨다(프로토콜 §4 표는 "쿨타임 중·전투 중이면 현 태세 유지"). 그 시점 쿨타임이 막 끝났을 수도 있어 확정은 못 함 — integration-qa 확인 요망.
 - 개발 중 HMR 로 GameScreen 이 다시 마운트되면 `usePolled` 가 첫 렌더의 클로저(옛 컨트롤러)를 계속 읽어 옵션 창 등이 안 뜰 수 있다(새로고침하면 정상). 기존 동작이며 배포 빌드와 무관.
+
+## 15. 프로토콜 §21 연결 (2026-10-14 2차 — 백엔드 39757b8 이후)
+
+§14 의 "§21 연결 대기" 항목을 전부 연결했다. server/·shared/ 는 손대지 않았다.
+
+### 사용하는 §21 필드
+| 필드 | 쓰는 곳 |
+|---|---|
+| `map_init.baseNames` (bases 와 같은 순서) | `GameModel.baseNames` (`baseNameMap`) → 기지 위 지명, 지형 툴팁, 피드, 생산 내역 행 이름 |
+| `snapshot_full.bases[].prodPm` · 델타 `baseProd` · `base_captured.newProdPm` | `GameModel.baseProd` = {마지막 서버 값, 그 tick} → `baseProdPm(tile, tickFloat)` 보간 |
+| `snapshot_full.production` · 델타 `production` (바뀐 플레이어만 통째 교체) | `GameModel.production` → `ui/production.ts` `incomeOf` · `productionRows` |
+| `flagFlags` 비트 `POSTURE_PENDING 128` · `snapshot_full.flags[].pendingPosture` | (백엔드가 넣은 모델 해석 그대로) → `flagActionState.pendingPosture` |
+| `player_eliminated.byPlayerId` · `annexedTiles` + 같은 tick `tileChanges` | 피드 문구, `GameModel.annexFlashes` → 렌더러 번쩍임 |
+
+### 구현
+- **생산력 바**: 기지 칸 아래 금색 바, **회복 중(< 100%)일 때만** 그린다(가득 찬 기지마다 바가 있으면 맵이 어지럽다 — 100% 는 툴팁·내역에서 확인). 표시값 = 마지막 서버 값 + 경과 tick × (분당 `BASE_PROD_RECOVER_PER_MIN_PERMILLE` × tickMs / 60000), 상한 `BASE_PROD_MAX_PERMILLE`. 경과 tick 은 `GameModel.renderTick()`(마지막 tick + 수신 후 경과/tickMs, 최대 +1)이라 매 프레임 부드럽게 차오른다. 서버 값이 오면 그 값으로 다시 맞춘다(권위). 줌 14 이상이면 바 옆에 "생산 n%".
+- **지명**: 체력 바 위 라벨 — 수도(연금색, 12px) 줌 7 이상, 기지 줌 9 이상. 지형 툴팁에 "기지/수도 · 지명", "생산력 n% (회복 중)" 행(기지 체력 항목과 함께 켜고 끔). 피드: "고요담 함락 — 내가 중립 기지를 점령", "누리 함락 — 내가 BOT 2의 수도를 점령".
+- **수입 = production 합** (§21.4): HUD 골드, 하단 바 골드 흐름(총·유지비 = Σgross − Σnet), 테크 창 머리·구매 대기 시간 모두 `incomeOf`. 표가 아직 없으면(부트스트랩 직후 등) 예전 `goldPerSecond` 식으로 대신. (테크 상세의 "구매 후 수입 변화"는 상대값이라 예전 식 유지)
+- **hover 출처**: HUD 병력·골드에 마우스/포커스 → 제목(총합) + 기지 행(수도 ★, 지명, 칸 수, 생산력 %, 초당 양 — 많은 순) + 기타(고립지, 생산력 —). 병력 = `troopsPerSecMilli`, 골드 = `goldNetPerSecMilli`(유지비 차감 후) → 행 합 = HUD 총합. 값이 10 미만이면 소수 둘째 자리.
+- **우클릭 이동**: `store.moveFlag` = §21.2 표 그대로 `cmd_flag_retarget{flagId, anchorTileId}`(내 기지 포함) — 변경 없음, 주석만 갱신. **대기 태세**: 떠 있는 버튼 아래 "태세 전환 대기 → (방어/공격)" 배지, 정보 패널에 "태세 전환 대기 → 방어 (쿨타임·전투가 끝나면 자동)". 귀환·패주 중이거나 현재와 같으면 표시 안 함.
+- **멸망·합병**: 피드 "BOT 2 멸망 — BOT 7이 남은 311칸을 합병"(나면 "내가"), 합병 대상 없으면 "— 남은 땅은 중립으로". 합병한 사람이 나면 토스트. 넘어간 칸을 합병자 색 + 흰 테두리로 1.6초 깜빡이며 사라지게(`drawAnnexFlash`, 칸 경로는 flash 당 한 번). 멸망자의 production 은 빈 배열.
+- `GameModel.diffAgainstFull` 에 기지 생산력·production 비교 추가 → 기존 서버 재구성 테스트(M 10인 HARD 2000 tick 등)가 §21 필드도 불일치 0 으로 확인한다.
+- 도움말: 기지 위 방어 ×1.5, 생산력(×0.5·회복·금색 바·hover 출처), 기지 전부 상실 = 멸망·합병.
+
+### 검증
+- `npm run typecheck` 통과 · `npm test` 23 파일 310개 통과 · `npm run build:client` 통과.
+- 새 테스트 `client/test/uiOct14b.test.ts` (15): 생산력 보간(속도·상한·tick 사이 소수·서버 값 재동기화·점령 50→25%·renderTick·바는 회복 중만), 지명 매핑(map_init → tileId, 길이 불일치)·툴팁 행·피드 문구, 출처 행 합 = 총합(병력·순골드)·정렬·생산력 %, 수입 = production 합·델타 교체·없으면 예전 식, 대기 태세(비트 128 → 버튼 상태 → 자동 적용 후 해제, full 필드, 귀환·패주·같은 태세 제외), 멸망·합병 피드·번쩍임 칸 수집·중립 처리.
+- 브라우저(서버 8092 / Vite 5182, S 맵 HARD 봇 6): 지명(전체·확대), 중립 기지 우클릭 이동 → 함락 → 피드 + 바 53% → 60% → 62% → 69% 차오름, 기지 툴팁(지명·체력·생산력 회복 중), HUD 병력·골드 hover(테드반 100% / 고요담 62%), 대기 태세 표시 → 몇 초 뒤 자동 방어 전환·배지 사라짐. 스크린샷 `_workspace/screenshots/2026-10-14b_*` 9장.
+
+### 확인 못 한 것
+- **멸망 번쩍임은 브라우저에서 못 봤다**(봇 멸망까지 기다리지 않음) — 단위 테스트로 칸 수집·피드만 확인.
+- 바 보간은 서버보다 최대 1‰ 앞설 수 있다(서버는 ‰×300 정수 누적 후 floor) — 다음 `baseProd` 가 덮어써 눈에 띄지 않는다.

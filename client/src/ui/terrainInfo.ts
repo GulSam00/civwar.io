@@ -68,8 +68,15 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, shall
   const ownerName = ownerId === 0 ? (isClaimable(ter) ? '중립' : '—') : `${nicknameOf(ownerId)}${ownerId === me ? ' (나)' : m.isAlly(me ?? 0, ownerId) ? ' (동맹)' : ''}`;
   add('owner', '소유자', ownerName);
   const b = m.bases.get(tile);
-  const base = b ? `${m.capitalTiles.has(tile) ? '수도' : '기지'} · 체력 ${Math.round(b.hpPct)}%` : null;
-  if (b) add('baseHp', m.capitalTiles.has(tile) ? '수도 체력' : '기지 체력', `${Math.round(b.hpPct)}%`);
+  const base = b ? `${m.capitalTiles.has(tile) ? '수도' : '기지'}${m.baseNames.get(tile) ? ` ${m.baseNames.get(tile)}` : ''} · 체력 ${Math.round(b.hpPct)}%` : null;
+  if (b) {
+    // §21.5 지명 · §21.4 생산력 — 서버가 보냈을 때만 (기지 체력 항목과 함께 켜고 끈다)
+    const name = m.baseNames.get(tile);
+    if (name) add('baseHp', m.capitalTiles.has(tile) ? '수도' : '기지', name);
+    add('baseHp', m.capitalTiles.has(tile) ? '수도 체력' : '기지 체력', `${Math.round(b.hpPct)}%`);
+    const prod = m.baseProdPm(tile);
+    if (prod !== null) add('baseHp', '생산력', `${Math.floor(prod / 10)}%${prod < 1000 ? ' (회복 중)' : ''}`);
+  }
   // 한 줄 요약(이전 형식) — 지형·소유자·기지 행을 뺀 보정 문구
   const mods = ter === TERRAIN.DEEP ? ['통행 불가 · 점령 불가'] : rows.filter((r) => r.field !== 'terrain' && r.field !== 'owner' && r.field !== 'baseHp').map((r) => (r.label === '점령' ? '점령 불가' : `${r.label} ${r.value}`));
   return { terrain, mods, rows, ownerId, ownerName, base };

@@ -25,11 +25,14 @@ import {
   rleDecode,
   techCount,
   techStatValues,
+  BASE_PROD_MAX_PERMILLE,
+  BASE_PROD_RECOVER_PER_MIN_PERMILLE,
   type AllianceSnapshot,
   type AllyProposalSnapshot,
   type BaseSnapshot,
   type FlagSnapshot,
   type PlayerSnapshot,
+  type ProductionRegion,
   type S2C_GameOver,
   type S2C_MapInit,
   type S2C_MatchConfig,
@@ -85,6 +88,20 @@ export class GameModel {
   /** 귀환 목적지 (flag_recalled / flag_routed.returnTileId — 표시 전용, 이동 방향 화살표) */
   flagReturn = new Map<number, number>();
 
+  // ── v4.4 (§21) 기지 생산력 · 지명 · 생산 내역 · 합병 ──
+  /** 지명 (map_init.baseNames, bases 와 같은 순서) — tileId → 이름 */
+  baseNames = new Map<number, string>();
+  /** 기지 생산력 ‰ 의 마지막 서버 값과 그 tick (보간 기준) — snapshot_full.bases[].prodPm · 델타 baseProd · base_captured.newProdPm */
+  baseProd = new Map<number, { pm: number; tick: number }>();
+  /** 플레이어별 생산 내역 (snapshot_full.production 전원 / 델타 production 은 바뀐 플레이어만 통째 교체) */
+  production = new Map<number, ProductionRegion[]>();
+  /** 합병 표시용 — player_eliminated 직후 같은 tick tileChanges 로 넘어간 칸 (렌더러가 잠깐 번쩍인다) */
+  annexFlashes: { playerId: number; byPlayerId: number; tick: number; tiles: number[]; at: number }[] = [];
+  /** 마지막 tick 을 받은 시각 (performance.now 기준 ms — tick 사이 보간) */
+  tickReceivedAt = 0;
+  /** 시계 (테스트에서 바꾼다) */
+  clock: () => number = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
   /** snapshot_full 을 1회 이상 받았는가 — 그 전에는 delta 를 적용하지 않는다 */
   ready = false;
 
@@ -112,6 +129,7 @@ export class GameModel {
     this.spawns = m.spawns;
     this.baseTiles = [...m.bases];
     this.capitalTiles = new Set(m.spawns.map((s) => s.homeTileId));
+    this.baseNames = baseNameMap(m.bases, m.baseNames);
     this.ownersVersion++;
     this.version++;
   }
@@ -123,6 +141,8 @@ export class GameModel {
     for (const id of [...this.flagEta.keys()]) if (this.flags.get(id)?.state !== 'MARCHING') this.flagEta.delete(id);
     for (const id of [...this.flagReturn.keys()]) if (this.flags.get(id)?.state !== 'RETURNING') this.flagReturn.delete(id);
     this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b }]));
+    this.baseProd = new Map(f.bases.filter((b) => b.prodPm !== undefined).map((b) => [b.tileId, { pm: b.prodPm!, tick: f.tick }]));
+    if (f.production) this.production = new Map(f.production.map((pp) => [pp.playerId, pp.regions]));
     this.alliances = new Map(f.alliances.map((a) => [allianceKey(a.a, a.b), { ...a }]));
     this.proposals = new Map(f.allyProposals.map((p) => [p.proposalId, { ...p }]));
     this.allianceFreezeUntilTick = f.allianceFreezeUntilTick;
@@ -130,6 +150,7 @@ export class GameModel {
     this.thresholdPct = f.thresholdPct;
     this.endgameRushActive = f.endgameRushActive;
     this.tick = f.tick;
+    this.tickReceivedAt = this.clock();
     this.ready = true;
     this.ownersVersion++;
     this.dirtyTiles = [];
@@ -238,6 +259,9 @@ export class GameModel {
       case 'player_eliminated': {
         const p = this.players.get(e.playerId);
         if (p) p.alive = false;
+        this.production.set(e.playerId, []);
+        // §21.3: 넘어간 칸은 같은 tick snapshot_delta.tileChanges 로 온다 → applyDelta 가 채운다
+        if (e.byPlayerId !== null && (e.annexedTiles ?? 0) > 0) this.annexFlashes.push({ playerId: e.playerId, byPlayerId: e.byPlayerId, tick: e.tick, tiles: [], at: this.clock() });
         break;
       }
       case 'player_reconnected': {
@@ -254,6 +278,10 @@ export class GameModel {
       case 'base_captured': {
         const b = this.bases.get(e.tileId);
         if (b) Object.assign(b, { ownerId: e.toPlayerId, hpPct: e.newHpPct });
+        if (e.newProdPm !== undefined) {
+          this.baseProd.set(e.tileId, { pm: e.newProdPm, tick: e.tick });
+          if (b) b.prodPm = e.newProdPm;
+        }
         break;
       }
       case 'ally_formed':
@@ -304,6 +332,8 @@ export class GameModel {
 
   applyDelta(d: S2C_SnapshotDelta): void {
     this.tick = d.tick;
+    this.tickReceivedAt = this.clock();
+    const flashes = this.annexFlashes.filter((a) => a.tick === d.tick);
     if (this.dirtyTiles.length > this.tileCount) {
       // 렌더러가 소비하지 못하는 동안(탭 숨김 등) 무한히 쌓이지 않게 — 전체 다시 그리기로 전환
       this.dirtyTiles = [];
@@ -312,6 +342,7 @@ export class GameModel {
     for (const [t, o] of d.tileChanges) {
       this.owners[t] = o;
       this.dirtyTiles.push(t);
+      for (const a of flashes) if (a.byPlayerId === o) a.tiles.push(t);
       const b = this.bases.get(t);
       if (b) b.ownerId = o;
     }
@@ -341,6 +372,13 @@ export class GameModel {
       const b = this.bases.get(tile);
       if (b) b.hpPct = hp;
     }
+    // v4.4 (§21): 기지 생산력 (바뀐 기지만) · 생산 내역 (바뀐 플레이어만 통째 교체)
+    for (const [tile, pm] of d.baseProd ?? []) {
+      this.baseProd.set(tile, { pm, tick: d.tick });
+      const b = this.bases.get(tile);
+      if (b) b.prodPm = pm;
+    }
+    for (const pp of d.production ?? []) this.production.set(pp.playerId, pp.regions);
     for (const id of d.flagsGone) {
       this.flags.delete(id);
       this.flagEta.delete(id);
@@ -401,6 +439,21 @@ export class GameModel {
     return Math.floor(((base + per * p.tiles) * capPm) / 1000);
   }
 
+  /**
+   * 기지 생산력 ‰ 표시값 — 마지막 서버 값에서 회복 속도(분당 BASE_PROD_RECOVER_PER_MIN_PERMILLE)로 앞으로 보간, 상한 BASE_PROD_MAX.
+   * tickFloat = 지금 tick + tick 안 경과 비율 (renderTick). 서버 값이 오면 그 값으로 다시 맞춘다(권위).
+   */
+  baseProdPm(tile: number, tickFloat: number = this.tick): number | null {
+    const v = this.baseProd.get(tile);
+    if (!v) return null;
+    return interpBaseProd(v.pm, tickFloat - v.tick, this.config.tickMs, constNum(this.config, 'BASE_PROD_RECOVER_PER_MIN_PERMILLE', BASE_PROD_RECOVER_PER_MIN_PERMILLE), constNum(this.config, 'BASE_PROD_MAX_PERMILLE', BASE_PROD_MAX_PERMILLE));
+  }
+
+  /** 렌더용 연속 tick (마지막 tick + 경과/tickMs, 한 tick 이상 앞서가지 않음) */
+  renderTick(now: number = this.clock()): number {
+    return this.tick + Math.max(0, Math.min(1, (now - this.tickReceivedAt) / this.config.tickMs));
+  }
+
   flagsOf(playerId: number): FlagSnapshot[] {
     const out: FlagSnapshot[] = [];
     for (const f of this.flags.values()) if (f.ownerId === playerId) out.push(f);
@@ -440,6 +493,12 @@ export class GameModel {
     for (const b of f.bases) {
       const m = this.bases.get(b.tileId);
       if (!m || m.hpPct !== b.hpPct || m.ownerId !== b.ownerId) out.push(`base ${b.tileId} 모델 ${JSON.stringify(m)} / full ${JSON.stringify(b)}`);
+      // §21.4 생산력: 모델의 마지막 서버 값(보간 전) = full
+      if (b.prodPm !== undefined && this.baseProd.get(b.tileId)?.pm !== b.prodPm) out.push(`baseProd ${b.tileId} 모델 ${this.baseProd.get(b.tileId)?.pm} / full ${b.prodPm}`);
+    }
+    for (const pp of f.production ?? []) {
+      const mine = this.production.get(pp.playerId) ?? [];
+      if (JSON.stringify(mine) !== JSON.stringify(pp.regions)) out.push(`production ${pp.playerId}`);
     }
     const al = [...this.alliances.values()].sort((x, y) => x.a - y.a || x.b - y.b);
     if (JSON.stringify(al) !== JSON.stringify(f.alliances)) out.push(`alliances 모델 ${JSON.stringify(al)} / full ${JSON.stringify(f.alliances)}`);
@@ -453,6 +512,27 @@ export class GameModel {
     if (this.ticksRemaining !== f.ticksRemaining) out.push(`ticksRemaining ${this.ticksRemaining} / ${f.ticksRemaining}`);
     return out;
   }
+}
+
+/** map_init.bases + baseNames → tileId → 이름 (길이가 다르면 있는 만큼만) */
+export function baseNameMap(bases: readonly number[], names: readonly string[] | undefined): Map<number, string> {
+  const m = new Map<number, string>();
+  if (!names) return m;
+  bases.forEach((t, i) => {
+    const n = names[i];
+    if (typeof n === 'string' && n) m.set(t, n);
+  });
+  return m;
+}
+
+/**
+ * 생산력 보간: pm + 경과 tick × (분당 회복 ‰ × tickMs / 60000), [pm, max] 안. 서버는 ‰×300 정수 누적 후 floor 라
+ * 표시값은 서버보다 최대 1‰ 앞설 수 있다 — 다음 서버 값이 덮어쓴다.
+ */
+export function interpBaseProd(pm: number, elapsedTicks: number, tickMs: number, perMinPm: number, maxPm: number): number {
+  if (pm >= maxPm) return maxPm;
+  const v = pm + Math.max(0, elapsedTicks) * ((perMinPm * tickMs) / 60000);
+  return Math.min(maxPm, v);
 }
 
 export function allianceKey(a: number, b: number): string {

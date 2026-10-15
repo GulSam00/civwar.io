@@ -22,7 +22,7 @@ import { UNIT_SHORT } from '../ui/text.js';
 import { layoutTerritoryLabels, territoryAnchors, type TerritoryAnchor } from './territoryLabels.js';
 
 /**
- * 기지 부가 정보 (프로토콜 §21 예정 — 백엔드 작업 후 연결). 지금은 GameScreen 이 아무것도 넘기지 않아 그려지지 않는다.
+ * 기지 부가 정보 (프로토콜 §21) — GameScreen.baseExtraOf 가 GameModel(baseProd 보간 · baseNames)에서 만든다.
  *  productivityPct: 기지 생산력 0..100 (점령 직후 비었다가 차오르는 바 — 기지 칸 아래)
  *  name: 지명 (수도·기지 아래 라벨)
  */
@@ -50,7 +50,7 @@ export interface RenderView {
   emotes: readonly { playerId: number; code: number; at: number }[];
   emoteText(code: number): string;
   nicknameOf(id: number): string;
-  /** §21 예정: 기지 생산력·지명 (없으면 생략) */
+  /** §21: 기지 생산력·지명 (없으면 생략) */
   baseExtra?(tile: number): BaseExtra | undefined;
 }
 
@@ -197,6 +197,7 @@ export class GameRenderer {
     }
     ctx.restore();
 
+    this.drawAnnexFlash(ctx, model, topo, now);
     this.drawTerritoryNames(ctx, model, topo, view, now);
     this.drawBases(ctx, model, topo, view);
     this.drawRouteArrow(ctx, topo, view);
@@ -247,6 +248,44 @@ export class GameRenderer {
       ctx.strokeText(l.text, l.x, l.y);
       ctx.fillStyle = l.owner === view.me ? '#ffffff' : '#eef2f6';
       ctx.fillText(l.text, l.x, l.y);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * 멸망·합병 (§21.3) — 넘어간 칸을 합병한 플레이어 색 + 흰 테두리로 1.6초 동안 번쩍였다가 사라진다.
+   * 칸 목록은 GameModel.annexFlashes (player_eliminated 직후 같은 tick tileChanges). Path2D 는 flash 마다 한 번 만든다.
+   */
+  private annexPaths = new WeakMap<object, { fill: Path2D; edge: Path2D }>();
+  private drawAnnexFlash(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, now: number): void {
+    if (!model.annexFlashes.length) return;
+    const DUR = 1600;
+    const wall = model.clock();
+    model.annexFlashes = model.annexFlashes.filter((a) => wall - a.at < DUR + 2000); // 칸이 아직 안 왔을 수도 있어 여유
+    const cam = this.camera;
+    ctx.save();
+    ctx.translate(cam.viewW / 2, cam.viewH / 2);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-cam.cx, -cam.cy);
+    for (const a of model.annexFlashes) {
+      if (!a.tiles.length) continue;
+      const k = (wall - a.at) / DUR;
+      if (k >= 1) continue;
+      let path = this.annexPaths.get(a);
+      if (!path) {
+        const fill = new Path2D();
+        for (const t of a.tiles) topo.tilePath(fill, t, 0);
+        path = { fill, edge: topo.regionOutline(a.tiles) };
+        this.annexPaths.set(a, path);
+      }
+      const alpha = (1 - k) * (0.6 + 0.4 * Math.abs(Math.sin(now / 110)));
+      ctx.globalAlpha = alpha * 0.55;
+      ctx.fillStyle = playerColor(a.byPlayerId);
+      ctx.fill(path.fill);
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 3 / cam.zoom;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke(path.edge);
     }
     ctx.restore();
   }
@@ -528,7 +567,7 @@ export class GameRenderer {
   /**
    * 기지 (2026-10-14: 칸을 꽉 채운다). 일반 기지 = 소유자 색 칸 + 검은 테두리 + 십자,
    * 수도 = 금색 바깥 테두리 + 안쪽 사각 + 별 (칸이 커도 한눈에 구분). 위 = 체력 바.
-   * §21 예정: 아래 = 생산력 바(baseExtra.productivityPct), 그 아래 = 지명(baseExtra.name).
+   * §21: 아래 = 생산력 바(baseExtra.productivityPct, 회복 중일 때만), 체력 바 위 = 지명(baseExtra.name — 수도 줌 7+, 기지 줌 9+).
    */
   private drawBases(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
     const cam = this.camera;
@@ -592,17 +631,28 @@ export class GameRenderer {
       ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
       ctx.fillStyle = b.ownerId ? playerColor(b.ownerId) : '#ddd';
       ctx.fillRect(bx, by, (bw * Math.max(0, Math.min(100, b.hpPct))) / 100, bh);
-      // §21 예정 — 데이터가 오면 그린다 (지금은 baseExtra 가 없다)
+      // §21.4 생산력 바 (칸 아래, 금색 — 회복 중일 때만 GameScreen 이 넘긴다) · §21.5 지명 (체력 바 위)
       const extra = view.baseExtra?.(tile);
-      let below = y0 + s + (capital ? 4 + lw : 3);
+      const below = y0 + s + (capital ? 4 + lw : 3);
       if (extra?.productivityPct !== undefined) {
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        const pct = Math.max(0, Math.min(100, extra.productivityPct));
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.fillRect(bx - 1, below - 1, bw + 2, bh + 2);
         ctx.fillStyle = '#ffd54f';
-        ctx.fillRect(bx, below, (bw * Math.max(0, Math.min(100, extra.productivityPct))) / 100, bh);
-        below += bh + 3;
+        ctx.fillRect(bx, below, (bw * pct) / 100, bh);
+        if (cam.zoom >= 14) {
+          ctx.font = 'bold 10px system-ui, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+          const t = `생산 ${Math.floor(pct)}%`;
+          ctx.strokeText(t, bx + bw + 4, below + bh / 2);
+          ctx.fillStyle = '#ffe9a8';
+          ctx.fillText(t, bx + bw + 4, below + bh / 2);
+        }
       }
-      if (extra?.name && cam.zoom >= 9) this.label(ctx, extra.name, p.x, below + 7, 11, capital ? '#ffe9a8' : '#fff');
+      if (extra?.name && cam.zoom >= (capital ? 7 : 9)) this.label(ctx, extra.name, p.x, by - 9, capital ? 12 : 11, capital ? '#ffe9a8' : '#fff');
     }
   }
 

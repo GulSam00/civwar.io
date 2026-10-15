@@ -46,6 +46,11 @@ export interface FlagActionState {
   cooldownSec: number;
   /** 바꿀 태세 */
   nextPosture: Posture;
+  /**
+   * §21.2 대기 태세 — 우클릭 이동이 정한 도착지 태세가 쿨타임·전투 때문에 아직 적용되지 않았으면 그 태세(현재의 반대), 아니면 null.
+   * 조건이 풀리면 서버가 자동 적용한다.
+   */
+  pendingPosture: Posture | null;
 }
 
 /**
@@ -59,25 +64,12 @@ export function flagActionState(f: FlagSnapshot, tick: number, tickMs: number): 
   const returning = f.state === 'RETURNING';
   const recallBlocked = f.routed ? '패주 중' : returning ? '귀환 중 — 취소 불가' : null;
   const postureBlocked = f.routed ? '패주 중' : returning ? '귀환 중' : f.disengaging ? '이탈 대기 중' : f.inCombat ? '전투 중' : cooldownSec > 0 ? `전환 대기 ${cooldownSec}초` : null;
-  return { recallBlocked, postureBlocked, cooldownSec, nextPosture: f.posture === POSTURE.ATTACK ? POSTURE.DEFEND : POSTURE.ATTACK };
-}
-
-/**
- * 병력·골드 hover 출처 내역 (프로토콜 §21 예정 — 기지별 + 기타 합산). 구조만 먼저: 서버가 기지별 생산량을 보내면 perBase 를 채운다.
- * 기타 = 합계 − Σ 기지 (음수면 0). 기지는 많은 순, 같으면 이름순.
- */
-export interface SourceRow {
-  key: string;
-  label: string;
-  amount: number;
-  /** 수도 여부 (표시 강조) */
-  capital?: boolean;
-}
-export function sourceBreakdown(total: number, perBase: readonly { tile: number; name: string; amount: number; capital?: boolean }[]): SourceRow[] {
-  const rows: SourceRow[] = [...perBase]
-    .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name))
-    .map((b) => ({ key: `base-${b.tile}`, label: b.name, amount: b.amount, capital: b.capital }));
-  const sum = perBase.reduce((s, b) => s + b.amount, 0);
-  rows.push({ key: 'other', label: '기타', amount: Math.max(0, total - sum) });
-  return rows;
+  const pending = f.pendingPosture ?? null;
+  return {
+    recallBlocked,
+    postureBlocked,
+    cooldownSec,
+    nextPosture: f.posture === POSTURE.ATTACK ? POSTURE.DEFEND : POSTURE.ATTACK,
+    pendingPosture: pending !== null && pending !== f.posture && !f.routed && !returning ? (pending as Posture) : null,
+  };
 }

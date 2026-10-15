@@ -9,7 +9,8 @@ import { TECH_BRANCH_COUNT, TECH_BRANCH_NAME, type TechNodeDef, type Unit } from
 import type { ClientStore } from '../state/store.js';
 import type { GameInputController } from '../input/controller.js';
 import { usePolled } from './hooks.js';
-import { goldPerSecond, techNodes } from './techInfo.js';
+import { techNodes } from './techInfo.js';
+import { incomeOf } from './production.js';
 import { fmtWait, secondsToAfford, techAncestors, techDetailRows, techLayout, techNodeViews, techPriceInfo, techScopeText, purchasableByBranch, type TechNodeState, type TechNodeView } from './techTree.js';
 import { StateGlyph, TechIcon } from './techIcons.js';
 import { UnitIcon } from './unitIcons.js';
@@ -84,7 +85,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
       {viewer && (
         <span className="tw-gold">
           골드 <b>{viewer.gold.toLocaleString()}</b>
-          <span className="muted"> (+{goldPerSecond(viewer.goldWeight, viewer.techMask, viewer.upkeepPm, consts).net.toFixed(1)}/초)</span>
+          <span className="muted"> (+{(incomeOf(g, viewer.id)?.net ?? 0).toFixed(1)}/초)</span>
           <span className="muted"> · 구매 {viewer.techCount}회</span>
         </span>
       )}
@@ -413,7 +414,8 @@ function TechDetailPanel({
   const parent = node.parent !== null ? nodes[node.parent] : null;
   const parentOwned = parent ? ((viewer.techMask >>> parent.id) & 1) === 1 : true;
   const price = techPriceInfo(node.tier, viewer.techCount, consts);
-  const inc = goldPerSecond(viewer.goldWeight, viewer.techMask, viewer.upkeepPm, consts);
+  // §21.4: 순수입 = production 합 (생산력 반영)
+  const inc = incomeOf(g, viewer.id) ?? { net: 0 };
   const wait = secondsToAfford(viewer.gold, price.cost, inc.net);
   const detail = techDetailRows(node, {
     consts,

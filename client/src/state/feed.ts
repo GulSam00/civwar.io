@@ -28,6 +28,10 @@ export interface FeedCtx {
   tickMs: number;
   /** 이벤트 적용 전 동맹 제안 (ally_proposal_closed 에는 당사자가 없다) */
   proposal?(proposalId: number): { fromPlayerId: number; toPlayerId: number } | undefined;
+  /** v4.4 (§21.5): 기지 지명 (map_init.baseNames) */
+  baseName?(tileId: number): string | undefined;
+  /** 수도 칸인가 */
+  isCapital?(tileId: number): boolean;
 }
 
 /** 받침 유무 — 한글 음절은 종성, 숫자는 읽는 소리(영·일·삼·육·칠·팔 = 받침), 그 외(영문 등)는 null */
@@ -65,15 +69,26 @@ export function describeEvent(m: ServerMessage, c: FeedCtx): Draft | null {
     case 'base_captured': {
       const mine = isMe(m.toPlayerId) || isMe(m.fromPlayerId);
       const from = m.fromPlayerId === 0 ? '중립' : who(m.fromPlayerId);
-      return { kind: 'base', mine, text: `${subj(m.toPlayerId)} ${from} 기지를 함락`, important: isMe(m.fromPlayerId), toast: isMe(m.fromPlayerId) };
+      // §21.5 지명: "BOT 3이 중립 기지 '한울'을 함락" → 지명이 있으면 "BOT 3이 나의 수도 한울 함락"
+      const name = c.baseName?.(m.tileId);
+      const kindName = c.isCapital?.(m.tileId) ? '수도' : '기지';
+      const owner = m.fromPlayerId === 0 ? '중립' : isMe(m.fromPlayerId) ? '나의' : `${c.nick(m.fromPlayerId)}의`;
+      const text = name ? `${name} 함락 — ${subj(m.toPlayerId)} ${owner} ${kindName}를 점령` : `${subj(m.toPlayerId)} ${from} 기지를 함락`;
+      return { kind: 'base', mine, text, important: isMe(m.fromPlayerId), toast: isMe(m.fromPlayerId) };
     }
-    case 'player_eliminated':
+    case 'player_eliminated': {
+      // §21.3 멸망·합병: "BOT 3 멸망 — BOT 7에 311칸 합병"
+      const n = m.annexedTiles ?? 0;
+      const by = m.byPlayerId;
+      const tail = by !== null && by !== undefined ? (n > 0 ? ` — ${subj(by)} 남은 ${n.toLocaleString()}칸을 합병` : ` (${who(by)})`) : n === 0 && m.annexedTiles !== undefined ? ' — 남은 땅은 중립으로' : '';
       return {
         kind: 'system',
-        mine: isMe(m.playerId) || isMe(m.byPlayerId),
-        text: `${who(m.playerId)} 탈락${m.byPlayerId ? ` (${who(m.byPlayerId)})` : ''}`,
-        important: isMe(m.playerId),
+        mine: isMe(m.playerId) || isMe(by),
+        text: `${who(m.playerId)} 멸망${tail}`,
+        important: isMe(m.playerId) || isMe(by),
+        toast: isMe(by) && n > 0,
       };
+    }
     case 'endgame_rush':
       return { kind: 'system', mine: false, text: `종반 러시 — 점령 비용 ×${m.costMultPermille / 1000}, 동맹 신규 체결 마감`, important: true, toast: true };
     case 'threshold_update':
