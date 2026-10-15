@@ -108,7 +108,9 @@ describe('v4.3 노드 표', () => {
     expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'set', value: 950 });
     expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.CONVERT_CAVALRY, op: 'set', value: 1070 });
     expect(s('CAV-3')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1300 });
-    expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.SHALLOW_MOVE, op: 'set', value: 3500 });
+    // v4.5 (01c 승인): 조선술·상륙정 → 철수 훈련(이탈 대기 15 → 10)·급속 귀환(귀환 ×1.5 → ×2.2). id·부모·스탯 칸(11·13) 유지
+    expect(s('MOB-2B')).toMatchObject({ id: 17, parent: 15, stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
+    expect(s('MOB-3B')).toMatchObject({ id: 19, parent: 17, stat: TECH_STAT.RETURN_SPEED, op: 'set', value: 2200, name: '급속 귀환' });
     expect(s('MIL-2A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK, value: 30 });
     expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF, value: 40 });
   });
@@ -122,7 +124,8 @@ describe('v4.3 노드 표', () => {
     expect(v[TECH_STAT.TROOP_CAP]).toBe(1140);
     expect(v[TECH_STAT.SPEED]).toBe(1300);
     expect(v[TECH_STAT.SLOT_BONUS]).toBe(1); // [A-74] 최대 +1
-    expect(v[TECH_STAT.SHALLOW_MOVE]).toBe(3500);
+    expect(v[TECH_STAT.DISENGAGE_TICKS]).toBe(10); // v4.5 철수 훈련
+    expect(v[TECH_STAT.RETURN_SPEED]).toBe(2200); // v4.5 급속 귀환
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(72);
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(15);
   });
@@ -252,15 +255,44 @@ describe('v4.3 계산식 연결', () => {
     giveTech(p, 'MOB-1', 'MOB-2A', 'CAV-1', 'SPE-1', 'SPE-2B');
     expect(sp3()).toEqual([182, 284, 147]); // ×1.30 / ×1.40 / ×1.40
   });
-  it('얕은 물 이동배율: MOB-2B 5000 → 3500', () => {
+  it('v4.5 MOB-2B 철수 훈련: 전투 중 회수 → 이탈 대기 10 tick (무테크 15)', () => {
+    for (const [codes, expectTicks] of [[[], 15], [['MOB-1', 'MOB-2B'], 10]] as [string[], number][]) {
+      const sim = makeSim();
+      const s = sim.state;
+      const p = s.players[2];
+      giveTech(p, ...codes);
+      const c = s.players[2].homeTileId;
+      const x = s.graph.neighbors(c).find((t) => !s.map.isBase[t])!;
+      setTileOwner(s, x, 1, false);
+      addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 1000, pos: x, anchorTileId: c, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'ENGAGED' });
+      const d = addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: 1000, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      sim.step();
+      expect(d.inCombat).toBe(true);
+      sim.enqueue(2, 2, { type: 'cmd_flag_recall', clientSeq: 1, flagId: d.id });
+      const out = sim.step();
+      const ev = out.broadcast.find((m) => m.type === 'flag_disengage_started') as { untilTick: number; tick: number } | undefined;
+      expect(ev).toBeTruthy();
+      expect(ev!.untilTick - ev!.tick).toBe(expectTicks);
+    }
+  });
+  it('v4.5 MOB-3B 급속 귀환: 귀환 속도 ×1.5 → ×2.2 (행군 속도는 그대로)', () => {
     const s = makeSim().state;
     const p = s.players[1];
-    const sh = s.map.terrain.findIndex((t) => t === TERRAIN.SHALLOW);
-    const t = sh >= 0 ? sh : 0;
-    s.map.terrain[t] = TERRAIN.SHALLOW;
-    expect(moveCostPermille(s, p, t)).toBe(5000);
-    giveTech(p, 'MOB-1', 'MOB-2B');
-    expect(moveCostPermille(s, p, t)).toBe(3500);
+    const pos = s.players[1].homeTileId;
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos });
+    const march = speedMilliAt(s, f, pos);
+    f.state = 'RETURNING';
+    const ret0 = speedMilliAt(s, f, pos);
+    giveTech(p, 'MOB-1', 'MOB-2B', 'MOB-3B');
+    f.state = 'MARCHING';
+    const march1 = speedMilliAt(s, f, pos);
+    f.state = 'RETURNING';
+    const ret1 = speedMilliAt(s, f, pos);
+    // 같은 floor 안에서 곱하므로 floor(행군 × 배율) 과 최대 1 차이 (milli)
+    expect(Math.abs(ret0 - (march * 1500) / 1000)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(ret1 - (march1 * 2200) / 1000)).toBeLessThanOrEqual(2.2);
+    expect(ret1 * 1000).toBeGreaterThan(ret0 * 1000 * 1.4);
+    expect(march1).toBeGreaterThan(march); // MOB-1 행군로 +15% 만큼
   });
   it('슬롯: MOB-3A 로만 +1, 전부 사도 +1 (최대 +1)', () => {
     const p = makeSim().state.players[1];

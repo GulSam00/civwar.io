@@ -3,7 +3,7 @@
  * 서버 `production` 표(milli/초)를 그대로 쓴다: 지역 합 = 플레이어 총 생산(서버가 정확히 맞춘다).
  * 표가 아직 없으면(구 서버·부트스트랩 직후) 예전 클라이언트 식(goldPerSecond)으로 대신한다 — 생산력이 깎인 기지가 있으면 과대 추정.
  */
-import type { ProductionRegion } from '@civwar/shared';
+import type { ProductionRow } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import { goldPerSecond } from './techInfo.js';
 
@@ -18,7 +18,7 @@ export interface Income {
   fromServer: boolean;
 }
 
-export function sumRegions(regions: readonly ProductionRegion[]): { troopsMilli: number; grossMilli: number; netMilli: number } {
+export function sumRegions(regions: readonly ProductionRow[]): { troopsMilli: number; grossMilli: number; netMilli: number } {
   let troopsMilli = 0;
   let grossMilli = 0;
   let netMilli = 0;
@@ -62,12 +62,12 @@ export interface SourceRow {
  * 행의 amount 합 = 총합 (서버 지역 합 = 총합이므로).
  */
 export function productionRows(
-  regions: readonly ProductionRegion[],
+  regions: readonly ProductionRow[],
   kind: 'troops' | 'gold',
   nameOf: (tile: number) => string | undefined,
   isCapital: (tile: number) => boolean = () => false,
 ): SourceRow[] {
-  const val = (r: ProductionRegion) => (kind === 'troops' ? r.troopsPerSecMilli : r.goldNetPerSecMilli) / 1000;
+  const val = (r: ProductionRow) => (kind === 'troops' ? r.troopsPerSecMilli : r.goldNetPerSecMilli) / 1000;
   const bases = regions.filter((r) => r.baseTileId !== null);
   const other = regions.filter((r) => r.baseTileId === null);
   const rows: SourceRow[] = bases

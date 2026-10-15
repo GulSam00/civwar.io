@@ -37,7 +37,7 @@ import { compareQueued, stage1_drainInput, type QueuedCommand } from './commands
 import { removeFlag } from './flagops.js';
 import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 import { stage4_moveFlags } from './movement.js';
-import { destOf, fieldKey, shallowPmOf } from './rules.js';
+import { destOf, fieldKey } from './rules.js';
 import { troopCap } from './economy.js';
 import { computeProduction } from './production.js';
 import { newOutbox, type Outbox } from './outbox.js';
@@ -68,7 +68,7 @@ export const IdleBot: BotBrain = { decide: () => [] };
 
 /**
  * 2. 자원 생산 — playerId ASC. 병력(√tiles) / 골드(그로스 → 유지비 차감 → 순증).
- * v4.4 (§21): 생산 지역별 기지 생산력을 곱한다 (production.ts — 생산력이 전부 1000 이면 기존 값과 같다). 내역은 state.yields 에.
+ * v4.5 (§22): 영토 생산 + 기지 생산(기지 60칸분 / 수도 100칸분 × 생산력) — production.ts. 내역은 state.yields 에.
  */
 export function stage2_produce(state: GameState): void {
   for (let id = 1; id < state.players.length; id++) {
@@ -229,10 +229,11 @@ export function stage14_broadcast(state: GameState, t: number, tracker: DeltaTra
 
 /** 거리장 캐시 정리 — 살아 있는 깃발이 쓰지 않는 키 삭제 (결과에 영향 없음, 메모리만) */
 function pruneFields(state: GameState): void {
-  if (state.fields.size === 0) return;
-  const used = new Set<string>();
-  for (const f of state.flags) used.add(fieldKey(destOf(f), shallowPmOf(state.players[f.ownerId])));
+  if (state.fields.size === 0 && state.defFields.size === 0) return;
+  const used = new Set<number>();
+  for (const f of state.flags) used.add(fieldKey(destOf(f)));
   for (const k of [...state.fields.keys()]) if (!used.has(k)) state.fields.delete(k);
+  for (const [k, v] of [...state.defFields]) if (v.ver !== state.pathVersion) state.defFields.delete(k); // v4.5: 낡은 방어 경로
 }
 
 // ───────────────────── 시뮬레이션 ─────────────────────
@@ -274,7 +275,7 @@ export class Simulation {
     if (this.finished) return out;
     const state = this.state;
     const t = ++state.tick;
-    state.changes = { tileChanges: [], flagsGone: [] };
+    state.changes = { tileChanges: [], flagsGone: [], combatLoss: [] };
 
     const queue = this.queue; // 1. tick 경계 이전 도착분만
     this.queue = [];

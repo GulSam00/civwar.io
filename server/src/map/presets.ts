@@ -222,7 +222,7 @@ export function presetFromMap(
     players,
     ...body,
     origin: {
-      generator: meta.generator ?? 'v4.1',
+      generator: meta.generator ?? 'v4.5', // v4.5: 물 ≈ 10%·통행 불가 생성기
       seed: map.seed,
       genConfig: { waterMode: map.config.waterMode === WATER_MODE.SHALLOW_QUOTA ? 'SHALLOW_QUOTA' : 'BORDER_ONLY', shallowPermille: map.config.shallowPermille },
     },

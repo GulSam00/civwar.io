@@ -3,7 +3,7 @@
  * 상수 원본은 constants.ts 의 TECH_NODES / TECH_STAT / TECH_STAT_BASE / TECH_NODE_BASE_COST / TECH_PROGRESSIVE_COEF_PERMILLE.
  */
 import {
-  SHALLOW_MOVE_PERMILLE_MIN,
+  SHALLOW_MOVE_PERMILLE,
   TECH_NODE_BASE_COST,
   TECH_NODE_COUNT,
   TECH_NODES,
@@ -97,9 +97,22 @@ export function techSpeedPm(stat: readonly number[], unit: number): number {
   return stat[TECH_STAT.SPEED] + stat[TECH_STAT.SPEED_SPEAR + unit];
 }
 
-/** 얕은 물 이동배율 ‰ (하한 SHALLOW_MOVE_PERMILLE_MIN) */
-export function techShallowPm(stat: readonly number[]): number {
-  return Math.max(SHALLOW_MOVE_PERMILLE_MIN, stat[TECH_STAT.SHALLOW_MOVE]);
+/**
+ * @deprecated v4.5 (2026-10-15): 해상 이동 폐지 — 물은 통행 불가. 항상 SHALLOW_MOVE_PERMILLE(기록값)을 돌려준다.
+ * 구 클라이언트 호출 호환용으로만 남긴다 (스탯 칸 11 은 이제 DISENGAGE_TICKS).
+ */
+export function techShallowPm(_stat: readonly number[]): number {
+  return SHALLOW_MOVE_PERMILLE;
+}
+
+/** v4.5: 그 플레이어의 이탈 대기 tick (무테크 15, MOB-2B 철수 훈련 10) */
+export function techDisengageTicks(stat: readonly number[]): number {
+  return stat[TECH_STAT.DISENGAGE_TICKS];
+}
+
+/** v4.5: 그 플레이어의 귀환 속도 배율 ‰ (무테크 1500, MOB-3B 급속 귀환 2200) */
+export function techReturnSpeedPm(stat: readonly number[]): number {
+  return stat[TECH_STAT.RETURN_SPEED];
 }
 
 /** 그 플레이어의 병종 유지비 가중치 (UNIT_GARRISON_PERMILLE 대체) */

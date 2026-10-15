@@ -3,6 +3,9 @@
  */
 import {
   FLAG_EXPOSED_ATTRITION_BP,
+  FLAG_EXPOSED_ATTRITION_NEUTRAL_PCM,
+  FLAG_EXPOSED_MIN_MILLI,
+  FLAG_EXPOSED_NEUTRAL_MIN_MILLI,
   FLAG_IDLE_TIMEOUT,
   FLAG_RECALL_REFUND_PERMILLE,
   POSTURE,
@@ -19,18 +22,28 @@ import {
   recallTarget,
   returnBaseValid,
   speedMilliAt,
-  stepToward,
+  defendDest,
+  defendPathing,
+  nextStep,
 } from './rules.js';
-import { isAlly, type Flag, type GameState } from './state.js';
+import { NEUTRAL, isAlly, type Flag, type GameState } from './state.js';
+
+/** v4.5 (§22.13): 이 칸에서의 노출 소모량 (milli, 0 = 없음). 패주 깃발은 기존처럼 면제 */
+export function exposureLossMilli(state: Readonly<GameState>, f: Readonly<Flag>): number {
+  if (f.routed) return 0;
+  const o = state.owners[f.posTileId];
+  if (o === f.ownerId || isAlly(state, f.ownerId, o)) return 0; // 내 땅·동맹 땅
+  const a =
+    o === NEUTRAL
+      ? Math.max(FLAG_EXPOSED_NEUTRAL_MIN_MILLI, Math.floor((f.troopsMilli * FLAG_EXPOSED_ATTRITION_NEUTRAL_PCM) / 100000)) // 중립: 절반 [A-113]
+      : Math.max(FLAG_EXPOSED_MIN_MILLI, Math.floor((f.troopsMilli * FLAG_EXPOSED_ATTRITION_BP) / 10000)); // 적 땅: 기존
+  return Math.min(a, f.troopsMilli);
+}
 
 /** 노출 소모. 소멸했으면 true */
 export function applyExposureAttrition(state: GameState, f: Flag, t: number, out: Outbox): boolean {
-  if (f.routed) return false;
-  const o = state.owners[f.posTileId];
-  if (o === f.ownerId || isAlly(state, f.ownerId, o)) return false;
-  // v4.3 [A-75]: 물 위 노출 감소 테크 폐기 — 땅·물 모두 같은 식
-  let a = Math.max(1000, Math.floor((f.troopsMilli * FLAG_EXPOSED_ATTRITION_BP) / 10000));
-  a = Math.min(a, f.troopsMilli);
+  const a = exposureLossMilli(state, f);
+  if (a <= 0) return false;
   f.troopsMilli -= a;
   state.ledger.exposure += a;
   if (f.troopsMilli <= 0) {
@@ -56,6 +69,16 @@ function settle(state: GameState, f: Flag, t: number, out: Outbox): boolean {
     f.halted = false;
     f.moveProgMilli = 0;
     out.broadcast.push({ type: 'flag_engaged', tick: t, flagId: f.id, posture: f.posture, guardTileCount: guardCount(state, f) });
+    return true;
+  }
+  // v4.5 [A-112] (§22.12): 방어 태세가 적 땅 때문에 앵커에 못 가면 "적 땅 바로 앞"(defendDest)에서 멈춘다 → IDLE(unreachable).
+  // 방어 도착(위)이 먼저다 — 앵커가 남의 땅이고 내 땅 관할 원 안에 들어왔으면 ENGAGED. IDLE 은 기존처럼 FLAG_IDLE_TIMEOUT 뒤 자동 귀환
+  if (defendPathing(f) && f.posTileId !== f.anchorTileId && defendDest(state, f.ownerId, f.posTileId, f.anchorTileId) === f.posTileId) {
+    f.state = 'IDLE';
+    f.idleSinceTick = t;
+    f.halted = false;
+    f.moveProgMilli = 0;
+    out.broadcast.push({ type: 'flag_idle', tick: t, flagId: f.id, reason: 'unreachable', autoRecallTick: t + FLAG_IDLE_TIMEOUT });
     return true;
   }
   const atAnchor = f.posTileId === f.anchorTileId;
@@ -122,7 +145,7 @@ export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void
       continue;
     }
     if (f.state === 'MARCHING') {
-      f.nextTileId = stepToward(state, f.ownerId, f.posTileId, f.anchorTileId);
+      f.nextTileId = nextStep(state, f, f.posTileId, f.anchorTileId);
       if (settle(state, f, t, out)) {
         applyExposureAttrition(state, f, t, out); // ① 현 위치 판정
         continue;
@@ -134,7 +157,7 @@ export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void
       if (rt !== f.returnTileId) f.returnTileId = rt;
     }
     const dest = destOf(f);
-    f.nextTileId = stepToward(state, f.ownerId, f.posTileId, dest);
+    f.nextTileId = nextStep(state, f, f.posTileId, dest);
     let moved = false;
     if (f.posTileId !== dest) {
       const blockedBy = f.state === 'RETURNING' ? [] : zocBy(f, f.nextTileId); // v4.2 [A-62]: 귀환(패주 포함)은 ZOC 무시
@@ -146,8 +169,8 @@ export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void
           f.moveProgMilli -= 1000;
           f.posTileId = f.nextTileId;
           moved = true;
-          f.nextTileId = stepToward(state, f.ownerId, f.posTileId, dest);
-          if (f.posTileId === dest) break;
+          f.nextTileId = nextStep(state, f, f.posTileId, dest);
+          if (f.posTileId === dest || f.nextTileId === f.posTileId) break; // v4.5: 방어 경로가 막히면 그 자리
         }
       }
     }

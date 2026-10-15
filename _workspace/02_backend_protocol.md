@@ -4,6 +4,7 @@
 > 기준: **GDD v4.1 (사용자 승인 2026-10-09)** — v4.0 부록 A 재조정값 + v4.1 A-40~A-50. 타입 원본: `shared/src/protocol.ts`, 상수 원본: `shared/src/constants.ts`.
 > 작성: 2026-10-08, multiplayer-backend-engineer. 프로토콜 버전 `PROTOCOL_VERSION = 1`.
 > **2차 갱신(2026-10-08)**: 깃발·게이지·깃발 전투·태세·ZOC·상륙·기지 체력·동맹 구현. 1차 메시지·필드는 **하나도 바꾸지 않고 추가만** 했다(§12 변경 요약).
+> **v4.5 갱신(2026-10-15, 사용자 결정 — `design-decisions.md` 2026-10-15 + 01c 기동 노드 교체 승인)**: **해상 이동 폐지**(얕은 물도 통행 불가, 물 ≈ 10%, 육지 한 덩어리, 공식 맵 9장 재생성), 중립 점령비용 고정(√칸 항 폐기), 깃발 전투 손실률 1.5% → 0.9%, **기지 피해 상한 300 milli/tick**, **기지 생산 모델 정정**(생산 지역 폐기 → 기지 60칸분·수도 100칸분 + 영토 합산), 기지 ×1.5 태세 무관, 지명 양식(서양식 판타지), MOB-2B 철수 훈련·MOB-3B 급속 귀환, **방어 태세 깃발 적 땅 통과 금지**, **중립 노출 소모 절반**. **형식 변경이 있다(`production.regions` → `rows`) → §22 를 먼저 읽을 것.**
 > **v4.4 갱신(2026-10-14, 사용자 결정 — `design-decisions.md` 2026-10-14)**: 기지 방어(깃발이 내 기지 칸 위에 서서 방어, 방어 태세면 지형 대신 ×1.5), 우클릭 = 항상 이동(`cmd_flag_retarget` 태세 = 도착지, 못 바꾸면 `pendingPosture`), **기지를 모두 잃으면 즉시 멸망 + 남은 땅 전부 합병**, 기지 생산력(점령 시 ×0.5, 선형 회복)·생산 지역 내역(`production`), 기지 지명(`map_init.baseNames`). **메시지·필드는 추가만, 규칙 의미 변경이 있다(탈락 조건·내 기지 클릭) → §21 을 먼저 읽을 것.**
 > **v4.3 갱신(2026-10-11, 테크 트리 v4.3 — 사용자 승인 A-66~A-84 전부 ①, `01b_tech-tree-v4.3-proposal.md`)**: 테크 4축 × 3단계 → **7갈래 32노드**(노드당 부모 하나·스탯 하나, 효과는 덧셈). `cmd_buy_tech{nodeId}`, 스냅숏 `techMask`(uint32)·`techCount`, 델타 `playerDeltas[].techMask`, `tech_purchased.nodeId/techMask`, 거절 `PREREQ_MISSING`/`ALREADY_OWNED`, `match_config.constants.TECH_NODES`. **제거·의미 변경이 있다(구 `tech[4]`·`axis/tier`·`*_BY_TIER` 테크 상수 삭제) → §19 를 먼저 읽을 것.** 같은 날 **깃발 접촉(전투·ZOC·진척 유지) 8방향**(사용자 결정) — 메시지 변경 없음, 규칙만 → §20.
 > **v4.2 갱신(2026-10-10, GDD v4.2 승인본 + 사용자 A-60 변경)**: 공격 = 깃발 옆 칸(쟁기, `halted`), 앵커 원 공격·중립 자동 전환 폐기, 지정 기지 회수(`cmd_flag_recall.baseTileId`), 귀환 취소 불가·ZOC 무시·자동 이탈 대기·귀환 ×1.5, 유지비 = 출전 깃발 전부(패주 제외), `FLAG_SPEED_BASE_MILLI` 140. **메시지·필드는 추가만, 의미 변경이 있다 → §18 을 먼저 읽을 것.**
@@ -493,7 +494,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `flag_engaged` | `{"type":"flag_engaged","tick":10,"flagId":1,"posture":0,"frontTileCount":8}` / `{"type":"flag_engaged","tick":12,"flagId":2,"posture":1,"guardTileCount":34}` | MARCHING(또는 v4.2 IDLE 재점화) → ENGAGED. ATTACK 이면 `frontTileCount`만, DEFEND 이면 `guardTileCount`만. **v4.2: `frontTileCount` = 그 순간 깃발 옆 칸 수(`|marchFront|`, 사각 ≤ 4)**. 공격 깃발은 **앵커 칸에 섰을 때만** ENGAGED 가 된다 — 가는 길 정지 점령은 `halted` 비트(이벤트 없음). IDLE 공격 깃발이 옆 칸이 다시 생겨 재점화할 때도 이 이벤트(이동 없음) |
 | `flag_stalled` | `{"type":"flag_stalled","tick":70,"flagId":1,"tileId":1833}` | **v4.1 의미**: ENGAGED(**v4.2: 또는 halted**)·공격 태세·비전투 깃발이 25 tick 연속 한 칸도 못 민(AP 0·타깃 없음·잠긴 기지) 시점 1회. `tileId`는 `targetTileId`(없으면 `null`). 되돌리기 상쇄는 더 이상 없다 |
 | `flag_progress_lost` | `{"type":"flag_progress_lost","tick":15,"flagId":2,"tileId":1833,"cause":"decayed"}` | 게이지 레이스 패배(`captured_by_other`) / 진척 > 0 인데 타깃이 바뀜(`target_lost`) / **v4.1 `decayed`: 자동 감소로 0 도달(1회). 이때 깃발의 `targetTileId`는 유지된다(다시 밀면 같은 칸에서 0부터)** |
-| `flag_idle` | `{"type":"flag_idle","tick":21,"flagId":1,"reason":"front_cleared","autoRecallTick":621}` | `front_cleared`(**v4.2: 공격 깃발이 앵커 칸에서 옆 칸을 다 먹음 · 앵커 칸에 닿았는데 옆에 먹을 칸 없음**) / `guard_lost` / `allied`. `unreachable`은 송신하지 않음(가중 거리장에 도달 불가 타일이 없음, GDD 4.4) |
+| `flag_idle` | `{"type":"flag_idle","tick":21,"flagId":1,"reason":"front_cleared","autoRecallTick":621}` | `front_cleared`(**v4.2: 공격 깃발이 앵커 칸에서 옆 칸을 다 먹음 · 앵커 칸에 닿았는데 옆에 먹을 칸 없음**) / `guard_lost` / `allied` / **`unreachable`(v4.5 §22.12: 방어 태세 깃발이 적 땅 때문에 앵커에 못 가 "적 땅 바로 앞"에서 멈춤)** |
 | `flag_ended` | `{"type":"flag_ended","tick":90,"flagId":1,"reason":"recalled","refunded":76}` | `recalled`(85% 환급) / `routed_returned`(0) / `exhausted`(0) / `attrited`(0) / `eliminated`(0). `refunded`는 정수 병력 |
 | `combat_started` | `{"type":"combat_started","tick":31,"groupKey":4,"flagIds":[4,7],"sides":[{"sideKey":1,"ownerIds":[1],"troops":1000,"power":1000},{"sideKey":2,"ownerIds":[2],"troops":1000,"power":1300}]}` | 무리가 새로 생기거나 기존 무리에 깃발이 합류. `troops`·`power`는 그 tick 손실 적용 **전** 값. `power` = 편 실효값 W(permille) — 교환비 k = W_방어 / W_공격 |
 | `combat_ended` | `{"type":"combat_ended","tick":129,"groupKey":4,"winnerSideKey":2,"routedFlagIds":[4]}` | 살아남은(패주·이탈 완료 제외) 편이 1개 이하가 된 tick. 동시 0 이면 `winnerSideKey:null`. 무리가 그냥 해체(상대 소멸·동맹 성립 등)되면 다음 tick 에 `winnerSideKey:null` |
@@ -605,6 +606,11 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ---
 
 ## 9. 테스트·스모크 결과
+
+### v4.5 (2026-10-15, 해상 이동 폐지·중립 비용 고정·손실률·기지 피해 상한·기지 생산·×1.5·지명·기동 노드 교체 — §22)
+
+- `npm run typecheck` 통과 · `npm test` **24 파일 329 테스트 통과**(신규 `server/test/v45.test.ts` 21개 + tech 2개) · `npm run smoke` PASSED · `qa:headless` 스키마 위반 0 / 순서 위반 0 / 재구성 불일치 0 · `qa:scenarios` 87/87 · `qa:ws` 78/78.
+- 자가대전 비교는 §22.8.
 
 ### v4.4 (2026-10-14, 기지 방어·우클릭 이동·멸망·합병·기지 생산력·지명 — 사용자 결정, §21)
 - `npm run typecheck` 통과(shared·server·client). `npm test`: **22 파일 297 테스트 전부 통과**. 신규 `server/test/v44.test.ts` **16**: 내 수도 앵커 발령 → 그 칸에서 ENGAGED·소멸 안 함 / **×1.5 가 지형을 대체**(언덕 수도 위 창 = 1950, 남의 기지가 되면 지형, 공격 태세 무관) / 기지 위 수비 깃발이 있으면 체력 피해 0 + 기병 공격 패주 / 재지정 태세 = 도착지(내 기지 → DEFEND·기지 위로 이동·회수 아님, 중립 → ATTACK) / 쿨타임 중 재지정 → `pendingPosture`·비트 128·full 필드 → 쿨타임 끝 tick 자동 적용(`flag_posture_changed auto`) / 회수가 대기 태세 삭제 / **유일 기지(수도) 함락 → 같은 tick `player_eliminated{byPlayerId, annexedTiles}` + 고립 칸 포함 전 영토 이전 + 깃발 소멸 + 델타 `tileChanges`** / 수도를 잃어도 기지가 남으면 생존·같은 tick 연쇄 합병(멸망한 합병 대상 → 그를 멸망시킨 쪽) / **생산력 1000 → 500 → 250 → 1분 뒤 417 → 1000 상한**, `base_captured.newProdPm`·full `prodPm` / **지역 합 = 총 생산**(봇 1500 tick, 50 tick 마다 전원: 칸·병력·그로스·순골드, 생산력 전부 1000 이면 기존 `regenMilliPerTick`·`grossGoldMilliPerTick` 과 같음, full `production` = 직전 정산 × 5) / 생산력 50% 지역만 감소 / `distribute` / **지명 풀 ≥ 100·중복 없음·한글 2~3음절, 시드 결정론·고유·`baseNames` 길이** / 봇: 마지막 기지 위협 → 그 기지 앵커 창병 발령, 마지막 아닌 기지는 체력이 깎일 때만. 모든 시뮬레이션 테스트 매 tick `ledgerImbalance == 0`.
@@ -904,6 +910,22 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 111. **봇 기지 수비 (§11, 사용자 "적당히")**: `guardBases` — 결정당 1회, `defend`(요격)보다 먼저. 대상 = **마지막 기지**(적대 공격 깃발이 `BOT_LAST_BASE_GUARD_RADIUS` 8 안) **+ 마지막이 아닌 기지는 최근 `BOT_BASE_GUARD_DAMAGE_WINDOW` 25 tick 안에 체력이 깎인 것**(`BOT_BASE_GUARD_RADIUS` 4 안 위협). 우선순위 = 위협 실효력 합 큰 순. 이미 기지 위(또는 가는 중) 수비대 실효력 ≥ 위협 × `BOT_INTERCEPT_RATIO`(1.25) 면 건너뜀. 수단 ① 창병 발령(앵커 = 기지 → 출발도 그 기지라 즉시 자리), 필요 병력 = 위협 × 1.25 ÷ 기지 위 창 방어값(1950), 최소 풀 40% — **마지막 기지는 필요량에 못 미쳐도 가진 만큼** ② 슬롯·병력이 없고 마지막 기지면 가장 가까운 비전투 깃발을 기지로 재지정(→ DEFEND). 수비대는 주둔 반격·제자리 공격 전환을 하지 않고, 위협 없이 `BOT_GARRISON_PATIENCE`(3분)가 지나면 회수, 위협 중엔 슬롯 재활용 대상에서 빠진다. **범위 선택 근거 = 자가대전 비교(§9 v4.4)**: 위협받는 기지 전부를 지키면 기지 함락이 33.0 → 14.4/판으로 반 이하, 마지막 기지만 지키면 26.0 이지만 일반 기지 방어를 전혀 안 쓴다 → 중간("공격받는 기지")을 골랐다(20.5/판, 탈락 1.2/판). 봇 기지 공격 점수(마지막 기지 가산 등)는 **바꾸지 않았다**.
 112. **[A-92] 지명**: 풀 120개(고유어풍 80 + 판타지풍 40, 한글 2~3음절)를 서버에 두고, **룸 시드**(무작위 맵 = 맵 시드 / 프리셋 맵 = 룸이 뽑은 시드 — 봇 성향 시드와 같은 값)로 Mulberry32 Fisher–Yates 셔플 → 기지 tileId 순서로 배정. 프리셋 맵에 맵 시드(파일 `origin.seed`, 없으면 0)를 쓰면 공식 맵마다 이름이 늘 같아져서 룸 시드를 골랐다. 풀보다 기지가 많으면(현 상한 24 라 발생 안 함) `"이름 2"` 접미사로 고유성 유지. 전송 = `map_init.baseNames`(bases 와 평행 배열).
 113. **`production` 직렬화**: 단위 milli/초(=milli/tick × 5) 정수, 델타는 5 tick 마다 바뀐 플레이어만 통째(지역 수가 적어 부분 갱신보다 단순), full 은 전원. 기지 생산력 델타 `baseProd` 는 `baseHp` 와 같은 5 tick 주기·변경분만. 새 필드는 TS 상 optional(구 클라이언트 리터럴 호환, v4.2 `halted` 와 같은 처리) — 서버는 항상 싣는다.
+
+### v4.5 (사용자 결정 2026-10-15)에서 정한 것 — **에이전트 선택 [A]** (상세·근거는 §22.9)
+
+114. **[A-102]** 호수 생성기(반해상도 CA) · 물 창 8.5~11.5% · 섬은 물로 메워 육지 한 덩어리
+115. **[A-103]** 기지 병력 생산 = 기준 390칸 평균 재생 × 환산 칸(60/100) × 생산력 — 선형 별도 항, 로지스틱·테크는 합에 한 번
+116. **[A-104]** 기지 피해 상한 분배 = 원래 피해 비례(잔여 → 큰 피해·앞 순서), 총량 ≤ min(300, 남은 체력), 지출 = 적용 피해분만
+117. **[A-105]** `COMBAT_LOSS_FLOOR_BP` 75 → 45 (손실률과 같은 비율 ×0.6)
+118. **[A-106]** 기지 ×1.5: 방어 = 지형 항 대체(v4.4 그대로), 공격 = 공격값 × 1.5 (테크 배율 앞)
+119. **[A-107]** 수도 100칸분 = 시작 수도였던 칸이면 소유자 무관
+120. **[A-108]** 서양식 지명 = 한국어 음차 135개
+121. **[A-109]** 봇: 중립 기지도 기지 후보(×2.0, 풀 45%)
+122. **[A-110]** 판 길이 추정식 기준 1인당 육지 390 → 540 (`PACING_P_REF_LAND_PER_PLAYER`)
+123. **[A-111]** `production` = `rows`(기지 행 + 영토 행), 델타 `combatLoss` 추가
+124. **[A-112]** 방어 태세 경로가 적 땅 때문에 막히면 "적 땅 바로 앞"(지형 거리로 앵커에 가장 가까운 도달 칸)에서 IDLE(unreachable)
+125. **[A-113]** 중립 노출 소모 = 적 땅의 절반(25/100000, 최소 500 milli/tick)
+126. 01c 노드 교체 구현 세부 — MOB-3B 봇 우선순위 13번째(②안이라 제안의 11번째보다 뒤), 이탈 대기 tick 은 명령 수락 시점의 소유자 스탯, 귀환 속도는 매 tick 소유자 스탯
 
 ---
 
@@ -1257,3 +1279,194 @@ net_r    = net 를 gross_r 로 분배
 ### 21.7 서버 코드
 
 `shared/src/constants.ts`·`protocol.ts`(타입 `ProductionRegion`·`PlayerProduction`. 새 필드는 TS 상 optional — 구 클라이언트 리터럴 호환, 서버는 항상 싣는다), `server/src/game/production.ts`(신규 — 생산 지역·분배), `state.ts`(`BaseState.prodScaled`, `PlayerState.lastBaseLostTo/conqueredBy`, `Flag.pendingPosture`, `GameState.baseNames/regions/yields`), `tick.ts`(2단계 생산·8단계 생산력 회복·12단계 멸망·합병), `gauge.ts`(기지 점령 생산력 ×0.5, `baseOccupiedByHostile`), `combat.ts`(`flagValue` 기지 ×1.5), `flagops.ts`(재지정 태세·`applyPendingPosture`), `movement.ts`(4단계 첫머리 대기 태세), `snapshot.ts`(직렬화), `server/src/map/placeNames.ts`(신규), `bot.ts`(기지 수비 — §10-111). 클라이언트는 `client/src/state/gameModel.ts` 에 `pendingPosture` 비트 해석 2줄만 넣었다(재구성 모델 테스트 유지용 — 나머지 UI 는 프론트 몫).
+
+## 22. v4.5 해상 이동 폐지 · 중립 비용 고정 · 손실률 · 기지 피해 상한 · 기지 생산 정정 · 기지 ×1.5 · 지명 양식 · 기동 노드 교체 · 방어 경로 · 중립 노출 소모 (프론트 영향 — 2026-10-15, 사용자 결정)
+
+근거: `_workspace/00_input/design-decisions.md` 2026-10-15 항목, `_workspace/01c_tech-water-replacement-proposal.md`(MOB-2B ①, MOB-3B ② 승인).
+**형식 변경(깨지는 것)**: ① `production[].regions` → **`production[].rows`**(행 의미도 바뀜, 22.5) ② `TECH_STAT.SHALLOW_MOVE`(11)·`LANDING_COMBAT`(13) 이름이 **`DISENGAGE_TICKS`·`RETURN_SPEED`** 로 바뀜(같은 번호 재사용, 22.7) ③ `NEUTRAL_SQRT_COEF_PERMILLE` 상수 삭제.
+**추가만**: 델타 `combatLoss`(22.3), `flag_idle.reason = "unreachable"` 실제 송신 시작(22.12), 상수 `FLAG_EXPOSED_ATTRITION_NEUTRAL_PCM`·`FLAG_EXPOSED_MIN_MILLI`·`FLAG_EXPOSED_NEUTRAL_MIN_MILLI`(22.13), 상수 `COMBAT_BASE_ATK_PERMILLE`·`BASE_HP_DMG_CAP_MILLI_PER_TICK`·`BASE_PROD_TILES`·`CAPITAL_PROD_TILES`·`PROD_REF_TILES`·`PACING_P_REF_LAND_PER_PLAYER`, `TECH_NODES[].icon`(선택).
+**프론트 재작업 필요**: 물 이동 경로 표시(얕은 물 통과 경로·이동배율 표시 제거), 생산 hover(기지 행 + 영토 행), 깃발 전투 −n/틱 표시, 테크 17·19 이름·아이콘·설명, 이탈 대기 호(소유자 스탯 기준 길이), 지명 글꼴 폭(서양식 음차는 최대 7음절), 방어 깃발 경로 미리보기(적 땅 회피 — 22.12), 노출 소모 표시가 있다면 중립 절반(22.13).
+
+### 22.1 해상 이동 폐지 · 물 ≈ 10%
+
+- **물(DEEP·SHALLOW)은 전부 통행 불가**. 이동 그래프(`TerrainGraph.neighbors`)에 물 칸이 없다 — 경로·앵커·도착지·귀환지 어디에도 물이 오지 않는다. 물 앵커 발령·재지정은 기존처럼 `WATER` 거절.
+- 지형 enum 은 그대로(0 DEEP / 6 SHALLOW). 기본 생성기는 **테두리 = DEEP, 안쪽 호수 = SHALLOW**(색 구분용). 커스텀 `waterMode`·`shallowPermille` 설정은 그대로 받지만 둘 다 통행 불가.
+- 상륙 규칙 삭제: 물 위 깃발 전투 배율(구 `LANDING_COMBAT`), 봇 상륙 후보 탐색(`scanLanding`), 플레이어별 물 이동배율 거리장 캐시(키 `${dest}:${shallowPm}` → **목적지만**)를 지웠다. 노출 소모(남의 땅 위 깃발)는 땅 규칙이라 그대로.
+- **생성기 [A-102]**: 반해상도(⌈W/2⌉×⌈H/2⌉) 호수 노이즈 460‰ → CA 3회(물 이웃 ≥ 5) → 2배 확대 → 전해상도 다듬기 2회 → 테두리 = 물 → **최대 4-연결 육지 덩어리만 남김**(섬은 물) → 육지 비율이 **885~915‰** 밖이면 p ± 10‰ 로 다시(최대 12회). 결과 = M 기준 물 평균 9.9%(테두리 5.3% 포함), 호수 7~8개(최대 ~100칸). 육지 연결은 생성 불변식 I1·I4 가 보장(실패 시 시드+1).
+- 상수: `TARGET_LAND_RATIO_PERMILLE` 650 → **900**, `LAND_RATIO_MIN/MAX_PERMILLE` 600/700 → **885/915**, `CA_INIT_LAND_P_PERMILLE` 550 → 540, `CA_LAND_P_STEP_PERMILLE` 20 → 10, `CA_MAX_ATTEMPTS` 10 → 12, `CA_SMOOTH_STEPS` 4 → 3.
+- **육지가 약 38% 늘었다**(M 6000칸: 육지 ≈3900 → ≈5400, 10인 1인당 390 → 540). 판 길이 추정식(`pacingNote`)의 기준 1인당 육지도 390 → 540 으로 옮겼다 [A-110] — 클라이언트 미리보기(`client/src/ui/pacing.ts`)도 같은 상수 `PACING_P_REF_LAND_PER_PLAYER` 를 쓴다.
+- **공식 프리셋 9장 재생성**: `export-map.ts --count 40`(시드 1000~1039) × S/M/L → `eval-maps.cjs`(공정성 점수, 목표 육지 0.90 으로 수정) 상위 3개.
+
+| id | 시드 | 육지 | 물 | | id | 시드 | 육지 | 물 | | id | 시드 | 육지 | 물 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| official-s-01 | 1030 | 2700 | 10.7% | | official-m-01 | 1005 | 5495 | 8.4% | | official-l-01 | 1006 | 6363 | 10.7% |
+| official-s-02 | 1025 | 2721 | 10.0% | | official-m-02 | 1003 | 5469 | 8.9% | | official-l-02 | 1024 | 6469 | 9.2% |
+| official-s-03 | 1002 | 2733 | 9.6% | | official-m-03 | 1026 | 5451 | 9.2% | | official-l-03 | 1022 | 6350 | 10.9% |
+
+  이름·id 는 그대로(작은/보통/큰 맵 1~3), `origin.generator = "v4.5"`. 테스트 픽스처 `server/test/fixtures/maps/sample-m-01.json` 도 같은 생성기로 다시 뽑았다.
+
+### 22.2 중립 점령비용 고정
+
+`tileCost(중립) = NEUTRAL_BASE(7) × 중립 테크(NEUTRAL_COST) × 지형 × 병종 × 보급선 × (종반 러시)` — **나라 크기 √칸 항 삭제**(구 `7 + 0.75√칸`). 곱하는 순서·floor 위치·최소 4 는 그대로. 봇 점수도 같은 `tileCost` 를 쓴다. 상수 `NEUTRAL_SQRT_COEF_PERMILLE` 삭제.
+
+### 22.3 깃발 전투 손실률 0.9% · 틱당 손실 표시
+
+- `COMBAT_LOSS_BP` 150 → **90**, `COMBAT_LOSS_FLOOR_BP` 75 → **45** [A-105]. 식은 그대로: `L = max(S × 0.9% / n, R × 0.45% / n, 1000 milli)`, 편 손실 = 1/v 비례. 교환비(누가 이기나)는 같고 시간만 ×5/3 (검↔검 평원 1000:1000 양쪽 패주 22.6초 → **37.6초**).
+- **틱당 손실은 기존 델타로 정확히 구할 수 없다**: `flagStats` 병력은 정수 floor(±1 오차)이고 같은 tick 의 노출 소모(남의 땅 위 ≥ 1/tick)·이탈 등이 섞인다. 그래서 **추가**:
+
+`snapshot_delta.combatLoss: [flagId, lossMilli][]` — 이번 tick 4b(깃발 대 깃발 전투)에서 잃은 병력(milli), **> 0 인 깃발만, flagId ASC, 매 tick**(빈 배열 가능, 서버는 항상 싣는다). 노출 소모·AP 지출은 포함하지 않는다. 화면 "−n" = `lossMilli / 1000`(소수 1자리 권장 — 1000:1000 검 평원 첫 tick 은 4.5).
+
+```json
+{ "type":"snapshot_delta","tick":812,"combatLoss":[[14,4500],[22,4500]],"flagStats":[[14,991,"ENGAGED"],[22,991,"ENGAGED"]],"…":"…" }
+```
+
+### 22.4 기지 피해 상한 300 / tick
+
+- 한 tick 에 기지 하나가 잃는 체력 합 ≤ **`BASE_HP_DMG_CAP_MILLI_PER_TICK` = 300 milli** — 깃발 수와 무관. 빈 기지(22500)도 최소 **75 tick = 15초**.
+- **분배 [A-104]** (`gauge.ts splitBaseDamage`, 7단계 그 기지의 타격 목록 = flagId ASC): `want_i` = 각 깃발의 원래 피해(기존 식 `min(AP×1000/cost, 최대 진척)`), 총 적용량 `T = min(Σwant, 300, 남은 체력)`. `Σwant ≤ T` 면 그대로, 아니면 `floor(T × want_i / Σwant)` 후 잔여 milli 를 (want DESC, 순서 ASC) 로 1씩. 합 = T (정확히).
+- **지출 = 적용된 피해분만**: `ceil(적용 피해 × cost / 1000)` AP. 상한·남은 체력에 잘린 피해에는 병력을 쓰지 않는다(쓰지 못한 예산은 기존처럼 누적 상한까지 남는다). 진척 0 이 된 깃발은 정체(stall) 판정 대상(기존 `updateStall(f, 0)`).
+- **함락자**: 체력 ≤ 0 인 tick 에 **적용 피해가 가장 큰 깃발**(동률 = flagId 작은 쪽) — 기존 규칙 그대로. 남은 체력 이상은 깎지 않으므로 함락 tick 의 체력은 정확히 0.
+- 이벤트·필드 변경 없음(`baseHp` 델타 1초 주기 그대로 — 1초에 최대 −1500 milli = −6.7%p).
+
+### 22.5 기지 생산 모델 정정 — 생산 지역 폐기
+
+**규칙**: 플레이어 생산 = **영토 생산**(내 땅 전부 — 기지 칸 포함, 생산력 페널티 없음) + **기지 생산**(내 기지 칸마다). 기지 한 칸 = 영토(평원) **`BASE_PROD_TILES` 60칸분**, 수도 칸 = **`CAPITAL_PROD_TILES` 100칸분** — 시작 수도였던 칸이면 지금 누가 갖고 있든 100 [A-107]. 점령 페널티(×0.5, 분당 +167‰ 회복 — 그대로)는 **그 기지 생산에만** 곱한다. §21.4 의 생산 지역(최근접 기지·"기타")·`production.ts` 지역 BFS 는 삭제.
+
+**정수식 [A-103]** (milli / tick, `server/src/game/production.ts`·`economy.ts`):
+```
+병력  terr   = 800 + floor(500 × isqrt(T × 10⁶) / 1000)                       // 기존 영토 식 0.8 + 0.5√T (T = 내 칸 수)
+      REF    = 800 + floor(500 × isqrt(390 × 10⁶) / 1000) = 10674              // PROD_REF_TILES 390 칸의 기본 재생
+      base_b = floor(eq_b × pm_b × REF / (390 × 1000))                          // eq = 60 | 100, pm = 생산력 ‰ → 기지 1642, 수도 2736 (pm 1000)
+      R      = round((terr + Σ base_b) × 재생테크‰ × (cap − troops) / (1000 × cap))   // 로지스틱·테크는 합에 한 번 (BigInt — 2^53 초과 방지). cap 은 그대로 (100 + 12·T) × 상한테크
+      행     = R 을 가중치 [base_b…, terr] 로 분배
+골드  GW_b   = floor(eq_b × 1000 × pm_b / 1000)                                 // 평원 가중치 1000 × 칸 수 × 생산력
+      GW_terr = goldWeight (지형 가중 합, 기존)
+      gross  = floor(ΣGW × 2080 × 골드테크‰ / 1e9)  → 행 = GW 비례 분배
+      net    = gross − floor(gross × 유지비‰ / 1000) → 행 = gross 행 비례 분배 (유지비는 총액에 한 번 — 기존과 같다)
+분배     = 각 몫 floor, 잔여는 가중치 최대(동률 = 앞) 행에 → 행 합 = 총합 (정확히)
+```
+- 칸당 기준 = "기준 영토 390칸(`LAND_TILES_PER_PLAYER`)일 때의 평균 재생" — 내 영토 크기와 무관한 **선형** 값이라 기지 하나의 가치가 판 내내 같다(내 영토 평균을 쓰면 시작 9칸에서 수도가 영토의 11배가 되고, 한계 재생을 쓰면 큰 나라에서 거의 0이 된다).
+- 크기 감(무테크, 생산력 100%, 로지스틱 전): 수도 13.7 병력/초 · 1.04 골드/초, 기지 8.2 병력/초 · 0.62 골드/초. 영토 400칸이면 10.8/틱 = 54 병력/초 → 수도 + 기지 1개가 +40%.
+- 플레이어 `goldWeight`(델타·full)는 **영토만**의 원값 — 수입 표시는 `production` 합을 쓸 것(§21.4 와 같은 안내).
+
+**`production` 형식 (변경)** — `snapshot_full.production` = id ASC 전원(탈락자 `rows: []`) / 델타 `production` = 5 tick 마다 바뀐 플레이어만(통째 교체). 타입 `ProductionRow` / `PlayerProduction` (`shared/src/protocol.ts`):
+```json
+{ "playerId": 2, "rows": [
+  { "kind":"base", "baseTileId":1290, "tiles":100, "prodPm":1000, "troopsPerSecMilli":11850, "goldGrossPerSecMilli":1040, "goldNetPerSecMilli":780 },
+  { "kind":"base", "baseTileId":2412, "tiles":60,  "prodPm":500,  "troopsPerSecMilli":3550,  "goldGrossPerSecMilli":310,  "goldNetPerSecMilli":232 },
+  { "kind":"territory", "baseTileId":null, "tiles":412, "prodPm":1000, "troopsPerSecMilli":47100, "goldGrossPerSecMilli":4120, "goldNetPerSecMilli":3090 } ] }
+```
+- 행 순서 = 기지 행(내 기지 tileId ASC — 수도 포함) → **영토 행 1개(항상 맨 끝, 칸이 있으면)**. 기지 행 `tiles` = 환산 칸 수(60/100, 생산력 반영 전), 영토 행 `tiles` = 실제 소유 칸 수, `prodPm` = 1000 고정.
+- 값 = 그 tick 2단계가 실제로 적용한 정산(병력 상한에서 잘리는 양은 반영 전). 단위 milli/초. hover = 기지 행(지명 + 생산력 바) + 영토 합산 행. 유지비 줄 = `Σ gross − Σ net`.
+- **클라이언트 영향**: 지금 `client/src/ui/production.ts` 는 `baseTileId === null` 행을 "기타" 로 그린다 → **"영토" 로 바꿔야 한다**(빌드 유지용으로 타입·필드명만 `rows` 로 고쳐 두었다).
+
+### 22.6 기지 ×1.5 — 태세 무관 [A-106]
+
+깃발이 **자기(소유자) 기지 칸**(수도 포함) 위에 있으면:
+- **방어 태세**: `v = floor(UNIT_DEF × 1500 / 1000)` — 지형 보정을 **대체**(v4.4 그대로, 기지가 언덕이어도 1500).
+- **공격 태세**: `v = floor(UNIT_ATK × COMBAT_BASE_ATK_PERMILLE(1500) / 1000)` — 공격 태세엔 원래 지형 항이 없으므로 공격값에 곱한다.
+- 그 뒤 테크(`techCombatPm`)·이탈 대기 ×0.5 는 기존과 같다. 남의 기지(동맹 기지 포함)·기지 밖은 해당 없음. 예: 창 1305/1950, 검 1500/1500, 기병 1770/1050 (공격/방어).
+- 기지 체력 전투 규칙(기지 위 적대 깃발이 있으면 체력 피해 0 — A-88)은 그대로.
+
+### 22.7 테크 MOB-2B · MOB-3B 교체 (01c 승인: 2B ①, 3B ②)
+
+| id | code | 이름 | 스탯 칸 | op | 값 (무테크 → 보유) | 설명 | 아이콘 콘셉트 |
+|---|---|---|---|---|---|---|---|
+| 17 | MOB-2B | **철수 훈련** | 11 `DISENGAGE_TICKS` | set | 15 → **10** tick (3.0 → 2.0초) | 이탈 대기 3.0초 → 2.0초 | 방패 뒤로 꺾여 돌아가는 화살표 |
+| 19 | MOB-3B | **급속 귀환** | 13 `RETURN_SPEED` | set | 1500 → **2200** ‰ | 귀환 속도 ×1.5 → ×2.2 (회수·자동 귀환·패주) | 기지 지붕 + 안으로 들어가는 화살표 |
+
+- 노드 id·부모(17 ← 15, 19 ← 17)·티어·`techMask` 비트 그대로. 스탯 칸 11·13 재사용(01c A-95 ①) — `TECH_STAT_COUNT` 32 그대로. `TECH_STAT.SHALLOW_MOVE` / `LANDING_COMBAT` 이름은 사라졌다. `TECH_NODES[].icon`(선택 필드)에 콘셉트 문구.
+- **이탈 대기**: `disengageUntilTick = 명령 수락 tick + 소유자 스탯 DISENGAGE_TICKS`(전투 중 회수·재지정, 그리고 전투에 붙잡힌 귀환 깃발의 자동 이탈 대기). `flag_disengage_started.untilTick` 이 이미 실제 값을 싣는다 → 클라이언트 이탈 호는 상수 `DISENGAGE_TICKS` 대신 `untilTick − tick`(또는 소유자 스탯)으로 길이를 정할 것.
+- **귀환 속도**: RETURNING(회수·IDLE 자동 귀환·패주) 이동 = `speedMilli × 소유자 스탯 RETURN_SPEED / 1000` (매 tick 그 시점 스탯). 행군·재지정 이동엔 적용 안 함(v4.2 A-63 그대로).
+- `shared/tech.ts`: `techDisengageTicks(stat)`, `techReturnSpeedPm(stat)` 추가. `techShallowPm` 은 **deprecated**(항상 5000 — 구 클라이언트 호출 호환용).
+- 봇 우선순위(01c A-96 ①, 3B 는 ② 채택에 맞춰 조정): 수비형 `… MIL-3B, MOB-1, MOB-2B, TER-1, TER-2B, MOB-2A, MOB-3A, SPE-2B`(TER-3B 제거), 기동형 `MOB-1, CAV-1, MOB-2A, CAV-2B, ECO-1, CAV-2A, MOB-3A, MOB-2B, MIL-1, MIL-2A, CAV-3, MIL-3A, MOB-3B, ECO-2B, TER-1, SWO-1` — MOB-3B 는 제안의 11번째(①질서 있는 회수 기준) 대신 **13번째**(②귀환 속도는 골드당 효과가 약하다 — 01c 1.2). 자가대전 구매율: MOB-2B 8% → 48%, MOB-3B 0% → 10%.
+
+### 22.8 자가대전 비교 (M 10인 NORMAL, 시드 1000~1009, `npm run selfplay -w @civwar/server -- 10 1000 M 10`)
+
+기준선 = 39757b8 서버(= 24d3ad5, 서버 코드 동일)를 같은 기계에서 다시 돌렸다(중립 잔여 지표를 새로 넣어서 — 기준선 숫자는 의뢰서 값과 같다). 기여 분리 = **v4.5 최종(22.12 방어 경로·22.13 중립 노출 포함)에서 하나만 되돌린** 판.
+
+| | 기준선 (39757b8) | **v4.5 최종** | 중립 √항 복원 | 손실률 1.5% 복원 | 물 35% 복원 (통행 불가 호수) |
+|---|---|---|---|---|---|
+| 종료 (분) · 사유 | 32.0 · timeout 10/10 | **32.0 · timeout 10/10** | 32.0 · timeout 10/10 | 32.0 · timeout 10/10 | 32.0 · timeout 10/10 (중간 측정에선 threshold 4판, 평균 30.9분) |
+| 1위 점유 @10 / 20 / 30분 | 9.8 / 17.2 / **22.9%** | 14.5 / 23.0 / **28.1%** | 9.7 / 16.7 / 21.5% | 14.2 / 21.5 / 26.2% | 16.1 / 27.8 / 35.7% |
+| 남은 중립 육지 @10 / 20 / 끝 | 37.1 / 20.3 / **11.7%** | 30.5 / 12.9 / **3.8%** | 40.1 / 24.4 / 15.0% | 30.4 / 11.6 / 2.4% | 25.8 / 10.3 / 2.6% |
+| 탈락 / 판 | 1.2 | **0.5** | 0.3 | 0.9 | 1.2 |
+| 기지 함락 / 판 (중립 포함 · 플레이어 기지 · 수도) | 20.5 · 12.6 · 4.2 | **19.9 · 9.9 · 4.3** | 18.2 · 9.0 · 3.9 | 20.4 · 10.4 · 4.2 | 20.8 · 10.8 · 5.3 |
+| 병력 소멸 (노출 / 전투 / 지출) | 2.9 / 32.6 / 64.5% | 0.7 / 29.9 / 69.4% | 0.7 / 26.5 / 72.9% | 0.6 / 33.4 / 66.0% | 0.5 / 37.8 / 61.7% |
+| tick ms 평균 / 최대 | 0.44 / ~14 | 0.83 / 26 | | | |
+
+중간 측정(22.12·22.13 넣기 전, 같은 시드): 1위 @30 28.3%, 끝 중립 4.3%, 탈락 0.0, 기지 함락 19.6 · 9.6 · 3.8 — 방어 경로 규칙이 들어가며 탈락이 0.0 → 0.5 로 돌아왔다(수비 깃발이 적 땅을 가로질러 소모되지 않는다).
+
+읽는 법:
+- **물 축소가 판을 가장 길게 만든다.** 같은 규칙에서 물만 35% 로 두면(1인당 육지 390) 1위가 30분에 35.7%, 중간 측정에선 10판 중 4판이 threshold 로 끝났다(threshold 문턱 근처라 판마다 흔들린다). 물 10% 로는 1인당 육지 540 이라 1위 28% 로 전부 timeout.
+- **중립 비용 고정이 확장을 크게 당긴다.** √항을 복원하면 1위 −6.6%p, 끝 중립 잔여 +11.2%p. "중립 땅이 끝까지 남는" 현상은 v4.5 에서 사실상 사라졌다(끝 3.8%).
+- **손실률 0.9% 는 탈락을 줄이고**(1.5% 복원 0.9 → 0.5) 전투 소멸 비중을 33 → 30% 로 낮춘다. 1위 점유는 +1.9%p(병력이 확장으로 더 간다).
+- **노출 소모 비중이 2.9% → 0.7%**: 방어 깃발이 적 땅을 지나지 않고(22.12), 중립 위 소모가 절반(22.13)이라.
+- **세션 길이 목표(25~32분, 표준 30분)와의 차이는 그대로** — 기준선도 v4.5 도 전부 32분 timeout, 1위가 30분에 28% 로 threshold(45~60%)에 못 미친다. 레버 후보(디자이너 판단 필요): 격자 축소(M 100×60 → 약 86×52 면 1인당 육지 390 복원), threshold 곡선, 종반 러시.
+- 테크 구매율(최종): MOB-2B 철수 훈련 43%, MOB-3B 급속 귀환 8% (기준선 조선술 8%·상륙정 0%).
+
+### 22.9 [A] — GDD·사용자 결정에 없어 에이전트가 정한 것
+
+| ID | 항목 | 결정 | 근거 |
+|---|---|---|---|
+| A-102 | 물 ≈ 10% 생성기 | 반해상도 호수 CA + 다듬기, 물 창 8.5~11.5%(테두리 포함), 섬은 물로 메워 육지 한 덩어리, 테두리 DEEP·안쪽 호수 SHALLOW(색 구분만) | 전해상도 CA 는 10% 에서 작은 웅덩이 30개가 생긴다. 반해상도면 큰 호수 7~8개 — 지형 장애물 역할. 섬(통행 불가라 도달 불가)을 남기면 "육지 연결" 보장이 깨진다 |
+| A-103 | 기지 병력 생산 식 | 칸당 = 기준 390칸 평균 재생(10674/390 milli), 기지 = 60·수도 100칸 × 생산력, 선형 별도 항. 로지스틱(1 − troops/cap)·재생 테크는 (영토 + Σ기지) 합에 한 번. 골드 = 평원 가중치 × 칸 × 생산력. 병력 상한 그대로 | 내 영토 평균은 초반에 폭주(9칸 → 수도 = 영토의 11배), 한계 재생은 큰 나라에서 0 에 수렴. 고정 기준이면 기지 가치가 판 내내 같고 hover 숫자가 안정된다 |
+| A-104 | 기지 피해 상한 분배 | 원래 피해 비례 floor + 잔여(피해 DESC, flagId ASC), 총량 ≤ min(300, 남은 체력), **지출 = 적용 피해분만**, 함락자 = 적용 피해 최대 | 결정론 + 버려지는 피해에 병력을 쓰지 않음(사용자 제안과 같은 자연스러운 선택) |
+| A-105 | 손실 바닥 | `COMBAT_LOSS_FLOOR_BP` 75 → 45 | 손실률과 같은 비율(×0.6) — 바닥이 상대적으로 세지면 소규모 교전만 따로 빨라진다 |
+| A-106 | ×1.5 적용 | 방어 = 지형 항 대체(1500), 공격 = UNIT_ATK × 1.5 (테크 배율 앞) | 공격 태세엔 지형 항이 없어 "공격값 ×1.5" 가 유일한 자연스러운 자리 |
+| A-107 | 수도 100칸분 | 시작 수도였던 칸이면 소유자 무관(빼앗은 수도도 100) | 칸의 성질로 정의 — 수도 함락의 가치가 커진다(사용자 "기지 가치 상승" 방향) |
+| A-108 | 지명 표기 | 서양식 판타지 = **한국어 음차** 135개(예: 알더미어, 레이븐홀트), 동양식 120개 보관. 매치마다 양식 1개(시드 결정론, 현재 활성 = 서양식뿐) | UI·사용자 텍스트가 한국어 전용. 저작권 있는 고유 지명(작품 지명)은 피했다 |
+| A-109 | 봇: 중립 기지 | 국경 6칸 안 **중립 기지도 기지 후보**, 점수 ×2.0(적 기지 ×2.5 보다 낮게), 발령 = 풀 45%(중립 비율), 병종 = 기병 | 기지 = 영토 60칸분이 되어 중립 기지가 가장 값싼 큰 이득. 적 기지 가중(사용자 확정 ×2.5)은 그대로 |
+| A-110 | 판 길이 추정 기준 | `PACING_P_REF_LAND_PER_PLAYER` = M 10인 육지/인 = 540 (구 390) | 추정식의 상대 눈금 유지(물 축소로 모든 맵의 육지가 늘었다). 절대 시간은 22.8 측정이 우선 |
+| A-111 | 프로토콜 형식 | `production.rows`(kind base/territory) — 이름까지 바꿨다(지역 의미가 사라져 `regions` 를 남기면 오해). 틱당 손실 = 델타 `combatLoss` 추가 | 22.3 — 기존 델타로는 정확히 못 구한다 |
+| A-112 | 방어 경로가 막힐 때 | 목적지 = from 에서 적 땅 없이 닿는 칸 중 **지형 거리장(적 땅 무시) 기준 앵커에 가장 가까운 칸**(동률 tileId) → 거기 닿으면 `IDLE(reason "unreachable")`, 이후 기존 IDLE 규칙(600 tick 뒤 자동 귀환). 방어 도착(`defendArrived`)이 먼저. 길이 다시 열려도 자동으로 다시 가지 않는다(재지정 필요) | 결정론·기존 상태 기계 재사용. 계속 MARCHING 으로 버티면 "멈춘 행군"이 화면에서 구분되지 않는다 |
+| A-113 | 중립 노출 소모 | 적 땅의 절반: tick 당 `floor(병력milli × 25 / 100000)`, 최소 **500 milli**(적 땅 최소 1000 의 절반), 남은 병력 이하 | 사용자 "절반" 기본값. 최소도 절반이라 작은 깃발에서도 비율이 그대로 반 |
+
+봇 조정 요약(사용자 "적당히"): 상륙 탐색 삭제 · 중립 기지 후보(A-109) · 기동 노드 우선순위(22.7) · **방어 발령·재지정 전에 적 땅 없이 닿는지 확인**(`defendReachable` BFS — 못 닿으면 그 명령을 내지 않고 다른 후보·전환으로 넘어간다: 기지 수비·요격·차단·최소 방어선·반격 재지정 전부) · 막혀 IDLE(unreachable) 이 된 깃발은 기존 IDLE 규칙(재배치 또는 가까운 기지로 회수) · 그 밖(중립 바이어스 ×1.6, 기지 수비 `guardBases`, ×1.5 는 `flagValue` 경유로 자동 반영, 기지 공격은 이미 기지당 깃발 1개라 피해 상한에 맞음)은 그대로. 이탈 손실 추정은 소유자 이탈 tick 스탯을 쓴다.
+
+### 22.10 상수 (`match_config.constants` 에 자동 포함)
+
+| 상수 | 값 | |
+|---|---|---|
+| `TARGET_LAND_RATIO_PERMILLE` / `LAND_RATIO_MIN·MAX_PERMILLE` | 900 / 885·915 | 사용자 "약 10%" · [A-102] |
+| `COMBAT_LOSS_BP` / `COMBAT_LOSS_FLOOR_BP` | 90 / 45 | 사용자 / [A-105] |
+| `BASE_HP_DMG_CAP_MILLI_PER_TICK` | 300 | 사용자 |
+| `COMBAT_BASE_ATK_PERMILLE` (`COMBAT_BASE_DEF_PERMILLE`) | 1500 (1500) | 사용자 |
+| `BASE_PROD_TILES` / `CAPITAL_PROD_TILES` / `PROD_REF_TILES` | 60 / 100 / 390 | 사용자 / 사용자 / [A-103] |
+| `PACING_P_REF_LAND_PER_PLAYER` | 540 | [A-110] |
+| `DISENGAGE_TICKS` / `RETURN_SPEED_PERMILLE` | 15 / 1500 (무테크 — 플레이어 스탯이 덮어쓴다) | 기존 |
+| `FLAG_EXPOSED_ATTRITION_BP` / `FLAG_EXPOSED_MIN_MILLI` | 5 / 1000 (적 땅 — 기존 값, 주석 정정 ≈14%/분) | 기존 |
+| `FLAG_EXPOSED_ATTRITION_NEUTRAL_PCM` / `FLAG_EXPOSED_NEUTRAL_MIN_MILLI` | 25 / 500 (중립 땅) | 사용자 "절반" · [A-113] |
+| ~~`NEUTRAL_SQRT_COEF_PERMILLE`~~ | 삭제 | 사용자 |
+
+### 22.11 서버 코드
+
+`shared/src/constants.ts`(상수·노드 17/19·`TECH_STAT` 11/13·`TechNodeDef.icon`), `shared/src/protocol.ts`(`ProductionRow`·`PlayerProduction.rows`·델타 `combatLoss`), `shared/src/tech.ts`(`techDisengageTicks`·`techReturnSpeedPm`, `techShallowPm` deprecated), `shared/src/terrain.ts`, `server/src/topology/square.ts`(`isPassable` = 육지), `server/src/map/generate.ts`(1단계 호수 생성기), `server/src/map/placeNames.ts`(양식별 풀), `server/src/map/presets.ts`(generator 표기 v4.5), `server/src/game/rules.ts`(중립 비용, 거리장 키 = 목적지, 귀환 속도 스탯), `combat.ts`(×1.5 태세 무관, 상륙 배율 삭제, `combatLoss` 기록, 자동 이탈 tick 스탯), `flagops.ts`(이탈 tick 스탯), `gauge.ts`(`splitBaseDamage`·피해 상한), `economy.ts`(`terrRegenBaseMilli`·`baseRegenBaseMilli`·`baseGoldWeight`·`applyRegenMult`), `production.ts`(전면 교체 — 기지 행 + 영토 행), `state.ts`(`capitalTiles`·`ProductionYield`·`TickChanges.combatLoss`, 지역 캐시 삭제), `snapshot.ts`, `tick.ts`, `bot.ts`(상륙 삭제·중립 기지 후보·우선순위·`chooseUnitFor` 테스트 훅), `server/src/room/settings.ts`(추정 기준), `server/maps/official/*.json` 9장, 스크립트 `eval-maps.cjs`(목표 육지 0.90)·`selfplay.ts`(중립 잔여 지표)·`qa-schema.ts`·`qa-scenarios.ts`·`duels.ts`. 테스트 `server/test/v45.test.ts`(신규) 외 갱신.
+방어 경로·노출: `rules.ts`(`hostileLand`·`defendPathing`·`defendDest`·`nextStep`, 거리장 금지 칸 인자), `state.ts`(`pathVersion`·`defFields`), `movement.ts`(settle 의 unreachable IDLE, `exposureLossMilli`), `flagops.ts`(첫 걸음 `nextStep`), `bot.ts`(`defendReachable`).
+클라이언트는 빌드·기존 테스트 유지용 최소 수정만: `client/src/state/gameModel.ts`·`ui/production.ts`(`regions` → `rows` 타입), `ui/techTree.ts`(스탯 11·13 라벨), `ui/pacing.ts`(공유 기준 상수), 테스트 픽스처 2개. 나머지 UI(영토 행 라벨, −n/틱, 노드 아이콘 17·19, 이탈 호 길이, 물 경로 표시 제거)는 프론트 몫.
+
+### 22.12 방어 태세 깃발은 적 땅을 지나지 못한다 (사용자 2026-10-15)
+
+- **적 땅** = 적대(동맹 아님) 플레이어 소유 칸. 중립·내 땅·동맹 땅은 지나간다.
+- 대상 = **현재 태세가 DEFEND 이고 귀환(RETURNING)·패주가 아닌 깃발**의 모든 이동: 발령 행군, 재지정 행군, 태세 전환 뒤 이동. 매 tick 그 시점 태세로 경로를 고르므로 **행군 중 공격 → 방어 전환(수동·대기 태세 자동 적용)이면 다음 걸음부터 새 규칙**, 방어 → 공격이면 기존 경로. 공격 태세·귀환·패주 경로는 바뀌지 않는다.
+- 경로 = 적 땅을 뺀 그래프의 거리장(지형 이동배율 가중, 동률 tileId — 기존 `stepToward` 와 같은 결정론). 깃발이 적 땅 위에 있으면 출발은 허용(빠져나오는 걸음).
+- **못 가면 [A-112]**: 실제 목적지 = 지금 칸에서 적 땅 없이 닿는 칸 중 **적 땅을 무시한 지형 거리로 앵커에 가장 가까운 칸**(동률 tileId 작은 쪽) = "적 땅 바로 앞". 그 칸에 서면(처음부터 그 칸이면 바로) `flag_idle{reason:"unreachable", autoRecallTick}` → `IDLE`. 우선순위: 방어 도착(`defendArrived` — 앵커가 남의 땅이면 내 땅 관할 원 안 도착 포함) > unreachable 정지. IDLE 이후는 기존과 같다(600 tick 뒤 자동 귀환, 전투·ZOC 그대로). 길이 나중에 열려도 다시 가지 않는다 — 재지정하면 그 시점 지도로 다시 계산.
+- 표시용 `etaTick`·`engageEtaTick`(flag_issued·flag_retargeted)도 같은 경로로 추정한다(막히면 정지 칸까지).
+- 메시지: `flag_idle.reason` 의 기존 enum 값 `"unreachable"`(그동안 "송신하지 않음")이 **이제 실제로 온다** — 형식 변경 없음.
+
+```json
+{ "type":"flag_retargeted","tick":2210,"flagId":31,"anchorTileId":2405,"targetOwnerId":254,"posture":1,"resumeTick":2225,"etaTick":2290,"engageEtaTick":2290,"auto":false }
+{ "type":"flag_idle","tick":2290,"flagId":31,"reason":"unreachable","autoRecallTick":2890 }
+```
+- 비용: 방어 경로 거리장은 (목적지, 소유자) × `pathVersion`(소유권·동맹이 바뀔 때마다 +1) 캐시 — 땅이 바뀐 tick 엔 행군 중인 방어 깃발마다 다시 계산. 자가대전 tick 평균 0.44 → 0.83 ms(최대 26 ms) — 200 ms 예산 안.
+
+### 22.13 노출 소모 — 중립 땅은 절반 (사용자 2026-10-15)
+
+| 깃발이 선 칸 | tick 당 소모 (milli) | 분당 (복리) |
+|---|---|---|
+| 적 땅(적대 플레이어) | `max(1000, floor(병력 × 5 / 10000))` — 기존 그대로 | ≈ 14% |
+| **중립 땅** | **`max(500, floor(병력 × 25 / 100000))`** [A-113] | ≈ 7% |
+| 내 땅 · 동맹 땅 | 0 (기존) | 0 |
+
+- 남은 병력보다 많이 깎지 않는다, 병력 0 이면 `flag_ended{reason:"attrited"}`(기존). 적용 대상 깃발 상태는 바뀌지 않았다 — 4단계에서 노출을 보던 모든 상태(행군·정지 점령·ENGAGED·IDLE·전투 중·**귀환 중**·발밑 칸이 점령된 깃발)에 그대로. **패주 깃발은 기존처럼 면제**(코드상 노출 대상이 아니었다 — 바꾸지 않았다).
+- 구 상수 주석 "≈3%/분" 은 틀린 값이었다(0.05% × 300 tick ≈ 14%/분) — `shared/src/constants.ts` 주석을 고쳤다. GDD 부록 A(`01_game-designer_gdd.md` 4754행)의 같은 주석은 디자이너 문서라 손대지 않았다 — 갱신 필요.

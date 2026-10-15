@@ -15,7 +15,6 @@ import {
   techCombatPm,
   techOwned,
   techPrereqMet,
-  techShallowPm,
   techSpeedPm,
   type TechNodeDef,
 } from '@civwar/shared';
@@ -161,9 +160,9 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   else if (stat === S.TROOP_CAP) (label = '병력 상한 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.SUPPLY_COEF) (label = '보급선 비용 계수 (칸당)'), (fmt = (v) => pmText(v[stat]));
   else if (stat === S.SPEED) (label = '이동속도 배율 (전 병종 공통)'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.SHALLOW_MOVE) (label = '얕은 물 이동배율 (클수록 느림)'), (fmt = (v) => x2(techShallowPm(v)));
+  else if (stat === S.DISENGAGE_TICKS) (label = '이탈 대기 시간'), (fmt = (v) => `${(v[stat] / 5).toFixed(1)}초`); // v4.5 (서버 §22 — 빌드 유지용 최소 수정)
   else if (stat === S.SLOT_BONUS) (label = '깃발 슬롯 보너스'), (fmt = (v) => `+${v[stat]}`);
-  else if (stat === S.LANDING_COMBAT) (label = '상륙 교전 전투값 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.RETURN_SPEED) (label = '귀환 속도 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.COMBAT_ATK_SPEAR && stat <= S.COMBAT_ATK_CAVALRY) {
     const unit = stat - S.COMBAT_ATK_SPEAR;
     label = `${u(S.COMBAT_ATK_SPEAR)} 공격 태세 전투 공격력`;
@@ -242,7 +241,8 @@ export function techScopeText(node: TechNodeDef): string {
   }
   if (s === S.COMBAT_ATK) return '공격 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
   if (s === S.COMBAT_DEF) return '방어 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
-  if (s === S.LANDING_COMBAT) return '물 위 깃발이 땅 위 적 깃발과 싸울 때';
+  if (s === S.DISENGAGE_TICKS) return '교전 중 회수·재지정으로 빠져나갈 때';
+  if (s === S.RETURN_SPEED) return '회수·자동 귀환·패주로 기지에 돌아갈 때';
   return '모든 깃발·영토에 적용';
 }
 

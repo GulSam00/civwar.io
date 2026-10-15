@@ -44,6 +44,8 @@ export interface GameReport {
   winnerId: number | null;
   winnerDiff: BotDifficultyName | null;
   topShare5m: number[]; // %, 5분 간격 (마지막은 종료 시점)
+  /** v4.5: 남은 중립 육지 %, 5분 간격 (마지막은 종료 시점) */
+  neutral5m: number[];
   finalShares: { id: number; diff: BotDifficultyName; aggr: number; sharePct: number; alive: boolean }[];
   defSharePct: number;
   apm: number;
@@ -115,6 +117,7 @@ function playGame(seed: number, k: number): GameReport {
   const sim = new Simulation(state, timed);
   const land = map.totalLandTiles;
   const topShare: number[] = [];
+  const neutral: number[] = [];
   let accepted = 0;
   let rejected = 0;
   const rejects: Record<string, number> = {};
@@ -191,6 +194,9 @@ function playGame(seed: number, k: number): GameReport {
       let top = 0;
       for (const p of state.players) if (p) top = Math.max(top, p.tiles);
       topShare.push(Math.round((top * 1000) / land) / 10);
+      let owned = 0;
+      for (const p of state.players) if (p) owned += p.tiles;
+      neutral.push(Math.round(((land - owned) * 1000) / land) / 10);
     }
     if (checkLedger && ledgerImbalance(state) !== 0) throw new Error(`ledger imbalance seed ${seed} tick ${state.tick}`);
   }
@@ -229,6 +235,7 @@ function playGame(seed: number, k: number): GameReport {
     winnerId: w,
     winnerDiff: w ? diffs[w - 1] : null,
     topShare5m: topShare,
+    neutral5m: neutral,
     defSharePct: Math.round((defFlags * 1000) / Math.max(1, allFlags)) / 10,
     finalShares,
     apm: Math.round(((accepted / N) * TICKS_PER_MIN * 10) / ticks) / 10,
@@ -275,6 +282,15 @@ for (let i = 0; i < nSlots; i++) {
   avgTop.push((v.reduce((a, b) => a + b, 0) / v.length).toFixed(1));
 }
 console.log(`avg top share % by 5-min slot: ${avgTop.join(', ')}`);
+{
+  const avgN: string[] = [];
+  for (let i = 0; i < nSlots; i++) {
+    const v = reports.filter((r) => r.neutral5m.length > i).map((r) => r.neutral5m[i]);
+    avgN.push((v.reduce((a, b) => a + b, 0) / v.length).toFixed(1));
+  }
+  const endN = reports.map((r) => r.neutral5m[r.neutral5m.length - 1]);
+  console.log(`v4.5 neutral land % by 5-min slot: ${avgN.join(', ')}; at end mean ${(endN.reduce((a, b) => a + b, 0) / endN.length).toFixed(1)}`);
+}
 console.log(`APM mean ${(reports.reduce((a, r) => a + r.apm, 0) / reports.length).toFixed(1)}, reject% mean ${(reports.reduce((a, r) => a + r.rejectPct, 0) / reports.length).toFixed(2)}`);
 const rejAll: Record<string, number> = {};
 for (const r of reports) for (const [k, v] of Object.entries(r.rejects)) rejAll[k] = (rejAll[k] ?? 0) + v;

@@ -27,7 +27,7 @@ export interface Topology {
 
 /**
  * 지형이 입혀진 이동 그래프 — 경로 계층.
- * neighbors() 는 isPassable 인 인접 타일만 돌려준다 (DEEP 은 그래프에 존재하지 않는다).
+ * neighbors() 는 isPassable 인 인접 타일만 돌려준다 (v4.5: 물(DEEP·SHALLOW)은 그래프에 존재하지 않는다).
  */
 export interface MapGraph {
   readonly topology: Topology;

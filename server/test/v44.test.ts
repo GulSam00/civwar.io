@@ -17,9 +17,8 @@ import {
 } from '@civwar/shared';
 import { CivBot } from '../src/game/bot.js';
 import { flagValue } from '../src/game/combat.js';
-import { grossGoldMilliPerTick, regenMilliPerTick } from '../src/game/economy.js';
 import { baseOccupiedByHostile } from '../src/game/gauge.js';
-import { computeProduction, distribute } from '../src/game/production.js';
+import { distribute } from '../src/game/production.js';
 import { buildMapInit, buildSnapshotFull, flagBits } from '../src/game/snapshot.js';
 import { NEUTRAL, baseProdPm, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
@@ -93,7 +92,7 @@ describe('v4.4 기지 방어 — 깃발이 내 기지 칸 위에 선다', () => 
     expect(flagValue(s, d, [d])).toBe(Math.floor((UNIT_DEF_PERMILLE[UNIT.SPEAR] * COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[TERRAIN.HILLS]) / 1000));
     setTileOwner(s, cap, 1, false);
     d.posture = POSTURE.ATTACK;
-    expect(flagValue(s, d, [d])).toBe(870); // 공격 태세는 지형·기지 무관
+    expect(flagValue(s, d, [d])).toBe(1305); // v4.5 (§22): 공격 태세도 내 기지 위면 ×1.5 (870 → 1305)
   });
 
   it('기지 위 방어 깃발이 있으면 공격 깃발은 먼저 깃발 전투를 이겨야 한다 — 체력 피해 0', () => {
@@ -271,54 +270,7 @@ describe('v4.4 기지 생산력', () => {
     expect(baseProdPm(base)).toBe(1000);
   });
 
-  it('생산 지역: 지역 합 = 총 생산(병력·그로스·순골드, 칸 수), 생산력 전부 1000 이면 기존 공식과 같다', () => {
-    const map = generateMapForPlayers(77, 8);
-    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
-    const sim = new Simulation(s, CivBot);
-    let checked = 0;
-    for (let i = 0; i < 1500 && !sim.finished; i++) {
-      sim.step();
-      if (s.tick % 50 !== 0) continue;
-      for (const p of s.players) {
-        if (!p || !p.alive) continue;
-        const r = computeProduction(s, p);
-        const sum = (k: 'troopsMilli' | 'goldGrossMilli' | 'goldNetMilli' | 'tiles') => r.yields.reduce((a, y) => a + y[k], 0);
-        expect(sum('tiles')).toBe(p.tiles);
-        expect(sum('troopsMilli')).toBe(r.regenMilli);
-        expect(sum('goldGrossMilli')).toBe(r.grossMilli);
-        expect(sum('goldNetMilli')).toBe(r.netMilli);
-        expect(r.yields.filter((y) => y.baseTileId >= 0).map((y) => y.baseTileId)).toEqual(p.baseTiles);
-        if (r.yields.every((y) => y.prodPm === 1000)) {
-          expect(r.regenMilli).toBe(regenMilliPerTick(p));
-          expect(r.grossMilli).toBe(grossGoldMilliPerTick(p));
-        } else expect(r.regenMilli).toBeLessThanOrEqual(regenMilliPerTick(p));
-        checked++;
-      }
-      // 스냅숏 production = 직전 2단계 내역 (milli/초 = milli/tick × 5)
-      const full = buildSnapshotFull(s);
-      for (const pp of full.production!) {
-        const ys = s.yields[pp.playerId] ?? [];
-        expect(pp.regions.map((x) => x.troopsPerSecMilli)).toEqual(ys.map((y) => y.troopsMilli * 5));
-      }
-    }
-    expect(checked).toBeGreaterThan(100);
-  });
-
-  it('생산력 50% 기지 지역의 병력·골드는 줄고, 다른 지역은 그대로', () => {
-    const s = makeSim().state;
-    const p = s.players[1];
-    const B = s.map.baseTiles.filter((b) => s.owners[b] === NEUTRAL).sort((a, b) => s.graph.distance(a, p.homeTileId) - s.graph.distance(b, p.homeTileId))[0];
-    setTileOwner(s, B, 1, false);
-    for (const x of s.graph.disk(B, 2)) if (isClaimable(s.map.terrain[x]) && s.owners[x] === NEUTRAL) setTileOwner(s, x, 1, false);
-    const full = computeProduction(s, p);
-    s.bases[s.baseIndexOf.get(B)!].prodScaled = 500 * TICKS_PER_MIN;
-    const half = computeProduction(s, p);
-    const reg = (r: typeof full, b: number) => r.yields.find((y) => y.baseTileId === b)!;
-    expect(reg(half, B).prodPm).toBe(500);
-    expect(reg(half, B).goldGrossMilli).toBeLessThan(reg(full, B).goldGrossMilli);
-    expect(half.regenMilli).toBeLessThan(full.regenMilli);
-    expect(reg(half, p.homeTileId).tiles).toBe(reg(full, p.homeTileId).tiles);
-  });
+  // v4.5 (§22): 생산 지역 모델 폐기 — 기지 행 + 영토 행 테스트는 v45.test.ts
 
   it('distribute: 합 보존, 잔여는 가중치 최대 항목', () => {
     expect(distribute(10, [1, 1, 1])).toEqual([4, 3, 3]);
@@ -329,10 +281,10 @@ describe('v4.4 기지 생산력', () => {
 });
 
 describe('v4.4 지명', () => {
-  it('풀 ≥ 100, 중복 없음, 한글 2~3음절', () => {
+  it('풀 ≥ 100, 중복 없음, 한글 (v4.5: 서양식 판타지 음차 — 2~7음절)', () => {
     expect(PLACE_NAME_POOL.length).toBeGreaterThanOrEqual(100);
     expect(new Set(PLACE_NAME_POOL).size).toBe(PLACE_NAME_POOL.length);
-    for (const n of PLACE_NAME_POOL) expect(n).toMatch(/^[가-힣]{2,3}$/);
+    for (const n of PLACE_NAME_POOL) expect(n).toMatch(/^[가-힣]{2,7}$/);
   });
 
   it('시드 결정론 · 매치 안 고유 · map_init.baseNames 가 bases 와 같은 길이', () => {

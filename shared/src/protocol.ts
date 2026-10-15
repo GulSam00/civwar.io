@@ -442,24 +442,30 @@ export interface BaseSnapshot {
   prodPm?: number;
 }
 
-/** v4.4 (§21): 생산 지역 하나 — 플레이어 땅 중 가장 가까운(내 땅만 밟는 그래프 거리) 내 기지에 속한 칸들 */
-export interface ProductionRegion {
-  /** 지역의 기지 tileId. null = "기타"(내 기지와 내 땅으로 이어지지 않은 칸) */
+/**
+ * v4.5 (§22, 사용자 2026-10-15): 생산 내역 한 행. 생산 지역 개념은 폐기됐다(§21.4 대체).
+ * kind = 'base'      : 내 기지 한 칸의 생산 = 영토 BASE_PROD_TILES(60)칸분 (수도 CAPITAL_PROD_TILES 100칸분) × 그 기지 생산력.
+ * kind = 'territory' : 내 땅 전체(기지 칸 포함)의 생산 합 — 생산력 페널티 없음. 플레이어당 1행, 항상 맨 끝.
+ */
+export interface ProductionRow {
+  kind: 'base' | 'territory';
+  /** 기지 행 = 기지 tileId, 영토 행 = null */
   baseTileId: number | null;
+  /** 기지 행 = 환산 칸 수(60 / 수도 100 — 생산력 반영 전), 영토 행 = 실제 소유 칸 수 */
   tiles: number;
-  /** 적용된 생산력 ‰ (기타 = 1000) */
+  /** 기지 행 = 적용된 생산력 ‰ (0..1000), 영토 행 = 1000 고정 */
   prodPm: number;
-  /** 이 지역 병력 재생 (milli 병력 / 초) — 병력/초 = 값 / 1000 */
+  /** 병력 재생 (milli 병력 / 초) — 병력/초 = 값 / 1000 */
   troopsPerSecMilli: number;
-  /** 이 지역 그로스 골드 (milli 골드 / 초, 유지비 차감 전) */
+  /** 그로스 골드 (milli 골드 / 초, 유지비 차감 전) */
   goldGrossPerSecMilli: number;
-  /** 이 지역 순골드 (milli 골드 / 초, 유지비 차감 후) */
+  /** 순골드 (milli 골드 / 초, 유지비 차감 후) */
   goldNetPerSecMilli: number;
 }
-/** v4.4 (§21): 플레이어별 생산 내역. regions = 기지 tileId 오름차순, "기타"(칸 있을 때만) 맨 끝. 지역 합 = 플레이어 총 생산 (정확히) */
+/** v4.5 (§22): 플레이어별 생산 내역. rows = 기지 행(tileId 오름차순) + 영토 행 1개(맨 끝). 행 합 = 플레이어 총 생산 (정확히) */
 export interface PlayerProduction {
   playerId: number;
-  regions: ProductionRegion[];
+  rows: ProductionRow[];
 }
 
 export interface AllianceSnapshot {
@@ -488,7 +494,7 @@ export interface S2C_SnapshotFull {
   allianceFreezeUntilTick: number | null;
   /** 2차 추가: lockout 카운트다운 중이면 강제 해제 tick */
   lockoutDissolveTick: number | null;
-  /** v4.4 (§21, 추가만): 플레이어별 생산 내역 (id ASC 전원, 탈락자는 regions []). 직전 2단계 정산값. 서버는 항상 싣는다 */
+  /** v4.4 (§21) → v4.5 (§22 형식 변경): 플레이어별 생산 내역 (id ASC 전원, 탈락자는 rows []). 직전 2단계 정산값. 서버는 항상 싣는다 */
   production?: PlayerProduction[];
 }
 export interface AllyProposalSnapshot {
@@ -542,6 +548,11 @@ export interface S2C_SnapshotDelta {
   baseProd?: [number, number][];
   /** v4.4 (§21, 추가만): PRODUCTION_DELTA_INTERVAL(5) 마다 내역이 바뀐 플레이어만 (전체 교체). 서버는 항상 싣는다(빈 배열 가능) */
   production?: PlayerProduction[];
+  /**
+   * v4.5 (§22, 추가만): [flagId, lossMilli] — 이번 tick 깃발 대 깃발 전투(4b)로 잃은 병력 (milli, > 0 인 깃발만, flagId ASC). 매 tick.
+   * 노출 소모·AP 지출은 포함하지 않는다. 표시용 "−n/틱" = lossMilli / 1000. 서버는 항상 싣는다(빈 배열 가능)
+   */
+  combatLoss?: [number, number][];
 }
 
 export interface S2C_CmdAck {

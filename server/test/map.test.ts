@@ -57,9 +57,9 @@ describe('불변식과 지형 쿼터 (인원 8~12 × 시드 3개)', () => {
         const L = m.totalLandTiles;
         const n = W * H;
 
-        // 육지 비율 0.60~0.70 (1단계 목표)
-        expect(L * 1000).toBeGreaterThanOrEqual(600 * n);
-        expect(L * 1000).toBeLessThanOrEqual(700 * n);
+        // v4.5: 육지 비율 0.885~0.915 (물 ≈ 10%, 1단계 목표)
+        expect(L * 1000).toBeGreaterThanOrEqual(885 * n);
+        expect(L * 1000).toBeLessThanOrEqual(915 * n);
 
         // I3: 테두리 = DEEP, 나머지 물 = SHALLOW
         expect(c[TERRAIN.DEEP]).toBe(2 * W + 2 * H - 4);
@@ -118,8 +118,8 @@ describe('v4.1 크기 프리셋 S/L · 격자-인원 분리 (2.8 b·c)', () => {
         expect(m.baseTiles.length).toBe(2 * N);
         expect(m.spawns.length).toBe(N);
         const n = p.w * p.h;
-        expect(m.totalLandTiles * 1000).toBeGreaterThanOrEqual(600 * n);
-        expect(m.totalLandTiles * 1000).toBeLessThanOrEqual(700 * n);
+        expect(m.totalLandTiles * 1000).toBeGreaterThanOrEqual(885 * n);
+        expect(m.totalLandTiles * 1000).toBeLessThanOrEqual(915 * n);
         expect(m.source).toEqual({ kind: 'random' });
       });
     }

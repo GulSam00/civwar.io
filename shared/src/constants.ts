@@ -32,16 +32,18 @@ export const ROOM_MAX_PLAYERS_RANGE = [2, 12] as const;
 export const MIN_PLAYERS = ROOM_MAX_PLAYERS_RANGE[0];
 export const MAX_PLAYERS = ROOM_MAX_PLAYERS_RANGE[1];
 
-// ══ 맵 ══ (v2.1 불변)
-export const LAND_TILES_PER_PLAYER = 390;
-export const TARGET_LAND_RATIO_PERMILLE = 650;
-export const LAND_RATIO_MIN_PERMILLE = 600;
-export const LAND_RATIO_MAX_PERMILLE = 700;
-export const CA_INIT_LAND_P_PERMILLE = 550;
-export const CA_LAND_P_STEP_PERMILLE = 20; // 시도마다 p ± 0.02
-export const CA_MAX_ATTEMPTS = 10;
-export const CA_SMOOTH_STEPS = 4;
-export const CA_LAND_NEIGHBOR_MIN = 5; // 8방향 기준
+// ══ 맵 ══
+// v4.5 (사용자 2026-10-15, 프로토콜 §22): 물 = 통행 불가 장애물, 물 비율 약 10% (테두리 깊은 물 포함). 육지는 항상 한 덩어리(4방향 연결).
+// 1단계 = 반해상도 격자에 호수 노이즈 → CA → 2배 확대 → 전해상도 다듬기 → 최대 육지 덩어리만 남김. 비율이 창 밖이면 p 를 조정해 다시.
+export const LAND_TILES_PER_PLAYER = 390; // 참고값 (v2.1). 생성기는 쓰지 않는다
+export const TARGET_LAND_RATIO_PERMILLE = 900; // v4.5: 650 → 900 (물 ≈ 10%)
+export const LAND_RATIO_MIN_PERMILLE = 885; // v4.5 [A]: 물 8.5~11.5%
+export const LAND_RATIO_MAX_PERMILLE = 915;
+export const CA_INIT_LAND_P_PERMILLE = 540; // v4.5 [A]: 반해상도 칸이 "육지"일 확률 (= 호수 노이즈 460‰)
+export const CA_LAND_P_STEP_PERMILLE = 10; // 시도마다 p ± 0.01
+export const CA_MAX_ATTEMPTS = 12;
+export const CA_SMOOTH_STEPS = 3; // 반해상도 CA 단계 (전해상도 다듬기 2단계는 고정)
+export const CA_LAND_NEIGHBOR_MIN = 5; // 8방향 기준 (호수 CA: 물 이웃 ≥ 5 → 물)
 export const SPAWN_BLOCK = 3; // 3×3
 /** v4.1: "인원별 기본 크기"(2.3 표) — 생성기는 lookup 하지 않고 W×H 를 인자로 받는다. 테스트·스크립트 편의용 */
 export const MAP_SIZE: Readonly<Record<number, readonly [number, number]>> = {
@@ -99,9 +101,9 @@ export const MAP_GEN_DEFAULT: Readonly<MapGenConfig> = {
 export const TERRAIN_COST_PERMILLE = [0, 1000, 1150, 1300, 800, 1700, 0] as const;
 /** 골드 가중치 */
 export const TERRAIN_GOLD_MILLI = [0, 1000, 2300, 900, 300, 250, 0] as const;
-/** "느려짐 배율". DEEP 은 통행 불가 → 0(조회되지 않음). SHALLOW 5000 = 속도 0.2배 */
+/** "느려짐 배율". v4.5: 물(DEEP·SHALLOW)은 통행 불가 → 조회되지 않음. SHALLOW 5000 은 기록용(커스텀 표시 호환) */
 export const TERRAIN_MOVE_PERMILLE = [0, 1000, 1000, 1250, 1100, 1800, 5000] as const;
-export const SHALLOW_MOVE_PERMILLE = 5000;
+export const SHALLOW_MOVE_PERMILLE = 5000; // v4.5: 미사용 (해상 이동 폐지)
 
 export const TERRAIN_GEN = {
   MOUNTAIN_BLOB_P_PERMILLE: 420,
@@ -136,18 +138,33 @@ export const BASE_HP_CAPTURE_MILLI = 11250;
 export const BASE_HP_REGEN_MILLI = 35; // [A-39] ×1.5 (23 → 35, 완전 회복 시간 유지 — 에이전트 선택)
 export const BASE_REGEN_DELAY_TICK = 50;
 export const BASE_CAPTURE_LOCK_TICK = 25;
+/** v4.5 (사용자 2026-10-15): 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 22500 → 최소 75 tick = 15초 */
+export const BASE_HP_DMG_CAP_MILLI_PER_TICK = 300;
 
 // ══ v4.4 기지 생산력·기지 방어 (사용자 2026-10-14, 프로토콜 §21) ══
 /** 방어 태세 깃발이 내 기지 칸 위에 서 있으면 지형 보정 대신 이 값 (곱하지 않고 대체) — 사용자 확정 */
 export const COMBAT_BASE_DEF_PERMILLE = 1500;
+/** v4.5 (사용자 2026-10-15): 공격 태세 깃발도 내 기지 칸 위면 공격값 × 이 값 / 1000 (태세 무관 ×1.5) */
+export const COMBAT_BASE_ATK_PERMILLE = 1500;
 /** 기지 생산력 시작값·상한 (‰). 중립 기지도 1000 에서 시작 — 사용자 확정 */
 export const BASE_PROD_MAX_PERMILLE = 1000;
 /** 점령될 때마다 현재 생산력 × 이 값 / 1000 (×0.5 → 연속 두 번 = 25%) — 사용자 확정 */
 export const BASE_PROD_CAPTURE_PERMILLE = 500;
 /** [A-85] 생산력 회복 속도 — 선형, 분당 +167‰ (50% → 100% 약 3분, 25% → 100% 약 4.5분). 에이전트 선택 */
 export const BASE_PROD_RECOVER_PER_MIN_PERMILLE = 167;
-/** 생산 지역 표(production) 델타 주기 — 1초 */
+/** 생산 내역(production) 델타 주기 — 1초 */
 export const PRODUCTION_DELTA_INTERVAL = 5;
+
+// ══ v4.5 기지 생산 (사용자 2026-10-15, 프로토콜 §22 — 2026-10-14 "생산 지역" 해석 폐기) ══
+/** 기지 한 칸의 생산 = 영토(평원) 이 칸 수만큼 — 사용자 확정 */
+export const BASE_PROD_TILES = 60;
+/** 수도 한 칸의 생산 = 영토(평원) 이 칸 수만큼 — 사용자 확정 */
+export const CAPITAL_PROD_TILES = 100;
+/**
+ * [A-103] 기지 병력 생산의 칸당 기준값을 정하는 기준 영토 크기 (= LAND_TILES_PER_PLAYER).
+ * 칸당 병력 재생(milli/tick) = (REGEN_BASE_MILLI + REGEN_SQRT_COEF × √PROD_REF_TILES) / PROD_REF_TILES — 정수식은 economy.ts
+ */
+export const PROD_REF_TILES = 390;
 
 // ══ 시작값 ══
 export const START_TROOPS = 150;
@@ -163,8 +180,7 @@ export const REGEN_SQRT_COEF_PERMILLE = 500; // 0.50
 export const GOLD_RATE_PERMILLE = 2080; // [A-39]
 
 // ══ 점령 비용 ══
-export const NEUTRAL_BASE = 7; // [A-37]
-export const NEUTRAL_SQRT_COEF_PERMILLE = 750; // [A-37]
+export const NEUTRAL_BASE = 7; // [A-37]. v4.5 (사용자 2026-10-15): 고정 비용 — √칸 항(NEUTRAL_SQRT_COEF_PERMILLE 750) 폐기
 export const ENEMY_BASE = 11; // [A-37, A-33 흡수]
 export const ADJACENCY_COEF_PERMILLE = 150;
 export const MIN_TILE_COST = 4;
@@ -190,9 +206,23 @@ export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거�
 export const FLAG_RETARGET_LOCK_TICK = 15;
 export const FLAG_RECALL_REFUND_PERMILLE = 850;
 /** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
-export const RETURN_SPEED_PERMILLE = 1500;
+export const RETURN_SPEED_PERMILLE = 1500; // v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.RETURN_SPEED (MOB-3B 급속 귀환 2200)
+/** 이탈 대기 tick (4.15 g). v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.DISENGAGE_TICKS (MOB-2B 철수 훈련 10) */
+export const DISENGAGE_TICKS = 15;
 export const FLAG_IDLE_TIMEOUT = 600;
+/**
+ * 노출 소모 — **적 땅**(적대 플레이어 소유) 위 깃발, tick 당 병력의 0.05% (최소 1 병력 = 1000 milli/tick).
+ * 실제 크기: 0.05% × 300 tick = 분당 약 14% (복리, 1 − 0.9995^300). 구 주석 "≈3%/분" 은 틀린 값이었다.
+ */
 export const FLAG_EXPOSED_ATTRITION_BP = 5;
+/**
+ * v4.5 (사용자 2026-10-15): **중립 땅** 위 노출 소모 = 적 땅의 절반 — tick 당 25 / 100,000 (0.025%, 분당 약 7%).
+ * [A-113] 단위 = 10만분율(PCM), 최소 = 적 땅 최소의 절반 500 milli/tick. 내 땅·동맹 땅 = 0 (기존)
+ */
+export const FLAG_EXPOSED_ATTRITION_NEUTRAL_PCM = 25;
+/** 노출 소모 tick 당 최소 (milli) — 적 땅 / 중립 땅 [A-113] */
+export const FLAG_EXPOSED_MIN_MILLI = 1000;
+export const FLAG_EXPOSED_NEUTRAL_MIN_MILLI = 500;
 export const FLAG_STALL_TICKS = 25;
 
 // ══ 주둔 유지비 (골드) ══
@@ -236,8 +266,9 @@ export type Posture = (typeof POSTURE)[keyof typeof POSTURE];
 //   SHALLOW_MOVE_BY_TIER [5000,4000,3000,2500] · WATER_EXPOSURE [1000,1000,500,500]
 //   COMBAT_WATER_VS_LAND [800,870,950,1000] · COMBAT_WATER_VS_WATER [1000,1000,1050,1100]
 // [A-75] 사라진 효과: 물 위 노출 소모 감소(항상 ×1.0), 물 대 물 교전 보너스(항상 ×1.0), 전 병종 편성 효율(기병 CAV-2A 로 축소), 슬롯 +2 단계(최대 +1).
-export const SHALLOW_MOVE_PERMILLE_MIN = 2000; // [A-20] 얕은 물 이동배율 하한 (테크로도 이 아래로 못 내려간다)
-/** 상륙(물 위 깃발이 땅 위 적과 교전) 깃발 전투 실효값 배율 — 무테크 값. MOB-3B 상륙정이 950 으로 덮어쓴다 (손실 배율 ≈ 1.25 → 1.05) [A-25] */
+// v4.5 (2026-10-15): 해상 이동·상륙 폐지 — 아래 둘은 서버 계산식이 읽지 않는다(기록용). 스탯 칸 11·13 은 DISENGAGE_TICKS·RETURN_SPEED 로 재사용.
+export const SHALLOW_MOVE_PERMILLE_MIN = 2000; // [A-20] (미사용)
+/** (미사용) 구 상륙 교전 실효값 배율 [A-25] */
 export const COMBAT_WATER_VS_LAND_PERMILLE = 800;
 
 export const TECH_BRANCH = { MIL: 0, ECO: 1, TER: 2, MOB: 3, SPE: 4, SWO: 5, CAV: 6 } as const;
@@ -261,9 +292,9 @@ export const TECH_STAT = {
   TROOP_CAP: 8, // 병력 상한 배율 ‰
   SUPPLY_COEF: 9, // 그 플레이어의 SUPPLY_COEF_PERMILLE (값 자체)
   SPEED: 10, // 깃발 이동속도 배율 — 공통 부분 ‰ (병종 증분 SPEED_* 를 더해 쓴다)
-  SHALLOW_MOVE: 11, // 얕은 물 이동배율 ‰ (값 자체, 하한 SHALLOW_MOVE_PERMILLE_MIN)
+  DISENGAGE_TICKS: 11, // v4.5 (A-95 ①, 구 SHALLOW_MOVE 칸 재사용): 그 플레이어의 이탈 대기 tick (값 자체, 무테크 DISENGAGE_TICKS 15)
   SLOT_BONUS: 12, // 깃발 슬롯 보너스 (개수)
-  LANDING_COMBAT: 13, // 상륙 교전 실효값 배율 ‰ (값 자체)
+  RETURN_SPEED: 13, // v4.5 (A-95 ①, 구 LANDING_COMBAT 칸 재사용): 그 플레이어의 귀환 속도 배율 ‰ (값 자체, 무테크 RETURN_SPEED_PERMILLE 1500)
   COMBAT_ATK_SPEAR: 14,
   COMBAT_ATK_SWORD: 15,
   COMBAT_ATK_CAVALRY: 16,
@@ -288,7 +319,7 @@ export const TECH_STAT_COUNT = 32;
 /** 무테크 스탯 값 (인덱스 = TECH_STAT). 값 자체가 상수인 스탯은 그 상수를 그대로 쓴다 */
 export const TECH_STAT_BASE: readonly number[] = [
   1000, 1000, 1000, 1000, 1000, GARRISON_UPKEEP_PERMILLE, 1000, 1000, 1000, SUPPLY_COEF_PERMILLE,
-  1000, SHALLOW_MOVE_PERMILLE, 0, COMBAT_WATER_VS_LAND_PERMILLE,
+  1000, DISENGAGE_TICKS, 0, RETURN_SPEED_PERMILLE,
   0, 0, 0, // COMBAT_ATK_* (공통 COMBAT_ATK 에 더하는 병종 증분)
   0, 0, 0, // COMBAT_DEF_*
   0, 0, 0, // SPEED_* (공통 SPEED 에 더하는 병종 증분)
@@ -319,6 +350,8 @@ export interface TechNodeDef {
   name: string;
   /** 짧은 효과 문구 (UI 한 줄) */
   desc: string;
+  /** v4.5: 아이콘 콘셉트 (그림 설명, 선택). 실제 아이콘은 클라이언트 techIcons — 새로 바뀐 노드만 채운다 */
+  icon?: string;
 }
 
 /** [A-72] 32노드 (01b 2.3 표 그대로). id = 표의 # */
@@ -344,9 +377,10 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   // 기동 MOB — 공통
   { id: 15, code: 'MOB-1', branch: 3, tier: 1, parent: null, stat: 10, op: 'add', value: 150, name: '행군로', desc: '깃발 이동속도 +15% (전 병종)' },
   { id: 16, code: 'MOB-2A', branch: 3, tier: 2, parent: 15, stat: 10, op: 'add', value: 150, name: '강행군', desc: '깃발 이동속도 +15% (전 병종)' },
-  { id: 17, code: 'MOB-2B', branch: 3, tier: 2, parent: 15, stat: 11, op: 'set', value: 3500, name: '조선술', desc: '얕은 물 이동배율 5.00 → 3.50' },
+  // v4.5 (사용자 승인 2026-10-15, 01c 제안 — MOB-2B ①, MOB-3B ②): 해상 노드 교체. id·마스크·부모 관계 유지, 스탯 칸 11·13 재사용 (A-95 ①)
+  { id: 17, code: 'MOB-2B', branch: 3, tier: 2, parent: 15, stat: 11, op: 'set', value: 10, name: '철수 훈련', desc: '이탈 대기 3.0초 → 2.0초', icon: '방패 뒤로 꺾여 돌아가는 화살표' },
   { id: 18, code: 'MOB-3A', branch: 3, tier: 3, parent: 16, stat: 12, op: 'add', value: 1, name: '참모부', desc: '깃발 슬롯 +1' },
-  { id: 19, code: 'MOB-3B', branch: 3, tier: 3, parent: 17, stat: 13, op: 'set', value: 950, name: '상륙정', desc: '상륙 교전 손실 배율 1.25 → 1.05 (물 위 전투값 ×0.80 → ×0.95)' },
+  { id: 19, code: 'MOB-3B', branch: 3, tier: 3, parent: 17, stat: 13, op: 'set', value: 2200, name: '급속 귀환', desc: '귀환 속도 ×1.5 → ×2.2 (회수·자동 귀환·패주)', icon: '기지 지붕 + 안으로 들어가는 화살표' },
   // 창병 SPE — 창병 깃발에만
   { id: 20, code: 'SPE-1', branch: 4, tier: 1, parent: null, stat: 17, op: 'add', value: 50, name: '장창 대열', desc: '창병 깃발 전투 방어력 +5%' },
   { id: 21, code: 'SPE-2A', branch: 4, tier: 2, parent: 20, stat: 23, op: 'set', value: 450, name: '주둔 진지', desc: '창병 유지비 가중치 0.60 → 0.45' },
@@ -453,16 +487,16 @@ export const BOT_AGGRESSION_SPAN: Readonly<BotAggressionSpan> = {
 };
 
 // ══ v4.0 깃발 대 깃발 전투 (4.15) ══
-export const COMBAT_LOSS_BP = 150; // [A-11]
-export const COMBAT_LOSS_FLOOR_BP = 75; // [A-11]
+export const COMBAT_LOSS_BP = 90; // [A-11] v4.5 사용자 2026-10-15: 150 → 90 (0.9%)
+export const COMBAT_LOSS_FLOOR_BP = 45; // [A-11] v4.5 [A-105]: 75 → 45 (손실률과 같은 비율 ×0.6)
 export const COMBAT_MIN_LOSS_MILLI = 1000;
 //                                   SPEAR SWORD CAVALRY
 export const UNIT_ATK_PERMILLE = [870, 1000, 1180] as const; // [A-23]
 export const UNIT_DEF_PERMILLE = [1300, 1000, 700] as const; // [A-23]
-/** 방어 태세만, 소유자 무관. 물 위 1000 [A-24]. 인덱스 = TERRAIN */
+/** 방어 태세만, 소유자 무관. 인덱스 = TERRAIN (v4.5: 물 칸에는 깃발이 서지 않는다) */
 export const COMBAT_TERRAIN_DEF_POSTURE_PERMILLE = [1000, 1000, 1050, 1300, 1000, 1600, 1000] as const;
 export const POSTURE_COOLDOWN_TICKS = 25; // 사용자 확정 튜닝 레버
-export const DISENGAGE_TICKS = 15;
+// DISENGAGE_TICKS 는 깃발 절로 옮겼다 (v4.5 — TECH_STAT_BASE 가 참조)
 export const DISENGAGE_VALUE_PERMILLE = 500; // [A-31]
 export const ANY_HOSTILE = 254; // targetOwnerId 예약값 [A-27]
 // 폐기·구현 금지: COMBAT_HOME_DEF_PERMILLE, COMBAT_TERRAIN_DEF_PERMILLE(A-16), UNIT_POWER, LOSER_ATTRITION_RATIO 등
@@ -476,6 +510,11 @@ export const PUBLIC_LOBBY_AUTOSTART_MS = 30000;
 /** 공개 룸 정원 — 시작 시 빈자리를 NORMAL 봇으로 충원 */
 export const PUBLIC_ROOM_PLAYERS = 10;
 export const PUBLIC_ROOM_SIZE: MapSizeClass = 'M';
+/**
+ * 판 길이 추정식(GDD 2.8 e)의 기준 1인당 육지 = M 10인의 육지/인. v4.5 [A-110]: 물 ≈ 10% 로 390 → 540.
+ * 서버 pacingNote 와 클라이언트 미리보기가 같은 값을 쓴다
+ */
+export const PACING_P_REF_LAND_PER_PLAYER = Math.floor((MAP_SIZE_PRESETS.M.w * MAP_SIZE_PRESETS.M.h * TARGET_LAND_RATIO_PERMILLE) / 1000 / PUBLIC_ROOM_PLAYERS);
 /** 게임 종료 후 룸을 정리하기까지 대기 */
 export const ROOM_CLOSE_AFTER_GAME_MS = 60000;
 /** 세션당 tick 당 최대 명령 수 — 초과분은 RATE_LIMITED */

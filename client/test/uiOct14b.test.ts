@@ -34,13 +34,13 @@ const delta = (tick: number, over: Partial<S2C_SnapshotDelta> = {}): S2C_Snapsho
 const PROD: PlayerProduction[] = [
   {
     playerId: 1,
-    regions: [
-      { baseTileId: CAP1, tiles: 14, prodPm: 1000, troopsPerSecMilli: 4120, goldGrossPerSecMilli: 2950, goldNetPerSecMilli: 2270 },
-      { baseTileId: BASE1B, tiles: 8, prodPm: 500, troopsPerSecMilli: 845, goldGrossPerSecMilli: 610, goldNetPerSecMilli: 470 },
-      { baseTileId: null, tiles: 2, prodPm: 1000, troopsPerSecMilli: 115, goldGrossPerSecMilli: 80, goldNetPerSecMilli: 61 },
+    rows: [
+      { kind: 'base', baseTileId: CAP1, tiles: 14, prodPm: 1000, troopsPerSecMilli: 4120, goldGrossPerSecMilli: 2950, goldNetPerSecMilli: 2270 },
+      { kind: 'base', baseTileId: BASE1B, tiles: 8, prodPm: 500, troopsPerSecMilli: 845, goldGrossPerSecMilli: 610, goldNetPerSecMilli: 470 },
+      { kind: 'territory', baseTileId: null, tiles: 2, prodPm: 1000, troopsPerSecMilli: 115, goldGrossPerSecMilli: 80, goldNetPerSecMilli: 61 },
     ],
   },
-  { playerId: 2, regions: [{ baseTileId: CAP2, tiles: 12, prodPm: 1000, troopsPerSecMilli: 3000, goldGrossPerSecMilli: 2000, goldNetPerSecMilli: 2000 }] },
+  { playerId: 2, rows: [{ kind: 'base', baseTileId: CAP2, tiles: 12, prodPm: 1000, troopsPerSecMilli: 3000, goldGrossPerSecMilli: 2000, goldNetPerSecMilli: 2000 }] },
 ];
 
 function setup(flags: FlagSnapshot[] = []) {
@@ -199,7 +199,7 @@ describe('§21.4 병력·골드 출처 (production)', () => {
 
   it('델타 production = 바뀐 플레이어만 통째 교체, 표가 없으면 예전 식으로 대신', () => {
     const { store, g } = setup();
-    store.onMessage(delta(105, { production: [{ playerId: 2, regions: [{ baseTileId: CAP2, tiles: 12, prodPm: 1000, troopsPerSecMilli: 1, goldGrossPerSecMilli: 1000, goldNetPerSecMilli: 900 }] }] }));
+    store.onMessage(delta(105, { production: [{ playerId: 2, rows: [{ kind: 'base', baseTileId: CAP2, tiles: 12, prodPm: 1000, troopsPerSecMilli: 1, goldGrossPerSecMilli: 1000, goldNetPerSecMilli: 900 }] }] }));
     expect(incomeOf(g, 2)!.net).toBeCloseTo(0.9, 9);
     expect(incomeOf(g, 1)!.net).toBeCloseTo(2.801, 9); // 그대로
     g.production.delete(1);

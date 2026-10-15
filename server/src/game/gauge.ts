@@ -5,6 +5,7 @@
  */
 import {
   BASE_CAPTURE_LOCK_TICK,
+  BASE_HP_DMG_CAP_MILLI_PER_TICK,
   BASE_HP_MAX_MILLI,
   BASE_HP_CAPTURE_MILLI,
   BASE_PROD_CAPTURE_PERMILLE,
@@ -185,19 +186,47 @@ function applyTilePushes(state: GameState, X: number, list: Push[], t: number, o
   }
 }
 
-/** 4.12 기지 체력 전투 */
+/**
+ * v4.5 [A-104] 기지 피해 상한 분배 (순수 함수). want = 깃발별 원래 피해(flagId ASC, > 0), hp = 현재 체력.
+ * 총 적용량 = min(Σwant, BASE_HP_DMG_CAP_MILLI_PER_TICK, hp) — 체력보다 많이 깎지 않는다(초과 피해에 병력을 쓰지 않게).
+ * 총량이 Σwant 보다 작으면 원래 피해 비례로 floor 분배, 잔여 milli 는 (want DESC, 순서 ASC) 로 1씩 — 결정론, 합 = 총 적용량.
+ */
+export function splitBaseDamage(want: readonly number[], hp: number): number[] {
+  const sum = want.reduce((a, b) => a + b, 0);
+  const total = Math.max(0, Math.min(sum, BASE_HP_DMG_CAP_MILLI_PER_TICK, hp));
+  if (total === sum) return want.slice();
+  const out = want.map((w) => Math.floor((total * w) / sum));
+  let rem = total - out.reduce((a, b) => a + b, 0);
+  const order = want.map((w, i) => ({ w, i })).sort((a, b) => b.w - a.w || a.i - b.i);
+  for (let k = 0; rem > 0; k = (k + 1) % order.length, rem--) out[order[k].i] += 1;
+  return out;
+}
+
+/**
+ * 4.12 기지 체력 전투. v4.5 (사용자 2026-10-15): 한 tick 에 기지가 잃는 체력 합 ≤ BASE_HP_DMG_CAP_MILLI_PER_TICK(300)
+ * — 깃발 수와 무관(빈 기지도 최소 15초). 깃발별 적용 피해 = splitBaseDamage, **지출 = 적용된 피해의 AP 만** [A-104]
+ * (상한·체력에 잘려 버려진 피해에는 병력을 쓰지 않는다). 함락자 = 적용 피해 최대(동률 flagId 작은 쪽) — 기존 규칙.
+ */
 function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, out: Outbox): void {
   const base = state.bases[state.baseIndexOf.get(B)!];
   let winner: Flag | null = null;
   let bestNet = 0;
   const hitters: Flag[] = [];
+  const hits: { f: Flag; h: BaseHit }[] = [];
   for (const h of list) {
     const f = flagById(state, h.flagId);
-    if (!f) continue;
+    if (f) hits.push({ f, h });
+  }
+  const applied = splitBaseDamage(
+    hits.map((x) => x.h.dmg),
+    base.hpMilli,
+  );
+  for (let i = 0; i < hits.length; i++) {
+    const { f, h } = hits[i];
     setTarget(f, B, t, out);
     hitters.push(f);
-    spend(state, f, Math.ceil((h.dmg * h.cost) / 1000));
-    const net = h.dmg; // v4.1: 기지 방어 = 격파 + 회복만 [A-44]
+    const net = applied[i]; // v4.1: 기지 방어 = 격파 + 회복만 [A-44]
+    spend(state, f, Math.ceil((net * h.cost) / 1000));
     updateStall(f, net, t, out);
     base.hpMilli -= net;
     base.lastDamageTick = t;
@@ -208,8 +237,9 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
     }
   }
   if (base.hpMilli <= 0 && winner) {
+    const w = winner;
     const from = state.owners[B];
-    setTileOwner(state, B, winner.ownerId);
+    setTileOwner(state, B, w.ownerId);
     base.hpMilli = BASE_HP_CAPTURE_MILLI;
     base.lockUntilTick = t + BASE_CAPTURE_LOCK_TICK;
     // v4.4 (§21): 생산력 = 현재 값 × 0.5 (중립 기지 포함). 이후 8단계가 선형 회복
@@ -221,7 +251,7 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
       tick: t,
       tileId: B,
       fromPlayerId: from,
-      toPlayerId: winner.ownerId,
+      toPlayerId: w.ownerId,
       newHpPct: Math.floor((BASE_HP_CAPTURE_MILLI * 100) / BASE_HP_MAX_MILLI),
       newProdPm: prodPm,
     });

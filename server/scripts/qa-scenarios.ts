@@ -268,6 +268,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
     f.targetOwnerId = posture === POSTURE.DEFEND ? 254 : NEUTRAL;
     s.flags.push(f);
   };
+  setTileOwner(s, c1, 1, false); // v4.5: 손실률 0.9% — 남의 땅이면 노출 소모(≥ 1/tick)가 마지막 병력을 지워 패주 대신 attrited 가 된다
   mk(1, 1, UNIT.SWORD, c1, POSTURE.ATTACK);
   mk(2, 2, UNIT.SPEAR, c1 + 1, POSTURE.DEFEND);
   mk(3, 3, UNIT.SWORD, c2, POSTURE.ATTACK);
@@ -300,9 +301,10 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
     }
   }
   check('flag_disengaged(broke_away) at untilTick', dg?.reason === 'broke_away' && dg.tick === ds?.untilTick, JSON.stringify(dg));
-  check('GDD 4.15 대표 전투 #7 (창 언덕 즉시 회수): 3초 후 수비 ≈780 / 공격 ≈814 (−220 / −186)', Math.abs(t17.d - 780) <= 2 && Math.abs(t17.a - 814) <= 2, `서버 수비 ${t17.d} / 공격 ${t17.a}  이력(tick:공/수) ${hist.join(' ')}`);
+  // v4.5 (§22): 손실률 1.5% → 0.9% · 중립 노출 소모 절반 — GDD 4.15 #7 의 −220 / −186 (1.5% 기준)은 이제 −160 / −142 (두 깃발 모두 중립 칸 위라 노출 0.025%/tick 포함)
+  check('GDD 4.15 대표 전투 #7 (창 언덕 즉시 회수, v4.5 손실률 0.9% + 중립 노출 절반): 3초 후 수비 ≈840 / 공격 ≈858 (−160 / −142)', Math.abs(t17.d - 840) <= 2 && Math.abs(t17.a - 858) <= 2, `서버 수비 ${t17.d} / 공격 ${t17.a}  이력(tick:공/수) ${hist.join(' ')}`);
   let routed: any = null;
-  for (let i = 0; i < 150 && !routed; i++) routed = stepWith(sim, []).ev.find((e) => e.type === 'flag_routed' && e.flagId === 1);
+  for (let i = 0; i < 400 && !routed; i++) routed = stepWith(sim, []).ev.find((e) => e.type === 'flag_routed' && e.flagId === 1);
   check('검→창 평원: 공격 깃발 패주 flag_routed', !!routed, JSON.stringify(routed));
   r = stepWith(sim, [
     [1, { type: 'cmd_flag_retarget', flagId: 1, anchorTileId: c1 + 2 }],

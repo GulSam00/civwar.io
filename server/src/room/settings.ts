@@ -9,6 +9,7 @@ import {
   MAP_SIZE_PRESETS,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  PACING_P_REF_LAND_PER_PLAYER,
   PUBLIC_ROOM_PLAYERS,
   PUBLIC_ROOM_SIZE,
   TARGET_LAND_RATIO_PERMILLE,
@@ -38,7 +39,11 @@ export interface RoomSettings {
 export const PACING_GUARANTEE_PLAYERS = PUBLIC_ROOM_PLAYERS;
 /** 추정식 T ≈ 29.4 × (P / 390)^0.75 (2.8 e, 표시용 — 시뮬레이션에 쓰지 않으므로 부동소수 허용) */
 const PACING_T_BASE_MIN = 29.4;
-const PACING_P_REF = 390;
+/**
+ * 기준 1인당 육지 = shared PACING_P_REF_LAND_PER_PLAYER (v4.5 [A-110]: 390 → 540).
+ * 추정식의 상대 눈금(같은 혼잡도 = 같은 추정 시간)을 유지하려고 기준을 함께 옮겼다 — 절대 시간은 자가대전으로 확인할 것(§22)
+ */
+const PACING_P_REF = PACING_P_REF_LAND_PER_PLAYER;
 const PACING_EXP = 0.75;
 const PACING_HARD_MIN = 32;
 

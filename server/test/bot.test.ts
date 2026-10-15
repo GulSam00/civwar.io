@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
-import { CivBot, botKnobs, decideBot } from '../src/game/bot.js';
+import { CivBot, botKnobs, chooseUnitFor, decideBot } from '../src/game/bot.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
 import { NEUTRAL, botAggressionPermille, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
 import { Simulation, type BotBrain } from '../src/game/tick.js';
@@ -232,14 +232,13 @@ describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2
     const home = p1.homeTileId;
     const b = s.map.baseTiles.filter((x) => s.owners[x] !== 1 && x !== s.players[2].homeTileId).sort((x, y) => s.graph.distance(x, home) - s.graph.distance(y, home) || x - y)[0];
     setTileOwner(s, b, 2, false);
-    // 수도 → 기지 방향 직선 근사로 거리 3 까지 p1 땅
-    let cur = home;
-    while (s.graph.distance(cur, b) > 3) {
-      const nx = s.graph.neighbors(cur).filter((n) => isClaimable(s.map.terrain[n])).sort((x, y) => s.graph.distance(x, b) - s.graph.distance(y, b) || x - y)[0];
-      if (nx === undefined) break;
-      cur = nx;
-      if (s.owners[cur] !== 2) setTileOwner(s, cur, 1, false);
-    }
+    // 수도 → 기지 최단 육지 경로(BFS)를 따라 기지 3칸 앞까지 p1 땅 (v4.5: 물이 통행 불가라 직선 근사는 호수에서 맴돈다)
+    const prev = new Map<number, number>([[home, -1]]);
+    const q = [home];
+    for (let i = 0; i < q.length && !prev.has(b); i++) for (const n of s.graph.neighbors(q[i])) if (!prev.has(n)) (prev.set(n, q[i]), q.push(n));
+    const path: number[] = [];
+    for (let x = b; x !== -1; x = prev.get(x)!) path.unshift(x);
+    for (const cur of path.slice(0, Math.max(0, path.length - 3))) if (s.owners[cur] !== 2) setTileOwner(s, cur, 1, false);
     const bs = s.bases[s.baseIndexOf.get(b)!];
     if (hpLow) bs.hpMilli = Math.floor(bs.hpMilli / 4);
     p1.troopsMilli = 1000 * 1000;
@@ -258,13 +257,13 @@ describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2
     expect(atk!.troops).toBeLessThanOrEqual(500);
   });
 
-  it('기지가 적 방어 관할 원 안이면 검병', () => {
+  it('기지가 적 방어 관할 원 안이면 검병 (밖이면 기병)', () => {
+    // v4.5: 중립 비용이 고정(7)이 되어 결정 전체에서는 싼 중립 땅이 지켜지는 적 기지보다 먼저 뽑힐 수 있다 — 병종 규칙만 직접 확인
     const { s, b } = baseScene(true);
+    const a = { tileId: b, border: b, owner: 2, kind: 1 as const, base: true };
+    expect(chooseUnitFor(s, 1, s.players[1].bot, a)).toBe(UNIT.CAVALRY);
     addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 50, pos: b, anchor: b, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-    const cmds = decideBot(s, 1, 3000, s.players[1].bot);
-    const atk = cmds.find((c) => c.type === 'cmd_flag_issue' && c.anchorTileId === b) as Extract<C2S_GameCommand, { type: 'cmd_flag_issue' }> | undefined;
-    expect(atk).toBeTruthy();
-    expect(atk!.unit).toBe(UNIT.SWORD);
+    expect(chooseUnitFor(s, 1, s.players[1].bot, a)).toBe(UNIT.SWORD);
   });
 
   it('공격 발령 앵커는 국경 칸이 아니라 노선 끝점(내 땅에서 4칸 이상) — 깊은 앵커', () => {

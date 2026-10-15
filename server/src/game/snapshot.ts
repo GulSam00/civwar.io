@@ -91,13 +91,14 @@ export function buildMapInit(state: Readonly<GameState>): S2C_MapInit {
 /** v4.4 (§21): milli/tick → milli/초 (TICK_MS 200 → ×5) */
 const perSec = (milliPerTick: number): number => Math.floor((milliPerTick * 1000) / TICK_MS);
 
-/** v4.4 (§21): 플레이어 생산 내역 (직전 2단계 정산 state.yields). 탈락자·아직 정산 전 = regions [] */
+/** v4.5 (§22): 플레이어 생산 내역 (직전 2단계 정산 state.yields) — 기지 행 + 영토 행. 탈락자·아직 정산 전 = rows [] */
 export function playerProduction(state: Readonly<GameState>, id: number): PlayerProduction {
   const ys = state.players[id]?.alive ? (state.yields[id] ?? []) : [];
   return {
     playerId: id,
-    regions: ys.map((y) => ({
-      baseTileId: y.baseTileId >= 0 ? y.baseTileId : null,
+    rows: ys.map((y) => ({
+      kind: y.kind,
+      baseTileId: y.kind === 'base' ? y.baseTileId : null,
       tiles: y.tiles,
       prodPm: y.prodPm,
       troopsPerSecMilli: perSec(y.troopsMilli),
@@ -262,6 +263,7 @@ export class DeltaTracker {
       flagReturnBase: [],
       baseProd: [],
       production: [],
+      combatLoss: state.changes.combatLoss.slice(),
     };
     if (t % PLAYER_DELTA_INTERVAL === 0) {
       for (const p of state.players) {

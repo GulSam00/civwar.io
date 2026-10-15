@@ -35,7 +35,7 @@ for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
   const evs = Ns.map(N => evalAt(m, t, N));
   const avg = k => evs.reduce((s, e) => s + e[k], 0) / evs.length;
   const landRatio = t.filter(x => x >= 1 && x <= 5).length / t.length;
-  const score = avg('cvTiles') * 2 + avg('cvGold') * 2 + avg('cvFert') + avg('cvBaseDist') * 0.5 + evs.reduce((s, e) => s + e.noBase, 0) * 0.15 + Math.abs(landRatio - 0.65) * 2;
+  const score = avg('cvTiles') * 2 + avg('cvGold') * 2 + avg('cvFert') + avg('cvBaseDist') * 0.5 + evs.reduce((s, e) => s + e.noBase, 0) * 0.15 + Math.abs(landRatio - 0.90) * 2 // v4.5: 목표 육지 0.90 (물 ≈ 10%);
   rows.push({ id: m.id, size: m.sizeClass, score, landRatio, cvTiles: avg('cvTiles'), cvGold: avg('cvGold'), cvFert: avg('cvFert'), cvBaseDist: avg('cvBaseDist'), noBase: evs.map(e => e.noBase).join('/'), range: evs.map(e => e.minTiles + '-' + e.maxTiles).join(' | ') });
 }
 for (const s of ['S', 'M', 'L']) {

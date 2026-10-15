@@ -2,19 +2,18 @@
  * 깃발 대 깃발 전투 (GDD 4.15) — 4a(Phase A, 읽기 전용) / 4b(Phase B, flagId ASC 적용).
  */
 import {
+  COMBAT_BASE_ATK_PERMILLE,
   COMBAT_BASE_DEF_PERMILLE,
   COMBAT_LOSS_BP,
   COMBAT_LOSS_FLOOR_BP,
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
-  DISENGAGE_TICKS,
   DISENGAGE_VALUE_PERMILLE,
   POSTURE,
-  TECH_STAT,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
-  isClaimable,
   techCombatPm,
+  techDisengageTicks,
 } from '@civwar/shared';
 import { beginReturn } from './flagops.js';
 import type { Outbox } from './outbox.js';
@@ -82,36 +81,33 @@ function engagedPair(state: Readonly<GameState>, f: Readonly<Flag>, g: Readonly<
   return hostile(state, f.ownerId, g.ownerId) && (attackSide(f) || attackSide(g));
 }
 
+/** v4.5: 깃발이 자기(소유자) 기지 칸(수도 포함) 위에 서 있는가 — 태세 무관 ×1.5 의 조건 */
+export function onOwnBase(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  const pos = f.posTileId;
+  return state.map.isBase[pos] === 1 && state.owners[pos] === f.ownerId;
+}
+
 /**
  * 실효 전투값 v(f) (4.15 d·e·g) — permille, 단계마다 floor, 최소 1.
- * v4.4: 방어 태세 지형 항 = 내 기지 칸이면 1500, 아니면 COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[지형].
- * v4.3: 테크 배율 = techCombatPm — 공격 태세 COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 COMBAT_DEF + COMBAT_DEF_<unit>
- *   (구 MIL_COMBAT 은 공·방 동시였다). 최대 1300 × 1600/1000 × 1140/1000 = 2371.
- * 물 위: 상대 편에 땅 위 적이 있으면 × LANDING_COMBAT(무테크 800, MOB-3B 950), 물 대 물은 ×1000 고정([A-75] 보너스 폐기).
+ * v4.5 (사용자 2026-10-15): 내 기지 칸 위면 **태세 무관 ×1.5** [A-106]
+ *   - 방어 태세: 지형 항 = COMBAT_BASE_DEF_PERMILLE 1500 (지형 보정을 대체 — 곱하지 않음, v4.4 그대로)
+ *   - 공격 태세: floor(UNIT_ATK × COMBAT_BASE_ATK_PERMILLE 1500 / 1000) (공격 태세엔 원래 지형 항이 없다)
+ * v4.3: 테크 배율 = techCombatPm — 공격 태세 COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 COMBAT_DEF + COMBAT_DEF_<unit>.
+ * v4.5: 물 위 깃발이 없어져 상륙 배율(LANDING_COMBAT) 항 삭제. group 인자는 호출 호환용.
  */
-export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, group: readonly Readonly<Flag>[]): number {
+export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, _group: readonly Readonly<Flag>[]): number {
   const terrain = state.map.terrain;
+  const base = onOwnBase(state, f);
   let v: number;
-  if (f.posture === POSTURE.ATTACK) v = UNIT_ATK_PERMILLE[f.unit];
-  else {
-    // v4.4 (§21, 사용자 2026-10-14): 내 기지 칸(수도 포함) 위 방어 태세 = 지형 보정 대신 COMBAT_BASE_DEF_PERMILLE (대체, 곱하지 않음)
-    const pos = f.posTileId;
-    const td =
-      state.map.isBase[pos] && state.owners[pos] === f.ownerId
-        ? COMBAT_BASE_DEF_PERMILLE
-        : isClaimable(terrain[pos])
-          ? COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[terrain[pos]]
-          : 1000;
+  if (f.posture === POSTURE.ATTACK) {
+    v = UNIT_ATK_PERMILLE[f.unit];
+    if (base) v = Math.floor((v * COMBAT_BASE_ATK_PERMILLE) / 1000);
+  } else {
+    const td = base ? COMBAT_BASE_DEF_PERMILLE : COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[terrain[f.posTileId]];
     v = Math.floor((UNIT_DEF_PERMILLE[f.unit] * td) / 1000);
   }
   const owner = state.players[f.ownerId];
   v = Math.floor((v * techCombatPm(owner.statPm, f.unit, f.posture === POSTURE.DEFEND)) / 1000);
-  let wm = 1000;
-  if (!isClaimable(terrain[f.posTileId])) {
-    const vsLand = group.some((g) => hostile(state, f.ownerId, g.ownerId) && isClaimable(terrain[g.posTileId]));
-    if (vsLand) wm = owner.statPm[TECH_STAT.LANDING_COMBAT];
-  }
-  v = Math.floor((v * wm) / 1000);
   if (f.disengageUntilTick !== null) v = Math.floor((v * DISENGAGE_VALUE_PERMILLE) / 1000);
   return Math.max(1, v);
 }
@@ -242,6 +238,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     if (l !== undefined) {
       f.troopsMilli -= l;
       state.ledger.combat += l;
+      if (l > 0) state.changes.combatLoss.push([f.id, l]); // v4.5 (§22): 델타 combatLoss (flagId ASC — state.flags 순서)
     }
     const inGroup = plan.groupOf.has(f.id);
     if (inGroup && !f.inCombat) f.combatSinceTick = t;
@@ -265,7 +262,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
   // v4.2 [A-62]: 전투에 붙잡힌 귀환(비패주) 깃발 → 자동 이탈 대기 (3초, 실효값 ×0.5 — 4.15 g 그대로)
   for (const f of state.flags) {
     if (!f.inCombat || f.state !== 'RETURNING' || f.routed || f.disengageUntilTick !== null || f.breakaway) continue;
-    f.disengageUntilTick = t + DISENGAGE_TICKS;
+    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm); // v4.5: 소유자 스탯 (MOB-2B 철수 훈련 10)
     out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: true });
   }
   // 이탈 대기 (4.15 g)

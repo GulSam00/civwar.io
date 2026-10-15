@@ -4,7 +4,6 @@
  */
 import {
   ANY_HOSTILE,
-  DISENGAGE_TICKS,
   FLAG_MIN_TROOPS,
   FLAG_RETARGET_LOCK_TICK,
   FRONT_MAX_RANGE,
@@ -20,10 +19,11 @@ import {
   type Posture,
   type Unit,
   techConvertPm,
+  techDisengageTicks,
 } from '@civwar/shared';
 import { flagCap } from './economy.js';
 import type { Outbox } from './outbox.js';
-import { engageEtaTicks, etaTicks, minDistFromTerritory, recallTarget, stepToward } from './rules.js';
+import { engageEtaTicks, etaTicks, minDistFromTerritory, nextStep, recallTarget, stepToward } from './rules.js';
 import { isAlly, makeFlag, type Flag, type GameState } from './state.js';
 
 export type CmdResult = { reason: CmdRejectReason } | { flagId: number; posture: Posture };
@@ -119,9 +119,9 @@ export function beginReturn(state: GameState, f: Flag, baseTileId?: number | nul
   f.nextTileId = stepToward(state, f.ownerId, f.posTileId, f.returnTileId);
 }
 
-function startDisengageIfInCombat(f: Flag, t: number, out: Outbox): void {
+function startDisengageIfInCombat(state: Readonly<GameState>, f: Flag, t: number, out: Outbox): void {
   if (f.inCombat && f.disengageUntilTick === null) {
-    f.disengageUntilTick = t + DISENGAGE_TICKS;
+    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm); // v4.5: 명령 수락 시점의 소유자 스탯 (MOB-2B 철수 훈련 10)
     out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: false });
   }
 }
@@ -188,7 +188,7 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
   });
   f.posture = posture;
   f.targetOwnerId = targetOwnerId;
-  f.nextTileId = stepToward(state, playerId, origin, anchor);
+  f.nextTileId = nextStep(state, f, origin, anchor); // v4.5: 방어 태세는 적 땅 회피 경로
   state.flags.push(f); // id 단조증가 → 정렬 유지
   out.broadcast.push({
     type: 'flag_issued',
@@ -250,14 +250,14 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   } else f.pendingPosture = def;
   f.postureManual = false;
   f.targetOwnerId = newOwner === playerId ? ANY_HOSTILE : newOwner;
-  startDisengageIfInCombat(f, t, out);
+  startDisengageIfInCombat(state, f, t, out);
   f.state = 'MARCHING';
   f.halted = false;
   f.idleSinceTick = null;
   f.lockUntilTick = t + FLAG_RETARGET_LOCK_TICK;
   resetGauge(f);
   f.returnTileId = null;
-  f.nextTileId = stepToward(state, playerId, f.posTileId, anchor);
+  f.nextTileId = nextStep(state, f, f.posTileId, anchor); // v4.5: 방어 태세는 적 땅 회피 경로
   out.broadcast.push({
     type: 'flag_retargeted',
     tick: t,
@@ -292,7 +292,7 @@ export function recallFlag(state: GameState, playerId: number, msg: C2S_CmdFlagR
     if (!validTile(state, base) || !state.map.isBase[base]) return { reason: 'NOT_BASE' };
     if (state.owners[base] !== playerId) return { reason: 'NOT_OWNED_BASE' };
   }
-  startDisengageIfInCombat(f, t, out);
+  startDisengageIfInCombat(state, f, t, out);
   beginReturn(state, f, base);
   out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
   return { flagId: f.id, posture: f.posture };

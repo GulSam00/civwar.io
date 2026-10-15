@@ -77,10 +77,10 @@ function duel(aUnit: 0 | 1 | 2, dUnit: 0 | 1 | 2, dTerrain: number, opts: { aTer
 }
 
 describe('4.15 대표 전투 재현 (1000 대 1000)', () => {
-  it('#1 검→검 평원: 양쪽 패주 ≈22.6초', () => {
+  it('#1 검→검 평원: 양쪽 패주 ≈37.6초 (v4.5 손실률 1.5% → 0.9%: 22.6초 × 5/3)', () => {
     const r = duel(UNIT.SWORD, UNIT.SWORD, TERRAIN.PLAIN);
     expect(r.aRouted && r.dRouted).toBe(true);
-    expect(Math.abs(r.ticks - 113)).toBeLessThanOrEqual(2);
+    expect(Math.abs(r.ticks - 188)).toBeLessThanOrEqual(3);
   });
   it('#2 검→창 평원: 방어 ≈225', () => {
     const r = duel(UNIT.SWORD, UNIT.SPEAR, TERRAIN.PLAIN);
@@ -100,11 +100,7 @@ describe('4.15 대표 전투 재현 (1000 대 1000)', () => {
     const r = duel(UNIT.CAVALRY, UNIT.SWORD, TERRAIN.HILLS, { dPosture: POSTURE.ATTACK });
     expect(Math.abs(r.a - 148)).toBeLessThanOrEqual(5); // 지형은 방어 태세에만 → 언덕이어도 무관
   });
-  it('#6 무테크 상륙 검→검 평원: 방어 ≈195', () => {
-    const r = duel(UNIT.SWORD, UNIT.SWORD, TERRAIN.PLAIN, { aTerrain: TERRAIN.SHALLOW });
-    expect(r.aRouted).toBe(true);
-    expect(Math.abs(r.d - 195)).toBeLessThanOrEqual(5);
-  });
+  // v4.5: #6 상륙 전투 폐지 (물 위에 깃발이 서지 않는다)
   it('방어 ↔ 방어는 싸우지 않는다', () => {
     const r = duel(UNIT.SWORD, UNIT.SWORD, TERRAIN.PLAIN, { aPosture: POSTURE.DEFEND });
     expect(r.ticks).toBe(2000);
@@ -275,7 +271,8 @@ describe('이탈 대기 · 패주', () => {
 
     // 패주 깃발: 조작 불가
     const { sim: sim2, s: s2, c: c2 } = scenario();
-    const weak = addFlag(s2, { ownerId: 1, unit: UNIT.SWORD, troops: 50, pos: c2, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    setTileOwner(s2, c2, 1, false); // v4.5: 손실률 0.9% — 중립 칸이면 노출 소모(≥ 1/tick)가 마지막 병력을 먼저 지워 패주 대신 attrited 가 된다
+    const weak = addFlag(s2, { ownerId: 1, unit: UNIT.SWORD, troops: 50, pos: c2, posture: POSTURE.ATTACK, state: 'ENGAGED', originTileId: s2.players[1].homeTileId });
     addFlag(s2, { ownerId: 2, unit: UNIT.SPEAR, troops: 1000, pos: c2 + 1, posture: POSTURE.DEFEND, state: 'ENGAGED' });
     const rr = run(sim2, 20);
     expect(weak.routed).toBe(true);
@@ -376,9 +373,12 @@ describe('v4.1 진척도 자동 감소 (4.7 e) · 정체 재정의 (4.7 f)', () 
 
   it('전투 중 유지 → 상대 패주 tick 도 유지(4a 스냅숏) → 다음 tick 부터 감소', () => {
     const { sim, s, c, f } = decayScenario();
-    const g = addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: 60, pos: c + s.map.width, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
+    // v4.5: g 를 자기 땅(대각선 접촉 칸)에 — 남의 땅이면 손실률 0.9% 에서 노출 소모가 마지막 병력을 지워 패주 대신 attrited
+    const gPos = c + s.map.width + 1;
+    setTileOwner(s, gPos, 2, false);
+    const g = addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: 60, pos: gPos, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
     let routTick = -1;
-    run(sim, 200, () => {
+    run(sim, 400, () => { // v4.5: 손실률 0.9% → 패주까지 더 오래
       if (routTick < 0 && g.routed) {
         routTick = sim.state.tick;
         expect(f.progressMilli).toBe(500); // 패주 tick: 4a 스냅숏에 g 가 있다
@@ -386,7 +386,7 @@ describe('v4.1 진척도 자동 감소 (4.7 e) · 정체 재정의 (4.7 f)', () 
     });
     expect(routTick).toBeGreaterThan(1);
     expect(f.routed).toBe(false);
-    // 패주 다음 tick 부터 감소 → 200 tick 이 끝나면 0
+    // 패주 다음 tick 부터 감소 → 400 tick 이 끝나면 0
     expect(f.progressMilli).toBe(0);
   });
 

@@ -13,30 +13,23 @@ import {
   FRONT_RADIUS,
   MIN_TILE_COST,
   NEUTRAL_BASE,
-  NEUTRAL_SQRT_COEF_PERMILLE,
   POSTURE,
-  RETURN_SPEED_PERMILLE,
   SUPPLY_FREE_RADIUS,
   SUPPLY_MAX_MULT_PERMILLE,
   SUPPLY_NO_BASE_DIST,
   TECH_STAT,
-  TERRAIN,
   TERRAIN_COST_PERMILLE,
   TERRAIN_MOVE_PERMILLE,
   UNIT_ASSAULT_PERMILLE,
   UNIT_SPEED_PERMILLE,
   isClaimable,
   techCaptureMultPm,
-  techShallowPm,
+  techReturnSpeedPm,
   techSpeedPm,
 } from '@civwar/shared';
-import { isqrt } from './economy.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 
 const MICRO = 1_000_000;
-
-/** v4.3: 그 플레이어의 얕은 물 이동배율 ‰ (MOB-2B 조선술 3500, 무테크 5000). 거리장 캐시 키로도 쓴다 */
-export const shallowPmOf = (p: Readonly<PlayerState>): number => techShallowPm(p.statPm);
 
 export function claimable(state: Readonly<GameState>, t: number): boolean {
   return isClaimable(state.map.terrain[t]);
@@ -184,8 +177,8 @@ export function tileCost(state: Readonly<GameState>, f: Readonly<Flag>, X: numbe
   const o = state.owners[X];
   let v: number;
   if (o === NEUTRAL) {
-    const sq = isqrt(p.tiles * 1_000_000); // milli
-    v = (NEUTRAL_BASE * 1000 + Math.floor((NEUTRAL_SQRT_COEF_PERMILLE * sq) / 1000)) * 1000; // micro
+    // v4.5 (사용자 2026-10-15): 고정 비용 NEUTRAL_BASE — 나라 크기 비례 √칸 항 폐기
+    v = NEUTRAL_BASE * MICRO;
     v = Math.floor((v * p.statPm[TECH_STAT.NEUTRAL_COST]) / 1000);
   } else {
     v = ENEMY_BASE * MICRO;
@@ -210,10 +203,9 @@ export function maxProgress(f: Readonly<Flag>): number {
 
 // ───────────────────────── 이동 (4.4) ─────────────────────────
 
-export function moveCostPermille(state: Readonly<GameState>, p: Readonly<PlayerState>, t: number): number {
-  const ter = state.map.terrain[t];
-  if (ter === TERRAIN.SHALLOW) return shallowPmOf(p);
-  return TERRAIN_MOVE_PERMILLE[ter];
+/** v4.5: 물은 통행 불가라 육지 지형 배율만 조회된다 (구 얕은 물 테크 배율 폐지). p 는 호출 호환용 */
+export function moveCostPermille(state: Readonly<GameState>, _p: Readonly<PlayerState>, t: number): number {
+  return TERRAIN_MOVE_PERMILLE[state.map.terrain[t]];
 }
 
 /**
@@ -222,7 +214,7 @@ export function moveCostPermille(state: Readonly<GameState>, p: Readonly<PlayerS
  */
 export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: number): number {
   const p = state.players[f.ownerId];
-  const ret = f.state === 'RETURNING' ? RETURN_SPEED_PERMILLE : 1000;
+  const ret = f.state === 'RETURNING' ? techReturnSpeedPm(p.statPm) : 1000; // v4.5: 플레이어 스탯 (무테크 1500, MOB-3B 급속 귀환 2200)
   return Math.max(
     1,
     Math.floor(
@@ -232,12 +224,14 @@ export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: n
 }
 
 /** 이진 힙 Dijkstra — 키 (dist ASC, tileId ASC). 정수 가중치 = 이동배율 permille */
-function buildField(state: Readonly<GameState>, dest: number, shallowPm: number): Int32Array {
+const UNREACHABLE = 0x7fffffff;
+
+function buildField(state: Readonly<GameState>, dest: number, allowed?: (t: number) => boolean): Int32Array {
   const n = state.graph.tileCount();
-  const INF = 0x7fffffff;
+  const INF = UNREACHABLE;
   const dist = new Int32Array(n).fill(INF);
   const terrain = state.map.terrain;
-  const shallow = shallowPm;
+  if (allowed && !allowed(dest)) return dist; // v4.5: 목적지가 금지 칸이면 전부 도달 불가
   // 힙: [dist, tile] 쌍을 평탄 배열로
   const hd: number[] = [];
   const ht: number[] = [];
@@ -289,9 +283,8 @@ function buildField(state: Readonly<GameState>, dest: number, shallowPm: number)
     const [d, u] = pop();
     if (d !== dist[u]) continue;
     for (const v of state.graph.neighbors(u)) {
-      const ter = terrain[v];
-      const w = ter === TERRAIN.SHALLOW ? shallow : TERRAIN_MOVE_PERMILLE[ter];
-      const nd = d + w;
+      if (allowed && !allowed(v)) continue;
+      const nd = d + TERRAIN_MOVE_PERMILLE[terrain[v]]; // v4.5: 그래프에 물 칸이 없다
       if (nd < dist[v]) {
         dist[v] = nd;
         push(nd, v);
@@ -301,17 +294,17 @@ function buildField(state: Readonly<GameState>, dest: number, shallowPm: number)
   return dist;
 }
 
-/** v4.3: 키 = (목적지, 얕은 물 이동배율 ‰). 구 (목적지, 기동 단계) 대체 — 같은 배율이면 같은 거리장 */
-export function fieldKey(dest: number, shallowPm: number): string {
-  return `${dest}:${shallowPm}`;
+/** v4.5: 거리장은 목적지만으로 정해진다 (구 (목적지, 얕은 물 배율) 키 — 플레이어별 물 경로 캐시 폐지) */
+export function fieldKey(dest: number): number {
+  return dest;
 }
 
 /** 거리장 조회(없으면 생성해 캐시). 캐시는 결과에 영향이 없다 — 같은 입력이면 같은 배열 */
-export function getField(state: GameState, dest: number, shallowPm: number): Int32Array {
-  const k = fieldKey(dest, shallowPm);
+export function getField(state: GameState, dest: number): Int32Array {
+  const k = fieldKey(dest);
   let d = state.fields.get(k);
   if (!d) {
-    d = buildField(state, dest, shallowPm);
+    d = buildField(state, dest);
     state.fields.set(k, d);
   }
   return d;
@@ -324,7 +317,8 @@ export function destOf(f: Readonly<Flag>): number {
 /** stepTarget(f) = argmin over neighbors of (dist[n], n). 목적지 위면 제자리 */
 export function stepToward(state: GameState, ownerId: number, from: number, dest: number): number {
   if (from === dest) return from;
-  const field = getField(state, dest, shallowPmOf(state.players[ownerId]));
+  void ownerId; // v4.5: 거리장이 플레이어와 무관해졌다 (호출 호환용 인자)
+  const field = getField(state, dest);
   let best = from;
   let bd = field[from];
   for (const n of state.graph.neighbors(from)) {
@@ -336,13 +330,89 @@ export function stepToward(state: GameState, ownerId: number, from: number, dest
   return best;
 }
 
+// ───────────────────────── v4.5 방어 태세 경로 — 적 땅 통과 금지 (사용자 2026-10-15, §22.12) ─────────────────────────
+
+/** 적 땅 = 적대(동맹 아님) 플레이어 소유 칸. 중립·내 땅·동맹 땅은 지나갈 수 있다 */
+export function hostileLand(state: Readonly<GameState>, ownerId: number, t: number): boolean {
+  const o = state.owners[t];
+  return o !== NEUTRAL && o !== ownerId && !isAlly(state, ownerId, o);
+}
+
+/** 이 깃발의 경로가 적 땅을 피해야 하는가 — 현재 태세 DEFEND, 귀환(패주 포함) 아님 */
+export function defendPathing(f: Readonly<Flag>): boolean {
+  return f.posture === POSTURE.DEFEND && f.state !== 'RETURNING' && !f.routed;
+}
+
+/** 적 땅을 뺀 그래프의 거리장 (dest 가 적 땅이면 전부 도달 불가). 캐시 = (dest, owner) × pathVersion */
+function defendField(state: GameState, ownerId: number, dest: number): Int32Array {
+  const key = `${dest}:${ownerId}`;
+  const hit = state.defFields.get(key);
+  if (hit && hit.ver === state.pathVersion) return hit.field;
+  const field = buildField(state, dest, (t) => !hostileLand(state, ownerId, t));
+  state.defFields.set(key, { ver: state.pathVersion, field });
+  return field;
+}
+
+/**
+ * [A-112] 방어 태세 깃발의 실제 목적지. from → dest 를 적 땅 없이 갈 수 있으면 dest,
+ * 못 가면 from 에서 적 땅 없이 닿는 칸(from 자신 포함 — from 이 적 땅이어도 출발은 허용) 중
+ * **지형 거리장(적 땅 무시) 기준 dest 에 가장 가까운 칸**(동률 tileId 작은 쪽) = "적 땅 바로 앞".
+ */
+export function defendDest(state: GameState, ownerId: number, from: number, dest: number): number {
+  if (from === dest) return dest;
+  const df = defendField(state, ownerId, dest);
+  if (df[from] < UNREACHABLE) return dest;
+  for (const n of state.graph.neighbors(from)) if (df[n] < UNREACHABLE) return dest; // 적 땅 위에서 출발
+  const terr = getField(state, dest);
+  const n = state.owners.length;
+  const seen = new Uint8Array(n);
+  const q = [from];
+  seen[from] = 1;
+  let best = from;
+  for (let i = 0; i < q.length; i++) {
+    const u = q[i];
+    if (terr[u] < terr[best] || (terr[u] === terr[best] && u < best)) best = u;
+    for (const v of state.graph.neighbors(u)) {
+      if (seen[v] || hostileLand(state, ownerId, v)) continue;
+      seen[v] = 1;
+      q.push(v);
+    }
+  }
+  return best;
+}
+
+/** 방어 태세 한 걸음: 적 땅이 아닌 이웃 중 (적 땅 회피 거리장, tileId) 최소. 더 가까운 칸이 없으면 제자리 */
+function stepTowardDefend(state: GameState, ownerId: number, from: number, dest: number): number {
+  if (from === dest) return from;
+  const field = defendField(state, ownerId, dest);
+  let best = from;
+  let bd = hostileLand(state, ownerId, from) ? UNREACHABLE : field[from];
+  for (const n of state.graph.neighbors(from)) {
+    if (hostileLand(state, ownerId, n)) continue;
+    if (field[n] < bd || (field[n] === bd && n < best && bd < UNREACHABLE)) {
+      best = n;
+      bd = field[n];
+    }
+  }
+  return best;
+}
+
+/**
+ * 깃발의 다음 칸 — v4.5: 방어 태세(귀환·패주 제외)는 적 땅을 밟지 않는다. 목적지까지 못 가면 defendDest(적 땅 바로 앞)로.
+ * 그 밖(공격 태세·귀환·패주)은 기존 stepToward 그대로.
+ */
+export function nextStep(state: GameState, f: Readonly<Flag>, from: number, dest: number): number {
+  if (!defendPathing(f)) return stepToward(state, f.ownerId, from, dest);
+  return stepTowardDefend(state, f.ownerId, from, defendDest(state, f.ownerId, from, dest));
+}
+
 /** 표시용 ETA: from → dest 를 현재 속도로 걸을 때 도착 tick 수 (ZOC·전투 무시 추정) */
 export function etaTicks(state: GameState, f: Readonly<Flag>, from: number, dest: number): number {
   let pos = from;
   let ticks = 0;
   for (let guard = 0; pos !== dest && guard < 4096; guard++) {
     ticks += Math.ceil(1000 / speedMilliAt(state, f, pos));
-    const nx = stepToward(state, f.ownerId, pos, dest);
+    const nx = nextStep(state, f, pos, dest);
     if (nx === pos) break;
     pos = nx;
   }
@@ -361,7 +431,7 @@ export function engageEtaTicks(state: GameState, f: Readonly<Flag>, from: number
   let ticks = 0;
   for (let guard = 0; !arrived() && guard < 4096; guard++) {
     ticks += Math.ceil(1000 / speedMilliAt(state, f, probe.posTileId));
-    const nx = stepToward(state, f.ownerId, probe.posTileId, dest);
+    const nx = nextStep(state, f, probe.posTileId, dest);
     if (nx === probe.posTileId) break;
     probe.posTileId = nx;
   }

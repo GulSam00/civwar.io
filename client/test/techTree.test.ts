@@ -72,9 +72,9 @@ describe('상세 패널 지금 → 구매 후', () => {
     expect(d.beforeLabel).toBe('없을 때');
     expect(d.rows[0]).toMatchObject({ before: '×0.95', after: '×0.91' });
   });
-  it('set 노드: 병참 유지비 계수 90‰ → 72‰, 조선술 ×5.00 → ×3.50', () => {
+  it('set 노드: 병참 유지비 계수 90‰ → 72‰, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
     expect(techDetailRows(TECH_NODES[7], { techMask: mask(5) }).rows[0]).toMatchObject({ before: '90‰', after: '72‰' });
-    expect(techDetailRows(TECH_NODES[17], { techMask: mask(15) }).rows[0]).toMatchObject({ before: '×5.00', after: '×3.50' });
+    expect(techDetailRows(TECH_NODES[17], { techMask: mask(15) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
   });
   it('공통 전투 노드는 병종별 실제 전투값 행을 붙인다', () => {
     const d = techDetailRows(TECH_NODES[1], { techMask: mask(0) }); // 공격 교리 +3%

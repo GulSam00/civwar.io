@@ -3,7 +3,7 @@
  * 방을 만들기 전(아직 room_state 가 없을 때)에만 쓴다. 방이 생기면 서버의 pacingNote 를 그대로 보여준다.
  * 참고값 — 보증 아님.
  */
-import { HARD_TIMEOUT_TICK, MAP_SIZE_PRESETS, PUBLIC_ROOM_PLAYERS, TARGET_LAND_RATIO_PERMILLE, TICKS_PER_MIN, isClaimable, rleDecode, type MapSizeClass } from '@civwar/shared';
+import { HARD_TIMEOUT_TICK, MAP_SIZE_PRESETS, PACING_P_REF_LAND_PER_PLAYER, PUBLIC_ROOM_PLAYERS, TARGET_LAND_RATIO_PERMILLE, TICKS_PER_MIN, isClaimable, rleDecode, type MapSizeClass } from '@civwar/shared';
 
 export function landOfRandom(size: MapSizeClass): number {
   const p = MAP_SIZE_PRESETS[size];
@@ -21,7 +21,7 @@ export function landOfTerrain(rle: number[], width: number, height: number): num
 export function estimatePacing(opts: { land: number; players: number; defaultSetup: boolean }): string {
   if (opts.defaultSetup && opts.players === PUBLIC_ROOM_PLAYERS) return 'guaranteed';
   if (opts.players <= 0) return 'timeout_likely';
-  const T = 29.4 * Math.pow(opts.land / opts.players / 390, 0.75);
+  const T = 29.4 * Math.pow(opts.land / opts.players / PACING_P_REF_LAND_PER_PLAYER, 0.75) // v4.5: 서버 §22 와 같은 기준 (390 → 540);
   if (T > HARD_TIMEOUT_TICK / TICKS_PER_MIN) return 'timeout_likely';
   return `estimate:${Math.round(T)}`;
 }

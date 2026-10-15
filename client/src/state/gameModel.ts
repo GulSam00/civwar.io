@@ -32,7 +32,7 @@ import {
   type BaseSnapshot,
   type FlagSnapshot,
   type PlayerSnapshot,
-  type ProductionRegion,
+  type ProductionRow,
   type S2C_GameOver,
   type S2C_MapInit,
   type S2C_MatchConfig,
@@ -94,7 +94,7 @@ export class GameModel {
   /** 기지 생산력 ‰ 의 마지막 서버 값과 그 tick (보간 기준) — snapshot_full.bases[].prodPm · 델타 baseProd · base_captured.newProdPm */
   baseProd = new Map<number, { pm: number; tick: number }>();
   /** 플레이어별 생산 내역 (snapshot_full.production 전원 / 델타 production 은 바뀐 플레이어만 통째 교체) */
-  production = new Map<number, ProductionRegion[]>();
+  production = new Map<number, ProductionRow[]>();
   /** 합병 표시용 — player_eliminated 직후 같은 tick tileChanges 로 넘어간 칸 (렌더러가 잠깐 번쩍인다) */
   annexFlashes: { playerId: number; byPlayerId: number; tick: number; tiles: number[]; at: number }[] = [];
   /** 마지막 tick 을 받은 시각 (performance.now 기준 ms — tick 사이 보간) */
@@ -142,7 +142,7 @@ export class GameModel {
     for (const id of [...this.flagReturn.keys()]) if (this.flags.get(id)?.state !== 'RETURNING') this.flagReturn.delete(id);
     this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b }]));
     this.baseProd = new Map(f.bases.filter((b) => b.prodPm !== undefined).map((b) => [b.tileId, { pm: b.prodPm!, tick: f.tick }]));
-    if (f.production) this.production = new Map(f.production.map((pp) => [pp.playerId, pp.regions]));
+    if (f.production) this.production = new Map(f.production.map((pp) => [pp.playerId, pp.rows]));
     this.alliances = new Map(f.alliances.map((a) => [allianceKey(a.a, a.b), { ...a }]));
     this.proposals = new Map(f.allyProposals.map((p) => [p.proposalId, { ...p }]));
     this.allianceFreezeUntilTick = f.allianceFreezeUntilTick;
@@ -378,7 +378,7 @@ export class GameModel {
       const b = this.bases.get(tile);
       if (b) b.prodPm = pm;
     }
-    for (const pp of d.production ?? []) this.production.set(pp.playerId, pp.regions);
+    for (const pp of d.production ?? []) this.production.set(pp.playerId, pp.rows);
     for (const id of d.flagsGone) {
       this.flags.delete(id);
       this.flagEta.delete(id);
@@ -498,7 +498,7 @@ export class GameModel {
     }
     for (const pp of f.production ?? []) {
       const mine = this.production.get(pp.playerId) ?? [];
-      if (JSON.stringify(mine) !== JSON.stringify(pp.regions)) out.push(`production ${pp.playerId}`);
+      if (JSON.stringify(mine) !== JSON.stringify(pp.rows)) out.push(`production ${pp.playerId}`);
     }
     const al = [...this.alliances.values()].sort((x, y) => x.a - y.a || x.b - y.b);
     if (JSON.stringify(al) !== JSON.stringify(f.alliances)) out.push(`alliances 모델 ${JSON.stringify(al)} / full ${JSON.stringify(f.alliances)}`);

@@ -18,12 +18,14 @@ describe('SquareTopology', () => {
     expect(topo.adjacent(0)).toEqual([1, 5]);
     expect(topo.adjacent(6)).toEqual([1, 5, 7, 11]);
   });
-  it('TerrainGraph.neighbors 는 DEEP 을 제외 (얕은 물은 포함)', () => {
+  it('v4.5: TerrainGraph.neighbors 는 물(DEEP·SHALLOW)을 모두 제외 — 해상 이동 폐지', () => {
     const terrain = new Uint8Array(20).fill(TERRAIN.PLAIN);
     terrain[1] = TERRAIN.DEEP;
     terrain[5] = TERRAIN.SHALLOW;
     const g = new TerrainGraph(topo, terrain);
-    expect(g.neighbors(0)).toEqual([5]);
+    expect(g.neighbors(0)).toEqual([]);
     expect(g.neighbors(1)).toEqual([]);
+    expect(g.neighbors(5)).toEqual([]);
+    expect(g.neighbors(6)).toEqual([7, 11]);
   });
 });

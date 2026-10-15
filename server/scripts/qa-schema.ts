@@ -86,10 +86,10 @@ const flagSnap = obj({
   disengaging: 'bool', postureCooldownUntilTick: 'int', disengageUntilTick: 'int|null', breakaway: 'bool', halted: 'bool', returnBaseTileId: 'int|null',
   pendingPosture: (v, p, e) => { if (v !== null && v !== 0 && v !== 1) e.push(`${p}: 0|1|null 기대 ${v}`); }, // v4.4 §21
 });
-/** v4.4 §21 */
+/** v4.5 §22 — 기지 행 + 영토 행 */
 const production = obj({
   playerId: range(1, 12),
-  regions: arr(obj({ baseTileId: 'int|null', tiles: 'int', prodPm: range(0, 1000), troopsPerSecMilli: 'int', goldGrossPerSecMilli: 'int', goldNetPerSecMilli: 'int' })),
+  rows: arr(obj({ kind: ['enum', 'base', 'territory'], baseTileId: 'int|null', tiles: 'int', prodPm: range(0, 1000), troopsPerSecMilli: 'int', goldGrossPerSecMilli: 'int', goldNetPerSecMilli: 'int' })),
 });
 
 export const DOC_SCHEMA: Record<string, Shape> = {
@@ -143,6 +143,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     flagReturnBase: arr(tuple('int', 'int|null')),
     baseProd: arr(tuple('int', range(0, 1000))),
     production: arr(production),
+    combatLoss: arr(tuple('int', 'int')), // v4.5 §22
   },
   cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE },
   error: { code: ['enum', ...DOC_ERROR], message: 'str' },
@@ -161,7 +162,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   flag_engaged: { tick: 'int', flagId: 'int', posture: POSTURE, 'frontTileCount?': 'int', 'guardTileCount?': 'int' },
   flag_stalled: { tick: 'int', flagId: 'int', tileId: 'int|null' },
   flag_progress_lost: { tick: 'int', flagId: 'int', tileId: 'int', cause: ['enum', 'captured_by_other', 'target_lost', 'decayed'] },
-  flag_idle: { tick: 'int', flagId: 'int', reason: ['enum', 'front_cleared', 'guard_lost', 'allied'], autoRecallTick: 'int' },
+  flag_idle: { tick: 'int', flagId: 'int', reason: ['enum', 'front_cleared', 'guard_lost', 'allied', 'unreachable'] /* v4.5 §22.12 */, autoRecallTick: 'int' },
   flag_ended: { tick: 'int', flagId: 'int', reason: ['enum', 'exhausted', 'recalled', 'attrited', 'eliminated', 'routed_returned'], refunded: 'int' },
   combat_started: { tick: 'int', groupKey: 'int', flagIds: arr('int'), sides: arr(obj({ sideKey: 'int', ownerIds: arr('int'), troops: 'int', power: 'int' })) },
   combat_ended: { tick: 'int', groupKey: 'int', winnerSideKey: 'int|null', routedFlagIds: arr('int') },

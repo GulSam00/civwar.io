@@ -130,23 +130,54 @@ function density8(topo: SquareTopology, blob: Uint8Array): Uint8Array {
 
 // ───────────────────────────── 1단계: 육지/물 ─────────────────────────────
 
+/**
+ * v4.5 (사용자 2026-10-15, 프로토콜 §22): 물 ≈ 10% (테두리 포함), 물은 통행 불가 → 육지는 반드시 한 덩어리.
+ * [A-102] 호수 생성: 반해상도 격자(⌈W/2⌉×⌈H/2⌉)에 물 노이즈(1 − p) → CA_SMOOTH_STEPS 번 "물 이웃 ≥ 5 → 물"(반해상도 테두리 = 육지)
+ *   → 2배 확대 → 전해상도 다듬기 2번(물 이웃 ≥ 5 → 물, ≤ 3 → 육지, 그 밖 유지 — 맵 테두리는 이웃 계산에서 육지 취급)
+ *   → 맵 테두리 = 물 → 최대 4-연결 육지 덩어리만 남김(나머지 섬은 물 — 육지 연결 보장, 불변식 I1).
+ *   육지 비율이 [LAND_RATIO_MIN, LAND_RATIO_MAX] 밖이면 p ± CA_LAND_P_STEP 로 다시(최대 CA_MAX_ATTEMPTS, 마지막 결과 사용).
+ * 결과: 큰 호수 몇 개(M 평균 7~8개, 최대 ~100칸) — 작은 웅덩이 대신 지형 장애물 역할.
+ */
 function generateLand(rng: Mulberry32, topo: SquareTopology): Uint8Array {
   const n = topo.tileCount();
+  const W = topo.width;
+  const H = topo.height;
+  const w2 = Math.ceil(W / 2);
+  const h2 = Math.ceil(H / 2);
+  const half = new SquareTopology(w2, h2);
+  const n2 = w2 * h2;
   let p = CA_INIT_LAND_P_PERMILLE;
   let land = new Uint8Array(n);
   for (let attempt = 0; attempt < CA_MAX_ATTEMPTS; attempt++) {
-    land = new Uint8Array(n);
-    for (let t = 0; t < n; t++) land[t] = rng.chance(p) ? 1 : 0;
-    for (let t = 0; t < n; t++) if (topo.isBorder(t)) land[t] = 0;
+    // (1) 반해상도 호수 노이즈 + CA
+    let c = new Uint8Array(n2);
+    for (let t = 0; t < n2; t++) c[t] = rng.chance(1000 - p) ? 1 : 0; // 1 = 물
     for (let s = 0; s < CA_SMOOTH_STEPS; s++) {
-      const cur = land;
+      const cur = c;
+      const next = new Uint8Array(n2);
+      for (let t = 0; t < n2; t++) next[t] = !half.isBorder(t) && half.count8(t, (x) => cur[x] === 1) >= CA_LAND_NEIGHBOR_MIN ? 1 : 0;
+      c = next;
+    }
+    // (2) 확대 + 전해상도 다듬기
+    let water = new Uint8Array(n);
+    for (let t = 0; t < n; t++) {
+      const r = Math.floor(t / W);
+      const col = t - r * W;
+      water[t] = c[(r >> 1) * w2 + (col >> 1)];
+    }
+    for (let s = 0; s < 2; s++) {
+      const cur = water;
       const next = new Uint8Array(n);
       for (let t = 0; t < n; t++) {
-        next[t] = !topo.isBorder(t) && topo.count8(t, (x) => cur[x] === 1) >= CA_LAND_NEIGHBOR_MIN ? 1 : 0;
+        if (topo.isBorder(t)) continue;
+        const k = topo.count8(t, (x) => !topo.isBorder(x) && cur[x] === 1);
+        next[t] = k >= CA_LAND_NEIGHBOR_MIN ? 1 : k <= 3 ? 0 : cur[t];
       }
-      land = next;
+      water = next;
     }
-    // 최대 4-연결 육지 컴포넌트만 남긴다 (불변식 I1 의 근거). 동률이면 먼저(작은 tileId) 발견된 것.
+    land = new Uint8Array(n);
+    for (let t = 0; t < n; t++) land[t] = !topo.isBorder(t) && water[t] === 0 ? 1 : 0;
+    // (3) 최대 4-연결 육지 컴포넌트만 남긴다 (불변식 I1 의 근거). 동률이면 먼저(작은 tileId) 발견된 것.
     const comp = new Int32Array(n).fill(-1);
     let bestId = -1;
     let bestSize = 0;

@@ -12,7 +12,10 @@ import {
   POSTURE,
   REGEN_BASE_MILLI,
   REGEN_SQRT_COEF_PERMILLE,
+  PROD_REF_TILES,
   TECH_STAT,
+  TERRAIN,
+  TERRAIN_GOLD_MILLI,
   TROOP_CAP_BASE,
   TROOP_CAP_PER_TILE,
   techNodeCost,
@@ -39,8 +42,41 @@ export function troopCap(p: Readonly<PlayerState>): number {
   return Math.floor(((TROOP_CAP_BASE + TROOP_CAP_PER_TILE * p.tiles) * capPm) / 1000);
 }
 
+/** 영토 T 칸의 기본 재생 (milli/tick, 테크·로지스틱 전) = 0.8 + 0.5·√T — 정수 (isqrt milli 정밀도) */
+export function terrRegenBaseMilli(tiles: number): number {
+  return REGEN_BASE_MILLI + Math.floor((REGEN_SQRT_COEF_PERMILLE * isqrt(tiles * 1_000_000)) / 1000);
+}
+
+/** v4.5 [A-103]: 기지 병력 생산 칸당 기준 = 기준 영토 PROD_REF_TILES 칸의 평균 재생. 상수에서 결정 (milli/tick × PROD_REF_TILES 분모) */
+export const PROD_REF_REGEN_MILLI = terrRegenBaseMilli(PROD_REF_TILES);
+
 /**
- * regenPerTick × 1000 (milli 병력/tick)
+ * v4.5 [A-103]: 기지 한 칸의 기본 병력 생산 (milli/tick, 테크·로지스틱 전) = floor(eqTiles × prodPm × PROD_REF_REGEN_MILLI / (PROD_REF_TILES × 1000)).
+ * eqTiles = BASE_PROD_TILES 60 / CAPITAL_PROD_TILES 100. 무테크 생산력 1000 → 기지 1642, 수도 2736 milli/tick (= 8.2 / 13.7 병력/초)
+ */
+export function baseRegenBaseMilli(eqTiles: number, prodPm: number): number {
+  return Math.floor((eqTiles * prodPm * PROD_REF_REGEN_MILLI) / (PROD_REF_TILES * 1000));
+}
+
+/** v4.5 [A-103]: 기지 한 칸의 골드 가중치 = 평원 eqTiles 칸 × 생산력 (milli) */
+export function baseGoldWeight(eqTiles: number, prodPm: number): number {
+  return Math.floor((eqTiles * TERRAIN_GOLD_MILLI[TERRAIN.PLAIN] * prodPm) / 1000);
+}
+
+/**
+ * 기본 재생 합(milli/tick) 에 테크 배율·로지스틱 (1 − troops/cap) 을 곱해 반올림 — regenMilliPerTick 과 같은 식.
+ * 큰 나라 + 기지 다수에서 곱이 2^53 을 넘을 수 있어 BigInt 로 계산한다 (정수·결정론 그대로).
+ */
+export function applyRegenMult(p: Readonly<PlayerState>, baseMilli: number): number {
+  const capMilli = troopCap(p) * 1000;
+  if (capMilli <= 0 || p.troopsMilli >= capMilli || baseMilli <= 0) return 0;
+  const num = BigInt(baseMilli) * BigInt(p.statPm[TECH_STAT.REGEN]) * BigInt(capMilli - p.troopsMilli);
+  const den = 1000n * BigInt(capMilli);
+  return Number((2n * num + den) / (2n * den));
+}
+
+/**
+ * regenPerTick × 1000 (milli 병력/tick) — 영토만 (v4.5: 기지 생산은 production.ts 가 더한다)
  *   = round( (0.8 + 0.5·√tiles) · regenMult · (1 − troops/cap) · 1000 )
  * 정수화: √tiles 는 milli 정밀도(isqrt(tiles·10⁶)), 로지스틱 항은 milli 병력 비율.
  */

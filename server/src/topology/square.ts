@@ -1,4 +1,4 @@
-import { TERRAIN } from '@civwar/shared';
+import { isClaimable } from '@civwar/shared';
 import type { MapGraph, Topology } from './topology.js';
 
 /**
@@ -126,9 +126,12 @@ export class SquareTopology implements Topology {
   }
 }
 
-/** isPassable — 경로 계층 내부 전용 (게임 로직은 호출하지 않는다) */
+/**
+ * isPassable — 경로 계층 내부 전용 (게임 로직은 호출하지 않는다).
+ * v4.5 (사용자 2026-10-15): 해상 이동 폐지 — 얕은 물도 깊은 물처럼 통행 불가. 통행 가능 = 육지(isClaimable)
+ */
 export function isPassable(terrain: number): boolean {
-  return terrain !== TERRAIN.DEEP;
+  return isClaimable(terrain);
 }
 
 /** 지형 위 이동 그래프. 이웃 목록은 생성 시 1회 계산 (지형 불변) */

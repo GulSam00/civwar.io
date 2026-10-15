@@ -119,16 +119,11 @@ export function baseProdPm(b: Readonly<BaseState>): number {
   return Math.floor(b.prodScaled / TICKS_PER_MIN);
 }
 
-/** v4.4 (§21): 생산 지역 (production.ts 가 소유권이 바뀐 뒤 처음 읽을 때 다시 계산) */
-export interface RegionStat {
-  /** 기지 tileId, -1 = 기타 */
-  baseTileId: number;
-  tiles: number;
-  goldWeight: number;
-}
-/** v4.4 (§21): 2단계가 실제로 적용한 지역별 생산 (milli / tick). 스냅숏 production 의 원천 */
-export interface RegionYield {
-  baseTileId: number; // -1 = 기타
+/** v4.5 (§22): 2단계가 실제로 적용한 생산 내역 한 행 (milli / tick). 스냅숏 production 의 원천 */
+export interface ProductionYield {
+  kind: 'base' | 'territory';
+  baseTileId: number; // 영토 행 = -1
+  /** 기지 행 = 환산 칸 수(60/100), 영토 행 = 실제 칸 수 */
   tiles: number;
   prodPm: number;
   troopsMilli: number;
@@ -186,18 +181,18 @@ export interface GameResult {
 export interface TickChanges {
   tileChanges: [number, number][];
   flagsGone: number[];
+  /** v4.5 (§22): 이번 tick 4b 전투 손실 [flagId, lossMilli] (> 0 만, flagId ASC) */
+  combatLoss: [number, number][];
 }
 
 export interface GameState {
   readonly map: GeneratedMap;
   /** v4.4 (§21): 기지 지명 — map.baseTiles 와 같은 순서 */
   readonly baseNames: readonly string[];
-  /** v4.4 (§21): 생산 지역 캐시. setTileOwner 가 regionsDirty = true 로 무효화 */
-  regionsDirty: boolean;
-  /** index = playerId */
-  regions: RegionStat[][];
-  /** index = playerId — 직전 2단계 정산 내역 */
-  yields: RegionYield[][];
+  /** v4.5 (§22): 시작 수도 칸 (기지 생산 100칸분 판정 — 소유자 무관) */
+  readonly capitalTiles: ReadonlySet<number>;
+  /** index = playerId — 직전 2단계 정산 내역 (기지 행 + 영토 행) */
+  yields: ProductionYield[][];
   /** v4.1: 방 봇 난이도 (match_config.botDifficulty) */
   readonly botDifficulty: BotDifficultyName;
   readonly graph: MapGraph;
@@ -218,8 +213,12 @@ export interface GameState {
   nextProposalId: number;
   allianceFreezeUntilTick: number | null;
   lockoutDissolveTick: number | null;
-  /** 거리장 캐시: key = `${dest}:${mobilityTier}` (매 tick 끝 미사용 키 정리) */
-  fields: Map<string, Int32Array>;
+  /** 거리장 캐시: key = 목적지 tileId (v4.5 — 물 경로 키 폐지. 매 tick 끝 미사용 키 정리) */
+  fields: Map<number, Int32Array>;
+  /** v4.5 (§22.12): 소유권·동맹이 바뀔 때마다 +1 — 방어 태세 경로(적 땅 회피) 거리장 캐시의 유효성 키 */
+  pathVersion: number;
+  /** v4.5 (§22.12): 방어 태세 거리장 캐시 key = `${dest}:${ownerId}` → pathVersion 이 같을 때만 유효 */
+  defFields: Map<string, { ver: number; field: Int32Array }>;
   /** 4단계가 쓰고 4b 끝이 읽는 tick 로컬: 대치 깃발 → 차단 깃발들 */
   zocBlocked: Map<number, number[]>;
   combats: CombatRecord[];
@@ -232,6 +231,7 @@ export interface GameState {
 export const ALLY_STRIDE = 16; // > MAX_PLAYERS
 
 export function rebuildAllyMatrix(state: GameState): void {
+  state.pathVersion++; // v4.5: 적대 관계가 바뀌면 방어 경로도 바뀐다
   state.allyMat.fill(0);
   for (const a of state.alliances) {
     const v = a.state === 'ACTIVE' ? 1 : 2;
@@ -336,8 +336,7 @@ export function createGameState(
   const state: GameState = {
     map,
     baseNames: assignPlaceNames(aggressionSeed, map.baseTiles.length),
-    regionsDirty: true,
-    regions: [],
+    capitalTiles: new Set(map.spawns.map((sp) => sp.homeTileId)),
     yields: [],
     botDifficulty,
     graph: map.graph,
@@ -355,6 +354,8 @@ export function createGameState(
     allianceFreezeUntilTick: null,
     lockoutDissolveTick: null,
     fields: new Map(),
+    pathVersion: 0,
+    defFields: new Map(),
     zocBlocked: new Map(),
     combats: [],
     ledger: {
@@ -371,7 +372,7 @@ export function createGameState(
     },
     endgameRushActive: false,
     result: null,
-    changes: { tileChanges: [], flagsGone: [] },
+    changes: { tileChanges: [], flagsGone: [], combatLoss: [] },
   };
   // 초기 소유 — onTileOwnerChange 경유로 파생 상태를 일관되게 만든다
   for (let t = 0; t < map.initialOwners.length; t++) {
@@ -389,7 +390,7 @@ export function setTileOwner(state: GameState, tileId: number, to: number, recor
   const from = state.owners[tileId];
   if (from === to) return;
   const w = TERRAIN_GOLD_MILLI[state.map.terrain[tileId]];
-  state.regionsDirty = true;
+  state.pathVersion++; // v4.5 (§22.12): 방어 경로 캐시 무효화
   if (from !== NEUTRAL) {
     const p = state.players[from];
     p.tiles -= 1;
