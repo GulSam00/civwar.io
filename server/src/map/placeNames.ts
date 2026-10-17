@@ -81,3 +81,85 @@ export function assignPlaceNames(seed: number, count: number, style: PlaceNameSt
   }
   return out;
 }
+
+// ───────────────────────── 세력 이름 (봇) — 사용자 2026-10-18 항목 8, 프로토콜 §23 ─────────────────────────
+/*
+ * 봇 이름 = "{핵심어} {꼴}" (예: 레이븐홀트 공국, 북부 변경백령). 지명과 같은 양식 안에서만 뽑는다.
+ * - 핵심어 풀 = 세력 전용 핵심어(지명 풀과 겹치지 않음) ∪ 같은 양식의 지명 풀. 매치 지명과 겹치는 핵심어는 뺀다(exclude).
+ * - (seed) 결정론 셔플 → 핵심어 하나당 이름 하나라 매치 안 고유. 꼴은 같은 rng 로 고른다.
+ * - 길이 ≤ NICKNAME_MAX_LEN(16) — 넘는 조합은 버린다(현재 데이터 최장 11자).
+ */
+
+/** 서양식 세력 전용 핵심어 — 지명 풀(WESTERN)과 겹치지 않는다 (테스트 고정). 방위어 포함 */
+const WESTERN_FACTION_CORES: readonly string[] = [
+  '북부', '남부', '동부', '서부', '고지', '해안', '내륙', '변방',
+  '아르델', '발로리아', '카르센', '에스테르', '몬트레일', '세렌디아', '그리펜', '로웬', '타리스', '벨모르',
+  '엘드라스', '크라운월', '하이가든', '아스테리온', '브레논', '카렌도르', '드라우펠', '에델란트', '피오렐', '가르덴',
+  '헬름가드', '이스트릴', '케일번', '로텐마르', '메르시아', '노르덴', '오르빌', '펠라도르', '레겐보르', '살렌',
+  '토렌가드', '울펜마르', '발데린', '빈터펠스', '이리스몬트', '잘츠마르',
+];
+const WESTERN_FACTION_FORMS: readonly string[] = [
+  '공국', '왕국', '동맹', '연합', '변경백령', '자유도시', '기사단', '백작령', '대공국', '후국', '공화국', '연방', '상업동맹', '제국',
+];
+
+/** 동양식 세력 전용 핵심어 — 보관용(현재 미사용). 지명 풀(EASTERN)과 겹치지 않는다 */
+const EASTERN_FACTION_CORES: readonly string[] = [
+  '북방', '남방', '동방', '서방', '해동', '청구', '진하', '적운', '현해', '백랑',
+  '흑운', '청람', '금오', '은하수', '천마', '만월', '설한', '풍림', '화산', '청성',
+  '오악', '사해', '천하', '비룡', '맹호', '독수', '흑룡', '금룡', '해룡', '혈월',
+];
+const EASTERN_FACTION_FORMS: readonly string[] = [
+  '왕조', '왕국', '연맹', '도호부', '후국', '부족연합', '상단', '군벌', '대국', '맹', '문파', '성국',
+];
+
+export const FACTION_CORE_POOLS: Readonly<Record<PlaceNameStyle, readonly string[]>> = { western: WESTERN_FACTION_CORES, eastern: EASTERN_FACTION_CORES };
+export const FACTION_FORMS: Readonly<Record<PlaceNameStyle, readonly string[]>> = { western: WESTERN_FACTION_FORMS, eastern: EASTERN_FACTION_FORMS };
+/** NICKNAME_MAX_LEN 과 같은 값 (shared 상수 — placeNames 는 shared 의존이 없어 숫자로 둔다, 테스트가 같음을 확인) */
+export const FACTION_NAME_MAX_LEN = 16;
+
+/** 세력 이름의 핵심어 (마지막 공백 앞) */
+export function factionCore(name: string): string {
+  const i = name.lastIndexOf(' ');
+  return i < 0 ? name : name.slice(0, i);
+}
+
+/**
+ * count 개 세력 이름 (seed 결정론, 매치 안 고유, 한 양식만). style 생략 = pickPlaceNameStyle(seed).
+ * exclude = 쓰면 안 되는 이름들(매치 지명·사람 닉네임) — 핵심어나 전체 이름이 여기 있으면 건너뛴다.
+ * 핵심어가 모자라면(실제로는 안 생긴다 — 서양식 ≈180개 ≫ 최대 인원 12) "이름 2" 꼴로 고유성을 지킨다.
+ */
+export function assignFactionNames(
+  seed: number,
+  count: number,
+  opts: { style?: PlaceNameStyle; exclude?: Iterable<string> } = {},
+): string[] {
+  const style = opts.style ?? pickPlaceNameStyle(seed);
+  const ex = new Set(opts.exclude ?? []);
+  const seen = new Set<string>();
+  const cores: string[] = [];
+  for (const c of [...FACTION_CORE_POOLS[style], ...PLACE_NAME_POOLS[style]]) {
+    if (seen.has(c) || ex.has(c)) continue;
+    seen.add(c);
+    cores.push(c);
+  }
+  const rng = new Mulberry32((seed ^ 0x3c6ef372) >>> 0);
+  for (let i = cores.length - 1; i > 0; i--) {
+    const j = rng.nextU32() % (i + 1);
+    const x = cores[i];
+    cores[i] = cores[j];
+    cores[j] = x;
+  }
+  const forms = FACTION_FORMS[style];
+  const base: string[] = [];
+  for (const c of cores) {
+    const name = `${c} ${forms[rng.nextU32() % forms.length]}`;
+    if (name.length > FACTION_NAME_MAX_LEN || ex.has(name)) continue;
+    base.push(name);
+  }
+  const out: string[] = [];
+  for (let i = 0; i < count && base.length > 0; i++) {
+    const k = Math.floor(i / base.length);
+    out.push(k === 0 ? base[i] : `${base[i % base.length]} ${k + 1}`);
+  }
+  return out;
+}

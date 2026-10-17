@@ -395,6 +395,8 @@ export interface PlayerSnapshot {
   flagCap: number;
   alive: boolean;
   connected: boolean;
+  /** §23 (2026-10-18, 추가만): 이 플레이어가 시작한 동맹 파기 수 (ally_break_started.byPlayerId 기준 누적). 서버는 항상 싣는다 (옵셔널 = 구 픽스처 호환) */
+  allyBreaks?: number;
 }
 
 export interface FlagSnapshot {
@@ -526,6 +528,8 @@ export interface PlayerDelta {
   upkeepPm: number;
   /** v4.3: 보유 테크 마스크 (uint32) */
   techMask: number;
+  /** §23 (2026-10-18, 추가만): 값이 바뀐 델타에만 실린다 (없으면 그대로). PLAYER_DELTA_INTERVAL 주기 */
+  allyBreaks?: number;
 }
 
 export interface S2C_SnapshotDelta {

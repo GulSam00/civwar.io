@@ -121,6 +121,7 @@ function playerSnap(p: Readonly<PlayerState>): PlayerSnapshot {
     flagCap: flagCap(p),
     alive: p.alive,
     connected: p.connected,
+    allyBreaks: p.allyBreaks,
   };
 }
 
@@ -204,6 +205,8 @@ function flagFlagsKey(f: Readonly<Flag>): string {
 /** 델타용 "마지막으로 보낸 값" 캐시 */
 export class DeltaTracker {
   private players = new Map<number, string>();
+  /** §23 마지막으로 보낸 allyBreaks — 바뀐 델타에만 싣는다 */
+  private allyBreaks = new Map<number, number>();
   private flagPos = new Map<number, number>();
   private flagStat = new Map<number, string>();
   private flagTarget = new Map<number, number | null>();
@@ -223,6 +226,8 @@ export class DeltaTracker {
   resync(state: Readonly<GameState>): void {
     this.players.clear();
     for (const p of state.players) if (p) this.players.set(p.id, JSON.stringify(playerDelta(p)));
+    this.allyBreaks.clear();
+    for (const p of state.players) if (p) this.allyBreaks.set(p.id, p.allyBreaks);
     this.flagPos.clear();
     this.flagStat.clear();
     this.flagTarget.clear();
@@ -270,7 +275,12 @@ export class DeltaTracker {
         if (!p) continue;
         const pd = playerDelta(p);
         const key = JSON.stringify(pd);
-        if (this.players.get(p.id) !== key) {
+        const breaksChanged = this.allyBreaks.get(p.id) !== p.allyBreaks;
+        if (breaksChanged) {
+          this.allyBreaks.set(p.id, p.allyBreaks);
+          pd.allyBreaks = p.allyBreaks;
+        }
+        if (this.players.get(p.id) !== key || breaksChanged) {
           this.players.set(p.id, key);
           d.playerDeltas.push(pd);
         }

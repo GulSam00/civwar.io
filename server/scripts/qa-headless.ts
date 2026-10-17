@@ -188,7 +188,7 @@ function compareFull(f: any): void {
   if (od) noteRecon('owners', `t${t} ${od}칸 불일치`);
   for (const p of f.players) {
     const m = M.players.get(p.id)!;
-    for (const k of ['tiles', 'troops', 'gold', 'goldWeight', 'upkeepPm', 'alive']) if (m[k] !== p[k]) noteRecon(`player.${k}`, `t${t} p${p.id} 모델 ${m[k]} / full ${p[k]}`);
+    for (const k of ['tiles', 'troops', 'gold', 'goldWeight', 'upkeepPm', 'alive', 'allyBreaks']) if (m[k] !== p[k]) noteRecon(`player.${k}`, `t${t} p${p.id} 모델 ${m[k]} / full ${p[k]}`);
     if (m.techMask !== p.techMask || m.techCount !== p.techCount) noteRecon('player.techMask', `t${t} p${p.id}`);
     if (capOf(p) !== p.flagCap) noteRecon('player.flagCap(문서식)', `t${t} p${p.id} 문서식 ${capOf(p)} / full ${p.flagCap}`);
   }

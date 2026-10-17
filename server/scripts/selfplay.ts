@@ -13,6 +13,7 @@ import { CivBot } from '../src/game/bot.js';
 import { createGameState, ledgerImbalance } from '../src/game/state.js';
 import { Simulation, type BotBrain } from '../src/game/tick.js';
 import { generateMap } from '../src/map/generate.js';
+import { assignFactionNames } from '../src/map/placeNames.js';
 
 const games = Number(process.argv[2] ?? 10);
 const seed0 = Number(process.argv[3] ?? 1000);
@@ -43,6 +44,8 @@ export interface GameReport {
   reason: string;
   winnerId: number | null;
   winnerDiff: BotDifficultyName | null;
+  /** §23: 우승 봇 세력 이름 (시드 결정론, 그 판 지명과 겹치지 않음 — 룸 배정과 같은 함수) */
+  winnerName: string | null;
   topShare5m: number[]; // %, 5분 간격 (마지막은 종료 시점)
   /** v4.5: 남은 중립 육지 %, 5분 간격 (마지막은 종료 시점) */
   neutral5m: number[];
@@ -219,6 +222,7 @@ function playGame(seed: number, k: number): GameReport {
   const atkTot = Math.max(1, Object.values(atkTime).reduce((a, b) => a + b, 0));
   const finalShares = state.players.filter(Boolean).map((p) => ({ id: p.id, diff: diffs[p.id - 1], aggr: p.bot.aggressionPermille ?? 500, sharePct: Math.round((p.tiles * 1000) / land) / 10, alive: p.alive }));
   const w = gameOver?.winnerId ?? null;
+  const names = assignFactionNames(seed, N, { exclude: state.baseNames });
   const alive = state.players.filter((p) => p && p.alive).sort((a, b) => b.tiles - a.tiles || a.id - b.id);
   const dead = state.players.filter((p) => p && !p.alive);
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -234,6 +238,7 @@ function playGame(seed: number, k: number): GameReport {
     reason: gameOver?.reason ?? 'none',
     winnerId: w,
     winnerDiff: w ? diffs[w - 1] : null,
+    winnerName: w ? names[w - 1] : null,
     topShare5m: topShare,
     neutral5m: neutral,
     defSharePct: Math.round((defFlags * 1000) / Math.max(1, allFlags)) / 10,
@@ -266,7 +271,7 @@ for (let k = 0; k < games; k++) {
   const r = playGame(seed0 + k, k);
   reports.push(r);
   console.log(
-    `${r.seed} | ${r.endTick} (${(r.endTick / TICKS_PER_MIN).toFixed(1)}) | ${r.reason.padEnd(13)} | ${r.winnerId ? `P${r.winnerId} ${r.winnerDiff}` : '-'} | ${r.topShare5m.join(', ')} | ${r.apm} | ${r.rejectPct} | ${r.msAvg}/${r.msMax} | ${r.botMsAvg}/${r.botMsMax}`,
+    `${r.seed} | ${r.endTick} (${(r.endTick / TICKS_PER_MIN).toFixed(1)}) | ${r.reason.padEnd(13)} | ${r.winnerId ? `P${r.winnerId} ${r.winnerName} ${r.winnerDiff}` : '-'} | ${r.topShare5m.join(', ')} | ${r.apm} | ${r.rejectPct} | ${r.msAvg}/${r.msMax} | ${r.botMsAvg}/${r.botMsMax}`,
   );
   if (json) console.log(JSON.stringify(r));
 }

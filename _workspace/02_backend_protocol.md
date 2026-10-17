@@ -4,6 +4,7 @@
 > 기준: **GDD v4.1 (사용자 승인 2026-10-09)** — v4.0 부록 A 재조정값 + v4.1 A-40~A-50. 타입 원본: `shared/src/protocol.ts`, 상수 원본: `shared/src/constants.ts`.
 > 작성: 2026-10-08, multiplayer-backend-engineer. 프로토콜 버전 `PROTOCOL_VERSION = 1`.
 > **2차 갱신(2026-10-08)**: 깃발·게이지·깃발 전투·태세·ZOC·상륙·기지 체력·동맹 구현. 1차 메시지·필드는 **하나도 바꾸지 않고 추가만** 했다(§12 변경 요약).
+> **2026-10-18 갱신(사용자 결정 — `design-decisions.md` 2026-10-18 항목 8·6)**: **봇 이름 = 세력 이름**(`room_state.players[].nickname` 이 `"BOT n"` → 예 `"레이븐홀트 공국"`, 지명과 같은 양식, 매치 안 고유, 지명과 안 겹침), **`allyBreaks`**(플레이어가 시작한 동맹 파기 수 — `snapshot_full.players[]` 에 항상, `playerDeltas[]` 에는 바뀐 때만). **추가만, 형식 변경 없음. 단 `"BOT n"` 이름 패턴에 기대던 코드는 `isBot` 으로 바꿀 것** → §23.
 > **v4.5 갱신(2026-10-15, 사용자 결정 — `design-decisions.md` 2026-10-15 + 01c 기동 노드 교체 승인)**: **해상 이동 폐지**(얕은 물도 통행 불가, 물 ≈ 10%, 육지 한 덩어리, 공식 맵 9장 재생성), 중립 점령비용 고정(√칸 항 폐기), 깃발 전투 손실률 1.5% → 0.9%, **기지 피해 상한 300 milli/tick**, **기지 생산 모델 정정**(생산 지역 폐기 → 기지 60칸분·수도 100칸분 + 영토 합산), 기지 ×1.5 태세 무관, 지명 양식(서양식 판타지), MOB-2B 철수 훈련·MOB-3B 급속 귀환, **방어 태세 깃발 적 땅 통과 금지**, **중립 노출 소모 절반**. **형식 변경이 있다(`production.regions` → `rows`) → §22 를 먼저 읽을 것.**
 > **v4.4 갱신(2026-10-14, 사용자 결정 — `design-decisions.md` 2026-10-14)**: 기지 방어(깃발이 내 기지 칸 위에 서서 방어, 방어 태세면 지형 대신 ×1.5), 우클릭 = 항상 이동(`cmd_flag_retarget` 태세 = 도착지, 못 바꾸면 `pendingPosture`), **기지를 모두 잃으면 즉시 멸망 + 남은 땅 전부 합병**, 기지 생산력(점령 시 ×0.5, 선형 회복)·생산 지역 내역(`production`), 기지 지명(`map_init.baseNames`). **메시지·필드는 추가만, 규칙 의미 변경이 있다(탈락 조건·내 기지 클릭) → §21 을 먼저 읽을 것.**
 > **v4.3 갱신(2026-10-11, 테크 트리 v4.3 — 사용자 승인 A-66~A-84 전부 ①, `01b_tech-tree-v4.3-proposal.md`)**: 테크 4축 × 3단계 → **7갈래 32노드**(노드당 부모 하나·스탯 하나, 효과는 덧셈). `cmd_buy_tech{nodeId}`, 스냅숏 `techMask`(uint32)·`techCount`, 델타 `playerDeltas[].techMask`, `tech_purchased.nodeId/techMask`, 거절 `PREREQ_MISSING`/`ALREADY_OWNED`, `match_config.constants.TECH_NODES`. **제거·의미 변경이 있다(구 `tech[4]`·`axis/tier`·`*_BY_TIER` 테크 상수 삭제) → §19 를 먼저 읽을 것.** 같은 날 **깃발 접촉(전투·ZOC·진척 유지) 8방향**(사용자 결정) — 메시지 변경 없음, 규칙만 → §20.
@@ -158,7 +159,7 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 |---|---|---|
 | 인원 (v4.1) | 방 설정 `maxPlayers` 2..min(12, 맵 최대 인원). 정원 = `maxPlayers`(사람). 맵 격자는 크기 프리셋(S 72×42 / M 100×60 / L 108×66) 또는 프리셋 파일이 정한다 — 인원 lookup 없음 | GDD 2.8 |
 | 시작 인원 N (v4.1) | 공개 룸: `maxPlayers`(빈자리 봇). 비공개: 사람 H + `min(botCount, maxPlayers − H)`. N < 2(프리셋은 `max(2, players.min)`) → `error NOT_ENOUGH_PLAYERS`, LOBBY 유지 | GDD 2.8 a·d |
-| playerId 배정 | **룸 입장 시** 비어 있는 가장 작은 번호. **v4.1: 비공개 방은 카운트다운 시작 때 사람을 기존 번호 순서대로 1..H 로 다시 매기고**(빈 번호 제거) 봇을 H+1..N 에 붙인다(`"BOT n"`). 공개 룸은 1..10 빈 번호를 봇으로 채운다 | 백엔드 결정 |
+| playerId 배정 | **룸 입장 시** 비어 있는 가장 작은 번호. **v4.1: 비공개 방은 카운트다운 시작 때 사람을 기존 번호 순서대로 1..H 로 다시 매기고**(빈 번호 제거) 봇을 H+1..N 에 붙인다(이름 = **세력 이름**, §23 — 구 `"BOT n"`). 공개 룸은 1..10 빈 번호를 봇으로 채운다 | 백엔드 결정 |
 | 스폰 | `spawn[k]` → `playerId k+1`. 무작위 = 생성기 배치 순서, 프리셋 = `spawnSets[N]` 또는 `spawns[0..N-1]` | 백엔드 결정 / GDD 2.8 f |
 | 방장 | 첫 입장자. 퇴장 시 남은 인간 중 playerId 최소 | GDD 7.2 |
 | 카운트다운 시작 조건 (v4.1) | **비공개: 방장 `lobby_start_now` 만.** 공개: 정원(10) 도달 또는 첫 입장 후 30초(`PUBLIC_LOBBY_AUTOSTART_MS`) **또는 방장(첫 입장자, 퇴장 시 승계)의 `lobby_start_now`**(플레이테스트 후속 2026-10-10 — QA m-6 의 "공개 룸 NOT_HOST" 번복. 비방장은 `NOT_HOST`, 3초 카운트다운 동일). 공개 룸 설정 변경(`lobby_update_settings`)은 여전히 `BAD_ROOM_OPTIONS`. **`ready` 는 표시용**(자동 시작 조건 아님 — v4.0 의 "인간 전원 ready"·비공개 "정원 도달" 자동 시작 폐지) | GDD 2.8 h |
@@ -322,7 +323,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
                 "pacingNote": "timeout_likely", "expectedPlayers": 8 },
   "players": [
     { "playerId": 1, "sessionId": "s_3f2a…", "nickname": "alice", "isBot": false, "isHost": true, "ready": false, "status": "LOBBY_WAITING" },
-    { "playerId": 3, "sessionId": null, "nickname": "BOT 3", "isBot": true, "isHost": false, "ready": true, "status": "LOBBY_WAITING" }
+    { "playerId": 3, "sessionId": null, "nickname": "레이븐홀트 공국", "isBot": true, "isHost": false, "ready": true, "status": "LOBBY_WAITING" }
   ],
   "spectatorCount": 0, "countdownMs": 2998, "autoStartMs": null
 }
@@ -1470,3 +1471,59 @@ net_r    = net 를 gross_r 로 분배
 
 - 남은 병력보다 많이 깎지 않는다, 병력 0 이면 `flag_ended{reason:"attrited"}`(기존). 적용 대상 깃발 상태는 바뀌지 않았다 — 4단계에서 노출을 보던 모든 상태(행군·정지 점령·ENGAGED·IDLE·전투 중·**귀환 중**·발밑 칸이 점령된 깃발)에 그대로. **패주 깃발은 기존처럼 면제**(코드상 노출 대상이 아니었다 — 바꾸지 않았다).
 - 구 상수 주석 "≈3%/분" 은 틀린 값이었다(0.05% × 300 tick ≈ 14%/분) — `shared/src/constants.ts` 주석을 고쳤다. GDD 부록 A(`01_game-designer_gdd.md` 4754행)의 같은 주석은 디자이너 문서라 손대지 않았다 — 갱신 필요.
+
+
+---
+
+## 23. 봇 세력 이름 · 동맹 파기 수 `allyBreaks` (프론트 영향 — 2026-10-18, 사용자 결정)
+
+근거: `_workspace/00_input/design-decisions.md` 2026-10-18 항목 8(봇 이름을 세력 이름 테마로, 지명 양식과 일관)·항목 6(플레이어 정보 카드 — 동맹 파기 이력).
+**추가만 — 메시지·필드 형식 변경 없음.** `PROTOCOL_VERSION` 1 그대로.
+**프론트 영향**: ① 봇 표시명이 더 이상 `"BOT n"` 이 아니다 — 봇 여부는 반드시 `room_state.players[].isBot` 으로 판단할 것(이름 패턴 금지). 이름은 최대 16자(`NICKNAME_MAX_LEN`)이고 공백을 포함한다. ② 정보 카드의 파기 이력은 `allyBreaks` 를 쓴다 — `ally_break_started` 를 직접 세지 않아도 되고, 중간 입장·재접속에서도 값이 맞다.
+
+### 23.1 봇 세력 이름
+
+- **어디에**: `room_state.players[].nickname`(봇 자리). 카운트다운 시작 `room_state` 부터 이 이름이고, 게임 시작부터 끝까지 바뀌지 않는다(예외는 아래 "지명과 안 겹침"의 드문 경우 하나).
+- **꼴**: `"{핵심어} {꼴}"`. 서양식 예: `"레이븐홀트 공국"`, `"알더미어 동맹"`, `"북부 변경백령"`, `"에스테르 자유도시"`.
+  - 서양식 핵심어 = 세력 전용 46개(방위어 북부·남부·동부·서부·고지·해안·내륙·변방 포함) ∪ 서양식 지명 풀 135개. 꼴 14개: 공국·왕국·동맹·연합·변경백령·자유도시·기사단·백작령·대공국·후국·공화국·연방·상업동맹·제국.
+  - 동양식(지명처럼 보관만, 현재 미사용): 핵심어 30개 ∪ 동양식 지명 풀, 꼴 12개(왕조·왕국·연맹·도호부·후국·부족연합·상단·군벌·대국·맹·문파·성국). 예: `"해동 왕조"`.
+- **양식**: 매치 지명 양식과 같은 규칙(`pickPlaceNameStyle(시드)`, 활성 양식 = 서양식만). 한 판 안의 지명과 세력 이름은 같은 양식이다.
+- **결정론·고유**: 카운트다운 시작 때 뽑는 **매치 시드**로 핵심어를 셔플하고 꼴을 고른다. 핵심어 하나당 이름 하나라 매치 안에서 고유하다. 시드와 사람 닉네임이 같으면 이름도 같다. 봇 자리는 playerId 오름차순으로, 후보 목록 앞에서부터 **아직 어떤 멤버도 쓰지 않은 이름**을 받는다(사람 닉네임과 같은 이름도 건너뛴다).
+- **지명과 안 겹침**: 그 매치 지명과 같은 핵심어는 쓰지 않는다. 카운트다운 때는 맵이 아직 없으므로 같은 시드의 지명 셔플 앞 32개를 미리 뺀다(총 기지 ≤ 24 보다 크다. 지명 배정은 셔플 앞부분을 쓰므로 기지 수와 상관없이 실제 지명이 이 안에 들어간다). 랜덤 맵이 불변식 실패로 시드+k 를 써서 지명이 달라진 드문 경우에만, 시작 때 실제 지명으로 다시 확인해 겹친 봇 이름을 바꾼다. 그 경우 IN_GAME `room_state` 의 이름이 카운트다운 때와 다를 수 있다 **[GDD에 없어 임의 결정함]**.
+- **길이**: ≤ 16자 보장(현재 데이터 최장 11자). 후보가 바닥나면 구 형식 `"BOT n"` 을 쓴다(실제로는 안 생긴다 — 서양식 후보 ≈180개 ≫ 최대 12인).
+- **인계**:
+  - 카운트다운 중 사람이 나가 자리가 봇이 되면(`isBot` true) 세력 이름을 받는다(구 `"BOT n"`).
+  - **인게임 접속 끊김 → `bot_takeover` 로 봇이 조종해도 사람 닉네임은 그대로**다(`isBot` false 유지, 기존과 같음).
+- **시드 흐름(서버 내부)**: 매치 시드를 카운트다운 시작 때 한 번 뽑아 랜덤 맵 시드 / 프리셋 맵의 룸 시드(봇 성향·지명) / 세력 이름에 함께 쓴다. 판당 시드 추첨 수(1)와 용도는 같다 — `match_config.seed` 의미는 바뀌지 않는다.
+
+```json
+{ "type": "room_state", "phase": "COUNTDOWN", "players": [
+  { "playerId": 1, "sessionId": "s_3f2a…", "nickname": "alice", "isBot": false, "isHost": true, "ready": false, "status": "LOBBY_WAITING" },
+  { "playerId": 2, "sessionId": null, "nickname": "레이븐홀트 공국", "isBot": true, "isHost": false, "ready": true, "status": "LOBBY_WAITING" },
+  { "playerId": 3, "sessionId": null, "nickname": "북부 변경백령", "isBot": true, "isHost": false, "ready": true, "status": "LOBBY_WAITING" }
+], "…": "…" }
+```
+
+### 23.2 `allyBreaks` — 플레이어가 시작한 동맹 파기 수
+
+- 정의: 판 시작부터 그 플레이어가 `cmd_ally_break` 로 **파기를 시작한 횟수**(= `ally_break_started.byPlayerId` 가 그 플레이어인 이벤트 수). 파기당한 쪽, Lockout 강제 해제, 탈락으로 인한 해제는 세지 않는다. 거절된 파기(`NOT_ALLIED`·`MIN_DURATION`)도 세지 않는다. 값은 줄지 않는다.
+- `snapshot_full.players[].allyBreaks: int` — **항상** 실린다(초기 0).
+- `snapshot_delta.playerDeltas[].allyBreaks?: int` — **값이 바뀐 델타에만** 실린다. 주기는 `playerDeltas` 와 같은 `PLAYER_DELTA_INTERVAL`(5 tick)이라 파기 시작 tick 보다 최대 1초 늦을 수 있다(즉시 반영이 필요하면 `ally_break_started` 이벤트). 다른 필드가 그대로여도 allyBreaks 가 바뀌면 그 플레이어 행이 실리고, 행의 다른 필드는 기존처럼 전부 현재값이다. 필드가 없으면 이전 값을 유지한다.
+- 전체 공개(시야 공개 원칙과 같다 — 플레이어별 분기 없음).
+
+```json
+{ "type":"ally_break_started","tick":2400,"a":1,"b":2,"byPlayerId":2,"breakAtTick":2550 }
+{ "type":"snapshot_delta","tick":2400,"playerDeltas":[ { "id":2,"tiles":410,"troops":380,"gold":95,"goldWeight":41000,"upkeepPm":120,"techMask":5,"allyBreaks":1 } ], "…":"…" }
+{ "type":"snapshot_full","tick":2600,"players":[ { "id":2,"tiles":412,"troops":385,"gold":101,"goldWeight":41200,"upkeepPm":120,"techMask":5,"techCount":2,"flagCap":4,"alive":true,"connected":true,"allyBreaks":1 } ], "…":"…" }
+```
+
+- 타입: `shared/src/protocol.ts` `PlayerSnapshot.allyBreaks?`(서버는 항상 싣는다 — 옵셔널은 기존 클라이언트 테스트 픽스처 호환용), `PlayerDelta.allyBreaks?`.
+
+### 23.3 서버 코드 · 검증
+
+- `server/src/map/placeNames.ts` — `FACTION_CORE_POOLS`·`FACTION_FORMS`(양식별), `assignFactionNames(seed, count, {style, exclude})`, `factionCore(name)`, `FACTION_NAME_MAX_LEN`.
+- `server/src/room/room.ts` — 매치 시드 `seed()`, `prepareFactionNames`(카운트다운), `takeFactionName`(봇 자리·카운트다운 이탈), `reconcileFactionNames`(시작 때 실제 지명 확인), `giveFactionName`(스크립트용 공개 메서드).
+- `server/src/game/state.ts`(`PlayerState.allyBreaks`), `alliance.ts`(파기 시작 때 +1), `snapshot.ts`(full 은 항상, `DeltaTracker` 는 바뀐 때만).
+- 스크립트: `watch-game.ts`(AI 전용 판의 방장 자리도 세력 이름 → 로그 머리 표), `selfplay.ts`(우승자 세력 이름 표시 — 그 판 지명을 뺀 같은 함수), `qa-schema.ts`(full `allyBreaks` 필수, 델타 `allyBreaks?`), `qa-headless.ts`(재구성 비교에 allyBreaks 추가).
+- 테스트: `server/test/v46.test.ts`(신규 — 풀 무겹침·길이·고유·결정론·한 양식·지명 회피 시드 200개, allyBreaks 증가·full·델타 바뀐 때만), `server/test/rooms.test.ts`(카운트다운~시작 이름 불변·지명 비충돌·같은 시드 같은 이름, 프리셋 맵, 인게임 인계 뒤 사람 닉네임 유지, 카운트다운 이탈 자리 세력 이름. 기존 `'BOT 3'` 기대값 갱신).
+- 결과(2026-10-18): `npm run typecheck` 통과, `npm test` 26 파일 362 테스트 통과, `npm run smoke` PASSED, `qa:headless` 스키마 위반·순서 위반·재구성 불일치 0, `qa:ws` 78/78.

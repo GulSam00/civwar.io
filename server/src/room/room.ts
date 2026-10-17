@@ -21,6 +21,7 @@ import {
 } from '@civwar/shared';
 import { generateMapForSize, type GeneratedMap } from '../map/generate.js';
 import { mapFromPreset, type MapCatalog } from '../map/presets.js';
+import { assignFactionNames, assignPlaceNames, factionCore } from '../map/placeNames.js';
 import { applyRoomOptions, mapLimits, plannedPlayers, settingsEcho, type RoomSettings } from './settings.js';
 import type { Outbox } from '../game/outbox.js';
 import { buildMapInit, buildMatchConfig, buildSnapshotFull } from '../game/snapshot.js';
@@ -28,6 +29,11 @@ import { createGameState } from '../game/state.js';
 import { CivBot } from '../game/bot.js';
 import { Simulation, type BotBrain } from '../game/tick.js';
 import type { Session } from './session.js';
+
+/** §23 세력 이름 후보 수 — 최대 인원 12 + 카운트다운 이탈 인계분을 넉넉히 덮는다 */
+const FACTION_POOL_SIZE = 48;
+/** §23 카운트다운 때 미리 빼는 지명 수 — 총 기지 2N ≤ 24 의 상한보다 크게 */
+const PLACE_NAME_EXCLUDE_COUNT = 32;
 
 export interface Member {
   playerId: number;
@@ -60,6 +66,10 @@ export class Room {
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private loopStart = 0;
   private disposed = false;
+  /** 카운트다운 시작 때 뽑는 매치 시드 — 랜덤 맵 시드 / 프리셋 맵의 룸 시드(봇 성향·지명) / 세력 이름 (§23) */
+  private matchSeed: number | null = null;
+  /** §23 봇 세력 이름 후보 (matchSeed 결정론 순서). 봇 자리는 앞에서부터 아직 안 쓰인 이름을 받는다 */
+  private factionPool: string[] = [];
 
   constructor(
     readonly id: string,
@@ -215,7 +225,7 @@ export class Room {
         } else if (this.phase === 'COUNTDOWN') {
           m.session = null; // 자리는 봇으로
           m.isBot = true;
-          m.nickname = `BOT ${m.playerId}`;
+          m.nickname = this.takeFactionName(m.playerId);
         } else {
           this.markDisconnected(m);
           m.session = null;
@@ -313,9 +323,10 @@ export class Room {
     const humans = [...this.members.values()].filter((x) => !x.isBot).sort((a, b) => a.playerId - b.playerId);
     const plan = plannedPlayers(this.settings, humans.length, this.isPublic);
     if (plan.total < mapLimits(this.settings.map, this.catalog).min) return 'NOT_ENOUGH_PLAYERS';
+    this.prepareFactionNames(humans.map((h) => h.nickname));
     if (this.isPublic) {
       for (let pid = 1; pid <= this.settings.maxPlayers; pid++) {
-        if (!this.members.has(pid)) this.members.set(pid, { playerId: pid, session: null, nickname: `BOT ${pid}`, isBot: true, ready: true });
+        if (!this.members.has(pid)) this.members.set(pid, { playerId: pid, session: null, nickname: this.takeFactionName(pid), isBot: true, ready: true });
       }
     } else {
       const hostMember = this.hostId !== null ? this.members.get(this.hostId) : undefined;
@@ -327,7 +338,7 @@ export class Room {
       });
       this.hostId = hostMember ? hostMember.playerId : null;
       for (let pid = humans.length + 1; pid <= plan.total; pid++) {
-        this.members.set(pid, { playerId: pid, session: null, nickname: `BOT ${pid}`, isBot: true, ready: true });
+        this.members.set(pid, { playerId: pid, session: null, nickname: this.takeFactionName(pid), isBot: true, ready: true });
       }
     }
     this.phase = 'COUNTDOWN';
@@ -341,7 +352,54 @@ export class Room {
   private buildMap(N: number): GeneratedMap {
     const m = this.settings.map;
     if (m.kind === 'preset') return mapFromPreset(this.catalog.get(m.mapId)!, N);
-    return generateMapForSize(this.hooks.nextSeed(), m.size, N, m.water);
+    return generateMapForSize(this.seed(), m.size, N, m.water);
+  }
+
+  /** 매치 시드 — 카운트다운 시작 때 한 번 뽑는다 (판당 nextSeed 호출 수 1 그대로) */
+  private seed(): number {
+    if (this.matchSeed === null) this.matchSeed = this.hooks.nextSeed();
+    return this.matchSeed;
+  }
+
+  /**
+   * §23 세력 이름 후보 준비 (카운트다운 시작). 지명은 아직 맵이 없어 모르므로
+   * 같은 시드의 지명 앞 PLACE_NAME_EXCLUDE_COUNT 개(지명 배정은 셔플 앞부분이라 기지 수와 무관하게 포함 관계)를 미리 뺀다.
+   * 랜덤 맵이 불변식 실패로 시드+k 를 쓰면 지명이 달라질 수 있어 beginGame 에서 실제 지명으로 한 번 더 확인한다.
+   */
+  private prepareFactionNames(humanNicknames: readonly string[]): void {
+    const seed = this.seed();
+    this.factionPool = assignFactionNames(seed, FACTION_POOL_SIZE, {
+      exclude: [...assignPlaceNames(seed, PLACE_NAME_EXCLUDE_COUNT), ...humanNicknames],
+    });
+  }
+
+  /** 아직 아무 멤버도 쓰지 않은 첫 세력 이름. 후보가 바닥나면(실제로는 안 생긴다) 구 형식 `BOT n` */
+  private takeFactionName(playerId: number): string {
+    const used = new Set([...this.members.values()].map((x) => x.nickname));
+    for (const n of this.factionPool) if (!used.has(n)) return n;
+    return `BOT ${playerId}`;
+  }
+
+  /** 실제 지명과 핵심어가 겹치는 봇 이름을 바꾼다 (랜덤 맵 시드 재생성 때만 생길 수 있다) */
+  private reconcileFactionNames(placeNames: readonly string[]): void {
+    const places = new Set(placeNames);
+    this.factionPool = this.factionPool.filter((n) => !places.has(factionCore(n)));
+    for (const m of [...this.members.values()].sort((a, b) => a.playerId - b.playerId)) {
+      if (m.isBot && places.has(factionCore(m.nickname))) {
+        m.nickname = '';
+        m.nickname = this.takeFactionName(m.playerId);
+      }
+    }
+  }
+
+  /** 스크립트용 (watch-game: 사람 없는 AI 전용 판의 방장 자리) — 그 자리에 세력 이름을 준다 */
+  giveFactionName(playerId: number): string | null {
+    const m = this.members.get(playerId);
+    if (!m) return null;
+    m.nickname = '';
+    m.nickname = this.takeFactionName(playerId);
+    this.broadcastRoomState();
+    return m.nickname;
   }
 
   // ───────────────────────── 인게임 ─────────────────────────
@@ -363,8 +421,9 @@ export class Room {
       .sort((a, b) => a.playerId - b.playerId)
       .map((m) => ({ playerId: m.playerId, isBot: m.isBot, connected: m.isBot || !!m.session?.socket }));
     // 봇 성향 시드 = 룸 맵 시드. 프리셋 맵은 시드가 파일 고정이라 룸 시드를 따로 뽑는다
-    const aggressionSeed = this.settings.map.kind === 'preset' ? this.hooks.nextSeed() : map.seed;
+    const aggressionSeed = this.settings.map.kind === 'preset' ? this.seed() : map.seed;
     const state = createGameState(map, setup, this.settings.botDifficulty, aggressionSeed);
+    this.reconcileFactionNames(state.baseNames);
     for (const s of setup) {
       if (!s.connected) state.players[s.playerId].disconnectedSinceTick = 0;
     }

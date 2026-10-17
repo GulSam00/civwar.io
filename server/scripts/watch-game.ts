@@ -384,6 +384,8 @@ async function main(): Promise<void> {
       S = room.sim.state;
       // 방장 자리도 봇이 조종 — 사람 없는 AI 전용 판
       for (const p of S.players) if (p) p.botControlled = true;
+      // §23: 방장 자리(이 스크립트의 세션)도 봇 세력 이름으로 — 다른 봇과 같은 양식·고유
+      for (const mem of room.members.values()) if (!mem.isBot) room.giveFactionName(mem.playerId);
       for (const mem of room.members.values()) nick.set(mem.playerId, mem.nickname);
       const sim = room.sim;
       const step = sim.step.bind(sim);

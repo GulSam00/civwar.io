@@ -59,6 +59,8 @@ export interface PlayerState {
   /** v4.3: 보유 노드 비트마스크 (uint32, 비트 i = TECH_NODES[i]) */
   techMask: number;
   techPurchased: number; // 누진비용용 총 구매 노드 수 (= popcount(techMask))
+  /** §23: 이 플레이어가 시작한 동맹 파기 수 (ally_break_started.byPlayerId = 이 플레이어) */
+  allyBreaks: number;
   /** v4.3 [A-71]: 스탯 캐시 (인덱스 = TECH_STAT) = techStatValues(techMask). 구매 시에만 갱신 — 계산식은 이것만 읽는다 */
   statPm: number[];
 }
@@ -319,6 +321,7 @@ export function createGameState(
       upkeepPm: 0,
       techMask: 0,
       techPurchased: 0,
+      allyBreaks: 0,
       statPm: techStatValues(0),
     };
   }

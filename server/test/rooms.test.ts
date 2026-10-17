@@ -5,12 +5,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAP_SIZE_PRESETS, type ServerMessage } from '@civwar/shared';
+import { DISCONNECT_GRACE_TICK, MAP_SIZE_PRESETS, type ServerMessage } from '@civwar/shared';
 import { generateMapForSize } from '../src/map/generate.js';
 import { MapCatalog, PresetFormatError, mapFromPreset, presetChecksum, validatePreset, type PresetMapFile } from '../src/map/presets.js';
 import { createGameState, ledgerImbalance } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
 import { LobbyManager } from '../src/room/lobby.js';
+import { FACTION_FORMS, factionCore } from '../src/map/placeNames.js';
 import type { Session } from '../src/room/session.js';
 import { applyRoomOptions, defaultPrivateSettings, pacingNote, publicSettings, type RoomSettings } from '../src/room/settings.js';
 
@@ -127,6 +128,8 @@ function fakeSession(lobby: LobbyManager, nick: string): { s: Session; inbox: Se
   s.socket = { send: (d: string) => inbox.push(JSON.parse(d) as ServerMessage), close: () => {} };
   return { s, inbox };
 }
+/** §23 세력 이름 꼴: "{핵심어} {꼴}" (서양식) */
+const FACTION_RE = new RegExp(`^[^ ]+ (${FACTION_FORMS.western.join('|')})$`);
 const lastOf = <T extends ServerMessage['type']>(inbox: ServerMessage[], type: T) =>
   [...inbox].reverse().find((m) => m.type === type) as Extract<ServerMessage, { type: T }> | undefined;
 
@@ -196,7 +199,8 @@ describe('룸 흐름 — 비공개 방 설정·시작', () => {
     room.leave(A.s); // 사람 = {2: B(방장), 3: C}
     expect(room.hostId).toBe(2);
     expect(room.startNow(B.s)).toBeNull();
-    expect([...room.members.values()].map((m) => [m.playerId, m.nickname])).toEqual([[1, 'b'], [2, 'c'], [3, 'BOT 3']]);
+    expect([...room.members.values()].map((m) => [m.playerId, m.nickname]).slice(0, 2)).toEqual([[1, 'b'], [2, 'c']]);
+    expect(room.members.get(3)!.nickname).toMatch(FACTION_RE); // §23 봇 = 세력 이름
     expect(room.hostId).toBe(1);
     expect(B.s.playerId).toBe(1);
     expect(C.s.playerId).toBe(2);
@@ -312,5 +316,87 @@ describe('룸 흐름 — 비공개 방 설정·시작', () => {
     const B = fakeSession(lobby, 'bob');
     expect(lobby.createPrivate(B.s, {})).toBeNull();
     expect(lastOf(B.inbox, 'room_state')!.autoStartMs).toBeNull();
+  });
+});
+
+describe('§23 봇 세력 이름 (사용자 2026-10-18 항목 8)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const startRoom = (seed: number, opts: Record<string, unknown>) => {
+    const lobby = new LobbyManager({ seed, catalog });
+    const A = fakeSession(lobby, 'alice');
+    expect(lobby.createPrivate(A.s, opts)).toBeNull();
+    const room = lobby.roomOf(A.s)!;
+    expect(room.startNow(A.s)).toBeNull();
+    return { lobby, A, room };
+  };
+
+  it('카운트다운 room_state 부터 봇 = 세력 이름 · 고유 · ≤16자 · 서양식 · 매치 지명과 안 겹침 · 같은 시드면 같은 이름', () => {
+    const names: string[][] = [];
+    for (let k = 0; k < 2; k++) {
+      const { lobby, A, room } = startRoom(11, { map: { kind: 'random', size: 'M' }, maxPlayers: 12, botCount: 11 });
+      const cd = lastOf(A.inbox, 'room_state')!;
+      const bots = cd.players.filter((p) => p.isBot).map((p) => p.nickname);
+      expect(bots).toHaveLength(11);
+      vi.advanceTimersByTime(3000);
+      expect(room.phase).toBe('IN_GAME');
+      const rs = lastOf(A.inbox, 'room_state')!;
+      expect(rs.players.filter((p) => p.isBot).map((p) => p.nickname)).toEqual(bots); // 시작 때 바뀌지 않는다
+      expect(rs.players.find((p) => !p.isBot)!.nickname).toBe('alice');
+      const places = new Set(lastOf(A.inbox, 'map_init')!.baseNames);
+      expect(new Set(bots).size).toBe(bots.length);
+      for (const n of bots) {
+        expect(n).toMatch(FACTION_RE);
+        expect(n.length).toBeLessThanOrEqual(16);
+        expect(places.has(factionCore(n))).toBe(false);
+        expect(places.has(n)).toBe(false);
+      }
+      names.push(bots);
+      lobby.shutdown();
+    }
+    expect(names[0]).toEqual(names[1]);
+    const other = startRoom(12, { map: { kind: 'random', size: 'M' }, maxPlayers: 12, botCount: 11 });
+    expect(lastOf(other.A.inbox, 'room_state')!.players.filter((p) => p.isBot).map((p) => p.nickname)).not.toEqual(names[0]);
+    other.lobby.shutdown();
+  });
+
+  it('프리셋 맵 방도 세력 이름 (지명과 안 겹침)', () => {
+    const { lobby, A } = startRoom(5, { map: { kind: 'preset', mapId: 'sample-m-01' }, maxPlayers: 12, botCount: 11 });
+    vi.advanceTimersByTime(3000);
+    const places = new Set(lastOf(A.inbox, 'map_init')!.baseNames);
+    const bots = lastOf(A.inbox, 'room_state')!.players.filter((p) => p.isBot).map((p) => p.nickname);
+    expect(bots).toHaveLength(11);
+    for (const n of bots) expect(places.has(factionCore(n))).toBe(false);
+    lobby.shutdown();
+  });
+
+  it('인게임 접속 끊김 → 봇 인계 후에도 사람 닉네임 유지 · 카운트다운 이탈 자리는 세력 이름', () => {
+    const lobby = new LobbyManager({ seed: 3, catalog });
+    const A = fakeSession(lobby, 'alice');
+    const B = fakeSession(lobby, 'bob');
+    const C = fakeSession(lobby, 'carol');
+    lobby.createPrivate(A.s, { map: { kind: 'random', size: 'S' }, maxPlayers: 4, botCount: 1 });
+    const room = lobby.roomOf(A.s)!;
+    lobby.joinPrivate(B.s, room.code);
+    lobby.joinPrivate(C.s, room.code);
+    expect(room.startNow(A.s)).toBeNull();
+    const cPid = C.s.playerId!;
+    room.leave(C.s); // 카운트다운 이탈 → 봇 자리
+    expect(room.members.get(cPid)!.isBot).toBe(true);
+    expect(room.members.get(cPid)!.nickname).toMatch(FACTION_RE);
+    const botNames = [...room.members.values()].filter((m) => m.isBot).map((m) => m.nickname);
+    expect(new Set(botNames).size).toBe(botNames.length);
+    vi.advanceTimersByTime(3000);
+    expect(room.phase).toBe('IN_GAME');
+    const bPid = B.s.playerId!;
+    B.s.socket = null;
+    room.onSocketClosed(B.s);
+    vi.advanceTimersByTime((DISCONNECT_GRACE_TICK + 5) * 200);
+    expect(room.sim!.state.players[bPid].botControlled).toBe(true);
+    expect(A.inbox.some((m) => m.type === 'bot_takeover' && m.playerId === bPid)).toBe(true);
+    expect(room.members.get(bPid)!.nickname).toBe('bob');
+    expect(lastOf(A.inbox, 'room_state')!.players.find((p) => p.playerId === bPid)!.nickname).toBe('bob');
+    lobby.shutdown();
   });
 });

@@ -115,6 +115,7 @@ export function allyBreak(state: GameState, me: number, msg: C2S_CmdAllyBreak, t
   a.state = 'BREAKING';
   a.breakAtTick = t + BACKSTAB_COOLDOWN_TICK;
   rebuildAllyMatrix(state);
+  state.players[me].allyBreaks++;
   out.broadcast.push({ type: 'ally_break_started', tick: t, a: x, b: y, byPlayerId: me, breakAtTick: a.breakAtTick });
   return null;
 }
