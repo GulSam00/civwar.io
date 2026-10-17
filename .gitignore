@@ -6,3 +6,6 @@ server/maps/candidates/
 
 # AI 관전 녹화 (용량 큼)
 _workspace/ai-match/**/video/
+.claude/skills/ai-match-monitor/recorder/node_modules/
+.claude/skills/ai-match-monitor/recorder/package-lock.json
+_workspace/ai-match/**/events.jsonl

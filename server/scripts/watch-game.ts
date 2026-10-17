@@ -3,10 +3,10 @@
  * (선택) 헤드리스 Chromium 관전 화면을 영상으로 녹화한다.
  *
  *   npx tsx server/scripts/watch-game.ts [출력 폴더] [인원=10] [크기=M] [난이도=NORMAL]
- *   환경변수: PW_MODULE=<playwright-core 경로>  CHROME_PATH=<chrome.exe>  (둘 다 있으면 영상 녹화)
+ *   환경변수: PW_MODULE / CHROME_PATH (생략 시 자동 탐색, NO_VIDEO=1 이면 녹화 생략)
  *            MAX_MIN=<분>  (짧게 끊어 보는 시험용), PORT_WS / PORT_HTTP
  *
- * 산출물: game-log.md(사람용 로그, 한 줄 = 사건 하나), events.jsonl(원본 이벤트), reports/*.md(5분 전황),
+ * 산출물: game-log.md(사람용 로그, 한 줄 = 사건 하나), highlights.md(핵심 사건만), events.jsonl(원본 이벤트), reports/*.md(5분 전황),
  *         shots/*.png(5분마다 화면), video/*.webm(녹화)
  * 사전 조건: npm run build:client (client/dist 를 이 스크립트가 직접 서빙한다)
  */
@@ -43,13 +43,15 @@ const TPM = 60000 / TICK_MS; // tick / 분
 
 for (const d of ['', 'reports', 'shots', 'video']) mkdirSync(join(OUT, d), { recursive: true });
 const LOG = join(OUT, 'game-log.md');
+const HL = join(OUT, 'highlights.md'); // 하이라이트: 기지·탈락·외교·1위 교체·기준 변화만
 const RAW = join(OUT, 'events.jsonl');
 writeFileSync(LOG, '');
+writeFileSync(HL, '');
 writeFileSync(RAW, '');
 
 // ───────────────────────── 표기 도우미 ─────────────────────────
 const UNIT_NAME = ['창병', '검병', '기병'];
-const TERRAIN_NAME = ['깊은 물', '평원', '비옥지', '언덕', '사막', '산', '얕은 물'];
+const TERRAIN_NAME = ['바다', '평원', '비옥지', '언덕', '사막', '산', '호수'];
 const pad = (n: number, w = 2) => String(n).padStart(w, '0');
 const clock = (t: number) => {
   const s = Math.floor((t * TICK_MS) / 1000);
@@ -80,7 +82,8 @@ function place(tile: number): string {
   const terr = TERRAIN_NAME[st.map.terrain[tile]] ?? '?';
   if (st.map.isBase[tile]) {
     const cap = st.players.find((p) => p && p.homeTileId === tile);
-    return `${cap ? `P${cap.id} 수도` : '기지'}${xy(tile)}`;
+    const name = st.baseNames?.[st.baseIndexOf.get(tile) ?? -1];
+    return `${cap ? `P${cap.id} 수도` : '기지'}${name ? ` '${name}'` : ''}${xy(tile)}`;
   }
   return `${terr}${xy(tile)}`;
 }
@@ -89,9 +92,11 @@ function flagDesc(id: number): string {
   if (!f) return `깃발#${id}`;
   return `${P(f.ownerId)} ${UNIT_NAME[f.unit]}#${id}(${k(f.troopsMilli)}명, ${f.posture === POSTURE.ATTACK ? '공격' : '방어'}, ${place(f.posTileId)})`;
 }
+const HL_TAGS = new Set(['★기지', '✖탈락', '외교', '기준', '러시', '종료', '1위']);
 function line(t: number, tag: string, text: string): void {
   const s = `[${clock(t)}] ${tag.padEnd(6, ' ')} ${text}`;
   appendFileSync(LOG, s + '\n');
+  if (HL_TAGS.has(tag)) appendFileSync(HL, s + '\n');
 }
 function shareOf(tiles: number): number {
   return (tiles * 100) / S!.map.totalLandTiles;
@@ -115,7 +120,10 @@ let win = freshWindow();
 const total = { issued: 0, combats: 0, routed: 0, baseCaps: 0, capitalCaps: 0, techs: 0 };
 const combatStart = new Map<number, { t: number; flags: { id: number; owner: number; troops: number }[] }>();
 let prevTiles = new Map<number, number>();
-let lastReportMin = 0;
+let windowStartTick = 0;
+let leaderId = 0;
+const combatPairs = { started: 0, matched: 0 };
+let stopped = false;
 
 // ───────────────────────── 이벤트 → 한 줄 ─────────────────────────
 function onEvent(m: ServerMessage): void {
@@ -154,6 +162,7 @@ function onEvent(m: ServerMessage): void {
         return { id, owner: f?.ownerId ?? 0, troops: f ? k(f.troopsMilli) : 0 };
       });
       combatStart.set(m.groupKey, { t: m.tick, flags });
+      combatPairs.started++;
       const sides = m.sides.map((s) => `${s.ownerIds.map(P).join('+')} ${s.troops}명(전력 ${(s.power / 1000).toFixed(2)})`).join(' vs ');
       line(m.tick, '교전', `${sides} | ${m.flagIds.map(flagDesc).join(' / ')}`);
       break;
@@ -161,6 +170,7 @@ function onEvent(m: ServerMessage): void {
     case 'combat_ended': {
       const c = combatStart.get(m.groupKey);
       combatStart.delete(m.groupKey);
+      if (c) combatPairs.matched++;
       win.routed += m.routedFlagIds.length;
       total.routed += m.routedFlagIds.length;
       let loss = '';
@@ -234,9 +244,10 @@ function report(t: number, final = false): string {
   out.push(`## ${clock(t)} 전황 보고${final ? ' (최종)' : ''}`);
   out.push('');
   out.push(`- 승리 기준 **${thresholdPct(t)}%** · 1위 **${P(lead.id)} ${pct(shareOf(lead.tiles))}** (2위 ${P(second.id)}와 ${(shareOf(lead.tiles) - shareOf(second.tiles)).toFixed(1)}%p 차) · 생존 ${alive}/${players.length} · 중립 땅 ${pct((neutral * 100) / land)}`);
-  out.push(`- 최근 5분: 출전 ${win.issued}회(창 ${win.issuedByUnit[0]} / 검 ${win.issuedByUnit[1]} / 기 ${win.issuedByUnit[2]}), 교전 ${win.combats}회, 패주 ${win.routed}, 소진 ${win.exhausted}, 회수 ${win.recalls}, 테크 ${win.techs}개, 기지 함락 ${win.baseCaps.length}회${win.baseCaps.length ? ` (${win.baseCaps.join(', ')})` : ''}${win.elim.length ? `, 탈락 ${win.elim.join(', ')}` : ''}`);
+  const span = Math.round(((t - windowStartTick) * TICK_MS) / 60000);
+  out.push(`- 최근 ${span}분(${clock(windowStartTick)}~${clock(t)}): 출전 ${win.issued}회(창 ${win.issuedByUnit[0]} / 검 ${win.issuedByUnit[1]} / 기 ${win.issuedByUnit[2]}), 교전 ${win.combats}회, 패주 ${win.routed}, 소진 ${win.exhausted}, 회수 ${win.recalls}, 테크 ${win.techs}개, 기지 함락 ${win.baseCaps.length}회${win.baseCaps.length ? ` (${win.baseCaps.join(', ')})` : ''}${win.elim.length ? `, 탈락 ${win.elim.join(', ')}` : ''}`);
   out.push('');
-  out.push('| 순위 | 플레이어 | 성향 | 영토 (점유율, 5분 변화) | 병력 / 상한 | 골드 (초당 순익) | 깃발 공·방 / 슬롯 | 기지 | 테크 (최근) |');
+  out.push('| 순위 | 플레이어 | 성향 | 영토 (점유율, 구간 변화) | 병력 / 상한 | 골드 (초당 순익) | 깃발 공·방 / 슬롯 | 기지 | 테크 (최근) |');
   out.push('|---|---|---|---|---|---|---|---|---|');
   players.forEach((p, i) => {
     const prev = prevTiles.get(p.id) ?? 0;
@@ -267,6 +278,7 @@ function report(t: number, final = false): string {
   out.push('');
   prevTiles = new Map(players.map((p) => [p.id, p.tiles]));
   win = freshWindow();
+  windowStartTick = t;
   return out.join('\n');
 }
 
@@ -291,10 +303,36 @@ interface Recorder {
   shot(name: string): Promise<void>;
   stop(): Promise<void>;
 }
+/** 녹화 도구 위치: 환경변수 → 스킬 기본 설치 위치(.claude/skills/ai-match-monitor/recorder) → ms-playwright 캐시의 최신 chromium */
+function findRecorder(): { pwModule: string; chrome: string } | null {
+  if (process.env.NO_VIDEO) return null;
+  const pwModule = process.env.PW_MODULE ?? resolve('.claude/skills/ai-match-monitor/recorder/node_modules/playwright-core');
+  let chrome = process.env.CHROME_PATH ?? '';
+  if (!chrome) {
+    const cache = join(process.env.LOCALAPPDATA ?? join(process.env.HOME ?? '', 'AppData/Local'), 'ms-playwright');
+    if (existsSync(cache)) {
+      const dirs = readdirSync(cache).filter((d) => /^chromium-\d+$/.test(d)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]));
+      for (const d of dirs) {
+        const exe = join(cache, d, 'chrome-win64', 'chrome.exe');
+        if (existsSync(exe)) {
+          chrome = exe;
+          break;
+        }
+      }
+    }
+  }
+  if (!existsSync(pwModule) || !chrome || !existsSync(chrome)) {
+    console.log(`녹화 생략 — playwright-core(${pwModule}) 또는 chromium(${chrome || '없음'})을 찾지 못함`);
+    return null;
+  }
+  return { pwModule, chrome };
+}
+
 async function startRecorder(code: string): Promise<Recorder | null> {
-  if (!process.env.PW_MODULE || !process.env.CHROME_PATH) return null;
-  const pw = createRequire(import.meta.url)(process.env.PW_MODULE) as PwModule;
-  const browser = await pw.chromium.launch({ executablePath: process.env.CHROME_PATH, args: ['--use-gl=swiftshader'] });
+  const found = findRecorder();
+  if (!found) return null;
+  const pw = createRequire(import.meta.url)(found.pwModule) as PwModule;
+  const browser = await pw.chromium.launch({ executablePath: found.chrome, args: ['--use-gl=swiftshader'] });
   const size = { width: 1600, height: 900 };
   const ctx = await browser.newContext({ viewport: size, recordVideo: { dir: join(OUT, 'video'), size } });
   const page = await ctx.newPage();
@@ -351,12 +389,21 @@ async function main(): Promise<void> {
       const step = sim.step.bind(sim);
       sim.step = () => {
         const out = step();
+        if (stopped) return out; // 종료 판정 뒤 남은 tick 은 기록하지 않는다
         for (const e of out.broadcast) {
           if (e.type === 'snapshot_delta' || e.type === 'snapshot_full') continue;
           appendFileSync(RAW, JSON.stringify(e) + '\n');
           onEvent(e);
         }
         const t = S!.tick;
+        // 1위 교체 (1초마다 확인, 첫 1분은 소란스러워서 제외)
+        if (t >= TPM && t % 5 === 0) {
+          const top = S!.players.filter((p) => p && p.alive).sort((a, b) => b.tiles - a.tiles || a.id - b.id)[0];
+          if (top && top.id !== leaderId) {
+            if (leaderId) line(t, '1위', `${P(top.id)}가 1위로 (${top.tiles}칸, ${pct(shareOf(top.tiles))}) — 이전 1위 ${P(leaderId)} ${S!.players[leaderId].tiles}칸`);
+            leaderId = top.id;
+          }
+        }
         if (t > 0 && t % (5 * TPM) === 0) {
           const r = report(t);
           writeFileSync(join(OUT, 'reports', `${pad(t / TPM)}min.md`), r + '\n');
@@ -364,7 +411,10 @@ async function main(): Promise<void> {
           console.log('\n' + r);
           void rec.r?.shot(`${pad(t / TPM)}min.png`).catch(() => {});
         }
-        if (sim.finished || (MAX_MIN && t >= MAX_MIN * TPM)) setTimeout(done, 3000);
+        if (sim.finished || (MAX_MIN && t >= MAX_MIN * TPM)) {
+          stopped = true;
+          setTimeout(done, 3000);
+        }
         return out;
       };
       // 헤더
@@ -387,6 +437,7 @@ async function main(): Promise<void> {
           '',
         ].join('\n'),
       );
+      writeFileSync(HL, `# 하이라이트 — 기지 함락·탈락·외교·1위 교체·승리 기준 변화만 (전체는 game-log.md)\n\n`);
       prevTiles = new Map(st.players.filter(Boolean).map((p) => [p.id, p.tiles]));
       console.log(`room ${code} started — ${N} bots, map ${st.map.width}x${st.map.height}`);
       try {
@@ -407,7 +458,7 @@ async function main(): Promise<void> {
   const r = report(t, true);
   writeFileSync(join(OUT, 'reports', 'final.md'), r + '\n');
   appendFileSync(LOG, '\n' + r + '\n');
-  appendFileSync(LOG, `\n누계: 출전 ${total.issued}회 · 교전 ${total.combats}회 · 패주 ${total.routed} · 기지 함락 ${total.baseCaps}회(수도 ${total.capitalCaps}) · 테크 ${total.techs}개\n`);
+  appendFileSync(LOG, `\n누계: 출전 ${total.issued}회 · 교전 ${total.combats}회 · 패주 ${total.routed} · 기지 함락 ${total.baseCaps}회(수도 ${total.capitalCaps}) · 테크 ${total.techs}개 · 교전 시작/종료 짝 ${combatPairs.matched}/${combatPairs.started} (짝이 없는 건 무리가 합쳐지거나 갈라져 손실 미기록)\n`);
   console.log('\n' + r);
   await rec.r?.shot('final.png').catch(() => {});
   await rec.r?.stop();
