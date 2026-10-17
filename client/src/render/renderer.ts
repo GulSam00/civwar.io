@@ -20,6 +20,7 @@ import type { RoutePreview } from '../input/route.js';
 import { drawGlyphParts, drawUnitGlyph } from './unitGlyphs.js';
 import { SHIELD_GLYPH, SWORD_GLYPH, combatPairs, declutter, glyphOf, pairGlyphKind, type CombatPair } from './combatPairs.js';
 import { UNIT_SHORT } from '../ui/text.js';
+import { fmtCompact } from '../ui/fmt.js';
 import { layoutTerritoryLabels, territoryAnchors, type TerritoryAnchor } from './territoryLabels.js';
 
 /**
@@ -222,9 +223,12 @@ export class GameRenderer {
     if (!this.labelAnchors.length) return;
     const cam = this.camera;
     const font = (size: number) => `800 ${size}px system-ui, "Malgun Gothic", sans-serif`;
+    const subFont = (size: number) => `700 ${size}px system-ui, "Malgun Gothic", sans-serif`;
     // 기준점이 기지(대개 수도) 칸이거나 그 옆이면 이름을 기지 아이콘 아래로 내린다 (아이콘에 가리지 않게)
     const s = baseIconSize(cam.zoom);
     const baseCenters = model.baseTiles.map((t) => topo.tileCenter(t));
+    // 2026-10-18: 이름 왼쪽 작은 문장(플레이어 색 방패) + 이름 아래 총 병력 ("2.55K")
+    const emblemW = (size: number) => Math.round(size * 0.78) + 4;
     const placed = layoutTerritoryLabels(
       this.labelAnchors.filter((a) => model.players.get(a.owner)?.alive ?? true),
       (id) => (view.colorblind ? `${id}. ${view.nicknameOf(id)}` : view.nicknameOf(id)),
@@ -234,11 +238,12 @@ export class GameRenderer {
         return nearBase ? { x: p.x, y: p.y + s * 1.5 + 12 } : p;
       },
       cam.zoom,
-      (text, size) => {
-        ctx.font = font(size);
-        return ctx.measureText(text).width;
+      (text, size, isSub) => {
+        ctx.font = isSub ? subFont(size) : font(size);
+        return ctx.measureText(text).width + (isSub ? 0 : emblemW(size));
       },
       { w: cam.viewW, h: cam.viewH },
+      (id) => fmtCompact(model.players.get(id)?.troops ?? 0),
     );
     ctx.save();
     ctx.textAlign = 'center';
@@ -246,12 +251,25 @@ export class GameRenderer {
     ctx.lineJoin = 'round';
     for (const l of placed) {
       ctx.font = font(l.size);
+      const tw = ctx.measureText(l.text).width;
+      const ew = emblemW(l.size);
+      const left = l.x - (tw + ew) / 2;
+      const tx = left + ew + tw / 2;
       ctx.globalAlpha = 0.9;
+      drawEmblem(ctx, left + (ew - 4) / 2, l.y, Math.round(l.size * 0.78), playerColor(l.owner));
       ctx.lineWidth = Math.max(3, l.size * 0.22);
       ctx.strokeStyle = 'rgba(8,12,18,0.8)';
-      ctx.strokeText(l.text, l.x, l.y);
+      ctx.strokeText(l.text, tx, l.y);
       ctx.fillStyle = l.owner === view.me ? '#ffffff' : '#eef2f6';
-      ctx.fillText(l.text, l.x, l.y);
+      ctx.fillText(l.text, tx, l.y);
+      if (l.sub && l.subSize) {
+        const sy = l.y + l.size / 2 + l.subSize * 0.6;
+        ctx.font = subFont(l.subSize);
+        ctx.lineWidth = Math.max(2.5, l.subSize * 0.24);
+        ctx.strokeText(l.sub, l.x, sy);
+        ctx.fillStyle = 'rgba(232,237,242,0.92)';
+        ctx.fillText(l.sub, l.x, sy);
+      }
     }
     ctx.restore();
   }
@@ -1214,4 +1232,23 @@ function rank(f: FlagSnapshot, view: RenderView): number {
   if (f.id === view.selectedFlagId) return 3;
   if (f.ownerId === view.me) return 2;
   return 1;
+}
+
+/** 영토 이름 옆 작은 문장 — 플레이어 색 방패 (가운데 cx, cy, 높이 h). 어두운 테두리로 어느 땅 위에서도 보이게 */
+function drawEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, h: number, color: string): void {
+  const w = h * 0.82;
+  const x0 = cx - w / 2;
+  const y0 = cy - h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x0 + w, y0);
+  ctx.lineTo(x0 + w, y0 + h * 0.5);
+  ctx.quadraticCurveTo(x0 + w, y0 + h * 0.85, cx, y0 + h);
+  ctx.quadraticCurveTo(x0, y0 + h * 0.85, x0, y0 + h * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.5, h * 0.12);
+  ctx.strokeStyle = 'rgba(8,12,18,0.85)';
+  ctx.stroke();
 }

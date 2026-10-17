@@ -355,6 +355,14 @@ export class ClientStore {
     return this.room?.players.find((p) => p.playerId === playerId)?.nickname ?? `P${playerId}`;
   }
 
+  /** room_state.players[].isBot (봇 자리. 끊긴 사람 자리를 봇이 맡아도 사람으로 남는다) */
+  isBotPlayer(playerId: number): boolean {
+    return this.room?.players.find((p) => p.playerId === playerId)?.isBot ?? false;
+  }
+
+  /** playerInfo.ts 용 이름 조회 */
+  readonly names = { nick: (id: number) => this.nicknameOf(id), isBot: (id: number) => this.isBotPlayer(id) };
+
   // ───────────── 이벤트 피드 ─────────────
 
   feed: FeedEntry[] = [];

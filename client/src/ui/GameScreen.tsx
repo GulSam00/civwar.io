@@ -19,7 +19,11 @@ import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME,
 import { fmtPm, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
-import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard } from './panels.js';
+import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, openCard } from './panels.js';
+import { PlayerCard } from './PlayerCard.js';
+import { fmtCompact, ratioBudget, troopBarParts } from './fmt.js';
+import { RELATION_NAME, TARGET_KIND_NAME, hoverTarget } from './playerInfo.js';
+import { ClockIcon, EmoteIcon, FullscreenIcon, HelpIcon, LeaveIcon } from './hudIcons.js';
 import { TechWindow } from './TechWindow.js';
 import { purchasableCount } from './techTree.js';
 import { Help } from './Help.js';
@@ -66,6 +70,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
   const radialRef = useRef<HTMLDivElement>(null);
   const terrainRef = useRef<HTMLDivElement>(null);
   const flagActRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
   const [ctl, setCtl] = useState<GameInputController | null>(null);
   const narrow = useNarrow();
   const narrowRef = useRef(narrow);
@@ -141,7 +146,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
       updateTooltip(tipRef.current, preview, ix, controller, route);
       positionRadial(radialRef.current, controller);
       positionFlagActions(flagActRef.current, controller, narrowRef.current);
-      updateTerrainTip(terrainRef.current, game, ix, store);
+      updateTerrainTip(terrainRef.current, game, ix, store, narrowRef.current);
+      updateTargetBar(targetRef.current, game, ix, store, narrowRef.current, now);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
@@ -169,6 +175,16 @@ export function GameScreen({ store }: { store: ClientStore }) {
       <canvas ref={canvasRef} className="game-canvas" />
       <div ref={tipRef} className="cursor-tip" />
       <div ref={terrainRef} className="terrain-tip" aria-hidden="true" />
+      <div
+        ref={targetRef}
+        className="target-bar"
+        role="status"
+        onClick={(e) => {
+          // 이름을 누르면 그 플레이어 정보 카드
+          const id = Number((e.target as HTMLElement).closest<HTMLElement>('[data-owner]')?.dataset.owner ?? 0);
+          if (ctl && id > 0) openCard(ctl, id);
+        }}
+      />
       <div ref={radialRef} className="radial-anchor">
         {ctl && <IssueRadial store={store} ctl={ctl} />}
       </div>
@@ -177,7 +193,9 @@ export function GameScreen({ store }: { store: ClientStore }) {
       </div>
       <canvas ref={miniRef} className="minimap" onPointerDown={onMini} onPointerMove={onMini} title="클릭해 이동" />
       {ctl && <Hud store={store} ctl={ctl} narrow={narrow} />}
+      {ctl && <TopCluster store={store} ctl={ctl} narrow={narrow} />}
       {ctl && <Scoreboard store={store} ctl={ctl} compact={narrow} />}
+      {ctl && <PlayerCard store={store} ctl={ctl} narrow={narrow} />}
       {ctl && !narrow && <EventFeed store={store} />}
       {ctl && !narrow && <CommandBar store={store} ctl={ctl} />}
       {ctl && <FlagPanel store={store} ctl={ctl} narrow={narrow} />}
@@ -210,7 +228,7 @@ function HelpLayer({ ctl }: { ctl: GameInputController }) {
  * 지형 정보 툴팁 — 맵 캔버스 위 칸에서만(HUD·패널 위 제외), 커서 왼쪽 위에 둔다(출전 안내 툴팁은 오른쪽 아래).
  * 삼각 메뉴가 떠 있는 동안은 숨긴다(메뉴·경로를 가리지 않게).
  */
-function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix: Interaction, store: ClientStore): void {
+function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix: Interaction, store: ClientStore, narrow: boolean): void {
   if (!el) return;
   const hide = () => {
     if (el.style.display !== 'none') el.style.display = 'none';
@@ -222,10 +240,11 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
   const b = game.bases.get(t);
   const o = ix.options;
   const fieldsKey = TOOLTIP_FIELDS.map((f) => (o.tooltipFields[f] ? 1 : 0)).join('');
-  const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${fieldsKey}`;
+  const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${fieldsKey}:${narrow ? 1 : 0}`;
   if (el.dataset.key !== key) {
     const info = terrainInfo(game, t, store.myPlayerId, (id) => store.nicknameOf(id));
-    const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields) : [];
+    // 2026-10-18: 넓은 화면은 주인 정보를 상단 대상 바가 보여 준다 → 커서 툴팁은 지형 위주 (소유자 줄 생략)
+    const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields).filter((r) => narrow || r.field !== 'owner') : [];
     if (!info || !rows.length) return hide();
     el.dataset.key = key;
     // 한 줄에 한 항목 (flex column): 지형 → 보정들 → 소유자 → 기지 체력
@@ -266,6 +285,164 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
   if (y < 64) y = ix.hoverY + 40; // 위쪽 HUD 와 겹치면 커서 아래로
   if (parent) x = Math.min(x, parent.clientWidth - w - 4);
   el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+
+/**
+ * 상단 중앙 "가리키는 대상" 바 (2026-10-18 UI 개선 4) — 커서 아래 칸의 주인: 색·이름·종류·병력·골드·기지 수·관계.
+ * rAF 루프에서 DOM 을 직접 고친다(내용이 바뀔 때만). 커서가 바 위로 올라가면(이름 클릭) 마지막 대상을 유지한다.
+ * 위치: 가운데 맨 위가 왼쪽 HUD·오른쪽 버튼 묶음과 겹치면 HUD 줄 아래로 내린다 (0.3초마다 다시 잰다). 좁은 화면은 숨김.
+ */
+function updateTargetBar(el: HTMLDivElement | null, game: GameModel | null, ix: Interaction, store: ClientStore, narrow: boolean, now: number): void {
+  if (!el) return;
+  const hide = () => {
+    if (el.style.display !== 'none') el.style.display = 'none';
+    el.dataset.key = '';
+  };
+  if (!game?.ready || narrow) return hide();
+  if (!ix.overMap || ix.hoverTile < 0) {
+    if (el.style.display === 'flex' && el.matches(':hover')) return; // 바 위 — 이름을 누를 수 있게 유지
+    return hide();
+  }
+  const tgt = hoverTarget(game, ix.hoverTile, store.myPlayerId, store.names);
+  if (!tgt) return hide();
+  const key = `${tgt.ownerId}:${tgt.troops}:${tgt.gold}:${tgt.bases}:${tgt.relation}:${tgt.name}:${tgt.alive}`;
+  if (el.dataset.key !== key) {
+    el.dataset.key = key;
+    const span = (cls: string, text: string) => {
+      const x = document.createElement('span');
+      x.className = cls;
+      x.textContent = text;
+      return x;
+    };
+    const parts: HTMLElement[] = [];
+    const who = document.createElement(tgt.ownerId ? 'button' : 'span');
+    who.className = 'tb-who';
+    if (tgt.ownerId) {
+      who.dataset.owner = String(tgt.ownerId);
+      who.title = '정보 카드 열기';
+    }
+    const sw = document.createElement('span');
+    sw.className = 'tb-swatch';
+    sw.style.background = tgt.ownerId ? playerColor(tgt.ownerId) : '#9aa5b1';
+    who.append(sw, span('tb-name', tgt.name));
+    parts.push(who);
+    parts.push(span('tag tb-kind', TARGET_KIND_NAME[tgt.kind]));
+    if (tgt.relation && tgt.ownerId) parts.push(span(`tag rel-${tgt.relation}`, RELATION_NAME[tgt.relation]));
+    if (!tgt.alive) parts.push(span('tag warn-tag', '탈락'));
+    const stat = (label: string, value: string) => {
+      const x = document.createElement('span');
+      x.className = 'tb-stat';
+      x.append(span('tb-k', label), span('tb-v', value));
+      return x;
+    };
+    if (tgt.troops !== null) parts.push(stat('병력', fmtCompact(tgt.troops)));
+    if (tgt.gold !== null) parts.push(stat('골드', fmtCompact(tgt.gold)));
+    parts.push(stat(tgt.ownerId ? '기지' : '중립 기지', `${tgt.bases}곳`));
+    if (tgt.share !== null) parts.push(stat('점유율', `${tgt.share.toFixed(1)}%`));
+    el.replaceChildren(...parts);
+    el.dataset.kind = tgt.kind;
+    el.dataset.posAt = '0'; // 폭이 바뀌었을 수 있다 → 다시 배치
+  }
+  if (el.style.display !== 'flex') {
+    el.style.display = 'flex';
+    el.dataset.posAt = '0';
+  }
+  if (now - Number(el.dataset.posAt || 0) > 300) {
+    el.dataset.posAt = String(now);
+    placeTargetBar(el);
+  }
+}
+
+/** 대상 바 자리: 맨 위 가운데 → (겹치면) HUD 첫 줄 오른쪽 끝 다음 → (그래도 안 되면) HUD 아래 가운데. 순위표·버튼 묶음은 피한다 */
+function placeTargetBar(el: HTMLElement): void {
+  const root = el.parentElement;
+  if (!root) return;
+  const R = root.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const hud = root.querySelector('.hud-top');
+  const cluster = root.querySelector('.top-cluster');
+  const board = root.querySelector('.scoreboard');
+  const hudR = hud?.getBoundingClientRect();
+  let statsRight = 8;
+  let statsBottom = 8;
+  if (hud && hudR) {
+    for (const c of Array.from(hud.children)) {
+      const r = c.getBoundingClientRect();
+      if (!r.width) continue;
+      statsBottom = Math.max(statsBottom, r.bottom - R.top);
+      if (r.top - hudR.top < 20) statsRight = Math.max(statsRight, r.right - R.left); // 첫 줄
+    }
+  }
+  const clusterLeft = cluster ? cluster.getBoundingClientRect().left - R.left : R.width - 8;
+  const boardLeft = board ? board.getBoundingClientRect().left - R.left : R.width - 8;
+  let x = (R.width - w) / 2;
+  let y = 8;
+  const fitsTop = (xx: number) => xx >= statsRight + 8 && xx + w <= clusterLeft - 8;
+  if (!fitsTop(x)) {
+    if (fitsTop(statsRight + 8)) x = statsRight + 8;
+    else {
+      y = statsBottom + 6;
+      x = Math.max(8, Math.min(x, boardLeft - 8 - w));
+    }
+  }
+  el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+
+/** 전체 화면 여부 (fullscreenchange 구독) */
+function useFullscreen(): boolean {
+  const [on, setOn] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement);
+  useEffect(() => {
+    const f = () => setOn(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', f);
+    return () => document.removeEventListener('fullscreenchange', f);
+  }, []);
+  return on;
+}
+
+function toggleFullscreen(): void {
+  try {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  } catch {
+    /* 지원 안 함 — 조용히 무시 */
+  }
+}
+
+/**
+ * 우상단 컨트롤 묶음 (2026-10-18 UI 개선 9) — 남은 시간 · 이모트 · 옵션 · 도움말 · 전체 화면 · 나가기를 한 줄 아이콘으로 (title = 툴팁).
+ * 테크·외교는 단축키·배지가 있는 주 버튼이라 왼쪽 HUD 에 남긴다. 좁은 화면은 시간·옵션·도움말·나가기만.
+ */
+function TopCluster({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputController; narrow: boolean }) {
+  usePolled(() => (store.game?.version ?? 0) * 7 + store.getVersion() + ctl.ix.version * 131, 250);
+  const fs = useFullscreen();
+  const g = store.game;
+  if (!g || !g.ready) return null;
+  const me = store.myPlayerId;
+  const spectating = me === null || store.viewerId !== me;
+  const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
+  const msLeft = g.ticksRemaining * g.config.tickMs;
+  const canFs = typeof document !== 'undefined' && typeof document.documentElement.requestFullscreen === 'function';
+  return (
+    <div className="top-cluster" role="toolbar" aria-label="게임 메뉴">
+      <span className={`tc-time ${g.endgameRushActive ? 'warn' : ''}`} title={g.endgameRushActive ? '남은 시간 — 종반 러시 중' : '남은 시간'} aria-label={`남은 시간 ${fmtClock(msLeft)}`}>
+        <ClockIcon size={14} />
+        <b>{fmtClock(msLeft)}</b>
+      </span>
+      {!narrow && !spectating && !over && <EmoteMenu store={store} />}
+      <OptionsBtn ctl={ctl} />
+      <button className={`hud-btn icon-btn ${ctl.ix.helpOpen ? 'on' : ''}`} onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} title="도움말 (?)" aria-label="도움말 (?)">
+        <HelpIcon size={16} />
+      </button>
+      {!narrow && canFs && (
+        <button className={`hud-btn icon-btn ${fs ? 'on' : ''}`} onClick={toggleFullscreen} title={fs ? '전체 화면 끝내기' : '전체 화면'} aria-label={fs ? '전체 화면 끝내기' : '전체 화면'} aria-pressed={fs}>
+          <FullscreenIcon size={16} on={fs} />
+        </button>
+      )}
+      <button className="hud-btn icon-btn leave-btn" onClick={() => requestLeave(store, ctl)} title="나가기" aria-label="나가기">
+        <LeaveIcon size={16} />
+      </button>
+    </div>
+  );
 }
 
 /** 렌더러용 기지 부가 정보 (§21.4 생산력 · §21.5 지명). 생산력 바는 회복 중(< 100%)일 때만 */
@@ -402,8 +579,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const me = store.myPlayerId;
   const viewer = store.viewerId;
   const p = viewer !== null ? g.players.get(viewer) : undefined;
-  const msLeft = g.ticksRemaining * g.config.tickMs;
-  const share = (tiles: number) => (tiles * 100) / g.config.totalLandTiles;
+  const share =(tiles: number) => (tiles * 100) / g.config.totalLandTiles;
   const flagsUsed = viewer !== null ? g.flagsOf(viewer).length : 0;
   const rushTick = (g.config.endgameRush?.tick as number | undefined) ?? ENDGAME_RUSH_TICK;
   const spectating = me === null || viewer !== me;
@@ -430,7 +606,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       {spectating && <span className="pill spectate-pill">{me !== null && g.players.get(me) && !g.players.get(me)!.alive ? '탈락 · 관전' : '관전'}{p ? ` · ${store.nicknameOf(p.id)}` : ''}</span>}
       {p && (
         <>
-          <Stat label="병력" value={`${p.troops.toLocaleString()} / ${g.troopCapOf(p).toLocaleString()}`} breakdown={troopTip} />
+          <Stat label="병력" value={`${fmtCompact(p.troops)} / ${fmtCompact(g.troopCapOf(p))}`} breakdown={troopTip} />
           <Stat
             label={p.upkeepPm > 0 ? `골드 · 유지비 −${(p.upkeepPm / 10).toFixed(0)}%` : '골드'}
             value={`${p.gold.toLocaleString()}${income ? ` +${income.net.toFixed(1)}/초` : ''}`}
@@ -443,7 +619,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
         </>
       )}
       <Stat label="승리 기준" value={`${g.thresholdPct.toFixed(1)}%`} />
-      <Stat label="남은 시간" value={fmtClock(msLeft)} warn={g.endgameRushActive} />
+      {/* 남은 시간은 우상단 컨트롤 묶음(TopCluster)으로 옮겼다 (2026-10-18) */}
       {g.endgameRushActive ? (
         <span className="pill warn-pill">종반 러시</span>
       ) : (
@@ -455,25 +631,13 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
           {/* 테크 창은 관전·종료 후에도 열 수 있다(보기 전용) */}
           <HudBtn on={ctl.ix.panel === 'tech'} k="T" label="테크" badge={techBadge} techToggle onClick={toggleTech} />
           {!spectating && !over && <HudBtn on={ctl.ix.panel === 'ally'} k="P" label="외교" onClick={() => ((ctl.ix.panel = ctl.ix.panel === 'ally' ? null : 'ally'), ctl.ix.bump())} />}
-          <OptionsBtn ctl={ctl} />
-          <HudBtn on={ctl.ix.helpOpen} k="?" label="도움말" onClick={() => ((ctl.ix.helpOpen = !ctl.ix.helpOpen), ctl.ix.bump())} />
-          {!spectating && !over && <EmoteMenu store={store} />}
-          <button className="hud-btn leave-btn" onClick={() => requestLeave(store, ctl)}>
-            나가기
-          </button>
+          {/* 옵션·도움말·이모트·전체 화면·나가기 = 우상단 TopCluster (2026-10-18) */}
         </span>
       )}
       {narrow && (
         <span className="hud-buttons">
           <button className={`btn btn-sm tech-btn ${ctl.ix.panel === 'tech' ? 'on' : ''}`} data-tech-toggle onClick={toggleTech} aria-label={techBadge ? `테크 (살 수 있는 노드 ${techBadge}개)` : '테크'}>
             테크{techBadge > 0 && <span className="hud-badge">{techBadge}</span>}
-          </button>
-          <OptionsBtn ctl={ctl} />
-          <button className="btn btn-sm" onClick={() => ((ctl.ix.helpOpen = true), ctl.ix.bump())}>
-            ?
-          </button>
-          <button className="btn btn-sm" onClick={() => requestLeave(store, ctl)}>
-            나가기
           </button>
         </span>
       )}
@@ -530,8 +694,8 @@ function EmoteMenu({ store }: { store: ClientStore }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="emote-wrap">
-      <button className={`hud-btn ${open ? 'on' : ''}`} onClick={() => setOpen(!open)}>
-        말풍선
+      <button className={`hud-btn icon-btn ${open ? 'on' : ''}`} onClick={() => setOpen(!open)} title="이모트 (말풍선 — 모두에게 보입니다)" aria-label="이모트" aria-expanded={open}>
+        <EmoteIcon size={16} />
       </button>
       {open && (
         <div className="emote-menu">
@@ -664,17 +828,38 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
       </div>
     );
   }
+  // 2026-10-18: 병력 = 현재/상한 채움 바 + 초당 회복, 비율 옆 실제로 빠질 병력 (OpenFront 참고)
+  let troopBar: JSX.Element | null = null;
+  let budget: number | null = null;
+  if (g && p && me !== null) {
+    const inc = incomeOf(g, me);
+    const tb = troopBarParts(p.troops, g.troopCapOf(p), inc?.troops ?? null);
+    budget = ratioBudget(p.troops, ix.ratio);
+    troopBar = (
+      <div className={`troop-bar ${tb.full ? 'full' : ''}`} role="meter" aria-label="병력" aria-valuemin={0} aria-valuemax={g.troopCapOf(p)} aria-valuenow={p.troops} title={`병력 ${p.troops.toLocaleString()} / 상한 ${g.troopCapOf(p).toLocaleString()}${tb.full ? ' — 가득 참 (더 늘지 않음)' : ''}`}>
+        <span className="tb-cur">{tb.cur}</span>
+        <span className="tb-track">
+          <span className="tb-fill" style={{ width: `${tb.fillPct}%` }} />
+          {tb.rate && <span className="tb-rate">{tb.full ? '가득 참' : tb.rate}</span>}
+        </span>
+        <span className="tb-cap">{tb.cap}</span>
+      </div>
+    );
+  }
+  const perUnit = ([0, 1, 2] as Unit[]).map((u) => `${UNIT_NAME[u]} ${ctl.troopsToSend(u)}`).join(' · ');
   return (
     <div className="bottom-dock">
       <UnitChips store={store} ctl={ctl} />
       <div className="command-bar">
-      <label className="ratio">
-        <span>
-          보낼 병력 비율 <b>{Math.round(ix.ratio * 100)}%</b> <kbd>Q</kbd>/<kbd>E</kbd>
-        </span>
-        <input type="range" min={10} max={100} step={10} value={Math.round(ix.ratio * 100)} onChange={(e) => ctl.setRatio(Number(e.target.value) / 100)} />
-      </label>
-      {gold}
+        {troopBar}
+        <label className="ratio" title={`깃발 병력 (병종 편성비 반영): ${perUnit}`}>
+          <span>
+            보낼 병력 <b>{Math.round(ix.ratio * 100)}%</b>
+            {budget !== null && <b className="ratio-n"> ({budget.toLocaleString()}명)</b>} <kbd>Q</kbd>/<kbd>E</kbd>
+          </span>
+          <input type="range" min={10} max={100} step={10} value={Math.round(ix.ratio * 100)} onChange={(e) => ctl.setRatio(Number(e.target.value) / 100)} />
+        </label>
+        {gold}
       </div>
     </div>
   );

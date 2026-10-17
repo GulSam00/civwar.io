@@ -2,6 +2,7 @@
  * 인게임 패널 — 외교(동맹) · 순위표(관전 따라가기) · 이벤트 피드. (테크 창은 TechWindow.tsx)
  * 모두 store.game 을 주기적으로 읽어 그린다(usePolled). 명령은 store 메서드 → cmd_* → cmd_ack 로만 결과 확인.
  */
+import { useState } from 'react';
 import { ALLIANCE_CUTOFF_TICK, ALLIANCE_MIN_DURATION, MAX_ALLIES_PER_PLAYER } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
@@ -10,6 +11,8 @@ import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { fmtClock } from './text.js';
 import { useDraggableWindow } from './draggable.js';
+import { fmtCompact } from './fmt.js';
+import { LEADER_COL_NAME, LEADER_KEYS, diplomacyState, leaderboardRows, visibleLeaderRows, type LeaderKey, type LeaderRow } from './playerInfo.js';
 
 function constOf<T>(g: GameModel, name: string, fallback: T): T {
   const v = g.config.constants?.[name];
@@ -19,18 +22,7 @@ const ticksToClock = (g: GameModel, ticks: number) => fmtClock(Math.max(0, ticks
 
 // ───────────────────────── 외교 ─────────────────────────
 
-type Rel = 'none' | 'active' | 'breaking' | 'outgoing' | 'incoming';
-
-function relation(g: GameModel, me: number, other: number): { rel: Rel; proposalId?: number; expire?: number; since?: number; breakAt?: number | null } {
-  const key = me < other ? `${me}-${other}` : `${other}-${me}`;
-  const a = g.alliances.get(key);
-  if (a) return a.state === 'ACTIVE' ? { rel: 'active', since: a.sinceTick } : { rel: 'breaking', breakAt: a.breakAtTick };
-  for (const pr of g.proposals.values()) {
-    if (pr.fromPlayerId === other && pr.toPlayerId === me) return { rel: 'incoming', proposalId: pr.proposalId, expire: pr.expireTick };
-    if (pr.fromPlayerId === me && pr.toPlayerId === other) return { rel: 'outgoing', expire: pr.expireTick };
-  }
-  return { rel: 'none' };
-}
+type Rel = ReturnType<typeof diplomacyState>['rel'];
 
 export function DiplomacyPanel({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
   usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 200);
@@ -66,11 +58,13 @@ export function DiplomacyPanel({ store, ctl }: { store: ClientStore; ctl: GameIn
       </div>
       <ul className="ally-list">
         {others.map((p) => {
-          const r = me !== null ? relation(g, me, p.id) : { rel: 'none' as Rel };
+          const r = me !== null ? diplomacyState(g, me, p.id) : { rel: 'none' as Rel, proposalId: undefined, since: undefined, breakAt: undefined, expire: undefined };
           return (
             <li key={p.id}>
               <span className="dot" style={{ background: playerColor(p.id) }} />
-              <span className="nick">{store.nicknameOf(p.id)}</span>
+              <button className="nick btn-link nick-link" onClick={() => openCard(ctl, p.id)} title="정보 카드">
+                {store.nicknameOf(p.id)}
+              </button>
               <span className="muted small">{((p.tiles * 100) / g.config.totalLandTiles).toFixed(1)}%</span>
               <span className="ally-actions">
                 {r.rel === 'active' && (
@@ -141,8 +135,25 @@ export function IncomingProposals({ store, ctl }: { store: ClientStore; ctl: Gam
 
 // ───────────────────────── 순위표 ─────────────────────────
 
+/** 플레이어 정보 카드 열기 (같은 사람이면 닫기) */
+export function openCard(ctl: GameInputController, id: number, toggle = false): void {
+  ctl.ix.cardPlayerId = toggle && ctl.ix.cardPlayerId === id ? null : id;
+  ctl.ix.bump();
+}
+
+/** 넓은 화면 기본 표시 줄 수 (펼치면 전부) · 좁은 화면(OpenFront 처럼 4줄 + 내 줄) */
+export const LEADER_TOP_WIDE = 8;
+export const LEADER_TOP_NARROW = 4;
+
+/**
+ * 순위표 (2026-10-18 UI 개선 3) — 순위·이름·점유율·병력·골드·기지 표, 열 머리를 누르면 정렬(다시 누르면 방향 바꿈).
+ * 위 N 줄 + 기준 플레이어(나, 관전이면 따라가는 사람)가 그 밖이면 맨 아래 고정. 줄을 누르면 정보 카드, 관전자는 따라가기도 켠다.
+ * 좁은 화면은 #·이름·점유율·병력만.
+ */
 export function Scoreboard({ store, ctl, compact }: { store: ClientStore; ctl: GameInputController; compact: boolean }) {
-  usePolled(() => (store.game?.version ?? 0) + store.getVersion() * 7, 300);
+  usePolled(() => (store.game?.version ?? 0) + store.getVersion() * 7 + ctl.ix.version * 131, 300);
+  const [sort, setSort] = useState<{ key: LeaderKey; desc: boolean }>({ key: 'share', desc: true });
+  const [expanded, setExpanded] = useState(false);
   const g = store.game;
   if (!g) return null;
   const me = store.myPlayerId;
@@ -150,11 +161,40 @@ export function Scoreboard({ store, ctl, compact }: { store: ClientStore; ctl: G
   // 종료 후 둘러보기(사용자 요청 2026-10-10): 플레이어·탈락자·관전자 모두 순위표로 영토 따라가기
   const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
   const spectator = over || me === null || !g.players.get(me)?.alive;
-  const rows = [...g.players.values()].sort((a, b) => Number(b.alive) - Number(a.alive) || b.tiles - a.tiles);
-  const shown = compact ? rows.slice(0, 4) : rows;
-  const allyOf = (id: number) => me !== null && g.isAlly(me, id);
+  const rows = leaderboardRows(g, store.names, sort.key, sort.desc);
+  const topN = compact ? LEADER_TOP_NARROW : expanded ? rows.length : LEADER_TOP_WIDE;
+  const { top, pinned } = visibleLeaderRows(rows, topN, viewer);
+  const cols: LeaderKey[] = compact ? ['share', 'troops'] : [...LEADER_KEYS];
+  const onRow = (id: number) => {
+    openCard(ctl, id, true);
+    if (spectator) store.setFollow(store.followPlayerId === id ? null : id);
+  };
+  const clickSort = (key: LeaderKey) => setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: true }));
+  const row = (pl: LeaderRow, pin = false) => (
+    <tr
+      key={pin ? `pin-${pl.id}` : pl.id}
+      className={`lb-row ${pl.id === viewer ? 'me' : ''} ${pl.alive ? '' : 'dead'} ${pin ? 'pinned' : ''} ${ctl.ix.cardPlayerId === pl.id ? 'sel' : ''} ${store.followPlayerId === pl.id ? 'following' : ''}`}
+      onClick={() => onRow(pl.id)}
+    >
+      <td className="lb-rank">{pl.rank}</td>
+      <td className="lb-name">
+        <button className="lb-nick" onClick={(e) => (e.stopPropagation(), onRow(pl.id))} title={spectator ? '정보 카드 · 따라가기' : '정보 카드'}>
+          <span className="dot" style={{ background: playerColor(pl.id) }} />
+          {ctl.ix.colorblind && <span className="pnum">{pl.id}</span>}
+          <span className="nick">{pl.name}</span>
+          {me !== null && g.isAlly(me, pl.id) && <span className="tag ok">동맹</span>}
+          {!pl.connected && pl.alive && <span className="tag">끊김</span>}
+        </button>
+      </td>
+      {cols.map((k) => (
+        <td key={k} className={`lb-num ${sort.key === k ? 'sorted' : ''}`}>
+          {k === 'share' ? `${pl.share.toFixed(1)}%` : k === 'bases' ? pl.bases : fmtCompact(pl[k])}
+        </td>
+      ))}
+    </tr>
+  );
   return (
-    <div className="scoreboard">
+    <div className={`scoreboard leaderboard ${compact ? 'compact' : ''}`}>
       {spectator && (
         <div className="score-head small">
           {store.followPlayerId !== null ? (
@@ -169,27 +209,38 @@ export function Scoreboard({ store, ctl, compact }: { store: ClientStore; ctl: G
           )}
         </div>
       )}
-      {shown.map((pl) => (
-        <button
-          key={pl.id}
-          className={`score-row ${pl.id === viewer ? 'me' : ''} ${pl.alive ? '' : 'dead'}`}
-          onClick={() => {
-            if (spectator) store.setFollow(store.followPlayerId === pl.id ? null : pl.id);
-            else if (pl.id !== me) {
-              ctl.ix.panel = 'ally';
-              ctl.ix.bump();
-            }
-          }}
-          title={spectator ? '따라가기' : pl.id !== me ? '외교 창 열기' : ''}
-        >
-          <span className="dot" style={{ background: playerColor(pl.id) }} />
-          {ctl.ix.colorblind && <span className="pnum">{pl.id}</span>}
-          <span className="nick">{store.nicknameOf(pl.id)}</span>
-          {allyOf(pl.id) && <span className="tag ok">동맹</span>}
-          {!pl.connected && pl.alive && <span className="tag">끊김</span>}
-          <span className="num">{((pl.tiles * 100) / g.config.totalLandTiles).toFixed(1)}%</span>
+      <table className="lb-table">
+        <thead>
+          <tr>
+            <th className="lb-rank">#</th>
+            <th className="lb-name">이름</th>
+            {cols.map((k) => (
+              <th key={k} className="lb-num" aria-sort={sort.key === k ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
+                <button className={`lb-sort ${sort.key === k ? 'on' : ''}`} onClick={() => clickSort(k)} title={`${LEADER_COL_NAME[k]} 순으로 정렬`}>
+                  {LEADER_COL_NAME[k]}
+                  {sort.key === k ? (sort.desc ? ' ▾' : ' ▴') : ''}
+                </button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {top.map((pl) => row(pl))}
+          {pinned && (
+            <>
+              <tr className="lb-gap" aria-hidden="true">
+                <td colSpan={2 + cols.length}>⋯</td>
+              </tr>
+              {row(pinned, true)}
+            </>
+          )}
+        </tbody>
+      </table>
+      {!compact && rows.length > LEADER_TOP_WIDE && (
+        <button className="btn-link lb-more small" onClick={() => setExpanded(!expanded)}>
+          {expanded ? '접기' : `전체 ${rows.length}명 보기`}
         </button>
-      ))}
+      )}
     </div>
   );
 }

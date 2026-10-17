@@ -63,6 +63,8 @@ export class Interaction {
   }
   /** 나가기 확인 대화상자 */
   leaveConfirm = false;
+  /** 플레이어 정보 카드 (2026-10-18) — 열린 플레이어 id, null = 닫힘 */
+  cardPlayerId: number | null = null;
   /** React 패널이 다시 그릴지 판단 */
   version = 0;
   bump(): void {
@@ -622,7 +624,8 @@ export class GameInputController {
           this.ix.bump();
           return;
         }
-        if (this.ix.helpOpen || this.ix.optionsOpen || this.ix.panel || this.ix.leaveConfirm) {
+        if (this.ix.helpOpen || this.ix.optionsOpen || this.ix.panel || this.ix.leaveConfirm || this.ix.cardPlayerId !== null) {
+          this.ix.cardPlayerId = null;
           this.ix.helpOpen = false;
           this.ix.optionsOpen = false;
           this.ix.panel = null;

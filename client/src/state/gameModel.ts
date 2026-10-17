@@ -489,7 +489,7 @@ export class GameModel {
         out.push(`player ${p.id} 없음`);
         continue;
       }
-      for (const k of ['tiles', 'troops', 'gold', 'goldWeight', 'upkeepPm', 'flagCap', 'alive', 'connected'] as const) {
+      for (const k of ['tiles', 'troops', 'gold', 'goldWeight', 'upkeepPm', 'flagCap', 'alive', 'connected', 'allyBreaks'] as const) {
         if (m[k] !== p[k]) out.push(`player ${p.id}.${k} 모델 ${m[k]} / full ${p[k]}`);
       }
       if (m.techMask !== p.techMask) out.push(`player ${p.id}.techMask`);

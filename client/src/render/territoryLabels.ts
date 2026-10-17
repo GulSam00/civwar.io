@@ -68,6 +68,16 @@ export interface PlacedLabel {
   y: number;
   /** 글자 크기 px */
   size: number;
+  /** 이름 아래 작은 줄 (총 병력 — 2026-10-18). 없으면 없음 */
+  sub?: string;
+  /** 작은 줄 글자 크기 px */
+  subSize?: number;
+}
+
+/** 이름 아래 병력 줄 글자 크기 = 이름의 0.62배, 최소 9px */
+export const LABEL_SUB_MIN_PX = 9;
+export function subSizePx(size: number): number {
+  return Math.max(LABEL_SUB_MIN_PX, Math.round(size * 0.62));
 }
 
 export const LABEL_MIN_PX = 11;
@@ -92,31 +102,35 @@ const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1
 /**
  * 화면 배치. toScreen = 월드 → 화면, measure(text, size) = 글자 폭(px), view = 화면 크기.
  * 화면 밖 이름은 버린다. 겹침은 위 설명대로 정리.
+ * sub(owner) = 이름 아래 작은 줄(총 병력, 2026-10-18). 주어지면 겹침 상자가 그 줄까지 포함한다(이름 y 는 그대로, 줄은 아래).
  */
 export function layoutTerritoryLabels(
   anchors: readonly TerritoryAnchor[],
   text: (owner: number) => string,
   toScreen: (x: number, y: number) => { x: number; y: number },
   zoom: number,
-  measure: (text: string, size: number) => number,
+  measure: (text: string, size: number, isSub?: boolean) => number,
   view: { w: number; h: number },
+  sub?: (owner: number) => string,
 ): PlacedLabel[] {
   const placed: PlacedLabel[] = [];
   const rects: Rect[] = [];
   const pad = 3;
-  const rectOf = (x: number, y: number, w: number, size: number): Rect => ({ x0: x - w / 2 - pad, y0: y - size / 2 - pad, x1: x + w / 2 + pad, y1: y + size / 2 + pad });
+  const rectOf = (x: number, y: number, w: number, size: number, below: number): Rect => ({ x0: x - w / 2 - pad, y0: y - size / 2 - pad, x1: x + w / 2 + pad, y1: y + size / 2 + below + pad });
   for (const a of anchors) {
     const p = toScreen(a.x, a.y);
     const label = text(a.owner);
     if (!label) continue;
+    const subText = sub ? sub(a.owner) : '';
     const want = labelSizePx(a.tiles, zoom);
     for (const size of want > LABEL_MIN_PX ? [want, LABEL_MIN_PX] : [want]) {
-      const w = measure(label, size);
-      const r = rectOf(p.x, p.y, w, size);
+      const ss = subSizePx(size);
+      const w = subText ? Math.max(measure(label, size, false), measure(subText, ss, true)) : measure(label, size, false);
+      const r = rectOf(p.x, p.y, w, size, subText ? ss * 1.15 : 0);
       if (r.x1 < 0 || r.y1 < 0 || r.x0 > view.w || r.y0 > view.h) break; // 화면 밖
       if (rects.some((q) => overlaps(q, r))) continue; // 겹침 → 줄여 보기 / 생략
       rects.push(r);
-      placed.push({ owner: a.owner, text: label, x: p.x, y: p.y, size });
+      placed.push(subText ? { owner: a.owner, text: label, x: p.x, y: p.y, size, sub: subText, subSize: ss } : { owner: a.owner, text: label, x: p.x, y: p.y, size });
       break;
     }
   }

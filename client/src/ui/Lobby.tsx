@@ -3,10 +3,10 @@ import { BOT_DIFFICULTY_DEFAULT, MAP_SIZE_PRESETS, NICKNAME_MAX_LEN, type BotDif
 import type { ClientStore } from '../state/store.js';
 import { useStore } from './hooks.js';
 import { Help } from './Help.js';
-import { drawMapPreview } from '../render/mapPreview.js';
+import { drawMapPreview, drawRandomPreview } from '../render/mapPreview.js';
 import { loadOfficialMapChecked } from './officialMaps.js';
-import { fmtClock } from './text.js';
 import { estimatePacing, landOfRandom, landOfTerrain, pacingText } from './pacing.js';
+import { ROOM_STATUS_NAME, roomCard, seedOf, type RoomCard } from './roomCards.js';
 
 type Panel = null | 'create' | 'join' | 'spectate' | 'browse';
 
@@ -30,7 +30,7 @@ export function Lobby({ store }: { store: ClientStore }) {
 
   return (
     <div className="lobby">
-      <div className="lobby-card">
+      <div className={`lobby-card ${panel === 'browse' ? 'wide' : ''}`}>
         <h1 className="logo">civwar.io</h1>
         <p className="tagline">깃발을 보내 땅을 넓히세요. 30분 안에 가장 넓은 나라가 이깁니다.</p>
         <label className="field">
@@ -263,11 +263,28 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
   );
 }
 
-const SIZE_NAME: Record<string, string> = { S: '작음', M: '보통', L: '큼' };
+/** 방 카드 썸네일: 공식 맵 = 번들 미리보기(MapThumb), 무작위 = 방 id 로 만든 분위기 그림(실제 지형 아님 — "무작위" 표시) */
+function RoomThumb({ card, players }: { card: RoomCard; players: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const w = card.width;
+  const h = card.height;
+  useEffect(() => {
+    if (card.presetId || !ref.current) return;
+    drawRandomPreview(ref.current, seedOf(card.roomId), w || 72, h || 42);
+  }, [card.presetId, card.roomId, w, h]);
+  if (card.presetId) return <MapThumb mapId={card.presetId} players={players} checksum={card.checksum} />;
+  return (
+    <div className="map-thumb random-thumb">
+      <canvas ref={ref} />
+      <span className="thumb-badge">무작위</span>
+    </div>
+  );
+}
 
 /**
- * 방 찾기 (플레이테스트 후속): 공개 방만 — 대기 중이면 입장, 진행 중이면 관전. 비공개 방은 코드로만.
- * 열려 있는 동안 5초마다 새로고침(서버 1초 1회 제한), 경과 시간은 수신 시각 기준으로 로컬 증가.
+ * 방 찾기 (플레이테스트 후속 → 2026-10-18 UI 개선 7: 맵 썸네일 카드). 공개 방만 — 대기 중이면 입장, 진행 중이면 관전. 비공개 방은 코드로만.
+ * 카드: 썸네일 · 맵 이름 · 크기 · 인원 n/최대 · 남은 시간(자동 시작)/경과 · 봇 난이도(서버가 보낼 때만) · 상태(대기/진행 중).
+ * 열려 있는 동안 5초마다 새로고침(서버 1초 1회 제한), 남은·경과 시간은 수신 시각 기준으로 로컬로 흐른다.
  */
 export function RoomBrowser({ store }: { store: ClientStore }) {
   useStore(store);
@@ -293,40 +310,41 @@ export function RoomBrowser({ store }: { store: ClientStore }) {
         </button>
       </div>
       {list && list.rooms.length === 0 && <p className="muted small">열린 공개 방이 없습니다. 빠른 시작으로 새 방을 만들 수 있습니다.</p>}
-      <ul className="room-list">
+      <ul className="room-cards">
         {list?.rooms.map((r) => {
-          const mapText = r.mapName ? r.mapName.ko : r.map.kind === 'random' ? `무작위 · ${SIZE_NAME[r.map.size] ?? r.map.size}` : r.map.mapId;
-          const live = r.phase === 'IN_GAME' ? r.elapsedMs + age : r.elapsedMs;
-          const status =
-            r.phase === 'LOBBY'
-              ? r.autoStartMs !== null
-                ? `대기 중 · ${Math.max(0, Math.ceil((r.autoStartMs - age) / 1000))}초 후 시작`
-                : '대기 중'
-              : r.phase === 'COUNTDOWN'
-                ? '곧 시작'
-                : r.phase === 'IN_GAME'
-                  ? `진행 ${fmtClock(live)}`
-                  : '종료';
+          const c = roomCard(r, age, store.officialMaps);
           return (
-            <li key={r.roomId}>
-              <div className="room-main">
-                <b>{mapText}</b> <span className="muted small">{r.width}×{r.height}</span>
-                <div className="muted small">
-                  사람 {r.humans} · 봇 {r.bots} / 최대 {r.maxPlayers}
-                  {r.spectatorCount > 0 ? ` · 관전 ${r.spectatorCount}` : ''}
+            <li key={r.roomId} className={`room-card st-${c.status}`}>
+              <RoomThumb card={c} players={c.players} />
+              <div className="rc-body">
+                <div className="rc-title">
+                  <b>{c.title}</b>
+                  <span className={`rc-status st-${c.status}`}>{ROOM_STATUS_NAME[c.status]}</span>
+                </div>
+                <div className="rc-meta small">
+                  <span title={`사람 ${c.humans} · 봇 ${c.bots}`}>
+                    인원 <b>
+                      {c.players}/{c.maxPlayers}
+                    </b>
+                  </span>
+                  <span>{c.sizeText}</span>
+                  {c.difficulty && <span>봇 {c.difficulty}</span>}
+                  {c.spectators > 0 && <span>관전 {c.spectators}</span>}
+                </div>
+                <div className="rc-foot">
+                  <span className={`rc-time small ${c.status === 'waiting' ? 'open' : ''}`}>{c.timeText ?? (c.status === 'waiting' ? '방장 시작 대기' : '')}</span>
+                  {c.joinable && (
+                    <button className="btn btn-sm btn-primary" onClick={() => store.joinListed(r.roomId, false)}>
+                      입장
+                    </button>
+                  )}
+                  {c.spectatable && (
+                    <button className="btn btn-sm" onClick={() => store.joinListed(r.roomId, true)}>
+                      관전
+                    </button>
+                  )}
                 </div>
               </div>
-              <span className={`room-status ${r.phase === 'LOBBY' ? 'open' : ''}`}>{status}</span>
-              {r.joinable && (
-                <button className="btn btn-sm btn-primary" onClick={() => store.joinListed(r.roomId, false)}>
-                  입장
-                </button>
-              )}
-              {r.spectatable && (
-                <button className="btn btn-sm" onClick={() => store.joinListed(r.roomId, true)}>
-                  관전
-                </button>
-              )}
             </li>
           );
         })}

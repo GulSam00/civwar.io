@@ -1966,3 +1966,587 @@ kbd {
 .cs-base {
   color: #ffe9a8;
 }
+
+/* ══════════ 2026-10-18 UI 개선 (OpenFront.io 참고 — 1·2·3·4·6·7·9) ══════════ */
+
+/* 9. 우상단 컨트롤 묶음 — 순위표는 그 아래 */
+.hud-top {
+  right: 360px;
+}
+.top-cluster {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 2;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  line-height: 1;
+}
+.btn.icon-btn {
+  height: auto;
+  min-width: 0;
+  padding: 4px 8px;
+}
+.hud-icon {
+  display: block;
+  flex: none;
+}
+.top-cluster .gear-btn,
+.top-cluster .emote-wrap > .hud-btn {
+  height: 32px;
+  min-width: 32px;
+}
+.tc-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  background: rgba(18, 26, 36, 0.88);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+.tc-time.warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.top-cluster .emote-menu {
+  top: 38px;
+}
+
+/* 3. 순위표 표 */
+.scoreboard.leaderboard {
+  top: 48px;
+  width: 340px;
+  padding: 6px 6px 4px;
+  max-height: 52vh;
+}
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  table-layout: fixed;
+}
+.lb-table th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+  padding: 0 3px 3px;
+  border-bottom: 1px solid var(--line);
+}
+.lb-table th.lb-name,
+.lb-table td.lb-name {
+  text-align: left;
+}
+.lb-table th.lb-rank,
+.lb-table td.lb-rank {
+  width: 22px;
+  text-align: right;
+  color: var(--muted);
+}
+.lb-table th.lb-num {
+  width: 52px;
+}
+.lb-table th.lb-num:last-child {
+  width: 36px;
+}
+.leaderboard.compact .lb-table th.lb-num:last-child {
+  width: 46px;
+}
+.lb-sort {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lb-sort:hover,
+.lb-sort.on {
+  color: var(--text);
+}
+.lb-row {
+  cursor: pointer;
+}
+.lb-row td {
+  padding: 2px 3px;
+  white-space: nowrap;
+}
+.lb-row:hover td {
+  background: var(--panel-2);
+}
+.lb-row.me td {
+  font-weight: 700;
+  background: rgba(47, 128, 237, 0.16);
+}
+.lb-row.sel td {
+  box-shadow: inset 0 -1px 0 var(--primary-hi), inset 0 1px 0 var(--primary-hi);
+}
+.lb-row.dead td {
+  opacity: 0.45;
+}
+.lb-row.dead .nick {
+  text-decoration: line-through;
+}
+.lb-row.following .lb-rank {
+  color: var(--primary-hi);
+}
+.lb-num {
+  text-align: right;
+}
+.lb-num.sorted {
+  color: var(--text);
+  font-weight: 600;
+}
+.lb-nick {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lb-nick .nick {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.lb-nick .tag {
+  flex: none;
+  font-size: 10px;
+  padding: 0 4px;
+}
+.lb-gap td {
+  text-align: center;
+  color: var(--muted);
+  line-height: 0.9;
+  padding: 0;
+}
+.lb-more {
+  display: block;
+  margin: 4px auto 0;
+}
+
+/* 관계 태그 (대상 바·정보 카드) */
+.tag.rel-me {
+  color: #fff;
+  background: var(--primary);
+}
+.tag.rel-ally {
+  color: #7bd88f;
+}
+.tag.rel-enemy {
+  color: #ff8a80;
+}
+
+/* 4. 상단 중앙 대상 바 (위치 = 렌더 루프 placeTargetBar) */
+.target-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 12px 0 6px;
+  background: rgba(18, 26, 36, 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13px;
+  white-space: nowrap;
+  z-index: 4; /* 잠깐 뜨는 바 — 정보 카드(3) 위 */
+  font-variant-numeric: tabular-nums;
+}
+.target-bar[data-kind="neutral"] {
+  color: var(--muted);
+}
+.tb-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+}
+button.tb-who {
+  cursor: pointer;
+}
+button.tb-who:hover {
+  background: var(--panel-2);
+}
+.tb-swatch,
+.pc-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  flex: none;
+}
+.tb-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.tb-k {
+  color: var(--muted);
+  font-size: 11px;
+}
+.tb-v {
+  font-weight: 700;
+}
+
+/* 동맹 제안 알림 — 대상 바 아래로 */
+.incoming {
+  top: 96px;
+}
+
+/* 6. 플레이어 정보 카드 */
+.player-card {
+  position: absolute;
+  top: 136px; /* 왼쪽 HUD 두 줄·대상 바(내려왔을 때) 아래 */
+  right: 356px;
+  width: 300px;
+  max-height: calc(100% - 200px);
+  overflow-y: auto;
+  background: rgba(18, 26, 36, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px 10px;
+  font-size: 13px;
+  z-index: 3;
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.pc-head .pc-swatch {
+  width: 18px;
+  height: 18px;
+}
+.pc-name {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.pc-head .btn-x {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+.pc-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  margin: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+.pc-stats dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.pc-stats dd {
+  margin: 0;
+  font-weight: 700;
+}
+.pc-stats dd .muted {
+  font-weight: 400;
+}
+.pc-sec {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+.pc-sec h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pc-sec p {
+  margin: 2px 0;
+}
+.pc-bases,
+.pc-allies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pc-bases li,
+.pc-allies li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 12px;
+}
+.pc-bname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pc-prod {
+  color: #e8c25a;
+  font-variant-numeric: tabular-nums;
+}
+.pc-prod.low {
+  color: var(--warn);
+}
+.pc-breaks b {
+  font-variant-numeric: tabular-nums;
+}
+.pc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.pc-emote-menu {
+  top: 32px;
+  left: 0;
+  right: auto;
+}
+.pc-note {
+  margin: 6px 0 0;
+}
+.nick-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  text-align: left;
+  color: var(--text);
+}
+
+/* 2. 하단 병력 바 */
+.troop-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+}
+.tb-track {
+  position: relative;
+  width: 190px;
+  height: 18px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tb-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: #3a7f53;
+  transition: width 0.2s linear;
+}
+.troop-bar.full .tb-fill {
+  background: #6a7d55;
+}
+.tb-rate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.tb-cap {
+  color: var(--muted);
+  font-weight: 600;
+}
+.ratio-n {
+  font-variant-numeric: tabular-nums;
+}
+.troop-bar + .ratio {
+  border-left: 1px solid var(--line);
+  padding-left: 10px;
+}
+
+/* 7. 로비 방 카드 */
+.room-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+.room-card {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.room-card.st-waiting {
+  border-color: #3f6b4c;
+}
+.room-card .map-thumb {
+  margin: 0;
+  width: 120px;
+  flex: none;
+}
+.room-card .map-thumb canvas {
+  height: 72px;
+}
+.room-card .map-thumb > span.muted {
+  font-size: 10px;
+  text-align: center;
+}
+.random-thumb .thumb-badge {
+  inset: auto 4px 4px auto;
+  display: inline-block;
+  background: rgba(10, 14, 20, 0.8);
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.rc-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rc-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rc-title b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rc-status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rc-status.st-waiting {
+  color: #7bd88f;
+}
+.rc-status.st-starting {
+  color: var(--warn);
+}
+.rc-status.st-live {
+  color: #ff8a80;
+}
+.rc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--muted);
+}
+.rc-meta b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.rc-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+}
+.rc-time {
+  flex: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.rc-time.open {
+  color: #7bd88f;
+}
+
+/* 좁은 화면(모바일 = 관전) */
+.game.narrow .hud-top {
+  right: 8px;
+  top: 46px;
+}
+.game.narrow .top-cluster {
+  left: 8px;
+  right: 8px;
+  justify-content: flex-end;
+}
+.game.narrow .scoreboard.leaderboard {
+  top: auto;
+  bottom: 10px;
+  width: 210px;
+  max-height: 40vh;
+}
+.game.narrow .player-card {
+  top: 132px;
+  right: 8px;
+  left: 8px;
+  bottom: auto;
+  width: auto;
+  max-height: calc(100% - 300px); /* 아래 순위표·미니맵을 가리지 않게 */
+  z-index: 6;
+}
+@media (max-width: 760px) {
+  .room-cards {
+    grid-template-columns: 1fr;
+  }
+  .room-card .map-thumb {
+    width: 96px;
+  }
+  .room-card .map-thumb canvas {
+    height: 60px;
+  }
+}
