@@ -110,6 +110,8 @@ function ConnectionLine({ store }: { store: ClientStore }) {
 }
 
 type MapSel = { kind: 'random'; size: MapSizeClass } | { kind: 'preset'; mapId: string };
+/** v4.5: 물 통행 불가 — 물 구성 선택지 숨김 */
+const SHOW_WATER_OPTION = false;
 type WaterSel = { mode: 'BORDER_ONLY' } | { mode: 'SHALLOW_QUOTA'; pct: number };
 
 /** 공식 맵 미리보기 (지형·스폰·기지) — 데이터는 번들된 맵 파일 */
@@ -213,7 +215,8 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
         </select>
       </label>
       {map.kind === 'preset' && <MapThumb mapId={map.mapId} players={startPlayers} checksum={preset?.checksum} />}
-      {map.kind === 'random' && (
+      {/* v4.5 (§22.1): 물은 모두 통행 불가라 "얕은 물 비율"은 색 구분뿐 — 선택지를 숨긴다(기본 BORDER_ONLY 로 보낸다) */}
+      {SHOW_WATER_OPTION && map.kind === 'random' && (
         <div className="field">
           <span>물 구성</span>
           <div className="seg">
@@ -226,7 +229,7 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
           </div>
           {water.mode === 'SHALLOW_QUOTA' && (
             <label className="field">
-              <span>안쪽 물 중 얕은 물(통행 가능) {water.pct}% — 나머지는 깊은 물(벽)</span>
+              <span>안쪽 물 중 호수 색 {water.pct}% (물은 모두 통행 불가)</span>
               <input type="range" min={0} max={100} step={5} value={water.pct} onChange={(e) => setWater({ mode: 'SHALLOW_QUOTA', pct: Number(e.target.value) })} />
             </label>
           )}

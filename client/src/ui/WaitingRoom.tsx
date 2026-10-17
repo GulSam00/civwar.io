@@ -88,7 +88,7 @@ export function WaitingRoom({ store, room }: { store: ClientStore; room: S2C_Roo
               <dt>맵</dt>
               <dd>
                 {mapLabel(store, room)}
-                {s.map.kind === 'random' && s.map.water?.waterMode === 'SHALLOW_QUOTA' ? ` · 얕은 물 ${Math.round((s.map.water.shallowPermille ?? 0) / 10)}%` : ''}
+                {/* v4.5: 물 통행 불가 — 얕은 물 비율 표시 생략 */}
               </dd>
               <dt>최대 인원</dt>
               <dd>

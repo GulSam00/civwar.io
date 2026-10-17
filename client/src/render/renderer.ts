@@ -6,7 +6,8 @@
  *        → 예고 원 → 기지 → 앵커 선 → 깃발 → (미니맵은 별도 캔버스)
  * 타일 좌표 변환은 전부 TopologyView 를 거친다 (사각 전제 식은 topology.ts 에만).
  */
-import { DISENGAGE_TICKS, POSTURE, POSTURE_COOLDOWN_TICKS, type FlagSnapshot } from '@civwar/shared';
+import { DISENGAGE_TICKS, POSTURE, POSTURE_COOLDOWN_TICKS, techDisengageTicks, techStatValues, TECH_NODES, TECH_STAT_BASE, type FlagSnapshot, type TechNodeDef } from '@civwar/shared';
+import { FLOAT_LIFE_MS, LossFloaters, floatAnim, lossText } from './lossFloaters.js';
 import type { GameModel } from '../state/gameModel.js';
 import { createTopologyView, type TileLayer, type TopologyView } from './topology.js';
 import { fitZoom, worldToScreen, type Camera } from './camera.js';
@@ -89,6 +90,8 @@ export class GameRenderer {
   private previewPathKey = '';
   private previewPath: Path2D | null = null;
   private dpr = 1;
+  /** §22.3 틱당 전투 손실 숫자 */
+  private losses = new LossFloaters();
   /** 영토 이름 기준점 — 영토가 바뀌었을 때만, 최대 LABEL_REFRESH_MS 에 한 번 다시 계산 */
   private labelAnchors: TerritoryAnchor[] = [];
   private labelsDirty = true;
@@ -107,6 +110,7 @@ export class GameRenderer {
     this.bordersDirty = true;
     this.interp.clear();
     this.progress.clear();
+    this.losses.clear();
     this.labelAnchors = [];
     this.labelsDirty = true;
     this.labelsAt = -Infinity;
@@ -410,7 +414,7 @@ export class GameRenderer {
         dy += p.y - c.y;
       }
       if (dx === 0 && dy === 0) {
-        // 내 땅과 맞닿지 않은 칸(상륙 등) — 깃발 쪽에서 차오른다
+        // 내 땅과 맞닿지 않은 칸(월경지 등) — 깃발 쪽에서 차오른다
         const fp = topo.tileCenter(f.posTileId);
         dx = fp.x - c.x;
         dy = fp.y - c.y;
@@ -560,6 +564,22 @@ export class GameRenderer {
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
       ctx.lineWidth = 1.2;
       ctx.stroke();
+    }
+    // §22.12 방어 태세가 적 땅에 막힘: 멈춤 칸 표식 + 멈춤 칸 → 앵커 옅은 점선 (그 너머로는 가지 않는다)
+    if (r?.blocked && r.stopTile !== null) {
+      const sc = topo.tileCenter(r.stopTile);
+      const sp = worldToScreen(cam, sc.x, sc.y);
+      const ac = topo.tileCenter(r.anchor);
+      const ap = worldToScreen(cam, ac.x, ac.y);
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(ap.x, ap.y);
+      ctx.setLineDash([2, 5]);
+      ctx.strokeStyle = 'rgba(200,205,212,0.75)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      drawStopMarker(ctx, sp.x, sp.y, Math.max(9, Math.min(14, cam.zoom * 0.55)));
     }
     ctx.restore();
   }
@@ -716,6 +736,56 @@ export class GameRenderer {
     }
     this.flagScreens = screens;
     this.drawCombatBadges(ctx, pairs, lod, baseR, now);
+    this.drawLossNumbers(ctx, model, view, now, lod, baseR);
+  }
+
+  /** 소유자 스탯 이탈 대기 tick (match_config 의 노드 표 우선) */
+  private disengageTicksOf(model: GameModel, ownerId: number): number {
+    const mask = model.players.get(ownerId)?.techMask ?? 0;
+    const consts = model.config.constants;
+    const nodes = (consts?.TECH_NODES as readonly TechNodeDef[] | undefined) ?? TECH_NODES;
+    const base = (consts?.TECH_STAT_BASE as readonly number[] | undefined) ?? TECH_STAT_BASE;
+    return Math.max(1, techDisengageTicks(techStatValues(mask, nodes, base)) || DISENGAGE_TICKS);
+  }
+
+  /**
+   * §22.3 틱당 전투 손실 "−n" — 깃발 위로 떠올라 사라진다. 합산·스로틀·상한은 LossFloaters.
+   * 화면 픽셀 고정 크기(줌 무관), 어두운 외곽선 + 밝은 글자(색각 보조와 무관하게 읽힘). 축소 보기(LOD)에선 내 깃발·선택만.
+   */
+  private drawLossNumbers(ctx: CanvasRenderingContext2D, model: GameModel, view: RenderView, now: number, lod: boolean, r: number): void {
+    for (const q of model.combatLossQueue) {
+      this.losses.ingest(q.tick, q.losses, now, (id) => model.flags.get(id)?.ownerId === view.me || id === view.selectedFlagId);
+    }
+    model.combatLossQueue.length = 0;
+    this.losses.retain((id) => model.flags.has(id));
+    const list = this.losses.active(now);
+    if (!list.length) return;
+    const cam = this.camera;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    for (const fl of list) {
+      if (lod && !fl.important) continue;
+      const w = this.flagWorld.get(fl.flagId);
+      if (!w) continue;
+      const p = worldToScreen(cam, w.x, w.y);
+      if (p.x < -40 || p.y < -40 || p.x > cam.viewW + 40 || p.y > cam.viewH + 40) continue;
+      const a = floatAnim((now - fl.born) / FLOAT_LIFE_MS);
+      const size = Math.round((fl.important ? 13 : 12) * a.scale);
+      // 깃발 바로 위에서 떠오른다 (좌우로 비키면 붙어 싸우는 상대 깃발 숫자와 겹친다 — 브라우저 확인)
+      const x = p.x;
+      const y = p.y - r - 8 + a.dy;
+      const text = lossText(fl.milli);
+      ctx.globalAlpha = a.alpha;
+      ctx.font = `800 ${size}px system-ui, "Malgun Gothic", sans-serif`;
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(10,12,16,0.9)';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = view.colorblind ? '#ffffff' : fl.important ? '#ff8a80' : '#ffd0cc';
+      ctx.fillText(text, x, y);
+    }
+    ctx.restore();
   }
 
   /** 교전 쌍의 화면 좌표 (보간 위치) */
@@ -1009,7 +1079,8 @@ export class GameRenderer {
       }
     }
     if (f.disengaging && f.disengageUntilTick !== null) {
-      const left = Math.max(0, f.disengageUntilTick - model.tick) / DISENGAGE_TICKS;
+      // v4.5 (§22.7): 이탈 대기 길이 = 소유자 스탯 DISENGAGE_TICKS (철수 훈련 15 → 10)
+      const left = Math.min(1, Math.max(0, f.disengageUntilTick - model.tick) / this.disengageTicksOf(model, f.ownerId));
       ctx.beginPath();
       ctx.arc(x, y, r + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
       ctx.strokeStyle = '#ffd600';
@@ -1024,7 +1095,7 @@ export class GameRenderer {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-    const tag = f.routed ? '패주' : f.disengaging ? '이탈' : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? '대기' : null;
+    const tag = f.routed ? '패주' : f.disengaging ? '이탈' : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? (model.flagIdleReason.get(f.id) === 'unreachable' ? '막힘' : '대기') : null;
     if (tag) {
       const tx = x + r + 4;
       const ty = y - r - 2;
@@ -1120,6 +1191,23 @@ function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, outer: 
     else ctx.lineTo(px, py);
   }
   ctx.closePath();
+}
+
+/** 멈춤 표식: 주황 원 + 흰 가로 막대 (색이 아니라 모양으로도 읽힌다) */
+function drawStopMarker(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  ctx.beginPath();
+  ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#ef6c00';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x - r * 0.55, y - r * 0.17, r * 1.1, r * 0.34);
 }
 
 function rank(f: FlagSnapshot, view: RenderView): number {

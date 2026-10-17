@@ -36,7 +36,7 @@ function model(flags: FlagSnapshot[] = [], upkeepPm = 0): GameModel {
 describe('지형 정보 툴팁', () => {
   const nick = (id: number) => `P${id}`;
   it('언덕: 방어 ×1.30, 이동 ×0.80, 소유자 이름', () => {
-    const i = terrainInfo(model(), 3, 1, 0, nick)!;
+    const i = terrainInfo(model(), 3, 1, nick)!;
     expect(i.terrain).toBe('언덕');
     expect(i.mods).toContain('방어 ×1.30');
     expect(i.mods).toContain('이동 속도 ×0.80');
@@ -44,15 +44,17 @@ describe('지형 정보 툴팁', () => {
     expect(i.base).toBeNull();
   });
   it('내 수도 칸 = 기지 정보, 중립·물', () => {
-    const cap = terrainInfo(model(), 1, 1, 0, nick)!;
+    const cap = terrainInfo(model(), 1, 1, nick)!;
     expect(cap.ownerName).toBe('P1 (나)');
     expect(cap.base).toBe('수도 · 체력 80%');
-    expect(terrainInfo(model(), 5, 1, 0, nick)!.ownerName).toBe('중립');
-    expect(terrainInfo(model(), 5, 1, 0, nick)!.mods).toContain('방어 ×1.60');
-    expect(terrainInfo(model(), 0, 1, 0, nick)!.mods[0]).toContain('통행 불가');
-    // v4.3: 인자 = 얕은 물 이동배율 ‰ (무테크 5000, MOB-2B 조선술 3500)
-    expect(terrainInfo(model(), 6, 1, 5000, nick)!.mods).toContain('이동 속도 ×0.20');
-    expect(terrainInfo(model(), 6, 1, 3500, nick)!.mods).toContain('이동 속도 ×0.29');
+    expect(terrainInfo(model(), 5, 1, nick)!.ownerName).toBe('중립');
+    expect(terrainInfo(model(), 5, 1, nick)!.mods).toContain('방어 ×1.60');
+    expect(terrainInfo(model(), 0, 1, nick)!.mods[0]).toContain('통행 불가');
+    // v4.5 (§22.1): 얕은 물(호수)도 통행 불가 — 이동 속도 행 없음
+    const lake = terrainInfo(model(), 6, 1, nick)!;
+    expect(lake.mods).toEqual(['통행 불가 · 점령 불가']);
+    expect(lake.terrain).toBe('호수');
+    expect(lake.rows.some((r) => r.field === 'speed')).toBe(false);
   });
 });
 

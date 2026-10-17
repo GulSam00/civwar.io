@@ -152,9 +152,10 @@ export function describeEvent(m: ServerMessage, c: FeedCtx): Draft | null {
       if (m.cause === 'captured_by_other') return { kind: 'flag', mine: true, text: '다른 깃발이 먼저 점령해 진척도를 잃었습니다' };
       return null;
     case 'flag_idle':
-      return isMe(c.flagOwner(m.flagId))
-        ? { kind: 'flag', mine: true, text: m.reason === 'allied' ? '동맹 성립으로 깃발 대기' : m.reason === 'guard_lost' ? '지킬 땅을 잃어 깃발 대기' : '밀 대상이 없어 깃발 대기 (2분 뒤 자동 회수)' }
-        : null;
+      if (!isMe(c.flagOwner(m.flagId))) return null;
+      // v4.5 (§22.12): 방어 태세는 적 땅을 지나지 못한다 — 막히면 적 땅 앞에서 멈춘다 (재지정해야 다시 간다)
+      if (m.reason === 'unreachable') return { kind: 'flag', mine: true, text: '적 땅에 막혀 방어 깃발이 멈췄습니다 (공격 태세로 바꾸거나 다른 곳으로 이동)', important: true, toast: true };
+      return { kind: 'flag', mine: true, text: m.reason === 'allied' ? '동맹 성립으로 깃발 대기' : m.reason === 'guard_lost' ? '지킬 땅을 잃어 깃발 대기' : '밀 대상이 없어 깃발 대기 (2분 뒤 자동 회수)' };
     case 'bot_takeover':
       return { kind: 'system', mine: isMe(m.playerId), text: `${who(m.playerId)} 연결 끊김 — 봇이 대신 조종` };
     case 'player_reconnected':

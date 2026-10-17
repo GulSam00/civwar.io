@@ -1,6 +1,6 @@
 /**
- * 생산 내역 (프로토콜 §21.4) — 병력·골드 수입 표시와 hover 출처(기지별 + 기타).
- * 서버 `production` 표(milli/초)를 그대로 쓴다: 지역 합 = 플레이어 총 생산(서버가 정확히 맞춘다).
+ * 생산 내역 (프로토콜 §21.4 → v4.5 §22.5) — 병력·골드 수입 표시와 hover 출처(기지별 + 영토).
+ * 서버 `production.rows`(§22.5 — 기지 행 + 영토 행, milli/초)를 그대로 쓴다: 행 합 = 플레이어 총 생산(서버가 정확히 맞춘다).
  * 표가 아직 없으면(구 서버·부트스트랩 직후) 예전 클라이언트 식(goldPerSecond)으로 대신한다 — 생산력이 깎인 기지가 있으면 과대 추정.
  */
 import type { ProductionRow } from '@civwar/shared';
@@ -18,11 +18,11 @@ export interface Income {
   fromServer: boolean;
 }
 
-export function sumRegions(regions: readonly ProductionRow[]): { troopsMilli: number; grossMilli: number; netMilli: number } {
+export function sumRows(rows: readonly ProductionRow[]): { troopsMilli: number; grossMilli: number; netMilli: number } {
   let troopsMilli = 0;
   let grossMilli = 0;
   let netMilli = 0;
-  for (const r of regions) {
+  for (const r of rows) {
     troopsMilli += r.troopsPerSecMilli;
     grossMilli += r.goldGrossPerSecMilli;
     netMilli += r.goldNetPerSecMilli;
@@ -34,9 +34,9 @@ export function sumRegions(regions: readonly ProductionRow[]): { troopsMilli: nu
 export function incomeOf(g: GameModel, playerId: number): Income | null {
   const p = g.players.get(playerId);
   if (!p) return null;
-  const regions = g.production.get(playerId);
-  if (regions && regions.length) {
-    const s = sumRegions(regions);
+  const prodRows = g.production.get(playerId);
+  if (prodRows && prodRows.length) {
+    const s = sumRows(prodRows);
     return { net: s.netMilli / 1000, gross: s.grossMilli / 1000, troops: s.troopsMilli / 1000, fromServer: true };
   }
   const f = goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants);
@@ -44,35 +44,38 @@ export function incomeOf(g: GameModel, playerId: number): Income | null {
 }
 
 export interface SourceRow {
+  /** base-<tileId> | territory */
   key: string;
-  /** 지명 (기지) 또는 "기타" */
+  kind: 'base' | 'territory';
+  /** 지명 (기지) 또는 "영토" */
   label: string;
   /** 초당 양 */
   amount: number;
-  /** 생산력 % (기지 지역만, 기타 = null) */
+  /** 생산력 % (기지 행만, 영토 = null) */
   prodPct: number | null;
-  /** 지역 칸 수 */
+  /** 기지 행 = 환산 칸 수(60 / 수도 100), 영토 행 = 실제 소유 칸 수 */
   tiles: number;
   capital?: boolean;
 }
 
 /**
- * hover 출처 행 — 서버 지역 순서(기지 tileId 오름차순, 기타 맨 끝) 대신 많은 순(같으면 tileId), "기타"는 맨 끝.
- * kind: troops = 병력 재생, gold = 순골드(유지비 차감 후 — 지역별 순골드 합 = 총 순수입).
- * 행의 amount 합 = 총합 (서버 지역 합 = 총합이므로).
+ * hover 출처 행 (§22.5) — 기지 행(지명·생산력, 많은 순 · 같으면 tileId) + 영토 합산 행 1개(맨 끝).
+ * kind: troops = 병력 재생, gold = 순골드(유지비 차감 후 — 행 순골드 합 = 총 순수입).
+ * 행의 amount 합 = 총합 (서버 행 합 = 총합이므로). 생산 지역 개념은 v4.5 에서 폐기됐다.
  */
 export function productionRows(
-  regions: readonly ProductionRow[],
+  rows: readonly ProductionRow[],
   kind: 'troops' | 'gold',
   nameOf: (tile: number) => string | undefined,
   isCapital: (tile: number) => boolean = () => false,
 ): SourceRow[] {
   const val = (r: ProductionRow) => (kind === 'troops' ? r.troopsPerSecMilli : r.goldNetPerSecMilli) / 1000;
-  const bases = regions.filter((r) => r.baseTileId !== null);
-  const other = regions.filter((r) => r.baseTileId === null);
-  const rows: SourceRow[] = bases
+  const isBase = (r: ProductionRow) => r.kind === 'base' && r.baseTileId !== null;
+  const out: SourceRow[] = rows
+    .filter(isBase)
     .map((r) => ({
       key: `base-${r.baseTileId}`,
+      kind: 'base' as const,
       label: nameOf(r.baseTileId!) ?? `기지 #${r.baseTileId}`,
       amount: val(r),
       prodPct: Math.floor(r.prodPm / 10),
@@ -80,8 +83,9 @@ export function productionRows(
       capital: isCapital(r.baseTileId!),
     }))
     .sort((a, b) => b.amount - a.amount || a.key.localeCompare(b.key));
-  if (other.length) {
-    rows.push({ key: 'other', label: '기타', amount: other.reduce((s, r) => s + val(r), 0), prodPct: null, tiles: other.reduce((s, r) => s + r.tiles, 0) });
+  const terr = rows.filter((r) => !isBase(r));
+  if (terr.length) {
+    out.push({ key: 'territory', kind: 'territory', label: '영토', amount: terr.reduce((s, r) => s + val(r), 0), prodPct: null, tiles: terr.reduce((s, r) => s + r.tiles, 0) });
   }
-  return rows;
+  return out;
 }

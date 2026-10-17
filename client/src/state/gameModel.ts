@@ -97,6 +97,13 @@ export class GameModel {
   production = new Map<number, ProductionRow[]>();
   /** 합병 표시용 — player_eliminated 직후 같은 tick tileChanges 로 넘어간 칸 (렌더러가 잠깐 번쩍인다) */
   annexFlashes: { playerId: number; byPlayerId: number; tick: number; tiles: number[]; at: number }[] = [];
+  /**
+   * §22.3 깃발 전투 틱당 손실 — 델타 combatLoss 를 tick 별로 쌓는다(렌더러가 꺼내 "−n" 숫자로 띄운다). 최근 20 tick 만 유지.
+   * 표시 전용 (병력은 flagStats 가 권위).
+   */
+  combatLossQueue: { tick: number; losses: [number, number][] }[] = [];
+  /** §22.12 IDLE 깃발이 멈춘 이유 (flag_idle.reason — "unreachable" 이면 지도에 "막힘" 태그). 재지정·회수·종료 시 지운다 */
+  flagIdleReason = new Map<number, string>();
   /** 마지막 tick 을 받은 시각 (performance.now 기준 ms — tick 사이 보간) */
   tickReceivedAt = 0;
   /** 시계 (테스트에서 바꾼다) */
@@ -216,6 +223,7 @@ export class GameModel {
         const f = this.flags.get(e.flagId);
         if (f) Object.assign(f, { anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, posture: e.posture });
         if (!e.auto) this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
+        this.flagIdleReason.delete(e.flagId);
         break;
       }
       case 'flag_posture_changed': {
@@ -243,6 +251,7 @@ export class GameModel {
         break;
       }
       case 'flag_ended':
+        this.flagIdleReason.delete(e.flagId);
         this.flags.delete(e.flagId);
         this.flagEta.delete(e.flagId);
         this.flagReturn.delete(e.flagId);
@@ -310,8 +319,11 @@ export class GameModel {
         this.flagEta.delete(e.flagId);
         break;
       case 'flag_engaged':
+        this.flagEta.delete(e.flagId);
+        break;
       case 'flag_idle':
         this.flagEta.delete(e.flagId);
+        this.flagIdleReason.set(e.flagId, e.reason);
         break;
       case 'flag_stalled':
       case 'flag_progress_lost':
@@ -371,6 +383,10 @@ export class GameModel {
     for (const [tile, hp] of d.baseHp) {
       const b = this.bases.get(tile);
       if (b) b.hpPct = hp;
+    }
+    if (d.combatLoss?.length) {
+      this.combatLossQueue.push({ tick: d.tick, losses: d.combatLoss });
+      if (this.combatLossQueue.length > 20) this.combatLossQueue.splice(0, this.combatLossQueue.length - 20);
     }
     // v4.4 (§21): 기지 생산력 (바뀐 기지만) · 생산 내역 (바뀐 플레이어만 통째 교체)
     for (const [tile, pm] of d.baseProd ?? []) {

@@ -1935,7 +1935,7 @@ kbd {
 .source-row.capital .source-name {
   color: #ffe9a8;
 }
-.source-row.other {
+.source-row.territory {
   margin-top: 3px;
   padding-top: 4px;
   border-top: 1px solid var(--line);
@@ -1960,4 +1960,9 @@ kbd {
 }
 .fa-pending-row {
   color: var(--warn);
+}
+
+/* v4.5 §22.6 기지 위 ×1.5 */
+.cs-base {
+  color: #ffe9a8;
 }

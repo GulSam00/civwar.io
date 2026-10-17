@@ -99,12 +99,12 @@ function model(): GameModel {
 describe('지형 툴팁 항목 필터', () => {
   const nick = (id: number) => `P${id}`;
   it('행 순서: 지형 → 방어 → 이동 → 점령 비용 → 골드 → 소유자 → 기지 체력', () => {
-    const i = terrainInfo(model(), 1, 1, 0, nick)!;
+    const i = terrainInfo(model(), 1, 1, nick)!;
     expect(i.rows.map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'cost', 'gold', 'owner', 'baseHp']);
     expect(i.rows.find((r) => r.field === 'baseHp')).toEqual({ field: 'baseHp', label: '수도 체력', value: '80%' });
   });
   it('끈 항목은 빠지고, 툴팁을 끄면 아무것도 없다', () => {
-    const i = terrainInfo(model(), 1, 1, 0, nick)!;
+    const i = terrainInfo(model(), 1, 1, nick)!;
     const f = { ...defaultOptions().tooltipFields, gold: false, cost: false, baseHp: false };
     expect(visibleTipRows(i, true, f).map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'owner']);
     expect(visibleTipRows(i, false, defaultOptions().tooltipFields)).toEqual([]);
@@ -112,8 +112,8 @@ describe('지형 툴팁 항목 필터', () => {
     expect(visibleTipRows(i, true, none)).toEqual([]);
   });
   it('기지가 아닌 칸·깊은 물: 기지 체력 행 없음, 깊은 물은 지형 행에 통행 불가', () => {
-    expect(terrainInfo(model(), 3, 1, 0, nick)!.rows.some((r) => r.field === 'baseHp')).toBe(false);
-    const deep = terrainInfo(model(), 0, 1, 0, nick)!;
+    expect(terrainInfo(model(), 3, 1, nick)!.rows.some((r) => r.field === 'baseHp')).toBe(false);
+    const deep = terrainInfo(model(), 0, 1, nick)!;
     expect(deep.rows[0].value).toContain('통행 불가');
     expect(deep.rows.map((r) => r.field)).toEqual(['terrain', 'owner']);
   });

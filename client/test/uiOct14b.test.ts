@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { FLAG_BIT, POSTURE, rleEncode, type FlagSnapshot, type PlayerProduction, type S2C_RoomState, type S2C_SnapshotDelta } from '@civwar/shared';
 import { ClientStore } from '../src/state/store.js';
 import { baseNameMap, interpBaseProd } from '../src/state/gameModel.js';
-import { incomeOf, productionRows, sumRegions } from '../src/ui/production.js';
+import { incomeOf, productionRows, sumRows } from '../src/ui/production.js';
 import { flagActionState } from '../src/ui/unitChips.js';
 import { terrainInfo } from '../src/ui/terrainInfo.js';
 import { baseExtraOf } from '../src/ui/GameScreen.js';
@@ -35,9 +35,9 @@ const PROD: PlayerProduction[] = [
   {
     playerId: 1,
     rows: [
-      { kind: 'base', baseTileId: CAP1, tiles: 14, prodPm: 1000, troopsPerSecMilli: 4120, goldGrossPerSecMilli: 2950, goldNetPerSecMilli: 2270 },
-      { kind: 'base', baseTileId: BASE1B, tiles: 8, prodPm: 500, troopsPerSecMilli: 845, goldGrossPerSecMilli: 610, goldNetPerSecMilli: 470 },
-      { kind: 'territory', baseTileId: null, tiles: 2, prodPm: 1000, troopsPerSecMilli: 115, goldGrossPerSecMilli: 80, goldNetPerSecMilli: 61 },
+      { kind: 'base', baseTileId: CAP1, tiles: 100, prodPm: 1000, troopsPerSecMilli: 4120, goldGrossPerSecMilli: 2950, goldNetPerSecMilli: 2270 },
+      { kind: 'base', baseTileId: BASE1B, tiles: 60, prodPm: 500, troopsPerSecMilli: 845, goldGrossPerSecMilli: 610, goldNetPerSecMilli: 470 },
+      { kind: 'territory', baseTileId: null, tiles: 30, prodPm: 1000, troopsPerSecMilli: 115, goldGrossPerSecMilli: 80, goldNetPerSecMilli: 61 },
     ],
   },
   { playerId: 2, rows: [{ kind: 'base', baseTileId: CAP2, tiles: 12, prodPm: 1000, troopsPerSecMilli: 3000, goldGrossPerSecMilli: 2000, goldNetPerSecMilli: 2000 }] },
@@ -153,13 +153,13 @@ describe('§21.5 지명', () => {
 
   it('지형 툴팁: 지명 · 체력 · 생산력 행', () => {
     const { g } = setup();
-    const rows = terrainInfo(g, BASE1B, 1, 0, (n) => `P${n}`)!.rows.filter((r) => r.field === 'baseHp');
+    const rows = terrainInfo(g, BASE1B, 1, (n) => `P${n}`)!.rows.filter((r) => r.field === 'baseHp');
     expect(rows).toEqual([
       { field: 'baseHp', label: '기지', value: '가람' },
       { field: 'baseHp', label: '기지 체력', value: '50%' },
       { field: 'baseHp', label: '생산력', value: '50% (회복 중)' },
     ]);
-    expect(terrainInfo(g, CAP1, 1, 0, (n) => `P${n}`)!.base).toBe('수도 한울 · 체력 100%');
+    expect(terrainInfo(g, CAP1, 1, (n) => `P${n}`)!.base).toBe('수도 한울 · 체력 100%');
   });
 
   it('피드: 기지 함락에 지명', () => {
@@ -172,10 +172,10 @@ describe('§21.5 지명', () => {
 });
 
 describe('§21.4 병력·골드 출처 (production)', () => {
-  it('행 합 = 총합 (병력·순골드), 기지는 많은 순·기타 맨 끝, 생산력 %', () => {
+  it('행 합 = 총합 (병력·순골드), 기지는 많은 순·영토 맨 끝, 생산력 %', () => {
     const { g } = setup();
     const regions = g.production.get(1)!;
-    const total = sumRegions(regions);
+    const total = sumRows(regions);
     const troops = productionRows(regions, 'troops', (t) => g.baseNames.get(t), (t) => g.capitalTiles.has(t));
     const gold = productionRows(regions, 'gold', (t) => g.baseNames.get(t), (t) => g.capitalTiles.has(t));
     expect(troops.reduce((s, r) => s + r.amount, 0)).toBeCloseTo(total.troopsMilli / 1000, 9);
@@ -183,9 +183,10 @@ describe('§21.4 병력·골드 출처 (production)', () => {
     expect(troops.map((r) => [r.label, r.prodPct, r.capital ?? false])).toEqual([
       ['한울', 100, true],
       ['가람', 50, false],
-      ['기타', null, false],
+      ['영토', null, false],
     ]);
-    expect(gold[1]).toMatchObject({ label: '가람', amount: 0.47, tiles: 8 });
+    expect(gold[1]).toMatchObject({ label: '가람', amount: 0.47, tiles: 60, kind: 'base' });
+    expect(gold[2]).toMatchObject({ kind: 'territory', label: '영토', prodPct: null, tiles: 30 });
   });
 
   it('수입 표시 = production 합 (생산력 반영) — 예전 goldWeight 식은 과대 추정', () => {

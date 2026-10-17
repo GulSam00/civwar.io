@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ENDGAME_RUSH_TICK, POSTURE, techShallowPm, type Unit } from '@civwar/shared';
+import { ENDGAME_RUSH_TICK, POSTURE, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -16,7 +16,7 @@ import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
-import { fmtPm, goldPerSecond, techStatsOf, unitCombatStats } from './techInfo.js';
+import { fmtPm, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard } from './panels.js';
@@ -218,15 +218,13 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
   };
   if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
   const viewer = store.viewerId;
-  // v4.3: 얕은 물 이동배율 ‰ (보는 플레이어의 MOB-2B 반영)
-  const tier = techShallowPm(techStatsOf(viewer !== null ? (game.players.get(viewer)?.techMask ?? 0) : 0, game.config.constants));
   const t = ix.hoverTile;
   const b = game.bases.get(t);
   const o = ix.options;
   const fieldsKey = TOOLTIP_FIELDS.map((f) => (o.tooltipFields[f] ? 1 : 0)).join('');
-  const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${tier}:${fieldsKey}`;
+  const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${fieldsKey}`;
   if (el.dataset.key !== key) {
-    const info = terrainInfo(game, t, store.myPlayerId, tier, (id) => store.nicknameOf(id));
+    const info = terrainInfo(game, t, store.myPlayerId, (id) => store.nicknameOf(id));
     const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields) : [];
     if (!info || !rows.length) return hide();
     el.dataset.key = key;
@@ -315,6 +313,8 @@ function routeText(route: RoutePreview | null, kind: string | undefined): string
   if (!route) return '';
   if (!route.reachable) return ' · 갈 수 있는 경로 없음';
   const steps = route.path.length - 1;
+  // §22.12 방어 태세는 적 땅을 지나지 못한다 — 막히면 적 땅 앞에서 멈춘다
+  if (route.blocked) return steps > 0 ? ` · 적 땅에 막혀 ${steps}칸 가서 멈춤` : ' · 적 땅에 막혀 출발 못 함';
   return kind === 'attack' ? ` · 경로 ${steps}칸 · 옆 칸 ${route.corridor.length}개 공격` : ` · 경로 ${steps}칸`;
 }
 
@@ -410,12 +410,12 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const over = !!g.gameOver || store.room?.phase === 'GAME_OVER';
   // §21.4: 수입 = production 합 (없으면 예전 식). hover = 기지별 + 기타
   const income = p ? incomeOf(g, p.id) : null;
-  const regions = p ? g.production.get(p.id) : undefined;
+  const prodRows = p ? g.production.get(p.id) : undefined;
   const nameOf = (t: number) => g.baseNames.get(t);
   const isCap = (t: number) => g.capitalTiles.has(t);
-  const troopTip = regions?.length ? { title: `병력 재생 +${(income?.troops ?? 0).toFixed(1)}/초 — 출처`, unit: '/초', rows: productionRows(regions, 'troops', nameOf, isCap) } : null;
-  const goldTip = regions?.length
-    ? { title: `골드 순수입 +${(income?.net ?? 0).toFixed(1)}/초 — 출처${income && income.gross > income.net ? ` (유지비 −${(income.gross - income.net).toFixed(1)} 반영)` : ''}`, unit: '/초', rows: productionRows(regions, 'gold', nameOf, isCap) }
+  const troopTip = prodRows?.length ? { title: `병력 재생 +${(income?.troops ?? 0).toFixed(1)}/초 — 출처`, unit: '/초', rows: productionRows(prodRows, 'troops', nameOf, isCap) } : null;
+  const goldTip = prodRows?.length
+    ? { title: `골드 순수입 +${(income?.net ?? 0).toFixed(1)}/초 — 출처${income && income.gross > income.net ? ` (유지비 −${(income.gross - income.net).toFixed(1)} 반영)` : ''}`, unit: '/초', rows: productionRows(prodRows, 'gold', nameOf, isCap) }
     : null;
   // 테크 버튼 배지 = 지금 살 수 있는 노드 수 (내가 명령할 수 있을 때만)
   const mineP = me !== null ? g.players.get(me) : undefined;
@@ -588,19 +588,19 @@ function Stat({ label, value, warn, breakdown }: { label: string; value: string;
 }
 
 /**
- * 병력·골드 hover 출처 내역 (§21.4 production — 기지별 + 기타). 제목 줄(총합) → 기지 행(수도 ★, 지명, 칸 수, 생산력 %, 초당 양 — 많은 순)
- * → 구분선 → 기타(고립지·월경지, 생산력 고정). 행 합 = 총합.
+ * 병력·골드 hover 출처 내역 (§22.5 production.rows — 기지별 + 영토). 제목 줄(총합) → 기지 행(수도 ★, 지명, 환산 칸 수 60/100, 생산력 %, 초당 양 — 많은 순)
+ * → 구분선 → 영토 합산 행(실제 칸 수). 행 합 = 총합.
  */
 function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: SourceRow[] }) {
   return (
     <div className="source-tip" role="tooltip">
       <div className="source-tip-head">{title}</div>
       {rows.map((r) => (
-        <div key={r.key} className={`source-row ${r.key === 'other' ? 'other' : ''} ${r.capital ? 'capital' : ''}`}>
+        <div key={r.key} className={`source-row ${r.kind === 'territory' ? 'territory' : ''} ${r.capital ? 'capital' : ''}`}>
           <span className="source-name">
             {r.capital ? '★ ' : ''}
             {r.label}
-            <span className="source-tiles muted"> {r.tiles}칸</span>
+            <span className="source-tiles muted"> {r.kind === 'territory' ? `${r.tiles.toLocaleString()}칸` : `${r.tiles}칸분`}</span>
           </span>
           {r.prodPct !== null ? (
             <span className={`source-prod ${r.prodPct < 100 ? 'low' : ''}`} title="기지 생산력">
@@ -763,6 +763,8 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   const owner = g.players.get(f.ownerId);
   const cs = unitCombatStats(f.unit, owner?.techMask ?? 0, g.config.constants);
   const atkNow = f.posture === POSTURE.ATTACK;
+  // v4.5 (§22.6): 자기 기지 칸 위면 태세와 무관하게 ×1.5 (방어 = 지형 대신, 공격 = 공격값에 곱) — 위 수치는 지형·기지 보정 제외
+  const onOwnBase = g.bases.get(f.posTileId)?.ownerId === f.ownerId;
   const pending = flagActionState(f, g.tick, g.config.tickMs).pendingPosture;
   const postureBlocked = returning || f.routed || f.inCombat || f.disengaging || cd > 0;
   return (
@@ -801,7 +803,12 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
               기본 {fmtPm(cs.defBase)} · 테크 {fmtPm(cs.defTechPm)}
             </span>
           </div>
-          <div className="muted small cs-note">병종 기본 × 테크(군사·병종) · 지형 보정 제외 · 지금 태세 = 굵게</div>
+          {onOwnBase && (
+            <div className="cs-base" title="자기 기지 칸 위: 방어는 지형 보정 대신 ×1.5, 공격도 ×1.5 (태세 무관)">
+              기지 위 <b>×1.5</b> <span className="muted small">(공격·방어 모두)</span>
+            </div>
+          )}
+          <div className="muted small cs-note">병종 기본 × 테크(군사·병종) · 지형·기지 보정 제외 · 지금 태세 = 굵게</div>
         </div>
         {f.state === 'MARCHING' && eta !== undefined && <div>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 <span className="muted small">(영토 변화·대치·전투 제외)</span></div>}
         {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div>진척도 {f.progressPct}%</div>}

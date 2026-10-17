@@ -309,3 +309,37 @@ server/·shared/ 는 손대지 않았다 (백엔드 §21 병행 작업 중). 새
 ### 확인 못 한 것
 - **멸망 번쩍임은 브라우저에서 못 봤다**(봇 멸망까지 기다리지 않음) — 단위 테스트로 칸 수집·피드만 확인.
 - 바 보간은 서버보다 최대 1‰ 앞설 수 있다(서버는 ‰×300 정수 누적 후 floor) — 다음 `baseProd` 가 덮어써 눈에 띄지 않는다.
+
+## 16. v4.5 규칙 반영 (프로토콜 §22, 2026-10-15 — 백엔드 014317b 이후)
+
+server/·shared/ 는 손대지 않았다. 백엔드가 빌드 유지용으로 고친 클라이언트 4파일(`gameModel.ts`·`production.ts`·`techTree.ts`·`pacing.ts`) 위에 이어서 작업했다.
+
+### 사용하는 §22 필드
+| 필드 | 쓰는 곳 |
+|---|---|
+| 델타 `combatLoss: [flagId, lossMilli][]` (매 tick) | `GameModel.combatLossQueue` → `render/lossFloaters.ts` → 렌더러 "−n" 숫자 |
+| `production[].rows` (`kind` base/territory) | `ui/production.ts productionRows` → HUD 병력·골드 hover |
+| `flag_idle.reason = "unreachable"` | 피드·토스트, `GameModel.flagIdleReason` → 지도 "막힘" 태그 |
+| `flag_disengage_started.untilTick` + 소유자 스탯 `DISENGAGE_TICKS`(11) | 이탈 대기 호 길이 = (until − tick) / `techDisengageTicks(소유자 스탯)` |
+| 스탯 11 `DISENGAGE_TICKS` · 13 `RETURN_SPEED`, 노드 17·19 이름·설명(shared) | 테크 상세 행·아이콘 |
+
+### 구현
+1. **틱당 전투 손실 −n** (`render/lossFloaters.ts` + `renderer.drawLossNumbers`): 깃발 바로 위에서 떠올라 1초에 사라진다(화면 px 고정 12~13px, 어두운 외곽선 + 밝은 글자 — 색각 보조면 흰 글자). **합산**: 같은 깃발의 숫자가 0.38초 안이면 거기에 더한다 → 보통 2 tick(0.4초)마다 새 숫자. **스로틀**: 교전 깃발이 12개를 넘으면 합산 창 ×2.5. **상한**: 깃발당 2개(오래된 것 버림), 전체 36개(넘치면 내·선택 깃발 → 손실 큰 순). 축소 보기(LOD)에선 내·선택 깃발만. 표시 = `lossMilli/1000` 소수 1자리(100 이상 정수).
+   - 처음엔 0.2초마다 새 숫자 + 좌우 교대 배치였는데, 브라우저에서 한 깃발 위로 숫자가 기둥처럼 쌓이고 붙어 싸우는 상대 숫자와 겹쳐 지금 방식으로 바꿨다(`2026-10-15_combat-loss-numbers_before-throttle-tuning.jpg` vs `..._combat-loss-numbers.jpg`).
+2. **생산 hover**: 기지 행(★수도, 지명, 환산 "100칸분/60칸분", 생산력 %, 초당 양 — 많은 순) + **영토 행 1개**(실제 칸 수, 생산력 —). "기타"·생산 지역 개념 삭제(`sumRegions` → `sumRows`, 변수명 정리). 행 합 = 총합.
+3. **테크 17·19**: 아이콘 교체(17 철수 훈련 = 방패 + 뒤로 꺾인 화살표, 19 급속 귀환 = 기지 지붕 + 들어가는 화살표·속도선). 상세 행 "이탈 대기 시간 3.0초 → 2.0초"(tick × TICK_MS, 상수 우선), "귀환 속도 배율 (회수·자동 귀환·패주) ×1.50 → ×2.20". 이름·설명은 shared `TECH_NODES`.
+4. **이탈 대기 호**: 상수 `DISENGAGE_TICKS` 대신 소유자 스탯(`techDisengageTicks`, match_config 노드 표 우선) — 철수 훈련 보유자는 10 tick 기준.
+5. **물 이동 제거**: `input/route.ts` 거리장·걸음에서 물 전부 제외(통행 = `isClaimable`, 서버 `isPassable` 과 같다), 플레이어별 물 배율 인자·캐시 키 삭제(`moveField(topo, terrain, dest, constants?, allowed?)`). 지형 툴팁: 바다·호수 = "통행 불가 · 점령 불가"(이동 속도 행 없음), `terrainInfo` 의 얕은 물 배율 인자 삭제, 지형 이름 깊은 물/얕은 물 → **바다/호수**. `techShallowPm` 사용처 0. 로비 "얕은 물 비율" 선택지 숨김(색 구분뿐 — 서버에는 기본 BORDER_ONLY), 대기실 표시 생략. 도움말 "물과 상륙" → "물".
+6. **방어 태세 경로 미리보기** (`route.ts computeRoute` 방어 분기): 서버 `defendField`·`defendDest`·`stepTowardDefend` 를 그대로 옮겼다 — 적(비동맹 플레이어) 땅 제외 거리장, 못 가면 적 땅 없이 닿는 칸 중 지형 거리(적 땅 무시)로 앵커에 가장 가까운 칸(동률 tileId)에서 멈춤. `RoutePreview.blocked / stopTile` 추가. 렌더: 멈춤 칸까지 점선 화살표 + **주황 원·흰 막대 멈춤 표식** + 멈춤 칸 → 앵커 옅은 점선. 문구 "적 땅에 막혀 n칸 가서 멈춤"(커서 툴팁·삼각 메뉴). 방어 경로 키에 소유 변경·tick·동맹 수 포함. `flag_idle unreachable` → 피드 + 토스트 "적 땅에 막혀 방어 깃발이 멈췄습니다 (공격 태세로 바꾸거나 다른 곳으로 이동)", 지도 태그 "막힘"(재지정·종료 시 해제).
+7. **기지 ×1.5 태세 무관**: 부대 정보 패널 — 깃발이 자기 기지 칸 위면 "기지 위 ×1.5 (공격·방어 모두)" 줄, 설명 "지형·기지 보정 제외". 도움말 전투·기지 절.
+8. **도움말·README**: 물 통행 불가·호수, 중립 비용 고정(NEUTRAL_BASE), 손실 0.2초마다 약 0.9%(COMBAT_LOSS_BP)·−n 숫자, 기지 피해 상한(초당 약 6.7%, 최소 15초 — 상수에서 계산), 생산 = 영토 + 기지 60/수도 100칸분 × 생산력, 방어 경로 제한·노출 소모(적 14%/분, 중립 절반), 서양식 지명, 철수 훈련·급속 귀환. README 에 규칙 요약 + 조작 표(우클릭 이동·칩·버튼·창 드래그·hover 출처) 갱신.
+
+### 검증
+- `npm run typecheck` 통과 · `npm test` 25 파일 353개 통과 · `npm run build:client` 통과.
+- 새 테스트 `client/test/uiOct15.test.ts` (24): 손실 숫자(깃발별·2 tick 합산·같은 tick 중복 무시·busy 스로틀·깃발당 2개·전체 상한 우선순위·수명·문자열), 생산 hover(§22.5 예시 — 기지 행 + 영토 행, "기타" 없음, 행 합 = 총합), 물 통행 불가(호수 열 = 도달 불가, 틈으로 우회·경로에 물 없음, 물 앵커), 방어 경로(적 땅 벽 → 멈춤 칸 = 지형 거리 최소·경로에 적 땅 없음, 공격 태세는 통과, 틈 우회, 동맹 땅 통과), unreachable 피드·태그, 테크 17·19 상세 행. 기존 테스트 갱신: `hoverUpkeep`(호수 = 통행 불가), `issueFlow`·`options`·`uiOct14b`(시그니처·rows).
+- 브라우저(서버 8092 / Vite 5182, S 맵 봇 6): 호수형 맵·서양식 지명, HUD hover "★ 호크리지 100칸분 100% / 영토 9칸", 봇끼리 교전에서 −n 숫자, 테크 17·19 상세. 스크린샷 `_workspace/screenshots/2026-10-15_*` 10장.
+
+### 확인 못 한 것 / 주의
+- **방어 막힘 미리보기 스크린샷은 연출(STAGED)**: 초반엔 적 땅 너머 내 땅(월경지)이 생기지 않아, 개발용 `window.__civwar` 로 BOT 4 땅 안 한 칸을 클라이언트에서만 내 땅으로 바꾸고(서버 full 덮어쓰기를 잠시 막음) 미리보기를 찍었다. 찍은 뒤 새로고침으로 되돌렸다. 경로 계산 자체는 단위 테스트로 서버 식과 같은 결과를 확인했지만 **실제 서버가 보낸 `flag_idle unreachable` 을 브라우저에서 받아 본 적은 없다**.
+- 내 깃발이 직접 싸우는 장면(강조색 −n)은 브라우저에서 못 봤다 — 봇끼리 교전만 확인.
+- 클라이언트 방어 경로는 서버 코드를 옮긴 것이라 서버 쪽 규칙이 바뀌면 같이 고쳐야 한다(서버·클라이언트 교차 테스트는 없다).

@@ -4,7 +4,8 @@ import type { CmdRejectReason, ErrorCode, FlagState, GameOverReason } from '@civ
 export const UNIT_NAME = ['창병', '검병', '기병'] as const;
 export const UNIT_SHORT = ['창', '검', '기'] as const;
 export const POSTURE_NAME = ['공격', '방어'] as const;
-export const TERRAIN_NAME = ['깊은 물', '평원', '비옥지', '언덕', '사막', '산', '얕은 물'] as const;
+/** v4.5 (§22.1): 물은 통행 불가 — 테두리 = 바다(DEEP), 안쪽 = 호수(SHALLOW, 색만 다름) */
+export const TERRAIN_NAME = ['바다', '평원', '비옥지', '언덕', '사막', '산', '호수'] as const;
 
 export const FLAG_STATE_NAME: Record<FlagState, string> = {
   MARCHING: '행군',

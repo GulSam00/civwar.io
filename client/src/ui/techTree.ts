@@ -160,9 +160,10 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   else if (stat === S.TROOP_CAP) (label = '병력 상한 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.SUPPLY_COEF) (label = '보급선 비용 계수 (칸당)'), (fmt = (v) => pmText(v[stat]));
   else if (stat === S.SPEED) (label = '이동속도 배율 (전 병종 공통)'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.DISENGAGE_TICKS) (label = '이탈 대기 시간'), (fmt = (v) => `${(v[stat] / 5).toFixed(1)}초`); // v4.5 (서버 §22 — 빌드 유지용 최소 수정)
+  // v4.5 (§22.7): 스탯 11 = 이탈 대기 tick (MOB-2B 철수 훈련 15 → 10), 13 = 귀환 속도 ‰ (MOB-3B 급속 귀환 1500 → 2200)
+  else if (stat === S.DISENGAGE_TICKS) (label = '이탈 대기 시간'), (fmt = (v) => `${((v[stat] * ((consts?.TICK_MS as number | undefined) ?? 200)) / 1000).toFixed(1)}초`);
   else if (stat === S.SLOT_BONUS) (label = '깃발 슬롯 보너스'), (fmt = (v) => `+${v[stat]}`);
-  else if (stat === S.RETURN_SPEED) (label = '귀환 속도 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.RETURN_SPEED) (label = '귀환 속도 배율 (회수·자동 귀환·패주)'), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.COMBAT_ATK_SPEAR && stat <= S.COMBAT_ATK_CAVALRY) {
     const unit = stat - S.COMBAT_ATK_SPEAR;
     label = `${u(S.COMBAT_ATK_SPEAR)} 공격 태세 전투 공격력`;

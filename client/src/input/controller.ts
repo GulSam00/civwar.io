@@ -19,7 +19,7 @@
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
  *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
-import { POSTURE, techConvertPm, techShallowPm, type Unit } from '@civwar/shared';
+import { POSTURE, techConvertPm, type Unit } from '@civwar/shared';
 import { panBy, screenToWorld, worldToScreen, zoomAt, clampCamera } from '../render/camera.js';
 import type { GameRenderer } from '../render/renderer.js';
 import type { ClientStore } from '../state/store.js';
@@ -258,21 +258,13 @@ export class GameInputController {
     return tile >= 0 && !!this.store.game?.bases.has(tile);
   }
 
-  /** v4.3: 내 얕은 물 이동배율 ‰ (MOB-2B 조선술 반영) — 거리장 키 */
-  private myMobilityTier(): number {
-    const g = this.store.game;
-    const me = this.store.myPlayerId;
-    const p = g && me !== null ? g.players.get(me) : undefined;
-    return techShallowPm(techStatsOf(p?.techMask ?? 0, g?.config.constants));
-  }
-
   /** 목적지까지 이동 거리(서버와 같은 가중 경로)가 가장 짧은 내 기지 */
   nearestBaseFor(anchor: number): number | null {
     const g = this.store.game;
     const me = this.store.myPlayerId;
     const topo = this.renderer.topo;
     if (!g || me === null || !topo || !g.terrain || anchor < 0) return null;
-    const field = this.routes.fieldFor(g, topo, anchor, this.myMobilityTier());
+    const field = this.routes.fieldFor(g, topo, anchor);
     return nearestOwnBase(g, field, me);
   }
 
@@ -300,11 +292,12 @@ export class GameInputController {
     if (!g || me === null || !topo || !g.terrain || !is) return null;
     const anchor = is.phase === 'aim' ? this.ix.hoverTile : is.anchor;
     if (anchor < 0) return null;
-    const attack = (is.phase === 'pick' ? is.posture : this.postureAt(anchor)) === 'attack';
-    const tier = this.myMobilityTier();
-    const key = `${is.base}:${anchor}:${attack}:${tier}:${g.ownersVersion}:${g.tick}`;
+    // 방어 태세만 §22.12 적 땅 회피 경로 (불가 지점은 공격 경로로 '도달 불가' 표시 — 기존과 같다)
+    const attack = (is.phase === 'pick' ? is.posture : this.postureAt(anchor)) !== 'defend';
+    // 방어 경로는 소유·동맹에 달려 있다 → 소유 변경(ownersVersion·tick)·동맹 수로 다시 계산
+    const key = `${is.base}:${anchor}:${attack}:${g.ownersVersion}:${g.tick}:${g.alliances.size}`;
     if (key !== this.routeKey) {
-      const field = this.routes.fieldFor(g, topo, anchor, tier);
+      const field = this.routes.fieldFor(g, topo, anchor);
       this.route = computeRoute(g, topo, field, me, is.base, anchor, attack);
       this.routeKey = key;
     }
