@@ -114,6 +114,18 @@ export const DOC_SCHEMA: Record<string, Shape> = {
       roomId: 'str', phase: ['enum', 'LOBBY', 'COUNTDOWN', 'IN_GAME', 'GAME_OVER'], map: mapChoice,
       mapName: (v, p, e) => { if (v !== null && (typeof v !== 'object' || typeof (v as any).ko !== 'string')) e.push(`${p}: {ko,en}|null`); },
       width: 'int', height: 'int', humans: 'int', bots: 'int', maxPlayers: range(2, 12), spectatorCount: 'int', elapsedMs: 'int', autoStartMs: 'int|null', joinable: 'bool', spectatable: 'bool',
+      // §26: 서버는 항상 싣는다
+      botDifficulty: ['enum', 'EASY', 'NORMAL', 'HARD'],
+      thumbnail: (v, p, e) => {
+        if (v === null) return;
+        obj({ width: range(1, 50), height: range(1, 30), scale: 'int', terrain: arr('int'), bases: arr('int') })(v, p, e);
+        const t = v as { width: number; height: number; terrain: number[]; bases: number[] };
+        if (!Array.isArray(t.terrain) || !Array.isArray(t.bases)) return;
+        let sum = 0;
+        for (let i = 1; i < t.terrain.length; i += 2) sum += t.terrain[i];
+        if (sum !== t.width * t.height) e.push(`${p}.terrain: RLE 길이 합 ${sum} ≠ ${t.width}×${t.height}`);
+        if (t.bases.some((b, i) => b < 0 || b >= t.width * t.height || (i > 0 && b <= t.bases[i - 1]))) e.push(`${p}.bases: 범위·오름차순 위반`);
+      },
     })),
   },
   match_config: {
@@ -154,7 +166,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   player_eliminated: { tick: 'int', playerId: 'int', byPlayerId: 'int|null', annexedTiles: 'int' },
   bot_takeover: { tick: 'int', playerId: 'int' },
   player_reconnected: { tick: 'int', playerId: 'int' },
-  emote_broadcast: { tick: 'int', playerId: 'int', code: range(0, 15) },
+  emote_broadcast: { tick: 'int', playerId: 'int', code: range(0, 15), 'targetPlayerId?': range(1, 12) },
   game_over: { finalTick: 'int', winnerId: 'int|null', reason: ['enum', 'last_standing', 'threshold', 'timeout'], standings: arr(obj({ rank: 'int', playerId: 'int', tiles: 'int', troops: 'int', goldEarned: 'int', alive: 'bool' })) },
   flag_issued: { tick: 'int', flagId: 'int', playerId: 'int', slotIndex: 'int', unit: UNIT, posture: POSTURE, troops: 'int', originTileId: 'int', anchorTileId: 'int', targetOwnerId: 'int', etaTick: 'int', engageEtaTick: 'int' },
   flag_retargeted: { tick: 'int', flagId: 'int', anchorTileId: 'int', targetOwnerId: 'int', posture: POSTURE, resumeTick: 'int', etaTick: 'int', engageEtaTick: 'int', auto: 'bool' },

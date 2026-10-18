@@ -205,6 +205,8 @@ export interface C2S_CmdAllyBreak {
 export interface C2S_Emote {
   type: 'emote';
   code: number;
+  /** §26 대상 이모트 (선택): 이 판의 다른 플레이어 playerId. 없으면 기존과 같은 전체 이모트. 없는 플레이어·자기 자신이면 서버가 조용히 무시 */
+  targetPlayerId?: number;
 }
 export interface C2S_Ping {
   type: 'ping';
@@ -328,6 +330,26 @@ export interface RoomListing {
   joinable: boolean;
   /** 지금 관전 가능한가 (IN_GAME ∨ GAME_OVER) */
   spectatable: boolean;
+  /** §26: 방 설정의 봇 난이도. 서버는 항상 싣는다 (옵셔널은 기존 클라이언트 테스트 픽스처 호환용) */
+  botDifficulty?: BotDifficultyName;
+  /**
+   * §26: 무작위 맵 방의 실제 맵 축소 썸네일 — 맵이 만들어진 뒤(IN_GAME · GAME_OVER)에만 실린다.
+   * LOBBY · COUNTDOWN(맵 생성 전)과 공식 맵 방(map_catalog 미리보기를 쓴다)은 null. 서버는 항상 싣는다(null 포함)
+   */
+  thumbnail?: MapThumbnail | null;
+}
+
+/** §26 방 카드 썸네일 — 원본 맵을 scale×scale 블록으로 줄인 지형 (최대 50×30) */
+export interface MapThumbnail {
+  /** 축소 격자 크기 = ceil(원본 width / scale) × ceil(원본 height / scale) */
+  width: number;
+  height: number;
+  /** 블록 한 변(원본 칸 수) = ceil(max(width / 50, height / 30)) */
+  scale: number;
+  /** 축소 지형 RLE [값, 길이, …] (shared rleDecode, 길이 합 = width × height). 값 = TERRAIN 코드, 블록 최빈값(동률은 작은 코드) */
+  terrain: number[];
+  /** 기지(수도 포함)가 들어 있는 축소 칸 index (y × width + x, 오름차순, 중복 없음) */
+  bases: number[];
 }
 export interface S2C_RoomList {
   type: 'room_list';
@@ -625,6 +647,8 @@ export interface S2C_EmoteBroadcast {
   tick: number;
   playerId: number;
   code: number;
+  /** §26: 대상 이모트일 때만 실린다 (보낸 사람이 고른 상대 playerId). 전원에게 그대로 브로드캐스트 */
+  targetPlayerId?: number;
 }
 export interface Standing {
   rank: number;

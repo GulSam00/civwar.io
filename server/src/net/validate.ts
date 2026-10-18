@@ -110,7 +110,10 @@ export function parseClientMessage(raw: string): ParseResult {
       return { ok: true, msg: { type, clientSeq: seq!, allyPlayerId: m.allyPlayerId } };
     case 'emote':
       if (!isInt(m.code)) return bad('code must be int');
-      return { ok: true, msg: { type, code: m.code } };
+      // §26 대상 이모트: 선택 필드. 있으면 1..MAX_PLAYERS 정수 (그 판에 있는 플레이어인지는 룸이 본다)
+      if (m.targetPlayerId === undefined || m.targetPlayerId === null) return { ok: true, msg: { type, code: m.code } };
+      if (!inRange(m.targetPlayerId, 1, MAX_PLAYERS)) return bad('targetPlayerId');
+      return { ok: true, msg: { type, code: m.code, targetPlayerId: m.targetPlayerId } };
     case 'ping':
       if (typeof m.clientTime !== 'number' || !Number.isFinite(m.clientTime)) return bad('clientTime must be number');
       return { ok: true, msg: { type, clientTime: m.clientTime } };

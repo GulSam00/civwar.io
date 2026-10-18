@@ -136,7 +136,7 @@ function route(lobby: LobbyManager, s: Session, msg: ClientMessage, error: (c: E
       if (!room) return error('NOT_IN_ROOM', 'not in a room');
       return fail(room.startNow(s));
     case 'emote':
-      return room?.emote(s, msg.code);
+      return room?.emote(s, msg.code, msg.targetPlayerId);
     case 'ping':
       return s.send({ type: 'pong', clientTime: msg.clientTime, serverTime: Date.now(), tick: room?.currentTick ?? 0 });
     case 'hello':

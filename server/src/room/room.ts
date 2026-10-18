@@ -14,12 +14,14 @@ import {
   type ErrorCode,
   type MemberStatus,
   type RoomListing,
+  type MapThumbnail,
   type RoomMember,
   type RoomPhase,
   type S2C_RoomState,
   type ServerMessage,
 } from '@civwar/shared';
 import { generateMapForSize, type GeneratedMap } from '../map/generate.js';
+import { buildThumbnail } from '../map/thumbnail.js';
 import { mapFromPreset, type MapCatalog } from '../map/presets.js';
 import { assignFactionNames, assignPlaceNames, factionCore } from '../map/placeNames.js';
 import { applyRoomOptions, mapLimits, plannedPlayers, settingsEcho, type RoomSettings } from './settings.js';
@@ -68,6 +70,8 @@ export class Room {
   private disposed = false;
   /** 카운트다운 시작 때 뽑는 매치 시드 — 랜덤 맵 시드 / 프리셋 맵의 룸 시드(봇 성향·지명) / 세력 이름 (§23) */
   private matchSeed: number | null = null;
+  /** §26 방 카드 썸네일 캐시 (맵 객체가 바뀌면 다시 만든다) */
+  private thumbCache: { map: object; thumb: MapThumbnail } | null = null;
   /** §23 봇 세력 이름 후보 (matchSeed 결정론 순서). 봇 자리는 앞에서부터 아직 안 쓰인 이름을 받는다 */
   private factionPool: string[] = [];
 
@@ -475,14 +479,21 @@ export class Room {
     this.sim.enqueue(session.connId, m.playerId, msg);
   }
 
-  emote(session: Session, code: number): void {
+  /**
+   * 이모트 — 1초 1회(세션당, 대상 유무 무관), 범위 밖 코드는 조용히 무시.
+   * §26 대상 이모트: targetPlayerId 가 이 판의 플레이어(탈락자 포함)이고 자기 자신이 아니면 그대로 실어 전원에게 보낸다.
+   * 그 밖의 대상(없는 자리·자기 자신)은 이모트 전체를 조용히 무시한다(1초 제한도 소모하지 않음).
+   */
+  emote(session: Session, code: number, targetPlayerId?: number): void {
     const m = this.memberOf(session);
     if (!m || this.phase !== 'IN_GAME' || !this.sim) return;
     if (!Number.isInteger(code) || code < 0 || code > EMOTE_CODE_MAX) return;
+    const targeted = targetPlayerId !== undefined;
+    if (targeted && (targetPlayerId === m.playerId || !this.sim.state.players[targetPlayerId])) return;
     const now = Date.now();
     if (now - session.lastEmoteAt < 1000) return;
     session.lastEmoteAt = now;
-    this.broadcast({ type: 'emote_broadcast', tick: this.sim.state.tick, playerId: m.playerId, code });
+    this.broadcast({ type: 'emote_broadcast', tick: this.sim.state.tick, playerId: m.playerId, code, ...(targeted ? { targetPlayerId } : {}) });
   }
 
   get isDisposed(): boolean {
@@ -512,7 +523,16 @@ export class Room {
       autoStartMs: this.isPublic && this.phase === 'LOBBY' && this.autoStartAt !== null ? Math.max(0, this.autoStartAt - now) : null,
       joinable: this.phase === 'LOBBY' && this.hasFreeSlot,
       spectatable: this.phase === 'IN_GAME' || this.phase === 'GAME_OVER',
+      botDifficulty: this.settings.botDifficulty,
+      thumbnail: this.thumbnail(),
     };
+  }
+
+  /** §26: 무작위 맵 방의 실제 맵 썸네일 (맵이 생긴 뒤에만, 판당 1회 계산해 둔다). 공식 맵·맵 생성 전은 null */
+  private thumbnail(): MapThumbnail | null {
+    if (!this.sim || this.sim.state.map.source.kind !== 'random') return null;
+    if (this.thumbCache?.map !== this.sim.state.map) this.thumbCache = { map: this.sim.state.map, thumb: buildThumbnail(this.sim.state.map) };
+    return this.thumbCache.thumb;
   }
 
   get currentTick(): number {

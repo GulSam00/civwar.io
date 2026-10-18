@@ -162,6 +162,7 @@ async function main() {
       const rl = await br.req({ type: 'lobby_list_rooms' }, (m) => m.type === 'room_list');
       const mine = rl?.rooms?.find((r: any) => r.roomId === prs.roomId);
       check('room_list: 공개 대기 방 포함(humans 2, joinable), 비공개 방·방 코드 없음', !!mine && mine.humans === 2 && mine.joinable && !JSON.stringify(rl).includes(prs.roomCode) && rl.rooms.every((r: any) => r.roomId !== rs.roomId), JSON.stringify(rl?.rooms));
+      check('§26 room_list: botDifficulty NORMAL, 대기 중 무작위 맵 thumbnail null', mine?.botDifficulty === 'NORMAL' && mine?.thumbnail === null, JSON.stringify(mine && { d: mine.botDifficulty, t: mine.thumbnail }));
       e = await br.err({ type: 'lobby_list_rooms' });
       check('room_list 1초 이내 재요청 → RATE_LIMITED', e?.code === 'RATE_LIMITED', JSON.stringify(e));
       e = await br.err({ type: 'lobby_join_listed', roomId: 'x1', spectate: false });
@@ -236,6 +237,19 @@ async function main() {
     await sleep(400);
     const em = h.log.slice(k).filter((m) => m.type === 'emote_broadcast');
     check('emote 1초 1회 + 범위 밖 무시', em.length === 1 && em[0].code === 3, JSON.stringify(em));
+    check('§26 대상 없는 emote_broadcast 에는 targetPlayerId 없음', em.length === 1 && !('targetPlayerId' in em[0]), JSON.stringify(em));
+    // §26 대상 이모트: 자기 자신·판에 없는 자리 → 조용히 무시(1초 제한 소모 안 함), 다른 플레이어 → targetPlayerId 실어 브로드캐스트
+    await sleep(1100);
+    k = h.mark();
+    h.send({ type: 'emote', code: 5, targetPlayerId: 1 });
+    h.send({ type: 'emote', code: 6, targetPlayerId: 9 });
+    h.send({ type: 'emote', code: 7, targetPlayerId: 3 });
+    h.send({ type: 'emote', code: 8, targetPlayerId: 2 });
+    await sleep(400);
+    const emT = h.log.slice(k).filter((m) => m.type === 'emote_broadcast');
+    check('§26 대상 이모트: 자기·없는 자리 무시, 유효 대상 1회 + targetPlayerId, 1초 제한 유지', emT.length === 1 && emT[0].code === 7 && emT[0].targetPlayerId === 3 && emT[0].playerId === 1, JSON.stringify(emT));
+    e = await h.err({ type: 'emote', code: 1, targetPlayerId: 0 });
+    check('§26 emote targetPlayerId 형식 오류(0) → BAD_MESSAGE', e?.code === 'BAD_MESSAGE', JSON.stringify(e));
     // rate limit
     k = h.mark();
     for (let i = 0; i < 25; i++) h.send({ type: 'cmd_buy_tech', clientSeq: 5000 + i, nodeId: 3 });
