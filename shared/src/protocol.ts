@@ -451,11 +451,7 @@ export interface FlagSnapshot {
   halted?: boolean;
   /** v4.2 [A-61] (추가만): cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 자동. 서버는 항상 싣는다 */
   returnBaseTileId?: number | null;
-  /**
-   * v4.4 (§21, 추가만): 재지정이 정한 도착지 태세가 아직 적용되지 않았으면 그 태세(전투·이탈 대기·태세 쿨타임 중), 아니면 null.
-   * 조건이 풀리는 첫 tick 에 서버가 자동 적용(flag_posture_changed auto:true). 델타는 flagFlags 비트 POSTURE_PENDING(128). 서버는 항상 싣는다
-   */
-  pendingPosture?: Posture | null;
+  // v4.6 (§27): pendingPosture 필드 제거 — 태세 전환은 즉시 적용되고 대기 상태가 없다
 }
 
 export interface BaseSnapshot {
@@ -537,8 +533,7 @@ export const FLAG_BIT = {
   STALLED: 32,
   /** v4.2 (4.4a): 행군 중 정지 점령 */
   HALTED: 64,
-  /** v4.4 (§21): 재지정의 도착지 태세가 대기 중 (pendingPosture != null — 값은 현재 태세의 반대) */
-  POSTURE_PENDING: 128,
+  // v4.6 (§27): 128(POSTURE_PENDING) 제거 — 비트 128 은 더 이상 보내지 않는다
 } as const;
 
 export interface PlayerDelta {
@@ -588,6 +583,11 @@ export interface S2C_CmdAck {
   reason?: CmdRejectReason;
   flagId?: number;
   posture?: Posture;
+  /**
+   * v4.6 (§27, 추가만): cmd_flag_retarget 응답 전용. true = 도착지의 기본 태세를 태세 쿨타임 때문에 적용하지 못했다
+   * (이동은 수락됨, `posture` 는 실제 태세). 클라이언트는 "태세 전환 쿨타임 중" 안내를 띄울 것
+   */
+  postureHeld?: boolean;
 }
 
 export interface S2C_Error {
@@ -697,6 +697,8 @@ export interface S2C_FlagRetargeted {
   /** 프론트 QA m-4 (필드 추가): 교전 개시 추정 tick (auto:true 면 tick) */
   engageEtaTick: number;
   auto: boolean;
+  /** v4.6 (§27, 추가만): true = 도착지 기본 태세를 쿨타임 때문에 적용하지 못함 (`posture` 는 실제 태세). 서버는 항상 싣는다 */
+  postureHeld?: boolean;
 }
 export interface S2C_FlagRecalled {
   type: 'flag_recalled';
@@ -799,7 +801,7 @@ export interface S2C_FlagDisengaged {
   type: 'flag_disengaged';
   tick: number;
   flagId: number;
-  reason: 'broke_away' | 'combat_over';
+  reason: 'broke_away' | 'combat_over' | 'wait_over';
 }
 export interface S2C_BaseCaptured {
   type: 'base_captured';

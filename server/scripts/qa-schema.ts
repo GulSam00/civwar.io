@@ -84,7 +84,6 @@ const flagSnap = obj({
   targetOwnerId: (v, p, e) => { if (!isInt(v) || !((v as number) <= 12 || v === 254)) e.push(`${p}: 0..12|254 기대 ${v}`); },
   state: FLAG_STATE, targetTileId: 'int|null', progressPct: range(0, 99), stalled: 'bool', inCombat: 'bool', routed: 'bool', blocked: 'bool',
   disengaging: 'bool', postureCooldownUntilTick: 'int', disengageUntilTick: 'int|null', breakaway: 'bool', halted: 'bool', returnBaseTileId: 'int|null',
-  pendingPosture: (v, p, e) => { if (v !== null && v !== 0 && v !== 1) e.push(`${p}: 0|1|null 기대 ${v}`); }, // v4.4 §21
 });
 /** v4.5 §22 — 기지 행 + 영토 행 */
 const production = obj({
@@ -157,7 +156,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     production: arr(production),
     combatLoss: arr(tuple('int', 'int')), // v4.5 §22
   },
-  cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE },
+  cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE, 'postureHeld?': 'bool' },
   error: { code: ['enum', ...DOC_ERROR], message: 'str' },
   pong: { clientTime: 'num', serverTime: 'int', tick: 'int' },
   tech_purchased: { tick: 'int', playerId: 'int', nodeId: range(0, 31), cost: 'int', newFlagCap: range(3, 7), techMask: range(0, 0xffffffff) },
@@ -169,7 +168,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   emote_broadcast: { tick: 'int', playerId: 'int', code: range(0, 15), 'targetPlayerId?': range(1, 12) },
   game_over: { finalTick: 'int', winnerId: 'int|null', reason: ['enum', 'last_standing', 'threshold', 'timeout'], standings: arr(obj({ rank: 'int', playerId: 'int', tiles: 'int', troops: 'int', goldEarned: 'int', alive: 'bool' })) },
   flag_issued: { tick: 'int', flagId: 'int', playerId: 'int', slotIndex: 'int', unit: UNIT, posture: POSTURE, troops: 'int', originTileId: 'int', anchorTileId: 'int', targetOwnerId: 'int', etaTick: 'int', engageEtaTick: 'int' },
-  flag_retargeted: { tick: 'int', flagId: 'int', anchorTileId: 'int', targetOwnerId: 'int', posture: POSTURE, resumeTick: 'int', etaTick: 'int', engageEtaTick: 'int', auto: 'bool' },
+  flag_retargeted: { tick: 'int', flagId: 'int', anchorTileId: 'int', targetOwnerId: 'int', posture: POSTURE, resumeTick: 'int', etaTick: 'int', engageEtaTick: 'int', auto: 'bool', postureHeld: 'bool' },
   flag_recalled: { tick: 'int', flagId: 'int', returnTileId: 'int' },
   flag_engaged: { tick: 'int', flagId: 'int', posture: POSTURE, 'frontTileCount?': 'int', 'guardTileCount?': 'int' },
   flag_stalled: { tick: 'int', flagId: 'int', tileId: 'int|null' },
@@ -183,7 +182,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   flag_blocked: { tick: 'int', flagId: 'int', byFlagIds: arr('int') },
   flag_unblocked: { tick: 'int', flagId: 'int' },
   flag_disengage_started: { tick: 'int', flagId: 'int', untilTick: 'int', auto: 'bool' },
-  flag_disengaged: { tick: 'int', flagId: 'int', reason: ['enum', 'broke_away', 'combat_over'] },
+  flag_disengaged: { tick: 'int', flagId: 'int', reason: ['enum', 'broke_away', 'combat_over', 'wait_over'] },
   base_captured: { tick: 'int', tileId: 'int', fromPlayerId: 'int', toPlayerId: 'int', newHpPct: 'int', newProdPm: range(0, 1000) },
   ally_proposed: { tick: 'int', proposalId: 'int', fromPlayerId: 'int', toPlayerId: 'int', expireTick: 'int' },
   ally_proposal_closed: { tick: 'int', proposalId: 'int', reason: ['enum', 'declined', 'expired', 'formed', 'invalidated'] },

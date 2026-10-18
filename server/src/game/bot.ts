@@ -333,6 +333,9 @@ function issue(ctx: Ctx, unit: Unit, troops: number, anchor: number): boolean {
 /** 재지정 — 도착지가 내 땅(= 방어 태세)인데 지금 위치에서 적 땅 없이 못 가면 내지 않는다 (v4.5). 냈으면 true */
 function retarget(ctx: Ctx, f: Readonly<Flag>, anchor: number): boolean {
   if (ctx.state.owners[anchor] === ctx.me && !defendReachable(ctx.state, ctx.me, f.posTileId, anchor)) return false;
+  // v4.6 (§27): 도착지 기본 태세가 지금 태세와 다른데 태세 쿨타임 중이면 서버는 태세를 못 바꾼 채 이동만 한다 — 봇은 쿨타임이 끝날 때까지 미룬다
+  const def = ctx.state.owners[anchor] === ctx.me ? POSTURE.DEFEND : POSTURE.ATTACK;
+  if (def !== f.posture && ctx.t + 1 < f.postureCooldownUntilTick) return false;
   push(ctx, { type: 'cmd_flag_retarget', clientSeq: seq(ctx), flagId: f.id, anchorTileId: anchor });
   ctx.touched.add(f.id);
   return true;
@@ -347,7 +350,10 @@ function posture(ctx: Ctx, f: Readonly<Flag>, to: Posture): void {
   ctx.touched.add(f.id);
 }
 
-/** 다음 tick 1단계에서 적용되므로 t+1 기준으로 경직·쿨타임을 본다 */
+/**
+ * 다음 tick 1단계에서 적용되므로 t+1 기준으로 경직·쿨타임을 본다.
+ * v4.6 (§27): 서버는 전투 중 전환도 받지만(이탈 비용 부과), 봇은 전투 중 전환하지 않는다 (후퇴 규칙이 전투 중 판단을 맡고, 전환 반복을 막는다).
+ */
 const canRetarget = (ctx: Ctx, f: Readonly<Flag>): boolean => isLive(f) && (ctx.t + 1 >= f.lockUntilTick || f.disengageUntilTick !== null);
 const canPosture = (ctx: Ctx, f: Readonly<Flag>): boolean =>
   isLive(f) && !f.inCombat && f.disengageUntilTick === null && ctx.t + 1 >= f.postureCooldownUntilTick;
@@ -740,8 +746,7 @@ function buyTech(ctx: Ctx): void {
 /** v4.4: 내 기지 칸 위(또는 그 칸으로 가는) 방어 태세 깃발 — 기지 수비대 */
 function isBaseGuard(ctx: Ctx, f: Readonly<Flag>): boolean {
   if (!isLive(f) || !ctx.state.map.isBase[f.anchorTileId] || ctx.state.owners[f.anchorTileId] !== ctx.me) return false;
-  const def = f.posture === POSTURE.DEFEND || f.pendingPosture === POSTURE.DEFEND;
-  return def && (f.posTileId === f.anchorTileId || f.state === 'MARCHING');
+  return f.posture === POSTURE.DEFEND && (f.posTileId === f.anchorTileId || f.state === 'MARCHING');
 }
 
 /**
@@ -981,8 +986,8 @@ function maintain(ctx: Ctx): void {
       if (canRetarget(ctx, f)) {
         const a = f.posture === POSTURE.ATTACK ? withSelf(ctx, f, () => bestAnchor(ctx, state.owners[f.anchorTileId], f.posTileId, myTroops)) : null;
         if (a && a.tileId !== f.anchorTileId) {
-          retarget(ctx, f, a.tileId);
-          ctx.plannedAttack.push([a.owner, a.tileId]);
+          if (retarget(ctx, f, a.tileId))
+            ctx.plannedAttack.push([a.owner, a.tileId]);
         } else recall(ctx, f);
         continue;
       }
@@ -993,8 +998,8 @@ function maintain(ctx: Ctx): void {
       if (!canRetarget(ctx, f)) continue;
       const a = myTroops >= BOT_IDLE_REDEPLOY_MIN_TROOPS ? withSelf(ctx, f, () => bestAnchor(ctx, -1, f.posTileId, myTroops)) : null;
       if (a) {
-        retarget(ctx, f, a.tileId);
-        ctx.plannedAttack.push([a.owner, a.tileId]);
+        if (retarget(ctx, f, a.tileId))
+          ctx.plannedAttack.push([a.owner, a.tileId]);
       } else recall(ctx, f);
       continue;
     }
@@ -1020,8 +1025,8 @@ function maintain(ctx: Ctx): void {
         if (f.stalled && canRetarget(ctx, f)) {
           const a = withSelf(ctx, f, () => bestAnchor(ctx, -1, f.posTileId, myTroops));
           if (a && a.tileId !== f.anchorTileId && a.score * 1000 > currentScore(ctx, f) * BOT_STALL_SWITCH_PERMILLE) {
-            retarget(ctx, f, a.tileId);
-            ctx.plannedAttack.push([a.owner, a.tileId]);
+            if (retarget(ctx, f, a.tileId))
+              ctx.plannedAttack.push([a.owner, a.tileId]);
           } else recall(ctx, f);
           continue;
         }

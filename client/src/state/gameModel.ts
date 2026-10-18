@@ -216,7 +216,6 @@ export class GameModel {
           // v4.2 (shared FlagSnapshot 추가 필드) — 이후 snapshot_delta flagFlags(HALTED)·flagReturnBase 가 갱신
           halted: false,
           returnBaseTileId: null,
-          pendingPosture: null, // v4.4 (§21) — flagFlags 비트 POSTURE_PENDING
         });
         this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
         break;
@@ -425,7 +424,6 @@ export class GameModel {
       f.breakaway = (bits & FLAG_BIT.BREAKAWAY) !== 0;
       f.stalled = (bits & FLAG_BIT.STALLED) !== 0;
       f.halted = (bits & FLAG_BIT.HALTED) !== 0; // v4.2 4.4a 정지 점령
-      f.pendingPosture = (bits & FLAG_BIT.POSTURE_PENDING) !== 0 ? (f.posture === 0 ? 1 : 0) : null; // v4.4 (§21) 대기 태세 = 현재의 반대
     }
     // v4.2 [A-61]: 지정 귀환 기지 — 바뀐 깃발만
     for (const [id, base] of d.flagReturnBase ?? []) {

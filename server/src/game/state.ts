@@ -102,8 +102,11 @@ export interface Flag {
   halted: boolean;
   /** v4.2 [A-61]: cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 기존 recallTarget 순서 */
   returnBaseTileId: number | null;
-  /** v4.4 (§21): 재지정이 정한 도착지 태세 — 전투·이탈 대기·쿨타임 때문에 아직 못 바꿨으면 여기 두고 4단계 첫머리에서 적용 */
-  pendingPosture: Posture | null;
+  /**
+   * v4.6 (§27) [A]: 전투 중 태세 전환(또는 태세가 바뀌는 재지정)이 연 이탈 대기. true 인 동안 상대 태세와 무관하게 전투 간선을 유지해
+   * 방어↔방어로 바뀌어도 이탈 비용(3초 ×0.5) 없이 끊기지 않게 한다. 직렬화하지 않는다 (disengageUntilTick 이 null 이 되면 함께 false)
+   */
+  disengageHold: boolean;
 }
 
 export interface BaseState {
@@ -450,7 +453,7 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     calmTicks: 0,
     halted: false,
     returnBaseTileId: null,
-    pendingPosture: null,
+    disengageHold: false,
     ...partial,
   };
 }

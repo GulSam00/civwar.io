@@ -78,7 +78,8 @@ export function attackSide(f: Readonly<Flag>): boolean {
 }
 
 function engagedPair(state: Readonly<GameState>, f: Readonly<Flag>, g: Readonly<Flag>): boolean {
-  return hostile(state, f.ownerId, g.ownerId) && (attackSide(f) || attackSide(g));
+  // v4.6 (§27) [A]: 전투 중 태세 전환의 이탈 대기(disengageHold) 동안은 상대 태세와 무관하게 간선 유지
+  return hostile(state, f.ownerId, g.ownerId) && (attackSide(f) || attackSide(g) || f.disengageHold || g.disengageHold);
 }
 
 /** v4.5: 깃발이 자기(소유자) 기지 칸(수도 포함) 위에 서 있는가 — 태세 무관 ×1.5 의 조건 */
@@ -253,6 +254,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     f.routed = true;
     f.inCombat = false;
     f.disengageUntilTick = null;
+    f.disengageHold = false;
     f.breakaway = false;
     f.blocked = false;
     beginReturn(state, f);
@@ -270,9 +272,16 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     if (f.disengageUntilTick === null) continue;
     if (!plan.groupOf.has(f.id)) {
       f.disengageUntilTick = null;
+      f.disengageHold = false;
       out.broadcast.push({ type: 'flag_disengaged', tick: t, flagId: f.id, reason: 'combat_over' });
+    } else if (t >= f.disengageUntilTick && f.disengageHold && (f.state === 'ENGAGED' || f.state === 'IDLE')) {
+      // v4.6 (§27) [A]: 제자리 깃발의 태세 전환 대기 — 만료돼도 빠져나갈 곳이 없다. 대기(×0.5)만 끝나고 전투는 계속 (breakaway 면 영구 면역이 된다)
+      f.disengageUntilTick = null;
+      f.disengageHold = false;
+      out.broadcast.push({ type: 'flag_disengaged', tick: t, flagId: f.id, reason: 'wait_over' });
     } else if (t >= f.disengageUntilTick) {
       f.disengageUntilTick = null;
+      f.disengageHold = false;
       f.breakaway = true;
       f.inCombat = false;
       brokeAway.add(f.id);

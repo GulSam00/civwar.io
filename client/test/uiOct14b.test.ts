@@ -24,7 +24,7 @@ const NAMES: Record<number, string> = { [CAP1]: '한울', [BASE1B]: '가람', [C
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 7, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: id(2, 5), anchorTileId: id(2, 7),
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, pendingPosture: null, ...over,
+  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
 });
 
 const delta = (tick: number, over: Partial<S2C_SnapshotDelta> = {}): S2C_SnapshotDelta => ({
@@ -208,28 +208,7 @@ describe('§21.4 병력·골드 출처 (production)', () => {
   });
 });
 
-describe('§21.2 대기 태세 (POSTURE_PENDING 128)', () => {
-  it('델타 비트 → pendingPosture = 현재의 반대 → 버튼·패널 "태세 전환 대기"', () => {
-    const { store, g } = setup([flag({ id: 7, posture: POSTURE.ATTACK })]);
-    store.onMessage(delta(131, { flagFlags: [[7, POSTURE.ATTACK, FLAG_BIT.POSTURE_PENDING, 140]] }));
-    const f = g.flags.get(7)!;
-    expect(f.pendingPosture).toBe(POSTURE.DEFEND);
-    const st = flagActionState(f, 131, 200);
-    expect(st.pendingPosture).toBe(POSTURE.DEFEND);
-    expect(st.postureBlocked).toBe('전환 대기 2초');
-    // 서버 자동 적용 → 비트가 꺼진다
-    store.onMessage({ type: 'flag_posture_changed', tick: 140, flagId: 7, posture: POSTURE.DEFEND, cooldownUntilTick: 165, auto: true, targetOwnerId: 254 });
-    store.onMessage(delta(140, { flagFlags: [[7, POSTURE.DEFEND, 0, 165]] }));
-    expect(flagActionState(g.flags.get(7)!, 140, 200).pendingPosture).toBeNull();
-  });
-
-  it('snapshot_full.pendingPosture 도 읽고, 귀환·패주 중이면 표시하지 않는다', () => {
-    expect(flagActionState(flag({ posture: POSTURE.ATTACK, pendingPosture: POSTURE.DEFEND }), 0, 200).pendingPosture).toBe(POSTURE.DEFEND);
-    expect(flagActionState(flag({ pendingPosture: POSTURE.DEFEND, state: 'RETURNING' }), 0, 200).pendingPosture).toBeNull();
-    expect(flagActionState(flag({ pendingPosture: POSTURE.DEFEND, routed: true }), 0, 200).pendingPosture).toBeNull();
-    expect(flagActionState(flag({ posture: POSTURE.DEFEND, pendingPosture: POSTURE.DEFEND }), 0, 200).pendingPosture).toBeNull(); // 같으면 대기 없음
-  });
-});
+// v4.6 (§27): '§21.2 대기 태세 (POSTURE_PENDING 128)' 테스트는 폐기됨 (pendingPosture·비트 128 제거). 프론트 재작업 때 정리할 것.
 
 describe('§21.3 멸망·합병', () => {
   it('피드 "멸망 — 합병", 같은 tick tileChanges 의 넘어간 칸을 번쩍임 목록에 모은다, 생산 내역 비움', () => {

@@ -73,11 +73,11 @@ function loadFull(f: any): void {
   M.threshold = f.thresholdPct;
   M.rush = f.endgameRushActive;
 }
-const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16, STALLED: 32, HALTED: 64, POSTURE_PENDING: 128 };
+const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16, STALLED: 32, HALTED: 64 };
 function applyEvent(e: any): void {
   switch (e.type) {
     case 'flag_issued':
-      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, pendingPosture: null });
+      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
       break;
     case 'flag_retargeted': {
       const f = M.flags.get(e.flagId);
@@ -166,7 +166,7 @@ function applyDelta(d: any): void {
   for (const [id, posture, bits, cd] of d.flagFlags) {
     const f = M.flags.get(id);
     if (!f) { recon.push(`t${d.tick} flagFlags 모르는 깃발 ${id}`); continue; }
-    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED), pendingPosture: bits & BIT.POSTURE_PENDING ? 1 - posture : null });
+    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED) });
   }
   for (const [id, rb] of d.flagReturnBase ?? []) {
     const f = M.flags.get(id);

@@ -64,7 +64,7 @@ export function flagActionState(f: FlagSnapshot, tick: number, tickMs: number): 
   const returning = f.state === 'RETURNING';
   const recallBlocked = f.routed ? '패주 중' : returning ? '귀환 중 — 취소 불가' : null;
   const postureBlocked = f.routed ? '패주 중' : returning ? '귀환 중' : f.disengaging ? '이탈 대기 중' : f.inCombat ? '전투 중' : cooldownSec > 0 ? `전환 대기 ${cooldownSec}초` : null;
-  const pending = f.pendingPosture ?? null;
+  const pending: Posture | null = null; // v4.6 (§27): pendingPosture 제거 — 프론트 정리 대기
   return {
     recallBlocked,
     postureBlocked,

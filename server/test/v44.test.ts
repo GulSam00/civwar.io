@@ -6,7 +6,6 @@ import {
   BASE_PROD_RECOVER_PER_MIN_PERMILLE,
   COMBAT_BASE_DEF_PERMILLE,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
-  FLAG_BIT,
   POSTURE,
   TERRAIN,
   TICKS_PER_MIN,
@@ -138,7 +137,7 @@ describe('v4.4 재지정(우클릭) = 항상 이동, 태세는 도착지로', ()
     expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true, posture: POSTURE.ATTACK });
   });
 
-  it('태세 쿨타임 중이면 pendingPosture(비트 128) → 쿨타임이 끝나는 tick 에 자동 적용', () => {
+  it('v4.6 (§27): 태세 쿨타임 중이면 이동은 하되 태세는 그대로 (postureHeld, 대기 상태·비트 128 없음)', () => {
     const sim = makeSim();
     const s = sim.state;
     const cap = s.players[1].homeTileId;
@@ -147,29 +146,14 @@ describe('v4.4 재지정(우클릭) = 항상 이동, 태세는 도착지로', ()
     f.postureCooldownUntilTick = s.tick + 10;
     sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 1, flagId: f.id, anchorTileId: neutral });
     const r = run(sim, 1);
-    expect(r.personal[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND }); // 현재 태세
-    expect(f.pendingPosture).toBe(POSTURE.ATTACK);
-    expect(flagBits(f) & FLAG_BIT.POSTURE_PENDING).toBe(FLAG_BIT.POSTURE_PENDING);
-    expect(buildSnapshotFull(s).flags.find((x) => x.id === f.id)!.pendingPosture).toBe(POSTURE.ATTACK);
+    expect(r.personal[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND, postureHeld: true });
+    expect(f.anchorTileId).toBe(neutral);
+    expect(f.state).toBe('MARCHING');
+    expect(flagBits(f) & 128).toBe(0);
+    expect(buildSnapshotFull(s).flags.find((x) => x.id === f.id)).not.toHaveProperty('pendingPosture');
     const r2 = run(sim, 12);
-    expect(f.posture).toBe(POSTURE.ATTACK);
-    expect(f.pendingPosture).toBeNull();
-    expect(r2.all.find((m) => m.type === 'flag_posture_changed')).toMatchObject({ flagId: f.id, posture: POSTURE.ATTACK, auto: true });
-  });
-
-  it('수동 태세 전환·회수는 대기 태세를 지운다', () => {
-    const sim = makeSim();
-    const s = sim.state;
-    const cap = s.players[1].homeTileId;
-    const neutral = s.graph.disk(cap, 4).find((x) => s.owners[x] === NEUTRAL && isClaimable(s.map.terrain[x]))!;
-    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: cap, anchor: cap, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-    f.postureCooldownUntilTick = s.tick + 30;
-    sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 1, flagId: f.id, anchorTileId: neutral });
-    run(sim, 1);
-    expect(f.pendingPosture).toBe(POSTURE.ATTACK);
-    sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 2, flagId: f.id });
-    run(sim, 1);
-    expect(f.pendingPosture).toBeNull();
+    expect(f.posture).toBe(POSTURE.DEFEND); // 쿨타임이 끝나도 자동 적용 없음
+    expect(r2.all.find((m) => m.type === 'flag_posture_changed')).toBeUndefined();
   });
 });
 

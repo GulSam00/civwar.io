@@ -61,61 +61,7 @@ function step(sim: Simulation, cmds: [number, Record<string, unknown>][] = [], s
 const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots: boolean) =>
   createGameState(generateMapForSize(seed, size, n, MAP_GEN_DEFAULT), Array.from({ length: n }, (_, i) => ({ playerId: i + 1, isBot: bots, connected: true, botDifficulty: 'HARD' as const })), 'NORMAL', seed);
 
-describe('QA v4.5 — 태세 쿨타임 중 우클릭 (프론트 보고 "쿨타임 중 내 기지 우클릭에 태세가 바뀜" 확인)', () => {
-  it('쿨타임 중 retarget 은 태세를 바꾸지 않고 pendingPosture 로 두며, 쿨타임이 끝난 첫 tick 에 자동 전환한다 (서버 = 모델)', () => {
-    const state = mkState(31, 4, 'S', false);
-    const sim = new Simulation(state, IdleBot);
-    const store = bootstrap(state);
-    const g = store.game!;
-    const home = state.players[1].homeTileId;
-    const near = (d: number) => {
-      for (let t = 0; t < state.owners.length; t++) if (state.owners[t] === 0 && state.graph.distance(home, t) === d && state.map.terrain[t] !== 0 && state.map.terrain[t] !== 6 && !state.map.isBase[t]) return t;
-      throw new Error('no tile');
-    };
-    const issue = (anchor: number) => ({ type: 'cmd_flag_issue', unit: UNIT.SWORD, troops: 40, anchorTileId: anchor, originBaseTileId: null });
-    // (1) DEFEND 로 바꾼 직후(쿨타임) 중립 칸 우클릭 → 대기 ATTACK
-    let r = step(sim, [[1, issue(near(5))]], [store]);
-    const fid = r.acks[0].flagId as number;
-    step(sim, [], [store]);
-    r = step(sim, [[1, { type: 'cmd_set_posture', flagId: fid, posture: POSTURE.DEFEND }]], [store]);
-    expect(r.acks[0].accepted).toBe(true);
-    const fl = state.flags.find((f) => f.id === fid)!;
-    const cd = fl.postureCooldownUntilTick;
-    step(sim, [], [store]);
-    r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: fid, anchorTileId: near(7) }]], [store]);
-    expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND }); // ack = 처리 직후 현재 태세
-    expect(fl.posture).toBe(POSTURE.DEFEND);
-    expect(fl.pendingPosture).toBe(POSTURE.ATTACK);
-    expect(r.msgs.some((m) => m.type === 'flag_posture_changed')).toBe(false);
-    expect(g.flags.get(fid)).toMatchObject({ posture: POSTURE.DEFEND, pendingPosture: POSTURE.ATTACK });
-    let changedAt = -1;
-    for (let i = 0; i < 40 && changedAt < 0; i++) {
-      const rr = step(sim, [], [store]);
-      if (rr.msgs.some((m) => m.type === 'flag_posture_changed' && (m as { flagId: number }).flagId === fid)) changedAt = state.tick;
-    }
-    expect(changedAt).toBe(cd);
-    expect(g.flags.get(fid)).toMatchObject({ posture: POSTURE.ATTACK, pendingPosture: null });
-    // (2) ATTACK 쿨타임 중 내 수도 우클릭 → 대기 DEFEND
-    r = step(sim, [[1, issue(near(5))]], [store]);
-    const f2 = r.acks[0].flagId as number;
-    const fl2 = state.flags.find((f) => f.id === f2)!;
-    step(sim, [], [store]);
-    step(sim, [[1, { type: 'cmd_set_posture', flagId: f2, posture: POSTURE.DEFEND }]], [store]);
-    while (state.tick < fl2.postureCooldownUntilTick) step(sim, [], [store]);
-    r = step(sim, [[1, { type: 'cmd_set_posture', flagId: f2, posture: POSTURE.ATTACK }]], [store]);
-    expect(r.acks[0].accepted).toBe(true);
-    const cd2 = fl2.postureCooldownUntilTick;
-    r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: f2, anchorTileId: home }]], [store]);
-    expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.ATTACK });
-    expect(fl2.pendingPosture).toBe(POSTURE.DEFEND);
-    let ch2 = -1;
-    for (let i = 0; i < 40 && ch2 < 0; i++) {
-      const rr = step(sim, [], [store]);
-      if (rr.msgs.some((m) => m.type === 'flag_posture_changed' && (m as { flagId: number }).flagId === f2)) ch2 = state.tick;
-    }
-    expect(ch2).toBe(cd2);
-  });
-});
+// v4.6 (§27): '쿨타임 중 retarget → pendingPosture' 검증은 폐기됨 (pendingPosture 제거). 프론트 재작업 때 postureHeld 기준으로 다시 쓸 것.
 
 describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 지도)', () => {
   it('막히는 방어 앵커 발령 → 서버 IDLE(unreachable) @ defendDest → 모델 flagIdleReason, 600 tick 뒤 자동 귀환; 클라이언트 미리보기 = 서버 정지 칸', () => {

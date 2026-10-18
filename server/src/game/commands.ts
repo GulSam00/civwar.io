@@ -40,7 +40,7 @@ function ack(out: Outbox, playerId: number, clientSeq: number, reason?: CmdRejec
 
 function flagAck(out: Outbox, playerId: number, clientSeq: number, r: CmdResult): void {
   if ('reason' in r) ack(out, playerId, clientSeq, r.reason);
-  else ack(out, playerId, clientSeq, undefined, { flagId: r.flagId, posture: r.posture });
+  else ack(out, playerId, clientSeq, undefined, { flagId: r.flagId, posture: r.posture, ...(r.postureHeld !== undefined ? { postureHeld: r.postureHeld } : {}) });
 }
 
 export function stage1_drainInput(state: GameState, queue: QueuedCommand[], t: number, out: Outbox): void {

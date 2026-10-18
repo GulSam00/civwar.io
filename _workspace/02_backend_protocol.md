@@ -264,9 +264,9 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 | 명령 | 검증 순서 (먼저 걸린 코드 1개 회신) | 효과 |
 |---|---|---|
 | `cmd_flag_issue` | `ELIMINATED` → `BAD_REQUEST`(tileId 범위 밖·troops 비정수) → `NO_SLOT`(내 깃발 수 ≥ flagCap — 패주 귀환 중인 깃발도 슬롯 점유) → `BAD_UNIT` → `WATER`(DEEP·SHALLOW) → `OUT_OF_RANGE`(내 타일까지 거리 > 40) → `TOO_SMALL`(< 40) → `ALLIED`(앵커 소유자가 ACTIVE/BREAKING 동맹) → `NOT_BASE` / `NOT_OWNED_BASE`(originBaseTileId 지정 시) → `INSUFFICIENT` | 기본 태세: 내 땅 앵커 = DEFEND(`targetOwnerId = 254 ANY_HOSTILE`), 그 외 ATTACK(`targetOwnerId` = 앵커 소유자, 중립 0). 풀 차감 `ceil(troops × CONVERT_<unit> / 1000)` (**v4.3**: 플레이어 스탯, 무테크 = `UNIT_CONVERT_PERMILLE` 1000/1000/1150, CAV-2A 기병 1070. 구 전 병종 편성 효율 `MOB_CONVERT` 폐기). 슬롯 = 최소 미사용 번호. 출발 = 지정 기지 / 앵커 최근접 내 기지 / (기지 없음) 수도 최근접 내 타일. → `flag_issued` |
-| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 전투 중이어도 항상 거절** — QA I-2 수락 경로 폐기 [A-62]) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생 — **v4.4 (§21.2): 태세 = 도착지(내 땅·내 기지 = DEFEND, 적·중립 = ATTACK). 쿨타임 중·전투 중이면 `pendingPosture` 로 미뤘다가 자동 적용. 내 기지 칸도 "그 기지 위로 가서 방어"(회수 아님)**, `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
+| `cmd_flag_retarget` | `NO_FLAG`(없음·남의 깃발) → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 전투 중이어도 항상 거절** — QA I-2 수락 경로 폐기 [A-62]) → `LOCKED`(재지정 경직 15 tick 중 — **이탈 대기 중이면 허용**) → `BAD_REQUEST` → `WATER` → `ALLIED` → `OUT_OF_RANGE` | 앵커 교체, 기본 태세 재파생 — **v4.4 (§21.2): 태세 = 도착지(내 땅·내 기지 = DEFEND, 적·중립 = ATTACK). **v4.6 (§27): 쿨타임이 안 돌면 즉시 바꾸고(전투 중 포함), 쿨타임 중이면 이동만 하고 태세는 그대로(`postureHeld:true`) — 대기·자동 적용 폐기**. 내 기지 칸도 "그 기지 위로 가서 방어"(회수 아님)**, `postureManual=false`, `state=MARCHING`, `lockUntilTick = t+15`, 진척도·예산 0. **전투 중이면 이탈 대기 15 tick 개시**. → `flag_retargeted` (+태세가 바뀌면 `flag_posture_changed auto:true`, +전투 중이면 `flag_disengage_started`) |
 | `cmd_flag_recall` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2: 귀환 중이면 항상 거절**, [A-62]) → (**v4.2** `baseTileId` 지정 시) `NOT_BASE`(기지 칸 아님·범위 밖) → `NOT_OWNED_BASE`(내 기지 아님) | `state=RETURNING`, `returnBaseTileId = baseTileId ?? null`, 귀환지 = recallTarget(지정 기지 우선). 깃발은 **실제로 걸어서** 귀환지까지 간다(속도 ×1.5, ZOC 무시). 도착 시 잔여 × 85% 풀 환급. **전투 중(비귀환)이면 이탈 대기**. → `flag_recalled` (+`flag_disengage_started{auto:false}`) |
-| `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2 추가** [A-62]) → `DISENGAGING` → `IN_COMBAT` → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
+| `cmd_set_posture` | `NO_FLAG` → `ROUTED` → `RETURNING`(**v4.2 추가** [A-62]) → `SAME_POSTURE` → `POSTURE_COOLDOWN`(`tick < postureCooldownUntilTick`) (**v4.6 (§27): `DISENGAGING`·`IN_COMBAT` 거절 폐기 — 전투 중에도 수락, 이탈 대기 부과**) | 즉시 적용(같은 tick 4a 가 새 태세로 교전 판정), 쿨타임 `t + 25`, 진척도·예산·정체 리셋, `targetOwnerId` 재계산 = `owners[anchor] == 소유자 ? 254 : owners[anchor]`(1단계 처리 시점), `postureManual=true`. → `flag_posture_changed auto:false`(결과 `targetOwnerId` 포함) |
 
 `recallTarget`: **v4.2 ⓪ 지정 기지(`returnBaseTileId`, 아직 내 소유일 때)** → ① 출발 타일(아직 내 소유) → ② 내 기지 중 현재 위치 최근접(동률 tileId ASC) → ③ 수도(내 소유면) → ④ 최근접 내 타일. **매 tick 재평가**. 지정 기지를 잃은 tick 에 `returnBaseTileId = null`(델타 `flagReturnBase`로 통지) → ①~④ 폴백. **되찾아도 다시 그 기지로 가지 않는다.** IDLE 2분 자동 회수는 `returnBaseTileId = null`. 패주(`flag_routed`)는 기존 지정을 유지한다(§10-84).
 
@@ -392,7 +392,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 - `alliances[]` 항목: `{ a, b, state:"ACTIVE|BREAKING", sinceTick, breakAtTick|null }` (a<b, (a,b) ASC).
 - **2차 추가 최상위 필드**: `allyProposals: [{ proposalId, fromPlayerId, toPlayerId, expireTick }]`(proposalId ASC), `allianceFreezeUntilTick: number|null`, `lockoutDissolveTick: number|null`.
 - `hpPct = floor(hpMilli × 100 / 15000)`.
-- **v4.4 추가 (§21)**: `bases[].prodPm`(기지 생산력 ‰), `flags[].pendingPosture`(0|1|null), 최상위 `production: PlayerProduction[]`(플레이어별 생산 지역 내역).
+- **v4.4 추가 (§21)**: `bases[].prodPm`(기지 생산력 ‰), ~~`flags[].pendingPosture`(0|1|null)~~ (**v4.6 (§27) 제거**), 최상위 `production: PlayerProduction[]`(플레이어별 생산 지역 내역).
 
 ### snapshot_delta (룸, 매 tick)
 ```json
@@ -424,7 +424,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 - **2차 변경(추가만)**:
   - `flagStats`는 `t % 5 == 0`의 변경분에 더해 **교전 중(`inCombat`) 깃발은 매 tick**, **새 깃발은 첫 tick 즉시** 실린다(GDD 7.3 "교전 깃발은 매 tick 병력 필드").
   - **`flagFlags: [flagId, posture, bits, postureCooldownUntilTick][]`** — 태세·비트·쿨타임 중 하나라도 바뀐 깃발만, 매 tick. 항상 존재(빈 배열 가능).
-    `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32 | HALTED 64`(**v4.2 추가**) | `POSTURE_PENDING 128`(**v4.4 추가**, 아래) — 현재 값 범위 **0..255**(v4.2 시점엔 0..127).
+    `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32 | HALTED 64`(**v4.2 추가**) | ~~`POSTURE_PENDING 128`~~(v4.4 추가 → **v4.6 (§27) 제거**, 비트 128 은 더 이상 보내지 않는다) — 값 범위 0..127.
   - **v4.4 (§21) 추가, 항상 존재**: `baseProd: [tileId, prodPm][]`(5 tick 마다 바뀐 기지만), `production: PlayerProduction[]`(5 tick 마다 내역이 바뀐 플레이어만 — 그 플레이어 내역 전체 교체), `flagFlags` 비트 **`POSTURE_PENDING 128`**(값 범위 0..255).
   - **`flagReturnBase: [flagId, returnBaseTileId|null][]` (v4.2 추가, 항상 존재)** — 지정 귀환 기지가 바뀐 깃발만(지정 회수 수락 tick, 지정 기지 상실로 null 이 된 tick). 새 깃발은 `null` 이 기본이라 싣지 않는다. 귀환 화살표: `returnBaseTileId ?? flag_recalled/flag_routed.returnTileId`.
   - 새 깃발은 `flag_issued` 이벤트 + 같은 tick 델타의 `flagMoves`/`flagStats`/`flagFlags`(첫 등장)로 알 수 있다. 사라진 깃발은 `flagsGone` + `flag_ended`.
@@ -511,7 +511,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `flag_posture_changed` | `{"type":"flag_posture_changed","tick":21,"flagId":1,"posture":1,"cooldownUntilTick":46,"auto":true,"targetOwnerId":254}` | 수동 전환(`auto:false`) / 재지정에 따른 기본 태세 재파생(`auto:true`). **QA I-1 추가 필드 `targetOwnerId`** = 전환 후 값(`owners[anchor] == 소유자 ? 254 : owners[anchor]`, 1단계 처리 시점) — 클라이언트는 이 값으로 덮어쓴다 |
 | `flag_blocked` / `flag_unblocked` | `{"type":"flag_blocked","tick":5,"flagId":2,"byFlagIds":[1]}` / `{"type":"flag_unblocked","tick":31,"flagId":2}` | 대치(ZOC 정지) 비트가 바뀐 tick (4b 끝). `byFlagIds` = 다음 칸에 ZOC 를 거는 적 방어 태세 깃발 |
 | `flag_disengage_started` | `{"type":"flag_disengage_started","tick":2,"flagId":2,"untilTick":17,"auto":false}` | 전투 중 재지정·회수 수락(`auto:false`) / **v4.2 `auto:true`(필드 추가, 항상 존재)**: 귀환(RETURNING·비패주) 깃발이 전투에 붙잡혀 서버가 자동 개시 — "귀환 중 붙잡힘, 3초 뒤 이탈" 표시 |
-| `flag_disengaged` | `{"type":"flag_disengaged","tick":17,"flagId":2,"reason":"broke_away"}` | `broke_away`(대기 완료 → breakaway) / `combat_over`(대기 중 무리 소멸) |
+| `flag_disengaged` | `{"type":"flag_disengaged","tick":17,"flagId":2,"reason":"broke_away"}` | `broke_away`(대기 완료 → breakaway) / `combat_over`(대기 중 무리 소멸) / **`wait_over`(v4.6 §27: 태세 전환 이탈 대기가 끝났으나 제자리 깃발이라 전투에 남음)** |
 | `base_captured` | `{"type":"base_captured","tick":3,"tileId":1290,"fromPlayerId":0,"toPlayerId":1,"newHpPct":50,"newProdPm":500}` | 기지 체력 0 → 함락. **v4.4 `newProdPm`(추가)** = 함락 직후 생산력 ‰(직전 값 × 0.5, §21) |
 | `ally_proposed` | `{"type":"ally_proposed","tick":1,"proposalId":1,"fromPlayerId":1,"toPlayerId":2,"expireTick":151}` | 제안 생성 |
 | `ally_proposal_closed` ⟵ **백엔드 추가** | `{"type":"ally_proposal_closed","tick":2,"proposalId":1,"reason":"formed"}` | `declined` / `expired` / `formed` / `invalidated`(탈락·lockout) |
@@ -914,7 +914,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 106. **[A-87] 생산 적용** = "지역 몫 × 생산력" (§21.4 식). 병력: 기존 재생 R(√tiles·로지스틱)을 그대로 두고 `R × Σ(tiles_r × pm_r) / (tiles × 1000)` — √ 안에 유효 칸 수를 넣는 방식(감소가 √ 로 약해짐) 대신 선형을 골랐다(사용자 "지역 생산에 그 기지 배율"). 병력 **상한은 생산력과 무관**(전체 칸 수). 골드: 지역 골드 가중치(지형 가중) × 생산력. 유지비는 총 그로스에 한 번(기존 정수식 그대로). 지역별 몫은 floor 분배 + 잔여는 가중치 최대 지역 → **지역 합 = 총합 정확히**, 생산력이 전부 1000 이면 기존 값과 비트 단위로 같다. 플레이어 `goldWeight` 필드는 원값 유지(의미 변경 없음).
 107. **[A-88] 기지 위 수비 깃발이 있는 동안 기지 체력 피해 0** — "공격자는 먼저 깃발 전투를 이겨야 한다". 현 전투 모델에서 이미 성립(기지를 미는 공격 깃발은 기지 칸과 4방향 인접 ⇒ 8방향 접촉 ⇒ 4a 전투 ⇒ `pushing` 아님)하므로 새 규칙이 아니라 귀결이다. 6단계에 같은 조건(`baseOccupiedByHostile`: 기지 칸 위에 공격자와 적대인 `combatEligible` 깃발)을 명시 검사로 추가해 불변식으로 고정했다. 기지 주인의 **동맹** 깃발이 서 있어도 막는다(공격자와 적대이므로 어차피 전투). 패주한 수비 깃발은 막지 못한다.
 108. **×1.5 적용 범위**: 방어 태세 + **내** 기지 칸(수도 포함)만. 동맹 기지 위는 지형 보정(사용자 문구 "its own base"). 서 있는 동안 기지가 넘어가면 그 tick 부터 지형 보정. 공격 태세는 기지 위라도 기존 값.
-109. **[A-90] 재지정 태세 대기(`pendingPosture`)**: 사용자 결정 "태세는 도착지로" 를 쿨타임·전투 중에도 지키기 위해, 즉시 못 바꾸면 미뤘다가 자동 적용. 전투 중 즉시 전환을 허용하지 않은 이유: 공격 태세로 싸우다 내 땅으로 재지정하면 방어↔방어가 되어 **이탈 대기(3초, ×0.5) 없이 전투가 끊기는 탈출구**가 생긴다. 직렬화는 full 필드 + 델타 비트 128(대기 태세는 항상 현재의 반대라 1비트로 충분 — `flagFlags` 튜플 모양 유지). 적용 시 ENGAGED·IDLE 깃발은 MARCHING 으로 돌려 같은 tick settle 이 새 태세로 다시 판정(공격 태세로 바뀐 방어 주둔 깃발이 엉뚱한 칸에서 밀지 않게). `postureManual = false`.
+109. **[A-90] 재지정 태세 대기(`pendingPosture`) — v4.6 (§27) 에서 폐기됨**: 사용자 결정 "태세는 도착지로" 를 쿨타임·전투 중에도 지키기 위해, 즉시 못 바꾸면 미뤘다가 자동 적용. 전투 중 즉시 전환을 허용하지 않은 이유: 공격 태세로 싸우다 내 땅으로 재지정하면 방어↔방어가 되어 **이탈 대기(3초, ×0.5) 없이 전투가 끊기는 탈출구**가 생긴다. 직렬화는 full 필드 + 델타 비트 128(대기 태세는 항상 현재의 반대라 1비트로 충분 — `flagFlags` 튜플 모양 유지). 적용 시 ENGAGED·IDLE 깃발은 MARCHING 으로 돌려 같은 tick settle 이 새 태세로 다시 판정(공격 태세로 바뀐 방어 주둔 깃발이 엉뚱한 칸에서 밀지 않게). `postureManual = false`.
 110. **[A-91] 멸망·합병 세부**: 합병 대상 = `lastBaseLostTo`(그 플레이어 기지를 마지막으로 가져간 플레이어 — `setTileOwner` 가 기지 칸 소유 변경 때 기록, 없으면 `lastLostTo`). 같은 tick 연쇄는 playerId ASC 처리 + `conqueredBy` 추적(합병 대상이 이미 멸망 → 그를 멸망시킨 쪽, 끝내 없으면 중립). 풀 병력·골드·테크·유지 중 동맹은 넘기지 않는다(소멸 — 회계 `eliminated`). 대량 칸 이전은 `setTileOwner` 경유 → 같은 tick 델타 `tileChanges`(별도 full 강제 송신 없음 — 최악 수천 쌍 × 1회). `player_eliminated` 에 `annexedTiles` 추가.
 111. **봇 기지 수비 (§11, 사용자 "적당히")**: `guardBases` — 결정당 1회, `defend`(요격)보다 먼저. 대상 = **마지막 기지**(적대 공격 깃발이 `BOT_LAST_BASE_GUARD_RADIUS` 8 안) **+ 마지막이 아닌 기지는 최근 `BOT_BASE_GUARD_DAMAGE_WINDOW` 25 tick 안에 체력이 깎인 것**(`BOT_BASE_GUARD_RADIUS` 4 안 위협). 우선순위 = 위협 실효력 합 큰 순. 이미 기지 위(또는 가는 중) 수비대 실효력 ≥ 위협 × `BOT_INTERCEPT_RATIO`(1.25) 면 건너뜀. 수단 ① 창병 발령(앵커 = 기지 → 출발도 그 기지라 즉시 자리), 필요 병력 = 위협 × 1.25 ÷ 기지 위 창 방어값(1950), 최소 풀 40% — **마지막 기지는 필요량에 못 미쳐도 가진 만큼** ② 슬롯·병력이 없고 마지막 기지면 가장 가까운 비전투 깃발을 기지로 재지정(→ DEFEND). 수비대는 주둔 반격·제자리 공격 전환을 하지 않고, 위협 없이 `BOT_GARRISON_PATIENCE`(3분)가 지나면 회수, 위협 중엔 슬롯 재활용 대상에서 빠진다. **범위 선택 근거 = 자가대전 비교(§9 v4.4)**: 위협받는 기지 전부를 지키면 기지 함락이 33.0 → 14.4/판으로 반 이하, 마지막 기지만 지키면 26.0 이지만 일반 기지 방어를 전혀 안 쓴다 → 중간("공격받는 기지")을 골랐다(20.5/판, 탈락 1.2/판). 봇 기지 공격 점수(마지막 기지 가산 등)는 **바꾸지 않았다**.
 112. **[A-92] 지명**: 풀 120개(고유어풍 80 + 판타지풍 40, 한글 2~3음절)를 서버에 두고, **룸 시드**(무작위 맵 = 맵 시드 / 프리셋 맵 = 룸이 뽑은 시드 — 봇 성향 시드와 같은 값)로 Mulberry32 Fisher–Yates 셔플 → 기지 tileId 순서로 배정. 프리셋 맵에 맵 시드(파일 `origin.seed`, 없으면 0)를 쓰면 공식 맵마다 이름이 늘 같아져서 룸 시드를 골랐다. 풀보다 기지가 많으면(현 상한 24 라 발생 안 함) `"이름 2"` 접미사로 고유성 유지. 전송 = `map_init.baseNames`(bases 와 평행 배열).
@@ -1208,6 +1208,7 @@ stat = techStatValues(mask):  v = TECH_STAT_BASE.slice()
 | 선택 부대 위 **태세 버튼** | `{ "type":"cmd_set_posture", "clientSeq":n, "flagId":f, "posture":p }` (v4.1 그대로) |
 
 - 재지정 태세 = **도착지 소유자로 결정**: 내 땅(내 기지 포함) = `DEFEND`, 적·중립 = `ATTACK`. 물(`WATER`)·동맹 땅(`ALLIED`)·사거리 밖(`OUT_OF_RANGE`)·경직(`LOCKED`)·귀환 중(`RETURNING`) 등 거절은 기존과 같다(§4 표).
+> **v4.6 (§27) 정정**: 아래 두 불릿(대기 태세 `pendingPosture`·비트 128)은 폐기됐다. 현행 규칙은 §27.
 - 지금 태세를 바꿀 수 있으면(쿨타임 경과 ∧ 비전투) 같은 tick 에 바꾸고 `flag_posture_changed{auto:true}`. **바꿀 수 없으면**(태세 쿨타임 중이거나 **전투 중** — 전투 중 재지정은 이탈 대기로 빠져나가는 중이라, 그 사이 태세를 바꾸면 방어↔방어가 되어 이탈 비용 없이 싸움이 끊긴다) **`pendingPosture` 에 도착지 태세를 두고**, 조건이 풀리는 첫 tick 4단계 첫머리에서 서버가 자동 적용 → `flag_posture_changed{auto:true}` [A-90]. 이미 멈춰 있던(ENGAGED·IDLE) 깃발은 그 tick MARCHING 으로 되돌려 새 태세로 다시 도착 판정한다(`flag_engaged`/`flag_idle` 이 다시 올 수 있다).
 - `cmd_ack.posture` 는 **처리 직후의 현재 태세**(대기 중이면 아직 이전 태세). 대기 태세는 `snapshot_full.flags[].pendingPosture`(0|1|null) / 델타 `flagFlags` 비트 **`POSTURE_PENDING 128`**(대기 태세 = 현재 태세의 반대 — 같으면 대기가 없다).
 - `pendingPosture` 를 지우는 것: 적용됨 / 수동 `cmd_set_posture` 수락 / 회수·IDLE 자동 귀환·패주(귀환 시작) / 현재와 같은 태세가 되는 재지정.
@@ -1285,7 +1286,7 @@ net_r    = net 를 gross_r 로 분배
 | `BASE_PROD_CAPTURE_PERMILLE` | 500 | 사용자 확정 (점령 시 ×0.5) |
 | `BASE_PROD_RECOVER_PER_MIN_PERMILLE` | 167 | **[A-85] 에이전트 선택** |
 | `PRODUCTION_DELTA_INTERVAL` | 5 | 델타 `production` 주기 |
-| `FLAG_BIT.POSTURE_PENDING` | 128 | 델타 비트 |
+| ~~`FLAG_BIT.POSTURE_PENDING`~~ | ~~128~~ | v4.6 (§27) 제거 |
 
 ### 21.7 서버 코드
 
@@ -1863,3 +1864,65 @@ A2(10초) + B4 + B3, 봇만:
   - `npm run smoke` PASSED
   - `qa:ws` 82/82
   - `qa:headless` 스키마 위반·순서 위반·재구성 불일치 0
+
+---
+
+## 27. 태세 전환 즉시 적용 (프론트 영향 있음, 호환 깨짐 — 2026-10-19, 사용자 결정)
+
+근거: `_workspace/BACKLOG.md` 「결정 완료」 2번, `_workspace/00_input/design-decisions.md`. `PROTOCOL_VERSION` 은 1 그대로(클라이언트·서버를 함께 배포).
+
+### 27.1 규칙
+
+태세 쿨타임(`POSTURE_COOLDOWN_TICKS` 25 tick = 5초)의 뜻은 **"같은 깃발이 다시 태세를 바꿀 수 있기까지의 시간"** 이다. "제자리에서 기다리는 시간"이 아니다.
+
+1. **쿨타임이 안 돌면 어떤 상태에서든 즉시 적용**한다. 전투 중도 포함. 적용 직후 쿨타임(5초)이 시작되고, 막는 것은 **다음 전환뿐**이다.
+2. **쿨타임 중 새 전환 요청은 거절**한다: `cmd_ack{accepted:false, reason:"POSTURE_COOLDOWN"}`. 대기열·예약 상태는 없다.
+3. `cmd_set_posture` 검증 순서: `NO_FLAG` → `ROUTED` → `RETURNING` → `SAME_POSTURE` → `POSTURE_COOLDOWN`. **`DISENGAGING`·`IN_COMBAT` 은 이 명령에서 더 이상 보내지 않는다**(코드 값은 `CmdRejectReason` 에 남아 있으나 쓰임 없음).
+4. **전투 중 전환**은 즉시 적용하되 **회수와 같은 이탈 대기**(`DISENGAGE_TICKS` 15 = 3초, 실효값 ×0.5 — MOB-2B 철수 훈련 시 10)를 부과한다. `flag_posture_changed{auto:false}` 와 `flag_disengage_started{auto:false, untilTick}` 가 같은 tick 에 온다(순서: posture_changed → disengage_started). 이미 이탈 대기 중이면 타이머는 그대로다.
+
+### 27.2 제거된 것 (호환 깨짐)
+
+| 제거 | 대체 |
+|---|---|
+| `snapshot_full.flags[].pendingPosture` | 없음 (대기 상태 자체가 없다) |
+| `snapshot_delta.flagFlags` 비트 `POSTURE_PENDING` (128) | 없음. 비트 값 범위는 0..127 로 돌아간다 |
+| `FLAG_BIT.POSTURE_PENDING` (shared) | — |
+| 서버의 4단계 첫머리 "대기 태세 자동 적용"과 그때의 `flag_posture_changed{auto:true}` | 재지정 순간의 즉시 전환만 `auto:true` |
+| `cmd_set_posture` 의 `DISENGAGING`·`IN_COMBAT` 거절 | 전투 중 전환 수락 + 이탈 대기 |
+
+`flag_posture_changed.auto` 는 **유지**한다. `auto:true` = 우클릭 이동(`cmd_flag_retarget`)이 도착지 기본 태세로 자동 전환한 경우, `auto:false` = `cmd_set_posture` 수동 전환.
+
+### 27.3 우클릭 이동(`cmd_flag_retarget`)의 자동 태세
+
+도착지 기본 태세 = 내 땅(내 기지 포함) `DEFEND`, 적·중립 `ATTACK`.
+
+- **쿨타임이 안 돌면** 이동과 함께 즉시 전환(전투 중도). `flag_posture_changed{auto:true}`.
+- **쿨타임 중이면 이동은 그대로 수락하고 태세는 바꾸지 않는다.** 대기·나중 적용 없음. 쿨타임이 끝나도 자동 전환되지 않는다.
+- 응답에 **실제 태세**가 실린다: `cmd_ack.posture`, `flag_retargeted.posture`. 새 필드 **`postureHeld: boolean`** (`cmd_ack` 는 선택 필드로 `cmd_flag_retarget` 응답에만, `flag_retargeted` 는 항상): `true` = 도착지 기본 태세와 현재 태세가 달라서 적용하고 싶었으나 쿨타임 때문에 못 함. 현재 태세가 이미 도착지 기본값이면 `false`.
+- **클라이언트는 `postureHeld === true` 일 때 "태세 전환 쿨타임 중" 안내를 띄워야 한다**(남은 시간 = `postureCooldownUntilTick - tick`). 도착지 표시·미리보기는 서버 태세(`posture`)를 따른다.
+- 전투 중 재지정은 종전처럼 이탈 대기를 부과하고(3초 ×0.5), 태세가 바뀌면 아래 27.4 의 간선 유지가 함께 걸린다. 대기가 끝나면 `broke_away`.
+
+### 27.4 [A] 에이전트 결정 (사용자 확인 필요)
+
+- **[A-119] 전환 이탈 대기 동안 전투 간선 유지(`disengageHold`, 서버 내부 상태·직렬화 안 함).** 전투 중 전환(또는 태세가 바뀌는 재지정)이 이탈 대기를 열면, 대기가 끝날 때까지 상대 태세와 무관하게 두 깃발의 전투 간선을 유지한다. 이유: 공격→방어 전환으로 방어↔방어가 되면 간선이 사라져 다음 tick 에 이탈 비용 없이 싸움이 끊긴다(A-90 이 막으려던 탈출구). 간선 유지 덕분에 3초 ×0.5 를 실제로 치르고, 대기가 끝난 뒤에야 끊긴다. 적용 범위는 **태세 전환·태세가 바뀌는 재지정뿐**이다 — §25 A3(귀환 깃발이 방어 깃발과 싸우다 공짜로 빠지는 빈틈)은 **그대로 두었다**.
+- **[A-120] 이탈 대기 만료 처리.** (a) 제자리 깃발(`state` ENGAGED·IDLE)의 태세 전환 대기는 만료되어도 **전투에 남는다**(breakaway 없음). 이동하지 않는 깃발이 breakaway 가 되면 영구히 전투 대상에서 빠져 면역이 되기 때문이다. 대신 ×0.5 가 끝나고 새 이벤트 `flag_disengaged{reason:"wait_over"}` 가 온다. (b) 행군 중 깃발·재지정 깃발은 종전처럼 만료 시 `broke_away`. 방어↔방어가 되어 간선이 유지되던 경우는 대기 만료 다음 tick 에 전투가 끝난다(`combat_ended`).
+- **[A-121] `flag_disengaged.reason` 에 `"wait_over"` 추가**(`broke_away`·`combat_over` 와 함께 3종). 클라이언트의 이탈 호는 `wait_over` 에서 "빠져나감" 연출 없이 그냥 끝내야 한다.
+- **[A-122] `postureHeld` 추가**(`cmd_ack`·`flag_retargeted`) — 클라이언트가 도착지 기본 태세와 비교하지 않고 안내를 띄울 수 있게 한다.
+- **[A-123] 전환 요청이 같은 tick 의 `cmd_flag_retarget` 뒤에 오면**(둘 다 같은 tick 1단계) 재지정이 쿨타임을 시작했으므로 거절된다(`POSTURE_COOLDOWN`). 명령 처리 순서는 `recvSeq` 오름차순 그대로.
+- **[A-124] 이탈 대기 중이어도 전환 수락**(`DISENGAGING` 거절 폐기). 이미 열린 대기의 타이머는 연장하지 않는다. 귀환(`RETURNING`)·패주(`ROUTED`)는 종전처럼 거절한다.
+- **[A-125] 봇.** (a) `isBaseGuard` 에서 `pendingPosture` 참조 제거. (b) 봇 재지정은 "도착지 기본 태세가 지금과 다르고 쿨타임 중"이면 보내지 않고 쿨타임이 끝날 때까지 미룬다(서버가 태세를 못 바꾼 채 이동만 하는 어중간한 깃발을 만들지 않으려는 것). (c) 봇의 `cmd_set_posture` 는 종전처럼 **전투 중에 보내지 않는다**(`canPosture` = 비전투·이탈 대기 아님·쿨타임 경과; 후퇴 규칙이 전투 중 판단을 맡는다). 그래서 봇이 전투 중 전환의 이탈 비용을 치르는 경우는 없고, 반격·굳히기 규칙의 왕복 전환도 늘지 않는다.
+- **[A-126] 클라이언트 빌드 유지용 최소 수정**(프론트 에이전트가 정리): `gameModel.ts`·`unitChips.ts` 의 `pendingPosture` 참조 제거(`unitChips` 는 항상 null), 폐기된 클라이언트 테스트(`qaV45.test.ts` 대기 태세, `uiOct14b.test.ts` §21.2) 삭제, `qa-v45-integration.ts` 는 `as any` 캐스트(실행 시 S1 검사는 실패하므로 재작성 필요).
+
+### 27.5 프론트 필요 변경
+
+1. `pendingPosture`·`POSTURE_PENDING` 사용 제거: `GameScreen.tsx`(패널 "태세 전환 대기" 줄, 버튼 보조 문구), `unitChips.ts`(`FlagActionState.pendingPosture`), `store.ts` 주석, `gameModel.ts`.
+2. `flagActionState`: 태세 버튼 차단 사유에서 `f.disengaging`("이탈 대기 중")·`f.inCombat`("전투 중")을 **제거**. 남는 것: 패주·귀환·쿨타임("전환 대기 n초"). 전투 중 눌렀을 때 "이탈 대기 3초, 방어력 ×0.5" 경고(툴팁 또는 확인)를 보여주는 것을 권장.
+3. 우클릭 이동: `cmd_ack.postureHeld`(또는 `flag_retargeted.postureHeld`)가 `true` 면 "태세 전환 쿨타임 중" 메시지를 띄운다. 이동 미리보기·도착 후 표시 태세는 `posture`(실제) 기준.
+4. `flag_disengaged.reason === "wait_over"` 처리: 이탈 호를 조용히 끝낸다(`broke_away` 연출 금지). `flag_disengage_started{auto:false}` 가 `flag_posture_changed` 직후 오면 호의 색·문구는 "태세 전환 중".
+5. 델타 `flagFlags` 비트 마스크에서 128 을 쓰던 곳이 있다면 제거.
+
+### 27.6 검증
+
+- `typecheck` 통과, `npm test` 33 파일 454 테스트 통과(신규 `server/test/v48.test.ts` 12: 즉시 전환·쿨타임 거절·쿨타임 시작·전투 중 이탈 대기·간선 유지·wait_over·재지정 postureHeld 2종·전투 중 재지정·스냅숏에 대기 필드 없음·결정론).
+- `smoke` PASSED, `qa:ws` 82/82, `qa:scenarios` 87/87(전투 중 전환 시나리오를 SAME_POSTURE 로 변경), `qa:headless` 스키마·순서·재구성 불일치 0.
+- 자가대전 10판(`selfplay 10 1000 M 10`) 변경 전 → 후: 평균 종료 29.72 → 29.37분(범위 25.05~32.00 → 26.47~32.00), 종료 사유 임계 7·타임아웃 3 → 8·2, 판당 멸망 1.4 → 0.9, 전투 비중(병력 소모) 31.0% → 30.5%, 교전 시간 비율 10.6% → 10.8%, 거절 0 → 0. 시드별 경로가 갈라지므로(봇 재지정 지연이 영향) 10판 표본의 차이는 노이즈 범위로 본다. 튜닝 없음.

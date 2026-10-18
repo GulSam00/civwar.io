@@ -96,17 +96,17 @@ const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots = true) =>
   for (let i = 0; i < 2; i++) step(sim, [], [store]);
   r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: fid, anchorTileId: n7 }]], [store]);
   check('S1 쿨타임 중 중립 우클릭: 수락, ack.posture = 현재(DEFEND)', r.acks[0].accepted && r.acks[0].posture === POSTURE.DEFEND, JSON.stringify(r.acks[0]));
-  check('S1 서버 posture DEFEND 유지 + pendingPosture ATTACK', fl.posture === POSTURE.DEFEND && fl.pendingPosture === POSTURE.ATTACK, `${fl.posture}/${fl.pendingPosture}`);
+  check('S1 서버 posture DEFEND 유지 + pendingPosture ATTACK', fl.posture === POSTURE.DEFEND && (fl as any).pendingPosture === POSTURE.ATTACK, `${fl.posture}/${(fl as any).pendingPosture}`);
   check('S1 flag_posture_changed 없음 (쿨타임 중)', !r.msgs.some((m) => m.type === 'flag_posture_changed'));
   const mf = g.flags.get(fid)!;
-  check('S1 클라이언트 모델: posture DEFEND + pendingPosture ATTACK(비트 128)', mf.posture === POSTURE.DEFEND && mf.pendingPosture === POSTURE.ATTACK, `${mf.posture}/${mf.pendingPosture}`);
+  check('S1 클라이언트 모델: posture DEFEND + pendingPosture ATTACK(비트 128)', mf.posture === POSTURE.DEFEND && (mf as any).pendingPosture === POSTURE.ATTACK, `${mf.posture}/${(mf as any).pendingPosture}`);
   let changedAt = -1;
   for (let i = 0; i < 40 && changedAt < 0; i++) {
     const rr = step(sim, [], [store]);
     if (rr.msgs.some((m) => m.type === 'flag_posture_changed' && (m as any).flagId === fid)) changedAt = state.tick;
   }
   check('S1 쿨타임이 끝난 첫 tick 에 자동 전환 (auto:true)', changedAt === cdUntil, `전환 ${changedAt} / 쿨타임 끝 ${cdUntil}`);
-  check('S1 전환 뒤 pendingPosture null (서버·모델), posture ATTACK', fl.pendingPosture === null && g.flags.get(fid)!.pendingPosture === null && g.flags.get(fid)!.posture === POSTURE.ATTACK);
+  check('S1 전환 뒤 pendingPosture null (서버·모델), posture ATTACK', (fl as any).pendingPosture === null && (g.flags.get(fid)! as any).pendingPosture === null && g.flags.get(fid)!.posture === POSTURE.ATTACK);
   // 반대 방향: 새 깃발 — DEFEND 로 갔다가 쿨타임 뒤 ATTACK 으로 돌아온 직후(쿨타임 중) → 내 수도로 우클릭 → 대기 DEFEND
   r = step(sim, [[1, issue(n5)]], [store]);
   const f2id = r.acks[0].flagId as number;
@@ -118,7 +118,7 @@ const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots = true) =>
   check('S1 쿨타임 경과 후 수동 전환 ATTACK 수락', r.acks[0].accepted && fl2.posture === POSTURE.ATTACK, JSON.stringify(r.acks[0]));
   const cd2 = fl2.postureCooldownUntilTick;
   r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: f2id, anchorTileId: home }]], [store]);
-  check('S1 쿨타임 중 내 수도 우클릭: ack.posture 현재(ATTACK), 대기 DEFEND', r.acks[0]?.accepted && r.acks[0].posture === POSTURE.ATTACK && fl2.pendingPosture === POSTURE.DEFEND, JSON.stringify(r.acks[0]) + ` pending ${fl2.pendingPosture}`);
+  check('S1 쿨타임 중 내 수도 우클릭: ack.posture 현재(ATTACK), 대기 DEFEND', r.acks[0]?.accepted && r.acks[0].posture === POSTURE.ATTACK && (fl2 as any).pendingPosture === POSTURE.DEFEND, JSON.stringify(r.acks[0]) + ` pending ${(fl2 as any).pendingPosture}`);
   check('S1 flag_retargeted.posture = 현재 태세(ATTACK)', (r.msgs.find((m) => m.type === 'flag_retargeted') as any)?.posture === POSTURE.ATTACK);
   let ch2 = -1;
   for (let i = 0; i < 40 && ch2 < 0; i++) {

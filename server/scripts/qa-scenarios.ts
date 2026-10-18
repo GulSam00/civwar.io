@@ -248,7 +248,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   void s;
 }
 
-// ───────── 4. 전투 거절 (IN_COMBAT / DISENGAGING / ROUTED) + 대표 전투 #7 ─────────
+// ───────── 4. 전투 거절 (v4.6: IN_COMBAT·DISENGAGING 은 태세 전환에서 폐기 / ROUTED) + 대표 전투 #7 ─────────
 {
   const { s, sim } = setup(4242, 4);
   const open = (avoid: number[]) => findTile(s, (c) => {
@@ -277,10 +277,10 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   let r = stepWith(sim, []);
   check('교전 개시 tick 1 → combat_started ×2', r.ev.filter((e) => e.type === 'combat_started').length === 2, r.ev.map((e) => e.type).join(','));
   r = stepWith(sim, [
-    [1, { type: 'cmd_set_posture', flagId: 1, posture: 1 }],
+    [1, { type: 'cmd_set_posture', flagId: 1, posture: POSTURE.ATTACK }],
     [4, { type: 'cmd_flag_recall', flagId: 4 }],
   ]);
-  expect('전투 중 태세 전환', r.acks[0], 'IN_COMBAT');
+  expect('전투 중 같은 태세 요청 (v4.6: IN_COMBAT 폐기 — 전환 자체는 v48.test.ts)', r.acks[0], 'SAME_POSTURE');
   expect('전투 중 회수 → 이탈 대기로 수락', r.acks[1], 'ACCEPT');
   const ds = r.ev.find((e) => e.type === 'flag_disengage_started');
   check('flag_disengage_started untilTick = t+15', ds?.untilTick === ds?.tick + 15, JSON.stringify(ds));
@@ -309,7 +309,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   r = stepWith(sim, [
     [1, { type: 'cmd_flag_retarget', flagId: 1, anchorTileId: c1 + 2 }],
     [1, { type: 'cmd_flag_recall', flagId: 1 }],
-    [1, { type: 'cmd_set_posture', flagId: 1, posture: 1 }],
+    [1, { type: 'cmd_set_posture', flagId: 1, posture: POSTURE.ATTACK }],
   ]);
   expect('패주 깃발 retarget', r.acks[0], 'ROUTED');
   expect('패주 깃발 recall', r.acks[1], 'ROUTED');

@@ -161,7 +161,6 @@ function flagSnap(f: Readonly<Flag>): FlagSnapshot {
     breakaway: f.breakaway,
     halted: f.halted,
     returnBaseTileId: f.returnBaseTileId,
-    pendingPosture: f.pendingPosture,
   };
 }
 
@@ -193,8 +192,7 @@ export function flagBits(f: Readonly<Flag>): number {
     (f.disengageUntilTick !== null ? FLAG_BIT.DISENGAGING : 0) |
     (f.breakaway ? FLAG_BIT.BREAKAWAY : 0) |
     (f.stalled ? FLAG_BIT.STALLED : 0) |
-    (f.halted ? FLAG_BIT.HALTED : 0) |
-    (f.pendingPosture !== null ? FLAG_BIT.POSTURE_PENDING : 0)
+    (f.halted ? FLAG_BIT.HALTED : 0)
   );
 }
 

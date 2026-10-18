@@ -160,7 +160,7 @@ describe('ZOC · 대치 · 태세', () => {
     expect(r2.all.map((m) => m.type)).toContain('flag_unblocked');
   });
 
-  it('태세 전환: SAME_POSTURE / 쿨타임 25 tick POSTURE_COOLDOWN / IN_COMBAT', () => {
+  it('태세 전환: SAME_POSTURE / 쿨타임 25 tick POSTURE_COOLDOWN (v4.6: 전투 중에도 수락 — v48.test.ts)', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 1, false);
     const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
@@ -181,10 +181,6 @@ describe('ZOC · 대치 · 태세', () => {
     expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'POSTURE_COOLDOWN' }); // t0+24
     sim.enqueue(1, 1, cmd(5, POSTURE.DEFEND));
     expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true }); // t0+25
-    f.inCombat = true;
-    sim.enqueue(1, 1, cmd(6, POSTURE.ATTACK));
-    s.flags.find((x) => x.id === f.id)!.postureCooldownUntilTick = 0;
-    expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'IN_COMBAT' });
   });
 });
 
