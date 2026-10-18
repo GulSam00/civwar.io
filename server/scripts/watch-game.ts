@@ -118,10 +118,16 @@ interface Window {
 const freshWindow = (): Window => ({ issued: 0, issuedByUnit: [0, 0, 0], combats: 0, routed: 0, baseCaps: [], techs: 0, elim: [], ally: 0, recalls: 0, exhausted: 0 });
 let win = freshWindow();
 const total = { issued: 0, combats: 0, routed: 0, baseCaps: 0, capitalCaps: 0, techs: 0 };
-const combatStart = new Map<number, { t: number; flags: { id: number; owner: number; troops: number }[] }>();
+const combatStart = new Map<number, { t: number; flags: { id: number; owner: number; troops: number; base: number }[] }>();
+/** 델타 combatLoss 누적 (깃발별 milli) — 교전 무리가 합쳐지거나 갈라져도 손실은 정확하다 */
+const lossByFlag = new Map<number, number>();
+const flagOwner = new Map<number, number>();
+let winCombatLoss = new Map<number, number>();
 let prevTiles = new Map<number, number>();
 let windowStartTick = 0;
 let leaderId = 0;
+let leaderCand = 0;
+let leaderCandSince = 0;
 const combatPairs = { started: 0, matched: 0 };
 let stopped = false;
 
@@ -130,6 +136,7 @@ function onEvent(m: ServerMessage): void {
   const st = S!;
   switch (m.type) {
     case 'flag_issued': {
+      flagOwner.set(m.flagId, m.playerId);
       win.issued++;
       win.issuedByUnit[m.unit]++;
       total.issued++;
@@ -159,7 +166,7 @@ function onEvent(m: ServerMessage): void {
       total.combats++;
       const flags = m.flagIds.map((id) => {
         const f = st.flags.find((x) => x.id === id)!;
-        return { id, owner: f?.ownerId ?? 0, troops: f ? k(f.troopsMilli) : 0 };
+        return { id, owner: f?.ownerId ?? flagOwner.get(id) ?? 0, troops: f ? k(f.troopsMilli) : 0, base: lossByFlag.get(id) ?? 0 };
       });
       combatStart.set(m.groupKey, { t: m.tick, flags });
       combatPairs.started++;
@@ -176,10 +183,8 @@ function onEvent(m: ServerMessage): void {
       let loss = '';
       if (c) {
         const byOwner = new Map<number, number>();
-        for (const f0 of c.flags) {
-          const f = st.flags.find((x) => x.id === f0.id);
-          byOwner.set(f0.owner, (byOwner.get(f0.owner) ?? 0) + f0.troops - (f ? k(f.troopsMilli) : 0));
-        }
+        // 손실 = 델타 combatLoss 누적의 차이 (노출 소모·점령 지출은 섞이지 않는다)
+        for (const f0 of c.flags) byOwner.set(f0.owner, (byOwner.get(f0.owner) ?? 0) + Math.round(((lossByFlag.get(f0.id) ?? 0) - f0.base) / 1000));
         loss = ` | ${((m.tick - c.t) * TICK_MS / 1000).toFixed(1)}초, 손실 ${[...byOwner].map(([o, l]) => `${P(o)} −${l}`).join(', ')}`;
       }
       const winner = m.winnerSideKey === null ? '무승부/이탈' : `승자 ${P(c?.flags.find((f) => f.owner === m.winnerSideKey)?.owner ?? m.winnerSideKey)}`;
@@ -246,6 +251,8 @@ function report(t: number, final = false): string {
   out.push(`- 승리 기준 **${thresholdPct(t)}%** · 1위 **${P(lead.id)} ${pct(shareOf(lead.tiles))}** (2위 ${P(second.id)}와 ${(shareOf(lead.tiles) - shareOf(second.tiles)).toFixed(1)}%p 차) · 생존 ${alive}/${players.length} · 중립 땅 ${pct((neutral * 100) / land)}`);
   const span = Math.round(((t - windowStartTick) * TICK_MS) / 60000);
   out.push(`- 최근 ${span}분(${clock(windowStartTick)}~${clock(t)}): 출전 ${win.issued}회(창 ${win.issuedByUnit[0]} / 검 ${win.issuedByUnit[1]} / 기 ${win.issuedByUnit[2]}), 교전 ${win.combats}회, 패주 ${win.routed}, 소진 ${win.exhausted}, 회수 ${win.recalls}, 테크 ${win.techs}개, 기지 함락 ${win.baseCaps.length}회${win.baseCaps.length ? ` (${win.baseCaps.join(', ')})` : ''}${win.elim.length ? `, 탈락 ${win.elim.join(', ')}` : ''}`);
+  const cl = [...winCombatLoss].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  if (cl.length) out.push(`- 구간 교전 손실(틱당 combatLoss 합): ${cl.map(([o, v]) => `${P(o)} −${Math.round(v / 1000)}`).join(', ')}`);
   out.push('');
   out.push('| 순위 | 플레이어 | 성향 | 영토 (점유율, 구간 변화) | 병력 / 상한 | 골드 (초당 순익) | 깃발 공·방 / 슬롯 | 기지 | 테크 (최근) |');
   out.push('|---|---|---|---|---|---|---|---|---|');
@@ -278,6 +285,7 @@ function report(t: number, final = false): string {
   out.push('');
   prevTiles = new Map(players.map((p) => [p.id, p.tiles]));
   win = freshWindow();
+  winCombatLoss = new Map();
   windowStartTick = t;
   return out.join('\n');
 }
@@ -393,18 +401,36 @@ async function main(): Promise<void> {
         const out = step();
         if (stopped) return out; // 종료 판정 뒤 남은 tick 은 기록하지 않는다
         for (const e of out.broadcast) {
-          if (e.type === 'snapshot_delta' || e.type === 'snapshot_full') continue;
+          if (e.type === 'snapshot_delta') {
+            for (const [fid, lm] of e.combatLoss ?? []) {
+              lossByFlag.set(fid, (lossByFlag.get(fid) ?? 0) + lm);
+              const o = flagOwner.get(fid) ?? 0;
+              winCombatLoss.set(o, (winCombatLoss.get(o) ?? 0) + lm);
+            }
+            continue;
+          }
+          if (e.type === 'snapshot_full') continue;
           appendFileSync(RAW, JSON.stringify(e) + '\n');
           onEvent(e);
         }
         const t = S!.tick;
-        // 1위 교체 (1초마다 확인, 첫 1분은 소란스러워서 제외)
+        // 1위 교체 — 히스테리시스: 새 1위가 10초 연속 1위이고 이전 1위보다 0.5%p(최소 10칸) 이상 앞설 때만 기록
         if (t >= TPM && t % 5 === 0) {
           const top = S!.players.filter((p) => p && p.alive).sort((a, b) => b.tiles - a.tiles || a.id - b.id)[0];
-          if (top && top.id !== leaderId) {
-            if (leaderId) line(t, '1위', `${P(top.id)}가 1위로 (${top.tiles}칸, ${pct(shareOf(top.tiles))}) — 이전 1위 ${P(leaderId)} ${S!.players[leaderId].tiles}칸`);
-            leaderId = top.id;
-          }
+          if (!leaderId && top) leaderId = top.id;
+          else if (top && top.id !== leaderId) {
+            if (leaderCand !== top.id) {
+              leaderCand = top.id;
+              leaderCandSince = t;
+            }
+            const prev = S!.players[leaderId];
+            const margin = Math.max(10, Math.ceil(S!.map.totalLandTiles / 200));
+            if (t - leaderCandSince >= 50 && top.tiles - (prev?.alive ? prev.tiles : 0) >= margin) {
+              line(t, '1위', `${P(top.id)}가 1위로 (${top.tiles}칸, ${pct(shareOf(top.tiles))}) — 이전 1위 ${P(leaderId)} ${prev?.tiles ?? 0}칸`);
+              leaderId = top.id;
+              leaderCand = 0;
+            }
+          } else leaderCand = 0;
         }
         if (t > 0 && t % (5 * TPM) === 0) {
           const r = report(t);
@@ -460,7 +486,7 @@ async function main(): Promise<void> {
   const r = report(t, true);
   writeFileSync(join(OUT, 'reports', 'final.md'), r + '\n');
   appendFileSync(LOG, '\n' + r + '\n');
-  appendFileSync(LOG, `\n누계: 출전 ${total.issued}회 · 교전 ${total.combats}회 · 패주 ${total.routed} · 기지 함락 ${total.baseCaps}회(수도 ${total.capitalCaps}) · 테크 ${total.techs}개 · 교전 시작/종료 짝 ${combatPairs.matched}/${combatPairs.started} (짝이 없는 건 무리가 합쳐지거나 갈라져 손실 미기록)\n`);
+  appendFileSync(LOG, `\n누계: 출전 ${total.issued}회 · 교전 ${total.combats}회 · 패주 ${total.routed} · 기지 함락 ${total.baseCaps}회(수도 ${total.capitalCaps}) · 테크 ${total.techs}개 · 교전 시작/종료 짝 ${combatPairs.matched}/${combatPairs.started} (짝이 없는 교전은 개별 줄에 손실이 안 찍히지만, 구간 교전 손실 합계에는 포함)\n`);
   console.log('\n' + r);
   await rec.r?.shot('final.png').catch(() => {});
   await rec.r?.stop();
