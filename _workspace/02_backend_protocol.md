@@ -342,7 +342,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | `mapMaxPlayers` | 맵 최대 인원(슬라이더 상한): S 7 / M 12 / L 12 / 프리셋 `players.max` |
 | `recommended` | 추천 인원 `[하한, 상한]`: S [5,6] / M [9,11] / L [11,12] / 프리셋 `[recommendedMin, recommendedMax]` |
 | `expectedPlayers` | 지금 시작하면 될 인원(공개 = 정원, 비공개 = 사람 + `min(botCount, maxPlayers − 사람)`) |
-| `pacingNote` | `"guaranteed"`(무작위·M·기본 물·10인·NORMAL) / `"estimate:<분>"` / `"timeout_likely"`(추정 > 32분). 추정 = `29.4 × (P/390)^0.75`, P = 육지/인원(무작위는 `floor(W×H×0.65)`, 프리셋은 파일 육지 수) — **GDD 2.8(e) 참고값, 보증 아님**. 클라이언트는 `recommended` 밖이면 경고 표시 |
+| `pacingNote` | `"guaranteed"`(무작위·M·기본 물·10인·NORMAL) / `"estimate:<분>"` / `"timeout_likely"`(추정 > 32분). 추정 = `29.4 × (P/540)^0.75` (기준 540 = `PACING_P_REF_LAND_PER_PLAYER`, v4.5 [A-110]; 구 390), P = 육지/인원(무작위는 `floor(W×H×TARGET_LAND_RATIO_PERMILLE/1000)` = `floor(W×H×0.9)`, 프리셋은 파일 육지 수) — **GDD 2.8(e) 참고값, 보증 아님**. 클라이언트는 `recommended` 밖이면 경고 표시 |
 
 ### match_config (룸, 시작 시 1회 / 개인 부트스트랩)
 ```json
@@ -424,7 +424,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 - **2차 변경(추가만)**:
   - `flagStats`는 `t % 5 == 0`의 변경분에 더해 **교전 중(`inCombat`) 깃발은 매 tick**, **새 깃발은 첫 tick 즉시** 실린다(GDD 7.3 "교전 깃발은 매 tick 병력 필드").
   - **`flagFlags: [flagId, posture, bits, postureCooldownUntilTick][]`** — 태세·비트·쿨타임 중 하나라도 바뀐 깃발만, 매 tick. 항상 존재(빈 배열 가능).
-    `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32 | HALTED 64`(**v4.2 추가** — 값 범위 0..127).
+    `bits` (`shared` 의 `FLAG_BIT`): `IN_COMBAT 1 | ROUTED 2 | BLOCKED 4 | DISENGAGING 8 | BREAKAWAY 16 | STALLED 32 | HALTED 64`(**v4.2 추가**) | `POSTURE_PENDING 128`(**v4.4 추가**, 아래) — 현재 값 범위 **0..255**(v4.2 시점엔 0..127).
   - **v4.4 (§21) 추가, 항상 존재**: `baseProd: [tileId, prodPm][]`(5 tick 마다 바뀐 기지만), `production: PlayerProduction[]`(5 tick 마다 내역이 바뀐 플레이어만 — 그 플레이어 내역 전체 교체), `flagFlags` 비트 **`POSTURE_PENDING 128`**(값 범위 0..255).
   - **`flagReturnBase: [flagId, returnBaseTileId|null][]` (v4.2 추가, 항상 존재)** — 지정 귀환 기지가 바뀐 깃발만(지정 회수 수락 tick, 지정 기지 상실로 null 이 된 tick). 새 깃발은 `null` 이 기본이라 싣지 않는다. 귀환 화살표: `returnBaseTileId ?? flag_recalled/flag_routed.returnTileId`.
   - 새 깃발은 `flag_issued` 이벤트 + 같은 tick 델타의 `flagMoves`/`flagStats`/`flagFlags`(첫 등장)로 알 수 있다. 사라진 깃발은 `flagsGone` + `flag_ended`.
@@ -922,7 +922,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 ### v4.5 (사용자 결정 2026-10-15)에서 정한 것 — **에이전트 선택 [A]** (상세·근거는 §22.9)
 
-114. **[A-102]** 호수 생성기(반해상도 CA) · 물 창 8.5~11.5% · 섬은 물로 메워 육지 한 덩어리
+114. **[A-102]** 호수 생성기(반해상도 CA) · 물 창 8.5~11.5%(생성 단계 기준, 최종 맵은 8.4% 대 가능 — §22.1) · 섬은 물로 메워 육지 한 덩어리
 115. **[A-103]** 기지 병력 생산 = 기준 390칸 평균 재생 × 환산 칸(60/100) × 생산력 — 선형 별도 항, 로지스틱·테크는 합에 한 번
 116. **[A-104]** 기지 피해 상한 분배 = 원래 피해 비례(잔여 → 큰 피해·앞 순서), 총량 ≤ min(300, 남은 체력), 지출 = 적용 피해분만
 117. **[A-105]** `COMBAT_LOSS_FLOOR_BP` 75 → 45 (손실률과 같은 비율 ×0.6)
@@ -1046,7 +1046,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 |---|---|
 | **C→S 추가** | `cmd_flag_recall.baseTileId?: number \| null` — 깃발 선택 후 **내 기지 클릭 = 지정 회수**. 거절 `NOT_BASE`(기지 칸 아님) / `NOT_OWNED_BASE`(내 것 아님). 생략·null = 자동 귀환지 |
 | **snapshot_full 추가** | `flags[].halted: bool`, `flags[].returnBaseTileId: number \| null` (항상 존재) |
-| **snapshot_delta 추가** | `flagFlags` 비트 `HALTED = 64`(값 범위 0..127). 새 배열 `flagReturnBase: [flagId, baseTileId \| null][]`(항상 존재, 바뀐 깃발만) |
+| **snapshot_delta 추가** | `flagFlags` 비트 `HALTED = 64`(당시 값 범위 0..127 — v4.4 에서 `POSTURE_PENDING 128` 이 추가돼 현재는 0..255). 새 배열 `flagReturnBase: [flagId, baseTileId \| null][]`(항상 존재, 바뀐 깃발만) |
 | **이벤트 필드 추가** | `flag_disengage_started.auto: bool` — `true` = 귀환 깃발이 붙잡혀 서버가 자동 개시("귀환 중 — 붙잡힘, 3초 뒤 이탈") |
 | **상수 추가/변경** | `RETURN_SPEED_PERMILLE = 1500`(신규), **`FLAG_SPEED_BASE_MILLI` 120 → 140**, 봇 상수 `BOT_COMMIT_BASE_PERMILLE`·`BOT_BASE_ATTACK_RANGE`·`BOT_BASE_ATTACK_WEIGHT_PERMILLE`·`BOT_BASE_UNGUARDED_PERMILLE`·`BOT_BASE_CAPITAL_PERMILLE`(표시 불필요). 모두 `match_config.constants` 로 온다 — ETA·속도 예측은 서버 값을 쓸 것 |
 | **의미 변경 — 공격** | 공격 태세 깃발의 대상 = **깃발 현재 칸의 이웃 중 점령 가능·비동맹(중립·제3자 포함) 칸뿐**. **앵커 반경 6 원 공격 폐기**(붉은 원 UI 제거 → 경로선 + 폭 3 회랑 미리보기). 내 땅에 닿지 않아도 됨 → **고립 영토** 생긴다(렌더는 칸 단위라 영향 없음). 깃발은 먹을 옆 칸이 있으면 **멈춰서**(`MARCHING` + `halted`) 점령, 없어지면 다시 걷는다. 앵커 칸에서는 `ENGAGED`(옆 칸 점령) → 다 먹으면 `IDLE` → 옆 칸이 다시 적·중립이 되면 **그 자리에서 재점화**(`flag_engaged`, 이동 없음) → IDLE 600 tick 뒤 자동 귀환. 방어 태세는 이동만(방어 원 반경 6 = guard 유지) |
@@ -1181,7 +1181,7 @@ stat = techStatValues(mask):  v = TECH_STAT_BASE.slice()
 | 땅 점령 `marchFront`(정지 점령·앵커 점령·재점화)·방어 관할 원·이동 경로·발령 사거리 | 4방향/맨해튼 | **변경 없음** (4방향/맨해튼) |
 
 - 서버 구현: `server/src/topology/topology.ts`(`contactNeighbors`·`touching` 인터페이스), `square.ts`(체비셰프 1), `combat.ts`(4a 후보), `movement.ts`(`zocBy`), `gauge.ts`(`holdProgress`), `bot.ts`(전투 판단·요격·차단). 육각 토폴로지로 바꾸면 `contactNeighbors` = 일반 이웃.
-- 클라이언트가 전투·ZOC 를 미리 그리거나 예측한다면 같은 판정(사각 = `|Δrow| ≤ 1 ∧ |Δcol| ≤ 1`)으로 바꿔야 한다. 현재 클라이언트 코드에는 이 판정이 없어 수정하지 않았다(전투·차단 상태는 서버 `inCombat`·`blocked` 비트를 그대로 그린다). 교전 연결선·검/방패 아이콘(같은 날 사용자 결정)은 프론트 작업.
+- 클라이언트가 전투·ZOC 를 미리 그리거나 예측한다면 같은 판정(사각 = `|Δrow| ≤ 1 ∧ |Δcol| ≤ 1`)으로 바꿔야 한다. **정정(QA v4.5 m-2)**: 클라이언트는 이미 같은 8방향 판정을 쓴다 — `client/src/render/combatPairs.ts` + `client/src/render/topology.ts` `touching()`(좌표식은 서버와 동일). 당시의 "클라이언트 코드에는 이 판정이 없다"는 서술은 사실이 아니다(전투·차단 상태는 서버 `inCombat`·`blocked` 비트를 그대로 그린다). 교전 연결선·검/방패 아이콘(같은 날 사용자 결정)은 프론트 작업.
 - 대표 전투 표(4.15)·`duels.ts` 수치는 불변(1:1 교전의 손실식은 그대로, 붙는 범위만 넓어짐).
 
 ## 21. v4.4 기지 방어 · 우클릭 이동 · 멸망·합병 · 기지 생산력 · 지명 (프론트 영향 — 2026-10-14, 사용자 결정)
@@ -1236,6 +1236,8 @@ stat = techStatValues(mask):  v = TECH_STAT_BASE.slice()
 ```
 
 ### 21.4 기지 생산력 · 생산 지역
+
+> **v4.5 정정(QA m-3)**: 아래 `production` 형식의 `regions` 는 **v4.5 에서 `rows` 로 바뀌었고 행 의미도 달라졌다**(생산 지역 폐기) — 현행 형식은 **§22.5** 를 따를 것. 이 절의 `regions` 예시·"기타" 지역 서술은 v4.4 당시 기록이다. `flagFlags` 비트 값 범위는 `POSTURE_PENDING 128` 포함 **0..255**.
 
 **생산력** (기지마다 정수 ‰, 0..1000):
 - 시작 1000(중립 기지 포함). **점령될 때마다 `floor(현재 ‰ × 500 / 1000)`**(중립 → 플레이어 포함): 1000 → 500 → 250.
@@ -1301,7 +1303,7 @@ net_r    = net 를 gross_r 로 분배
 - **물(DEEP·SHALLOW)은 전부 통행 불가**. 이동 그래프(`TerrainGraph.neighbors`)에 물 칸이 없다 — 경로·앵커·도착지·귀환지 어디에도 물이 오지 않는다. 물 앵커 발령·재지정은 기존처럼 `WATER` 거절.
 - 지형 enum 은 그대로(0 DEEP / 6 SHALLOW). 기본 생성기는 **테두리 = DEEP, 안쪽 호수 = SHALLOW**(색 구분용). 커스텀 `waterMode`·`shallowPermille` 설정은 그대로 받지만 둘 다 통행 불가.
 - 상륙 규칙 삭제: 물 위 깃발 전투 배율(구 `LANDING_COMBAT`), 봇 상륙 후보 탐색(`scanLanding`), 플레이어별 물 이동배율 거리장 캐시(키 `${dest}:${shallowPm}` → **목적지만**)를 지웠다. 노출 소모(남의 땅 위 깃발)는 땅 규칙이라 그대로.
-- **생성기 [A-102]**: 반해상도(⌈W/2⌉×⌈H/2⌉) 호수 노이즈 460‰ → CA 3회(물 이웃 ≥ 5) → 2배 확대 → 전해상도 다듬기 2회 → 테두리 = 물 → **최대 4-연결 육지 덩어리만 남김**(섬은 물) → 육지 비율이 **885~915‰** 밖이면 p ± 10‰ 로 다시(최대 12회). 결과 = M 기준 물 평균 9.9%(테두리 5.3% 포함), 호수 7~8개(최대 ~100칸). 육지 연결은 생성 불변식 I1·I4 가 보장(실패 시 시드+1).
+- **생성기 [A-102]**: 반해상도(⌈W/2⌉×⌈H/2⌉) 호수 노이즈 460‰ → CA 3회(물 이웃 ≥ 5) → 2배 확대 → 전해상도 다듬기 2회 → 테두리 = 물 → **최대 4-연결 육지 덩어리만 남김**(섬은 물) → 육지 비율이 **885~915‰** 밖이면 p ± 10‰ 로 다시(최대 12회). **이 창은 "생성 단계"의 판정 기준이다** — 창을 재는 시점과 최종 맵(섬을 물로 메운 뒤) 사이에 차이가 있어, 최종 맵의 물 비율은 8.5% 아래로 약간 내려갈 수 있다(무작위 420맵 중 10맵이 8.42~8.47%, 공식 `official-m-01` 8.4%; 반대쪽은 11.49% 까지 정상). 규칙·밸런스 영향은 0.1%p 미만이라 코드·맵은 그대로 둔다(QA v4.5 m-8). "물 8.5~11.5%"는 보장 범위가 아니라 생성 창이다. 결과 = M 기준 물 평균 9.9%(테두리 5.3% 포함), 호수 7~8개(최대 ~100칸). 육지 연결은 생성 불변식 I1·I4 가 보장(실패 시 시드+1).
 - 상수: `TARGET_LAND_RATIO_PERMILLE` 650 → **900**, `LAND_RATIO_MIN/MAX_PERMILLE` 600/700 → **885/915**, `CA_INIT_LAND_P_PERMILLE` 550 → 540, `CA_LAND_P_STEP_PERMILLE` 20 → 10, `CA_MAX_ATTEMPTS` 10 → 12, `CA_SMOOTH_STEPS` 4 → 3.
 - **육지가 약 38% 늘었다**(M 6000칸: 육지 ≈3900 → ≈5400, 10인 1인당 390 → 540). 판 길이 추정식(`pacingNote`)의 기준 1인당 육지도 390 → 540 으로 옮겼다 [A-110] — 클라이언트 미리보기(`client/src/ui/pacing.ts`)도 같은 상수 `PACING_P_REF_LAND_PER_PLAYER` 를 쓴다.
 - **공식 프리셋 9장 재생성**: `export-map.ts --count 40`(시드 1000~1039) × S/M/L → `eval-maps.cjs`(공정성 점수, 목표 육지 0.90 으로 수정) 상위 3개.
@@ -1418,7 +1420,7 @@ net_r    = net 를 gross_r 로 분배
 
 | ID | 항목 | 결정 | 근거 |
 |---|---|---|---|
-| A-102 | 물 ≈ 10% 생성기 | 반해상도 호수 CA + 다듬기, 물 창 8.5~11.5%(테두리 포함), 섬은 물로 메워 육지 한 덩어리, 테두리 DEEP·안쪽 호수 SHALLOW(색 구분만) | 전해상도 CA 는 10% 에서 작은 웅덩이 30개가 생긴다. 반해상도면 큰 호수 7~8개 — 지형 장애물 역할. 섬(통행 불가라 도달 불가)을 남기면 "육지 연결" 보장이 깨진다 |
+| A-102 | 물 ≈ 10% 생성기 | 반해상도 호수 CA + 다듬기, 물 창 8.5~11.5%(테두리 포함, 생성 단계 기준 — 최종 맵은 8.4% 대까지 가능, §22.1), 섬은 물로 메워 육지 한 덩어리, 테두리 DEEP·안쪽 호수 SHALLOW(색 구분만) | 전해상도 CA 는 10% 에서 작은 웅덩이 30개가 생긴다. 반해상도면 큰 호수 7~8개 — 지형 장애물 역할. 섬(통행 불가라 도달 불가)을 남기면 "육지 연결" 보장이 깨진다 |
 | A-103 | 기지 병력 생산 식 | 칸당 = 기준 390칸 평균 재생(10674/390 milli), 기지 = 60·수도 100칸 × 생산력, 선형 별도 항. 로지스틱(1 − troops/cap)·재생 테크는 (영토 + Σ기지) 합에 한 번. 골드 = 평원 가중치 × 칸 × 생산력. 병력 상한 그대로 | 내 영토 평균은 초반에 폭주(9칸 → 수도 = 영토의 11배), 한계 재생은 큰 나라에서 0 에 수렴. 고정 기준이면 기지 가치가 판 내내 같고 hover 숫자가 안정된다 |
 | A-104 | 기지 피해 상한 분배 | 원래 피해 비례 floor + 잔여(피해 DESC, flagId ASC), 총량 ≤ min(300, 남은 체력), **지출 = 적용 피해분만**, 함락자 = 적용 피해 최대 | 결정론 + 버려지는 피해에 병력을 쓰지 않음(사용자 제안과 같은 자연스러운 선택) |
 | A-105 | 손실 바닥 | `COMBAT_LOSS_FLOOR_BP` 75 → 45 | 손실률과 같은 비율(×0.6) — 바닥이 상대적으로 세지면 소규모 교전만 따로 빨라진다 |
@@ -1461,6 +1463,7 @@ net_r    = net 를 gross_r 로 분배
 - 경로 = 적 땅을 뺀 그래프의 거리장(지형 이동배율 가중, 동률 tileId — 기존 `stepToward` 와 같은 결정론). 깃발이 적 땅 위에 있으면 출발은 허용(빠져나오는 걸음).
 - **못 가면 [A-112]**: 실제 목적지 = 지금 칸에서 적 땅 없이 닿는 칸 중 **적 땅을 무시한 지형 거리로 앵커에 가장 가까운 칸**(동률 tileId 작은 쪽) = "적 땅 바로 앞". 그 칸에 서면(처음부터 그 칸이면 바로) `flag_idle{reason:"unreachable", autoRecallTick}` → `IDLE`. 우선순위: 방어 도착(`defendArrived` — 앵커가 남의 땅이면 내 땅 관할 원 안 도착 포함) > unreachable 정지. IDLE 이후는 기존과 같다(600 tick 뒤 자동 귀환, 전투·ZOC 그대로). 길이 나중에 열려도 다시 가지 않는다 — 재지정하면 그 시점 지도로 다시 계산.
 - 표시용 `etaTick`·`engageEtaTick`(flag_issued·flag_retargeted)도 같은 경로로 추정한다(막히면 정지 칸까지).
+- **참고(QA v4.5 정보 항목)**: `flag_idle.reason` 은 이벤트에만 있고 `snapshot_full.flags[]` 에는 없다. 재접속한 클라이언트는 "막혀서 멈춘 깃발(`unreachable` 등)"과 평범한 IDLE 깃발을 구분할 수 없다(IDLE 상태만 보인다). 필요하면 추후 필드 추가를 검토.
 - 메시지: `flag_idle.reason` 의 기존 enum 값 `"unreachable"`(그동안 "송신하지 않음")이 **이제 실제로 온다** — 형식 변경 없음.
 
 ```json
