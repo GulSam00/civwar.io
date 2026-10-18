@@ -1,6 +1,6 @@
 /**
  * [QA v4.5 — 커밋 금지] 실제 Simulation(명령 큐 경로) + 실제 ClientStore 로 v4.4~v4.5 경계면을 검증한다.
- *  S1 태세 쿨타임 중 우클릭(내 기지 / 적·중립) — 서버 거동 + 클라이언트 모델 표시
+ *  S1 태세 쿨타임 중 우클릭(내 기지 / 적·중립) — v4.6 §27: postureHeld · 대기·자동 적용 없음 · 쿨타임 재전환 거절
  *  S2 방어 깃발 "unreachable" IDLE — 실제 명령·실제 소유 지도에서 서버 이벤트 → 클라이언트 flagIdleReason·경로 미리보기
  *  S3 멸망·합병: annexedTiles ↔ delta.tileChanges ↔ 클라이언트 annexFlashes, 기지 함락/멸망 tick 직후 새 부트스트랩 = 연속 모델
  *  S4 combatLoss 합 = ledger.combat, production.rows 불변식
@@ -92,22 +92,27 @@ const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots = true) =>
   const fl = state.flags.find((f) => f.id === fid)!;
   const cdUntil = fl.postureCooldownUntilTick;
   check('S1 쿨타임 시작 (현재 tick + 25)', cdUntil === state.tick + 25 || cdUntil > state.tick, `cd ${cdUntil} tick ${state.tick}`);
-  // 쿨타임 중 중립 칸 우클릭 → 도착지 ATTACK, 지금 태세는 DEFEND 유지 + 대기 ATTACK
+  // v4.6 (§27): 쿨타임 중 중립 칸 우클릭 → 도착지 기본 ATTACK 이지만 DEFEND 유지 + 이동만 (postureHeld), 대기·자동 적용 없음
   for (let i = 0; i < 2; i++) step(sim, [], [store]);
   r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: fid, anchorTileId: n7 }]], [store]);
-  check('S1 쿨타임 중 중립 우클릭: 수락, ack.posture = 현재(DEFEND)', r.acks[0].accepted && r.acks[0].posture === POSTURE.DEFEND, JSON.stringify(r.acks[0]));
-  check('S1 서버 posture DEFEND 유지 + pendingPosture ATTACK', fl.posture === POSTURE.DEFEND && (fl as any).pendingPosture === POSTURE.ATTACK, `${fl.posture}/${(fl as any).pendingPosture}`);
+  check('S1 쿨타임 중 중립 우클릭: 수락, ack.posture = 현재(DEFEND), ack.postureHeld = true', r.acks[0].accepted && r.acks[0].posture === POSTURE.DEFEND && r.acks[0].postureHeld === true, JSON.stringify(r.acks[0]));
+  check('S1 flag_retargeted.postureHeld = true, posture = 현재(DEFEND)', (r.msgs.find((m) => m.type === 'flag_retargeted') as any)?.postureHeld === true && (r.msgs.find((m) => m.type === 'flag_retargeted') as any)?.posture === POSTURE.DEFEND);
+  check('S1 서버 posture DEFEND 유지 + pendingPosture 필드 없음', fl.posture === POSTURE.DEFEND && !('pendingPosture' in fl), `${fl.posture}`);
   check('S1 flag_posture_changed 없음 (쿨타임 중)', !r.msgs.some((m) => m.type === 'flag_posture_changed'));
   const mf = g.flags.get(fid)!;
-  check('S1 클라이언트 모델: posture DEFEND + pendingPosture ATTACK(비트 128)', mf.posture === POSTURE.DEFEND && (mf as any).pendingPosture === POSTURE.ATTACK, `${mf.posture}/${(mf as any).pendingPosture}`);
+  check('S1 클라이언트 모델: posture DEFEND, pendingPosture 없음', mf.posture === POSTURE.DEFEND && !('pendingPosture' in mf), `${mf.posture}`);
+  check('S1 postureHeld 토스트 1회 ("태세 전환 쿨타임 중 — 이동만 했습니다")', store.toasts.filter((t) => /이동만 했습니다/.test(t.text)).length === 1, store.toasts.map((t) => t.text).join('|'));
   let changedAt = -1;
-  for (let i = 0; i < 40 && changedAt < 0; i++) {
+  for (let i = 0; i < 40; i++) {
     const rr = step(sim, [], [store]);
     if (rr.msgs.some((m) => m.type === 'flag_posture_changed' && (m as any).flagId === fid)) changedAt = state.tick;
   }
-  check('S1 쿨타임이 끝난 첫 tick 에 자동 전환 (auto:true)', changedAt === cdUntil, `전환 ${changedAt} / 쿨타임 끝 ${cdUntil}`);
-  check('S1 전환 뒤 pendingPosture null (서버·모델), posture ATTACK', (fl as any).pendingPosture === null && (g.flags.get(fid)! as any).pendingPosture === null && g.flags.get(fid)!.posture === POSTURE.ATTACK);
-  // 반대 방향: 새 깃발 — DEFEND 로 갔다가 쿨타임 뒤 ATTACK 으로 돌아온 직후(쿨타임 중) → 내 수도로 우클릭 → 대기 DEFEND
+  check('S1 쿨타임이 끝나도 자동 전환 없음 (40 tick 동안 flag_posture_changed 0)', changedAt < 0 && fl.posture === POSTURE.DEFEND && g.flags.get(fid)!.posture === POSTURE.DEFEND, `전환 ${changedAt}`);
+  // 쿨타임이 지난 뒤 중립 칸 우클릭 → 이동과 함께 즉시 ATTACK (auto:true), postureHeld = false
+  store.toasts = [];
+  r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: fid, anchorTileId: n5 }]], [store]);
+  check('S1 쿨타임 경과 후 중립 우클릭: 즉시 ATTACK + postureHeld false, 토스트 없음', r.acks[0]?.accepted && r.acks[0].posture === POSTURE.ATTACK && r.acks[0].postureHeld === false && r.msgs.some((m) => m.type === 'flag_posture_changed' && (m as any).auto === true) && store.toasts.length === 0, JSON.stringify(r.acks[0]));
+  // 반대 방향: 새 깃발 — 쿨타임 중 내 수도로 우클릭 → 현재 ATTACK 유지(postureHeld), 쿨타임이 끝나도 DEFEND 로 안 바뀐다
   r = step(sim, [[1, issue(n5)]], [store]);
   const f2id = r.acks[0].flagId as number;
   const fl2 = state.flags.find((f) => f.id === f2id)!;
@@ -116,16 +121,17 @@ const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots = true) =>
   while (state.tick < fl2.postureCooldownUntilTick) step(sim, [], [store]);
   r = step(sim, [[1, { type: 'cmd_set_posture', flagId: f2id, posture: POSTURE.ATTACK }]], [store]);
   check('S1 쿨타임 경과 후 수동 전환 ATTACK 수락', r.acks[0].accepted && fl2.posture === POSTURE.ATTACK, JSON.stringify(r.acks[0]));
+  check('S1 쿨타임 안의 재전환은 POSTURE_COOLDOWN 거절 (대기열 없음)', (step(sim, [[1, { type: 'cmd_set_posture', flagId: f2id, posture: POSTURE.DEFEND }]], [store]).acks[0] as any)?.reason === 'POSTURE_COOLDOWN');
   const cd2 = fl2.postureCooldownUntilTick;
   r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: f2id, anchorTileId: home }]], [store]);
-  check('S1 쿨타임 중 내 수도 우클릭: ack.posture 현재(ATTACK), 대기 DEFEND', r.acks[0]?.accepted && r.acks[0].posture === POSTURE.ATTACK && (fl2 as any).pendingPosture === POSTURE.DEFEND, JSON.stringify(r.acks[0]) + ` pending ${(fl2 as any).pendingPosture}`);
+  check('S1 쿨타임 중 내 수도 우클릭: ack.posture 현재(ATTACK), postureHeld true', r.acks[0]?.accepted && r.acks[0].posture === POSTURE.ATTACK && r.acks[0].postureHeld === true, JSON.stringify(r.acks[0]));
   check('S1 flag_retargeted.posture = 현재 태세(ATTACK)', (r.msgs.find((m) => m.type === 'flag_retargeted') as any)?.posture === POSTURE.ATTACK);
   let ch2 = -1;
-  for (let i = 0; i < 40 && ch2 < 0; i++) {
+  while (state.tick < cd2 + 20) {
     const rr = step(sim, [], [store]);
     if (rr.msgs.some((m) => m.type === 'flag_posture_changed' && (m as any).flagId === f2id)) ch2 = state.tick;
   }
-  check('S1 내 수도 우클릭 대기 → 쿨타임 끝 tick 에 DEFEND 자동 전환', ch2 === cd2, `전환 ${ch2} / ${cd2}`);
+  check('S1 내 수도 우클릭 뒤 쿨타임이 끝나도 DEFEND 자동 전환 없음', ch2 < 0 && fl2.posture === POSTURE.ATTACK, `전환 ${ch2}`);
   const dd = g.diffAgainstFull(buildSnapshotFull(state)).filter((x) => x.startsWith('flag') && !/\.(troops|state) /.test(x));
   check('S1 모델 flag = 서버 full flag', dd.length === 0, dd.join(';'));
 }
@@ -203,7 +209,7 @@ const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots = true) =>
 }
 
 // ───────────────────────── S3/S4 전체 판 ─────────────────────────
-const total = { elims: 0, annexOk: 0, annexDiffs: [] as number[], flashDiffs: [] as number[], bootMis: 0, bootChecks: 0, bootSamples: [] as string[], elimSamples: [] as string[], lossChecks: 0, lossMis: 0, prodChecks: 0, prodMis: 0, prodSamples: [] as string[], unreach: 0, unreachClientMis: 0, pendingBits: 0, baseNameMis: 0, baseCaps: 0, idleStateMis: 0 };
+const total = { elims: 0, annexOk: 0, annexDiffs: [] as number[], flashDiffs: [] as number[], bootMis: 0, bootChecks: 0, bootSamples: [] as string[], elimSamples: [] as string[], lossChecks: 0, lossMis: 0, prodChecks: 0, prodMis: 0, prodSamples: [] as string[], unreach: 0, unreachClientMis: 0, bit128: 0, baseNameMis: 0, baseCaps: 0, idleStateMis: 0 };
 const GAMES: { seed: number; n: number; size: 'S' | 'M' | 'L'; ticks: number }[] = [
   { seed: 7001, n: 12, size: 'S', ticks: 9600 },
   { seed: 7002, n: 12, size: 'S', ticks: 9600 },
@@ -239,7 +245,7 @@ for (const G of GAMES) {
       const ids = loss.map((x) => x[0]);
       if (ids.some((v, i) => i && v <= ids[i - 1]) || loss.some(([, l]) => l <= 0)) total.lossMis++;
       lastLedger = state.ledger.combat;
-      if (delta.flagFlags.some((x: number[]) => (x[2] & 128) !== 0)) total.pendingBits++;
+      if (delta.flagFlags.some((x: number[]) => (x[2] & 128) !== 0)) total.bit128++;
       const capNear = msgs.some((m) => m.type === 'base_captured') || capLast;
       for (const pp of delta.production ?? []) {
         total.prodChecks++;
@@ -312,7 +318,7 @@ check(`S3 기지 함락·멸망 tick 직후 모델 = 새 full / 늦은 입장 �
 check('S3 baseNames 늦은 입장 모델과 일치', total.baseNameMis === 0);
 check(`S2' 실제 판의 unreachable 이벤트(n=${total.unreach}) → 클라이언트 flagIdleReason`, total.unreachClientMis === 0, `${total.unreachClientMis}`);
 check(`S2' 같은 이벤트 → 5의 배수 tick 에 모델 state IDLE (서버 IDLE 인 한)`, total.idleStateMis === 0, `${total.idleStateMis}`);
-console.log(`  pendingPosture 비트(128) 가 실린 델타 수: ${total.pendingBits}`);
+check(`S1' v4.6 (§27): 델타 flagFlags 에 비트 128 이 실리지 않는다`, total.bit128 === 0, `${total.bit128}`);
 const bad = results.filter((r) => !r.ok);
 console.log(`\n${results.length - bad.length}/${results.length} 통과`);
 process.exit(bad.length ? 1 : 0);

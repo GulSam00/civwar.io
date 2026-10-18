@@ -21,6 +21,8 @@ export interface CursorPreview {
   /** 공격: 0 (회랑 칸 수는 route.ts) / 방어: 보호 타일 수 */
   count: number;
   label: string;
+  /** v4.6 (§27.3): 쿨타임 때문에 도착지 기본 태세 대신 붙들린 현재 태세를 보여 주는 예고 */
+  held?: true;
 }
 
 /** 내 영토 거리장 캐시 (owners 가 바뀔 때만 다시 계산) */
@@ -36,7 +38,25 @@ export class RangeCache {
   }
 }
 
-export function computePreview(model: GameModel, topo: TopologyView, me: number, tile: number, rangeField: Int32Array | null): CursorPreview | null {
+/**
+ * v4.6 (§27.3): 선택한 내 깃발이 태세 쿨타임 중이면 우클릭 이동은 이동만 하고 태세는 그대로다(postureHeld).
+ * 그때의 예고는 도착지 기본 태세가 아니라 "지금 붙들린 태세"를 보여야 한다 — held 가 있으면 도착지 기본 태세와 다를 때만 덮어쓴다.
+ */
+export interface HeldPosture {
+  posture: Posture;
+  /** 쿨타임 남은 초 */
+  sec: number;
+}
+
+export function computePreview(model: GameModel, topo: TopologyView, me: number, tile: number, rangeField: Int32Array | null, held?: HeldPosture | null): CursorPreview | null {
+  const p = computeDefaultPreview(model, topo, me, tile, rangeField);
+  if (!p || !held || p.posture === null || p.posture === held.posture) return p;
+  const name = held.posture === POSTURE.ATTACK ? '공격' : '방어';
+  const where = p.kind === 'attack' ? '적·중립 땅까지 이동만' : '내 땅까지 이동만';
+  return { ...p, kind: held.posture === POSTURE.ATTACK ? 'attack' : 'defend', posture: held.posture, disk: [], count: 0, held: true, label: `${name} 태세 유지 (전환 쿨타임 ${held.sec}초) · ${where}` };
+}
+
+function computeDefaultPreview(model: GameModel, topo: TopologyView, me: number, tile: number, rangeField: Int32Array | null): CursorPreview | null {
   if (tile < 0 || !model.terrain) return null;
   const radius = (model.config.constants?.FRONT_RADIUS as number | undefined) ?? FRONT_RADIUS;
   const maxRange = (model.config.constants?.FRONT_MAX_RANGE as number | undefined) ?? FRONT_MAX_RANGE;

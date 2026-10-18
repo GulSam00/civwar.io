@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ENDGAME_RUSH_TICK, POSTURE, type Unit } from '@civwar/shared';
+import { ENDGAME_RUSH_TICK, POSTURE, type Posture, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -18,6 +18,7 @@ import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
 import { fmtPm, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
+import { disengageTicksOf } from '../state/disengage.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, openCard } from './panels.js';
 import { PlayerCard } from './PlayerCard.js';
@@ -121,7 +122,11 @@ export function GameScreen({ store }: { store: ClientStore }) {
       // 예고 대상 칸: 삼각 메뉴 = 확정 지점, 기지→커서 화살표 = 커서, 내 깃발 선택 = 커서(우클릭 재지정)
       const pv = ix.issue?.phase === 'pick' ? ix.issue.anchor : ix.issue?.phase === 'aim' || controller.myFlag(ix.selectedFlagId) ? ix.hoverTile : -1;
       if (game && me !== null && renderer.topo && canCmd && pv >= 0) {
-        preview = computePreview(game, renderer.topo, me, pv, range.get(game, renderer.topo, me));
+        // §27.3: 쿨타임 중인 내 깃발의 우클릭 이동 예고는 붙들린(현재) 태세 — 도착지 기본 태세가 아니다
+        const sel = !ix.issue && ix.selectedFlagId !== null && controller.myFlag(ix.selectedFlagId) ? game.flags.get(ix.selectedFlagId) : undefined;
+        const cdLeft = sel ? sel.postureCooldownUntilTick - game.tick : 0;
+        const held = sel && cdLeft > 0 ? { posture: sel.posture as Posture, sec: Math.ceil((cdLeft * game.config.tickMs) / 1000) } : null;
+        preview = computePreview(game, renderer.topo, me, pv, range.get(game, renderer.topo, me), held);
       }
       const route = canCmd ? controller.currentRoute() : null;
       const routeKind = ix.issue ? (ix.issue.phase === 'pick' ? ix.issue.posture : preview ? (preview.kind as 'attack' | 'defend' | 'blocked') : null) : null;
@@ -543,7 +548,8 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
   } else if (ctl.canCommand() && g >= 0) {
     const myFlag = ctl.myFlag(ix.selectedFlagId);
     // 2026-10-14: 선택 부대 우클릭 = 항상 이동 (내 기지 = 기지 위로 가서 방어, 태세는 서버가 도착지로 정한다)
-    if (myFlag && ctl.isMyBase(g)) {
+    if (myFlag && p?.held && p.kind !== 'blocked') text = `우클릭 = 이동 → ${p.label}`;
+    else if (myFlag && ctl.isMyBase(g)) {
       text = '우클릭 = 이 기지로 이동해 방어';
       kind = 'defend';
     } else if (myFlag && ctl.isBaseTile(g) && p?.kind !== 'blocked') {
@@ -932,7 +938,7 @@ function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputControl
   const id = ctl.ix.selectedFlagId;
   const f = id !== null ? g?.flags.get(id) : undefined;
   if (!g || !f || !ctl.myFlag(f.id) || !ctl.canCommand()) return null;
-  const st = flagActionState(f, g.tick, g.config.tickMs);
+  const st = flagActionState(f, g.tick, g.config.tickMs, disengageTicksOf(g, f.ownerId));
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <div className="flag-actions" onMouseDown={stop} onContextMenu={(e) => e.preventDefault()}>
@@ -943,14 +949,14 @@ function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputControl
         className="btn btn-sm fa-btn"
         disabled={!!st.postureBlocked}
         onClick={() => ctl.togglePosture()}
-        title={st.postureBlocked ?? `${POSTURE_NAME[st.nextPosture]} 태세로 바꾸기 (F) — 진척도가 0이 됩니다`}
+        title={st.postureBlocked ?? `${POSTURE_NAME[st.nextPosture]} 태세로 바꾸기 (F) — 진척도가 0이 됩니다${st.combatWarning ? ` · ${st.combatWarning}` : ''}`}
       >
         <kbd>F</kbd> 태세 변경 <PostureIcon posture={st.nextPosture} size={12} />
         {st.cooldownSec > 0 && <span className="fa-cd">{st.cooldownSec}초</span>}
       </button>
-      {st.pendingPosture !== null && (
-        <span className="fa-pending" role="status" title="이동 명령의 도착지 태세 — 쿨타임·전투가 끝나면 자동으로 바뀝니다">
-          태세 전환 대기 → <PostureIcon posture={st.pendingPosture} size={12} /> {POSTURE_NAME[st.pendingPosture]}
+      {st.combatWarning !== null && (
+        <span className="fa-warn" role="status" data-testid="posture-combat-warning">
+          {st.combatWarning}
         </span>
       )}
     </div>
@@ -983,8 +989,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   const atkNow = f.posture === POSTURE.ATTACK;
   // v4.5 (§22.6): 자기 기지 칸 위면 태세와 무관하게 ×1.5 (방어 = 지형 대신, 공격 = 공격값에 곱) — 위 수치는 지형·기지 보정 제외
   const onOwnBase = g.bases.get(f.posTileId)?.ownerId === f.ownerId;
-  const pending = flagActionState(f, g.tick, g.config.tickMs).pendingPosture;
-  const postureBlocked = returning || f.routed || f.inCombat || f.disengaging || cd > 0;
+  const st = flagActionState(f, g.tick, g.config.tickMs, disengageTicksOf(g, f.ownerId));
   return (
     <div className="flag-panel">
       <div className="flag-panel-head">
@@ -999,12 +1004,6 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           태세 <b className={f.posture === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[f.posture]}</b>
           {cd > 0 && <span className="muted"> (전환 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
         </div>
-        {pending !== null && (
-          <div className="fa-pending-row">
-            태세 전환 대기 → <b className={pending === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[pending]}</b>
-            <span className="muted small"> (쿨타임·전투가 끝나면 자동)</span>
-          </div>
-        )}
         <div className="muted">{status}</div>
         <div className="combat-stats" aria-label="전투값">
           <div className={`cs-row ${atkNow ? 'now' : ''}`}>
@@ -1033,9 +1032,10 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
       </div>
       {mine && (
         <div className="flag-panel-actions">
-          <button className="btn" disabled={postureBlocked} onClick={() => ctl.togglePosture()} title="단축키 F">
+          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F')}>
             <kbd>F</kbd> {f.posture === POSTURE.ATTACK ? '방어로' : '공격으로'}
           </button>
+          {st.combatWarning !== null && <span className="fa-warn small">{st.combatWarning}</span>}
           <button className="btn" disabled={f.routed || returning} onClick={() => ctl.recallSelected()} title="단축키 R">
             <kbd>R</kbd> 귀환
           </button>

@@ -2206,8 +2206,8 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-/* §21.2 대기 태세 */
-.fa-pending {
+/* v4.6 §27 교전 중 태세 전환 경고 */
+.fa-warn {
   font-size: 12px;
   padding: 3px 8px;
   border-radius: var(--radius);
@@ -2216,13 +2216,11 @@ kbd {
   color: var(--warn);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   white-space: nowrap;
 }
-.fa-pending-row {
-  color: var(--warn);
+.flag-panel-actions .fa-warn {
+  white-space: normal;
 }
-
 /* v4.5 §22.6 기지 위 ×1.5 */
 .cs-base {
   color: #ffe9a8;

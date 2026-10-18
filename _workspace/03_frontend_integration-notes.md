@@ -445,3 +445,22 @@ server/·shared/ 는 손대지 않았다. 백엔드 f292640(§23 봇 세력 이�
 - `qa-recon-full.ts` 5판 `diffAgainstFull` 불일치 **0**(full 1,921·2,282회 등).
 - 브라우저(서버 8095 / 클라이언트 5185·5186, 봇 10, 4,500 tick 빨리 감기 후 같은 방을 이전·이후 빌드로 동시 관전, `client/scripts/shot-labels.ts`): `_workspace/screenshots/2026-10-19_territory-labels_full-map_{before,after}.png`. 이후: 이름이 작아지고 서로·기지 아이콘을 덜 덮는다. 왼쪽 위 모서리처럼 깃발이 몰린 곳은 이름이 흐리게 남는다.
 - 확인 못 한 것: 테크 창 골드 행을 브라우저에서 직접 열어 보지 않음(단위 테스트만). 실제 서버 대비 `incomeNow` 환산 오차는 측정하지 않음.
+
+## 21. 프로토콜 §27 연결 — 태세 전환 즉시 적용 (2026-10-19, 백엔드 19ed75a 이후, 클라이언트만 — server/·shared/ 변경 없음)
+
+**제거**: `pendingPosture`(`FlagActionState`·GameScreen "태세 전환 대기" 줄·패널 줄·store 주석·테스트), 델타 비트 128 읽기(없었음 — `qa-v45-integration.ts` 가 128 비트 0건을 검증), 구 CSS `.fa-pending*`.
+
+**태세 버튼** (`ui/unitChips.ts` `flagActionState(f, tick, tickMs, disengageTicks?)`): 차단 사유는 패주·귀환·쿨타임("전환 대기 n초")뿐. `DISENGAGING`/`IN_COMBAT` 사유 삭제. 새 필드 `combatWarning` — 전투 중이면 "교전 중 전환: 이탈 대기 n초, 방어력 ×0.5"(n = 소유자 스탯 이탈 대기, 철수 훈련이면 2초 — 새 `state/disengage.ts` `disengageTicksOf`, 렌더러 호 길이와 같은 함수), 이미 이탈 대기 중이면 "남은 대기 시간은 그대로". 떠 있는 버튼 옆 `.fa-warn` 줄 + 패널 버튼 옆 + 툴팁에 표시. 확인 대화상자는 두지 않았다(눌러도 되는 상태에서 경고만).
+
+**postureHeld** (`state/store.ts`): `cmd_ack.postureHeld === true`(수락) 또는 내 깃발 `flag_retargeted{postureHeld:true, auto:false}` → 토스트 "태세 전환 쿨타임 중 — 이동만 했습니다 (n초 남음, 공격|방어 태세 유지)". 둘이 같은 tick 에 오므로 같은 깃발 0.5초 안은 1회만. 남은 시간 = 모델 `postureCooldownUntilTick − tick`. 모델은 `flag_retargeted.posture`(실제 태세)를 그대로 적용(기존 동작).
+
+**우클릭 예고** (`input/preview.ts` `computePreview(..., held?)`): 선택한 내 깃발이 쿨타임 중이면 도착지 기본 태세가 현재 태세와 다를 때 예고 색·라벨을 **붙들린 현재 태세**로("방어 태세 유지 (전환 쿨타임 3초) · 적·중립 땅까지 이동만", `held:true`, 보호 원 없음). `GameScreen` 렌더 루프가 `held`를 계산해 넘기고 툴팁이 `held` 를 우선 표시. `input/route.ts`(진격 경로)는 **새 출전(cmd_flag_issue) 전용**이라 쿨타임이 있는 깃발이 없어 변경 없음 — 재지정 이동에는 경로 미리보기가 없고 커서 예고(위)만 있다.
+
+**이탈 호** (`state/gameModel.ts`): `flag_disengaged` 는 `reason` 3종 모두 호를 조용히 닫는다(클라이언트에는 원래 "빠져나감" 연출이 없고, `wait_over` 는 깃발이 전투에 남는다). 새 `disengageForPosture: Set<flagId>` — `flag_posture_changed{auto:false}` 와 **같은 tick** 의 `flag_disengage_started{auto:false}` 가 오면 넣고, `flag_disengaged`·패주·종료·델타 `disengaging=false`·snapshot_full(이탈 대기 아님)에서 뺀다. 렌더러: 이 깃발은 하늘색 호 + 태그 "태세 전환 중"(그 외는 노란 호 + "이탈"). 이미 이탈 대기 중에 전환하면 이벤트가 없어 호/태그는 그대로. snapshot_full 로 늦게 들어온 클라이언트는 "이탈" 로 보인다(서버가 사유를 직렬화하지 않음 — 허용 범위).
+
+**우연히 고친 것 1건**: `flag_recalled`(자동 귀환 포함) 때 `flagIdleReason` 을 지운다(주석에는 있었는데 코드에 없어 `qa-v45-integration` S2 한 항목이 실패하던 것).
+
+**테스트**: 신규 `client/test/postureV46.test.ts` 19건(버튼 상태 4 · 이탈 호/모델 5 · postureHeld 토스트 3 · 예고 4 · 실제 Simulation+ClientStore 종단 3: 쿨타임 중 우클릭→이동만·자동 전환 없음·쿨타임 후 즉시 전환, 도착지=현재 태세면 held 없음, 전투 중 전환→같은 tick 이벤트 순서→"태세 전환 중"→wait_over). `uiOct14.test.ts` 버튼 상태 기대를 새 규칙으로 고침, `qaV45.test.ts`·`uiOct14b.test.ts` 의 폐기 표지는 postureV46 을 가리키게 정리. `scripts/qa-v45-integration.ts` S1 을 postureHeld 기준으로 재작성 + 비트 128 0건 검사 → 32/32.
+
+**UI 문구**: Help(태세 절·이탈 대기 절)·README 조작표 갱신. `ui/text.ts` 의 `IN_COMBAT`/`DISENGAGING` 거절 문구는 서버가 더 이상 보내지 않아 죽은 항목(타입상 남아 있어 그대로 둠).
+**프로토콜 문서와 다르게 해석한 곳**: 없음. 경고 문구의 "방어력 ×0.5" 는 §27.5 원문 그대로이나 서버 규칙은 "실효값 ×0.5"(공격력도 포함일 수 있음) — 백엔드 확인 사항.

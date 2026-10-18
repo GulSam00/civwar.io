@@ -6,9 +6,10 @@
  *        → 예고 원 → 기지 → 앵커 선 → 깃발 → (미니맵은 별도 캔버스)
  * 타일 좌표 변환은 전부 TopologyView 를 거친다 (사각 전제 식은 topology.ts 에만).
  */
-import { DISENGAGE_TICKS, POSTURE, POSTURE_COOLDOWN_TICKS, techDisengageTicks, techStatValues, TECH_NODES, TECH_STAT_BASE, type FlagSnapshot, type TechNodeDef } from '@civwar/shared';
+import { POSTURE, POSTURE_COOLDOWN_TICKS, type FlagSnapshot } from '@civwar/shared';
 import { FLOAT_LIFE_MS, LossFloaters, floatAnim, lossText } from './lossFloaters.js';
 import type { GameModel } from '../state/gameModel.js';
+import { disengageTicksOf as disengageTicksModel } from '../state/disengage.js';
 import { createTopologyView, type TileLayer, type TopologyView } from './topology.js';
 import { fitZoom, worldToScreen, type Camera } from './camera.js';
 import { FlagInterpolator, type Pt } from './flagInterp.js';
@@ -820,11 +821,7 @@ export class GameRenderer {
 
   /** 소유자 스탯 이탈 대기 tick (match_config 의 노드 표 우선) */
   private disengageTicksOf(model: GameModel, ownerId: number): number {
-    const mask = model.players.get(ownerId)?.techMask ?? 0;
-    const consts = model.config.constants;
-    const nodes = (consts?.TECH_NODES as readonly TechNodeDef[] | undefined) ?? TECH_NODES;
-    const base = (consts?.TECH_STAT_BASE as readonly number[] | undefined) ?? TECH_STAT_BASE;
-    return Math.max(1, techDisengageTicks(techStatValues(mask, nodes, base)) || DISENGAGE_TICKS);
+    return disengageTicksModel(model, ownerId);
   }
 
   /**
@@ -1162,7 +1159,8 @@ export class GameRenderer {
       const left = Math.min(1, Math.max(0, f.disengageUntilTick - model.tick) / this.disengageTicksOf(model, f.ownerId));
       ctx.beginPath();
       ctx.arc(x, y, r + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
-      ctx.strokeStyle = '#ffd600';
+      // v4.6 (§27): 태세 전환이 연 이탈 대기 = 하늘색 호 + "전환" 태그 (회수·재지정의 노란 호와 구분)
+      ctx.strokeStyle = model.disengageForPosture.has(f.id) ? '#4fc3f7' : '#ffd600';
       ctx.lineWidth = 3;
       ctx.stroke();
     }
@@ -1174,13 +1172,13 @@ export class GameRenderer {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-    const tag = f.routed ? '패주' : f.disengaging ? '이탈' : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? (model.flagIdleReason.get(f.id) === 'unreachable' ? '막힘' : '대기') : null;
+    const tag = f.routed ? '패주' : f.disengaging ? (model.disengageForPosture.has(f.id) ? '태세 전환 중' : '이탈') : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? (model.flagIdleReason.get(f.id) === 'unreachable' ? '막힘' : '대기') : null;
     if (tag) {
       const tx = x + r + 4;
       const ty = y - r - 2;
       ctx.font = 'bold 10px system-ui, sans-serif';
       const tw = ctx.measureText(tag).width + 6;
-      ctx.fillStyle = f.routed ? '#555' : f.blocked ? '#ef6c00' : f.disengaging ? '#c49000' : f.stalled ? '#b26a00' : 'rgba(0,0,0,0.6)';
+      ctx.fillStyle = f.routed ? '#555' : f.blocked ? '#ef6c00' : f.disengaging ? (model.disengageForPosture.has(f.id) ? '#0277bd' : '#c49000') : f.stalled ? '#b26a00' : 'rgba(0,0,0,0.6)';
       ctx.fillRect(tx, ty - 7, tw, 13);
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'left';

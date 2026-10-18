@@ -6,6 +6,7 @@
  * (렌더 루프와 상태 갱신 분리: WS 수신 즉시 React 렌더를 일으키지 않는다)
  */
 import {
+  POSTURE,
   PROTOCOL_VERSION,
   type C2S_GameCommand,
   type ClientMessage,
@@ -323,8 +324,8 @@ export class ClientStore {
   /**
    * 선택 부대 우클릭 = "이동" (2026-10-14 사용자 결정). 내 기지·내 땅 = 그 자리로 가서 방어, 적·중립 = 공격 —
    * 태세는 서버가 도착지로 정한다(cmd_flag_retarget 의 기본 태세 재파생, 프로토콜 §4).
-   * 프로토콜 §21.2 표 그대로: 내 기지 칸도 cmd_flag_retarget(회수 아님). 태세를 바로 못 바꾸면 서버가 pendingPosture 에 두고
-   * 조건이 풀릴 때 자동 적용한다(델타 flagFlags 비트 POSTURE_PENDING 128). 호출부는 controller.rightClickTile 뿐.
+   * 프로토콜 §21.2 표 그대로: 내 기지 칸도 cmd_flag_retarget(회수 아님). v4.6 (§27): 쿨타임이 안 돌면 이동과 함께 태세도 즉시 바뀌고,
+   * 쿨타임 중이면 이동만 하고 태세는 그대로(대기·예약 없음) — 응답의 postureHeld 로 알려 준다(notifyPostureHeld). 호출부는 controller.rightClickTile 뿐.
    */
   moveFlag(flagId: number, tileId: number): number {
     return this.retarget(flagId, tileId);
@@ -484,6 +485,7 @@ export class ClientStore {
       case 'cmd_ack': {
         const p = this.pending.get(m.clientSeq);
         this.pending.delete(m.clientSeq);
+        if (m.accepted && m.postureHeld === true && m.flagId !== undefined) this.notifyPostureHeld(m.flagId);
         if (m.accepted && p?.type === 'cmd_buy_tech' && p.nodeId !== undefined) this.acceptedTech.set(p.nodeId, this.now());
         if (!m.accepted && m.reason) {
           const text = (p?.type === 'cmd_buy_tech' ? TECH_REJECT_TEXT[m.reason] : undefined) ?? REJECT_TEXT[m.reason] ?? m.reason;
@@ -528,8 +530,32 @@ export class ClientStore {
         this.emotes = [...this.emotes.filter((e) => t - e.at < 4000 && e.playerId !== m.playerId), shown];
         return;
       }
+      case 'flag_retargeted':
+        this.game?.apply(m);
+        // §27.3: 내 깃발의 재지정이 태세 쿨타임 때문에 도착지 태세를 못 바꿨다 (cmd_ack 와 같은 안내 — 중복은 notifyPostureHeld 가 거른다)
+        if (m.postureHeld === true && !m.auto && this.game?.flags.get(m.flagId)?.ownerId === this.myPlayerId) this.notifyPostureHeld(m.flagId);
+        return;
       default:
         this.game?.apply(m);
     }
+  }
+
+  private heldToastAt = new Map<number, number>();
+  /**
+   * §27.3 "태세 전환 쿨타임 중 — 이동만 했습니다 (남은 n초, 현재 태세 유지)". 남은 시간 = postureCooldownUntilTick − tick.
+   * cmd_ack 와 flag_retargeted 가 같은 tick 에 둘 다 오므로 같은 깃발은 0.5초 안에 한 번만.
+   */
+  private notifyPostureHeld(flagId: number): void {
+    const t = this.now();
+    if (t - (this.heldToastAt.get(flagId) ?? -1e9) < 500) return;
+    this.heldToastAt.set(flagId, t);
+    const g = this.game;
+    const f = g?.flags.get(flagId);
+    const left = g && f ? Math.max(0, f.postureCooldownUntilTick - g.tick) : 0;
+    const sec = g ? Math.ceil((left * g.config.tickMs) / 1000) : 0;
+    const parts: string[] = [];
+    if (sec > 0) parts.push(`${sec}초 남음`);
+    if (f) parts.push(`${f.posture === POSTURE.ATTACK ? '공격' : '방어'} 태세 유지`);
+    this.toast(`태세 전환 쿨타임 중 — 이동만 했습니다${parts.length ? ` (${parts.join(', ')})` : ''}`, 'info', 3500);
   }
 }

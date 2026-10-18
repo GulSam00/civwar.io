@@ -1,6 +1,6 @@
 /**
- * 프로토콜 §21 연결 (2026-10-14 2차) — 기지 생산력 보간 · 지명 매핑 · 생산 내역 합 · 대기 태세 · 멸망·합병 피드/번쩍임.
- * 실제 와이어 shape(map_init.baseNames, snapshot_full.bases[].prodPm/production, 델타 baseProd/production/flagFlags 128,
+ * 프로토콜 §21 연결 (2026-10-14 2차) — 기지 생산력 보간 · 지명 매핑 · 생산 내역 합 · 멸망·합병 피드/번쩍임.
+ * 실제 와이어 shape(map_init.baseNames, snapshot_full.bases[].prodPm/production, 델타 baseProd/production,
  * base_captured.newProdPm, player_eliminated.annexedTiles)을 ClientStore 에 넣어 확인한다.
  */
 import { describe, expect, it } from 'vitest';
@@ -8,7 +8,6 @@ import { FLAG_BIT, POSTURE, rleEncode, type FlagSnapshot, type PlayerProduction,
 import { ClientStore } from '../src/state/store.js';
 import { baseNameMap, interpBaseProd } from '../src/state/gameModel.js';
 import { incomeOf, productionRows, sumRows } from '../src/ui/production.js';
-import { flagActionState } from '../src/ui/unitChips.js';
 import { terrainInfo } from '../src/ui/terrainInfo.js';
 import { baseExtraOf } from '../src/ui/GameScreen.js';
 
@@ -208,7 +207,7 @@ describe('§21.4 병력·골드 출처 (production)', () => {
   });
 });
 
-// v4.6 (§27): '§21.2 대기 태세 (POSTURE_PENDING 128)' 테스트는 폐기됨 (pendingPosture·비트 128 제거). 프론트 재작업 때 정리할 것.
+// v4.6 (§27): §21.2 대기 태세(pendingPosture · 델타 비트 128)는 서버에서 제거됨 — 대체 검증은 postureV46.test.ts (postureHeld · 즉시 전환 규칙).
 
 describe('§21.3 멸망·합병', () => {
   it('피드 "멸망 — 합병", 같은 tick tileChanges 의 넘어간 칸을 번쩍임 목록에 모은다, 생산 내역 비움', () => {

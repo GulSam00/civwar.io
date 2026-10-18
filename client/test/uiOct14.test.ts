@@ -153,7 +153,7 @@ describe('병력 바 위 내 부대 칩', () => {
 describe('선택 부대 떠 있는 버튼 [귀환]/[태세 변경] 상태', () => {
   it('평상시: 둘 다 가능, 바꿀 태세 = 반대', () => {
     const st = flagActionState(flag({ posture: POSTURE.ATTACK }), 100, 200);
-    expect(st).toEqual({ recallBlocked: null, postureBlocked: null, cooldownSec: 0, nextPosture: POSTURE.DEFEND, pendingPosture: null });
+    expect(st).toEqual({ recallBlocked: null, postureBlocked: null, cooldownSec: 0, nextPosture: POSTURE.DEFEND, combatWarning: null });
   });
 
   it('쿨타임: 남은 초(올림) 표시 + 태세 변경만 막힘', () => {
@@ -164,11 +164,12 @@ describe('선택 부대 떠 있는 버튼 [귀환]/[태세 변경] 상태', () =
     expect(st.nextPosture).toBe(POSTURE.ATTACK);
   });
 
-  it('서버 거절 순서대로 막는다: 패주 > 귀환 > 이탈 대기 > 전투 중', () => {
+  it('서버 거절 순서대로 막는다 (§27.1-3): 패주 > 귀환 > 쿨타임 — 전투 중·이탈 대기 중은 막지 않는다', () => {
     expect(flagActionState(flag({ routed: true, state: 'RETURNING' }), 0, 200)).toMatchObject({ recallBlocked: '패주 중', postureBlocked: '패주 중' });
     expect(flagActionState(flag({ state: 'RETURNING' }), 0, 200)).toMatchObject({ recallBlocked: '귀환 중 — 취소 불가', postureBlocked: '귀환 중' });
-    expect(flagActionState(flag({ disengaging: true, inCombat: true }), 0, 200)).toMatchObject({ recallBlocked: null, postureBlocked: '이탈 대기 중' });
-    expect(flagActionState(flag({ inCombat: true }), 0, 200)).toMatchObject({ recallBlocked: null, postureBlocked: '전투 중' });
+    expect(flagActionState(flag({ disengaging: true, inCombat: true }), 0, 200)).toMatchObject({ recallBlocked: null, postureBlocked: null });
+    expect(flagActionState(flag({ inCombat: true }), 0, 200)).toMatchObject({ recallBlocked: null, postureBlocked: null });
+    expect(flagActionState(flag({ inCombat: true, postureCooldownUntilTick: 10 }), 0, 200)).toMatchObject({ postureBlocked: '전환 대기 2초' });
   });
 });
 

@@ -105,6 +105,13 @@ export class GameModel {
   combatLossQueue: { tick: number; losses: [number, number][] }[] = [];
   /** §22.12 IDLE 깃발이 멈춘 이유 (flag_idle.reason — "unreachable" 이면 지도에 "막힘" 태그). 재지정·회수·종료 시 지운다 */
   flagIdleReason = new Map<number, string>();
+  /**
+   * v4.6 (§27): 이탈 대기가 "태세 전환"으로 열린 깃발 id — flag_posture_changed{auto:false} 와 같은 tick 의
+   * flag_disengage_started{auto:false} 가 오면 넣고, flag_disengaged·패주·종료·델타 disengaging=false 에서 뺀다 (호 색·태그 "태세 전환 중").
+   */
+  disengageForPosture = new Set<number>();
+  /** flag_posture_changed{auto:false} 를 받은 tick (같은 tick 의 disengage_started 가 태세 전환 때문인지 가리는 용도) */
+  private manualPostureTick = new Map<number, number>();
   /** 마지막 tick 을 받은 시각 (performance.now 기준 ms — tick 사이 보간) */
   tickReceivedAt = 0;
   /** 시계 (테스트에서 바꾼다) */
@@ -147,6 +154,7 @@ export class GameModel {
     this.players = new Map(f.players.map((p) => [p.id, { ...p }]));
     this.flags = new Map(f.flags.map((x) => [x.id, { ...x }]));
     for (const id of [...this.flagEta.keys()]) if (this.flags.get(id)?.state !== 'MARCHING') this.flagEta.delete(id);
+    for (const id of [...this.disengageForPosture]) if (!this.flags.get(id)?.disengaging) this.disengageForPosture.delete(id);
     for (const id of [...this.flagReturn.keys()]) if (this.flags.get(id)?.state !== 'RETURNING') this.flagReturn.delete(id);
     this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b }]));
     this.baseProd = new Map(f.bases.filter((b) => b.prodPm !== undefined).map((b) => [b.tileId, { pm: b.prodPm!, tick: f.tick }]));
@@ -230,11 +238,15 @@ export class GameModel {
         const f = this.flags.get(e.flagId);
         // QA I-1: 이벤트의 targetOwnerId 로 덮어쓴다 (§16)
         if (f) Object.assign(f, { posture: e.posture, postureCooldownUntilTick: e.cooldownUntilTick, targetOwnerId: e.targetOwnerId });
+        if (!e.auto) this.manualPostureTick.set(e.flagId, e.tick);
         break;
       }
       case 'flag_disengage_started': {
         const f = this.flags.get(e.flagId);
         if (f) f.disengageUntilTick = e.untilTick;
+        // §27.1-4: 수동 전환이 같은 tick 에 이탈 대기를 열었다 → "태세 전환 중" (이미 열린 대기에 전환하면 이벤트가 없어 표식도 없다)
+        if (!e.auto && this.manualPostureTick.get(e.flagId) === e.tick) this.disengageForPosture.add(e.flagId);
+        else this.disengageForPosture.delete(e.flagId);
         break;
       }
       case 'flag_routed':
@@ -243,15 +255,21 @@ export class GameModel {
           const f = this.flags.get(e.flagId);
           if (f) f.disengageUntilTick = null;
         }
+        this.disengageForPosture.delete(e.flagId);
         this.setFlagState(e.flagId, 'RETURNING'); // 서버 beginReturn — 패주도 귀환 상태
         break;
       case 'flag_disengaged': {
         // §5: 패주 시 disengageUntilTick = null (m-8), 이탈 완료·무리 소멸도 null
+        // reason: broke_away(빠져나감) · combat_over(전투 끝) · wait_over(§27 A-121: 제자리 전환 대기 만료 — 전투에 남음).
+        // 호는 어느 경우든 조용히 닫는다 — 클라이언트는 빠져나감 연출을 따로 그리지 않는다.
         const f = this.flags.get(e.flagId);
         if (f) f.disengageUntilTick = null;
+        this.disengageForPosture.delete(e.flagId);
         break;
       }
       case 'flag_ended':
+        this.disengageForPosture.delete(e.flagId);
+        this.manualPostureTick.delete(e.flagId);
         this.flagIdleReason.delete(e.flagId);
         this.flags.delete(e.flagId);
         this.flagEta.delete(e.flagId);
@@ -318,6 +336,7 @@ export class GameModel {
       case 'flag_recalled':
         this.flagReturn.set(e.flagId, e.returnTileId);
         this.flagEta.delete(e.flagId);
+        this.flagIdleReason.delete(e.flagId); // 주석대로 회수(자동 귀환 포함) 때도 지운다
         this.setFlagState(e.flagId, 'RETURNING');
         break;
       case 'flag_engaged':
@@ -421,6 +440,7 @@ export class GameModel {
       f.routed = (bits & FLAG_BIT.ROUTED) !== 0;
       f.blocked = (bits & FLAG_BIT.BLOCKED) !== 0;
       f.disengaging = (bits & FLAG_BIT.DISENGAGING) !== 0;
+      if (!f.disengaging) this.disengageForPosture.delete(id);
       f.breakaway = (bits & FLAG_BIT.BREAKAWAY) !== 0;
       f.stalled = (bits & FLAG_BIT.STALLED) !== 0;
       f.halted = (bits & FLAG_BIT.HALTED) !== 0; // v4.2 4.4a 정지 점령

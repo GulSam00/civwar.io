@@ -1,6 +1,6 @@
 /**
  * QA v4.5 회귀 (2026-10-18) — 실제 Simulation 명령 경로 + 실제 ClientStore.
- *  - 태세 쿨타임 중 우클릭(retarget): 서버는 태세를 즉시 바꾸지 않고 pendingPosture, 쿨타임이 끝난 첫 tick 에 자동 전환
+ *  - (태세 쿨타임 중 우클릭 검증은 v4.6 §27 로 postureV46.test.ts 에 옮겼다 — pendingPosture 폐기)
  *  - 방어 깃발 unreachable IDLE: 실제 소유 지도에서 서버 이벤트 → 클라이언트 모델, 클라이언트 경로 미리보기 = 서버 defendDest
  *  - 클라이언트 route.ts 방어 경로 ↔ 서버 nextStep/defendDest 걸음 열 (봇 판 중간 상태, 동맹 주입)
  *  - 멸망·합병: annexedTiles ↔ delta.tileChanges, 직후 새 부트스트랩 = 이어 받은 모델
@@ -61,7 +61,7 @@ function step(sim: Simulation, cmds: [number, Record<string, unknown>][] = [], s
 const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots: boolean) =>
   createGameState(generateMapForSize(seed, size, n, MAP_GEN_DEFAULT), Array.from({ length: n }, (_, i) => ({ playerId: i + 1, isBot: bots, connected: true, botDifficulty: 'HARD' as const })), 'NORMAL', seed);
 
-// v4.6 (§27): '쿨타임 중 retarget → pendingPosture' 검증은 폐기됨 (pendingPosture 제거). 프론트 재작업 때 postureHeld 기준으로 다시 쓸 것.
+// v4.6 (§27): '쿨타임 중 retarget → pendingPosture' 검증은 폐기 — 실제 서버·ClientStore 종단 검증은 postureV46.test.ts (postureHeld · 즉시 전환 · wait_over).
 
 describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 지도)', () => {
   it('막히는 방어 앵커 발령 → 서버 IDLE(unreachable) @ defendDest → 모델 flagIdleReason, 600 tick 뒤 자동 귀환; 클라이언트 미리보기 = 서버 정지 칸', () => {
