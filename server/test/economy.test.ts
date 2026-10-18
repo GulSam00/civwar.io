@@ -65,19 +65,26 @@ describe('테크·슬롯 (3.4)', () => {
   });
 });
 
-describe('threshold (6.1, v4.0 3단계 2차)', () => {
+describe('threshold (6.1, 프로토콜 §24 — 60% → 20분부터 3.5 %p/분 → 30분 25%)', () => {
   it('곡선', () => {
+    expect(THRESHOLD_DECAY_START).toBe(6000);
     expect(thresholdScaled(0)).toBe(12000);
     expect(thresholdScaled(THRESHOLD_DECAY_START)).toBe(12000);
-    expect(thresholdScaled(THRESHOLD_DECAY_START + 300)).toBe(11700); // 58.5%
-    expect(thresholdScaled(6300)).toBe(10500); // 52.5%
-    expect(thresholdScaled(7800)).toBe(9000); // 26분 바닥
-    expect(thresholdScaled(HARD_TIMEOUT_TICK)).toBe(9000);
+    expect(thresholdScaled(THRESHOLD_DECAY_START + 1)).toBe(11998); // tick 사이 floor (2.33 단위/tick)
+    expect(thresholdScaled(THRESHOLD_DECAY_START + 300)).toBe(11300); // 21분 56.5%
+    expect(thresholdScaled(7200)).toBe(9200); // 24분 46%
+    expect(thresholdScaled(7800)).toBe(7800); // 26분(종반 러시) 39%
+    expect(thresholdScaled(8700)).toBe(5700); // 29분 28.5%
+    expect(thresholdScaled(8999)).toBe(5003);
+    expect(thresholdScaled(9000)).toBe(5000); // 30분 바닥 25%
+    expect(thresholdScaled(HARD_TIMEOUT_TICK)).toBe(5000);
   });
   it('정수 판정', () => {
     expect(meetsThreshold(2340, 3900, 0)).toBe(true); // 60%
     expect(meetsThreshold(2339, 3900, 0)).toBe(false);
-    expect(meetsThreshold(1755, 3900, 7800)).toBe(true); // 45%
-    expect(meetsThreshold(1754, 3900, 7800)).toBe(false);
+    expect(meetsThreshold(1521, 3900, 7800)).toBe(true); // 39%
+    expect(meetsThreshold(1520, 3900, 7800)).toBe(false);
+    expect(meetsThreshold(975, 3900, 9000)).toBe(true); // 25%
+    expect(meetsThreshold(974, 3900, 9000)).toBe(false);
   });
 });

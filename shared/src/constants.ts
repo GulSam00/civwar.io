@@ -19,8 +19,8 @@ export const PROTOCOL_VERSION = 1;
 // ══ 시간 ══
 export const TICK_MS = 200; // 초당 5 tick
 export const TICKS_PER_MIN = 300;
-export const ENDGAME_RUSH_TICK = 8400; // 28분 [A-38]
-export const ENDGAME_RUSH_COST_MULT_PERMILLE = 750; // tileCost × 0.75
+export const ENDGAME_RUSH_TICK = 7800; // 26분 — §24 [A-117] (구 8400 = 28분 [A-38])
+export const ENDGAME_RUSH_COST_MULT_PERMILLE = 600; // tileCost × 0.6 — §24 [A-118] (구 750)
 export const HARD_TIMEOUT_TICK = 9600; // 32분 [A-38]
 export const SNAPSHOT_FULL_INTERVAL = 25; // 5초
 export const PLAYER_DELTA_INTERVAL = 5; // 1초. troops/gold/flagStats 델타 주기
@@ -400,12 +400,13 @@ export const TECH_NODES: readonly TechNodeDef[] = [
 
 // ══ 승리 ══
 export const THRESHOLD_START_PCT = 60;
-export const THRESHOLD_DECAY_START = 4800; // 16분 [A-38]
-export const THRESHOLD_DECAY_PER_MIN_PERMILLE = 1500; // 1.5 %p/분 [A-38]
-export const THRESHOLD_FLOOR_PCT = 45;
+export const THRESHOLD_DECAY_START = 6000; // 20분 — §24 [A-114] (구 4800 = 16분 [A-38])
+export const THRESHOLD_DECAY_PER_MIN_PERMILLE = 3500; // 3.5 %p/분 — §24 [A-115] (구 1500)
+export const THRESHOLD_FLOOR_PCT = 25; // §24 [A-116] (구 45). 60 − 3.5 × 10분 = 25 → 바닥 도달 30분(tick 9000)
 /**
  * 정수 판정 스케일: 1 %p = 200 단위 (GDD 6.1 thresholdScaled).
- * decay/tick = 1500 × 200 / (1000 × 300) = 1 단위 → 정확히 정수.
+ * §24: decay/분 = 3500 × 200 / 1000 = 700 단위(정수) — 분 경계 값은 정확(56.5, 53.0, …).
+ * tick 사이 값은 floor (decay/tick = 2.33 단위). threshold_update 는 분 경계에서만 나가므로 표시값은 항상 0.5 %p 단위.
  */
 export const THRESHOLD_SCALE = 200;
 
@@ -414,7 +415,7 @@ export const MAX_ALLIES_PER_PLAYER = 2;
 export const PROPOSAL_TTL_TICK = 150;
 export const ALLIANCE_MIN_DURATION = 300;
 export const BACKSTAB_COOLDOWN_TICK = 150;
-export const ALLIANCE_CUTOFF_TICK = 8400; // = ENDGAME_RUSH_TICK [A-38]
+export const ALLIANCE_CUTOFF_TICK = ENDGAME_RUSH_TICK; // = 종반 러시 tick (§24: 7800 = 26분)
 export const LOCKOUT_COUNTDOWN_TICK = 150;
 export const LOCKOUT_FREEZE_TICK = 300;
 

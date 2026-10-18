@@ -141,7 +141,7 @@ describe('Simulation', () => {
     }
     expect(sim.state.tick).toBe(HARD_TIMEOUT_TICK);
     expect(last).toMatchObject({ type: 'game_over', reason: 'timeout' });
-    expect(thresholdUpdates).toBe(11); // 16분 ~ 26분, 분당 1회
+    expect(thresholdUpdates).toBe(11); // §24: 20분 ~ 30분(바닥 도달), 분당 1회
     expect(rush).toBe(1);
   });
 });
