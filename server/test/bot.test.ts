@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
-import { CivBot, botKnobs, chooseUnitFor, decideBot } from '../src/game/bot.js';
+import { BOT_DEEP_MAX, BOT_DEEP_MIN, CivBot, botKnobs, chooseUnitFor, decideBot } from '../src/game/bot.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
 import { NEUTRAL, botAggressionPermille, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
 import { Simulation, type BotBrain } from '../src/game/tick.js';
@@ -277,5 +277,10 @@ describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2
     expect(anchors.length).toBeGreaterThan(0);
     // 발령 직후 확인은 어렵다(영토가 변함) — 앵커가 수도에서 6칸 이상 떨어진 것이 하나 이상
     expect(anchors.some((a) => s.graph.distance(a, s.players[1].homeTileId) >= 6)).toBe(true);
+  });
+
+  it('깊은 앵커 노선 깊이 4~6칸 (§25 B2, 사용자 2026-10-18: 상한 20 → 6)', () => {
+    expect(BOT_DEEP_MIN).toBe(4);
+    expect(BOT_DEEP_MAX).toBe(6);
   });
 });

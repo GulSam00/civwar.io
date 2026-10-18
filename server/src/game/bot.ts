@@ -87,9 +87,9 @@ export const BOT_CONSOLIDATE_TROOPS_PERMILLE = 400;
 export const BOT_MIN_ATTACK_MULT = 3;
 /** v4.2 8.7 3b [A-65]: IDLE 공격 깃발 — 남은 병력이 이 이상이면 깊은 앵커로 재지정, 아니면 가까운 기지 지정 회수 */
 export const BOT_IDLE_REDEPLOY_MIN_TROOPS = 200;
-/** v4.2 8.3 [A-65]: 깊은 앵커 노선 깊이 clamp(병력 / (3 × cost), MIN, MAX) */
+/** v4.2 8.3 [A-65]: 깊은 앵커 노선 깊이 clamp(병력 / (3 × cost), MIN, MAX). §25 B2 (사용자 2026-10-18): MAX 20 → 6 — 긴 노선이 띠 모양 영토를 만든다 */
 export const BOT_DEEP_MIN = 4;
-export const BOT_DEEP_MAX = 20;
+export const BOT_DEEP_MAX = 6;
 /** GDD 에 없어 정함 (§10 v4.2): 새 공격 앵커 후보(국경 칸)가 내 공격 깃발 현재 위치에서 이 거리 이내면 건너뛴다 (같은 회랑 중복 방지) */
 export const BOT_PLOW_SPACING = 2;
 /**
@@ -426,7 +426,7 @@ function interceptTile(ctx: Ctx, e: Readonly<Flag>): number {
 
 // ───────────────────────── 8.3 앵커 선택 ─────────────────────────
 
-/** v4.2 8.3 [A-65]: 노선 깊이 = clamp(floor(병력 / (3 × cost)), 4, 20) — 걸음당 3칸 */
+/** v4.2 8.3 [A-65]: 노선 깊이 = clamp(floor(병력 / (3 × cost)), 4, 6) (§25 B2: 상한 20 → 6) — 걸음당 3칸 */
 function plowDepth(troops: number, cost: number): number {
   return Math.min(BOT_DEEP_MAX, Math.max(BOT_DEEP_MIN, Math.floor(troops / (3 * cost))));
 }
