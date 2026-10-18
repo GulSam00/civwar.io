@@ -181,7 +181,7 @@ describe('영토 이름 위치', () => {
     const o = new Array(W * H).fill(0);
     for (let r = 1; r <= 3; r++) for (let c = 1; c <= 3; c++) o[r * W + c] = 1;
     const a = territoryAnchors(o, W * H, center);
-    expect(a).toEqual([{ owner: 1, x: 2.5, y: 2.5, tiles: 9 }]);
+    expect(a).toEqual([{ owner: 1, x: 2.5, y: 2.5, tiles: 9, pieceTiles: 9 }]);
   });
 
   it('ㄷ자(오목) 영토: 무게중심이 빈 칸이어도 자기 칸 위에 놓인다', () => {
@@ -236,7 +236,7 @@ describe('영토 이름 위치', () => {
     const measure = (t: string, size: number) => t.length * size * 0.6;
     const anchors = [
       { owner: 1, x: 100, y: 100, tiles: 2500 },
-      { owner: 2, x: 100, y: 128, tiles: 2500 },
+      { owner: 2, x: 100, y: 122, tiles: 2500 },
     ];
     const placed = layoutTerritoryLabels(anchors, () => 'AB', (x, y) => ({ x, y }), 20, measure, { w: 800, h: 600 });
     expect(placed).toHaveLength(2);

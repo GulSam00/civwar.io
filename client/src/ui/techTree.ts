@@ -132,6 +132,11 @@ export interface TechDetailCtx {
   /** 골드 수입 행 (ECO) — 없으면 생략 */
   goldWeight?: number;
   upkeepPm?: number;
+  /**
+   * 지금 실제 순수입/초 = production.rows 합(incomeOf — 기지 골드·생산력 포함, HUD 와 같은 값). 주면 골드 행이 이 값을 기준으로
+   * 노드 전·후의 GOLD 스탯 비로 환산한다 (영토분 + 기지분 모두 goldPm 에 비례). 없으면 goldWeight 식(영토분만).
+   */
+  incomeNow?: { net: number; gross: number };
   /** 병력 상한 / 깃발 슬롯 실제 값 (GameModel.troopCapOf / flagCapOf) — 없으면 생략 */
   troopCap?: (mask: number) => number;
   flagCap?: (mask: number) => number;
@@ -214,7 +219,13 @@ export function techDetailRows(node: TechNodeDef, ctx: TechDetailCtx): TechDetai
   const rows: StatRow[] = [primaryRow(node.stat, before, after, ctx.consts)];
   if (node.stat === S.COMBAT_ATK) rows.push(combatUnitsRow(false, before, after, ctx.consts));
   if (node.stat === S.COMBAT_DEF) rows.push(combatUnitsRow(true, before, after, ctx.consts));
-  if (node.stat === S.GOLD && ctx.goldWeight !== undefined) {
+  if (node.stat === S.GOLD && ctx.incomeNow) {
+    const cur = techStatsOf(ctx.techMask, ctx.consts)[S.GOLD];
+    const at = (stats: number[]) => (cur > 0 ? (ctx.incomeNow!.net * stats[S.GOLD]) / cur : ctx.incomeNow!.net);
+    const nb = at(before);
+    const na = at(after);
+    rows.push({ label: '골드 순수입 (기지 포함, 지금 영토 기준)', before: `+${nb.toFixed(1)}/초`, after: `+${na.toFixed(1)}/초`, changed: nb.toFixed(1) !== na.toFixed(1) });
+  } else if (node.stat === S.GOLD && ctx.goldWeight !== undefined) {
     const gb = goldPerSecond(ctx.goldWeight, maskBefore, ctx.upkeepPm ?? 0, ctx.consts).gross;
     const ga = goldPerSecond(ctx.goldWeight, maskAfter, ctx.upkeepPm ?? 0, ctx.consts).gross;
     rows.push({ label: '골드 수입 (지금 영토 기준)', before: `+${gb.toFixed(1)}/초`, after: `+${ga.toFixed(1)}/초`, changed: gb !== ga });

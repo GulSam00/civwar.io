@@ -31,6 +31,7 @@ import {
   type AllyProposalSnapshot,
   type BaseSnapshot,
   type FlagSnapshot,
+  type FlagState,
   type PlayerSnapshot,
   type ProductionRow,
   type S2C_GameOver,
@@ -243,6 +244,7 @@ export class GameModel {
           const f = this.flags.get(e.flagId);
           if (f) f.disengageUntilTick = null;
         }
+        this.setFlagState(e.flagId, 'RETURNING'); // 서버 beginReturn — 패주도 귀환 상태
         break;
       case 'flag_disengaged': {
         // §5: 패주 시 disengageUntilTick = null (m-8), 이탈 완료·무리 소멸도 null
@@ -317,12 +319,15 @@ export class GameModel {
       case 'flag_recalled':
         this.flagReturn.set(e.flagId, e.returnTileId);
         this.flagEta.delete(e.flagId);
+        this.setFlagState(e.flagId, 'RETURNING');
         break;
       case 'flag_engaged':
         this.flagEta.delete(e.flagId);
+        this.setFlagState(e.flagId, 'ENGAGED');
         break;
       case 'flag_idle':
         this.flagEta.delete(e.flagId);
+        this.setFlagState(e.flagId, 'IDLE');
         this.flagIdleReason.set(e.flagId, e.reason);
         break;
       case 'flag_stalled':
@@ -333,13 +338,20 @@ export class GameModel {
       case 'combat_ended':
       case 'emote_broadcast':
       case 'bot_takeover':
-        // 상태 필드는 같은 tick 의 snapshot_delta(flagStats/flagFlags/flagTargets)가 싣는다 — 표시 피드 전용
+        // 표시 피드 전용. 상태 필드(flagFlags/flagTargets)는 snapshot_delta 가 싣는다.
+        // (flagStats 의 state 는 1초 주기(t%5==0, 교전 중만 매 tick)라, 상태가 바뀌는 flag_recalled/engaged/idle/routed 는 위에서 즉시 반영한다)
         break;
       default:
         return false;
     }
     this.version++;
     return true;
+  }
+
+  /** 이벤트가 알려 준 상태를 flagStats(1초 주기)를 기다리지 않고 바로 반영 — 다음 flagStats 가 오면 서버 값으로 덮어쓴다 */
+  private setFlagState(flagId: number, state: FlagState): void {
+    const f = this.flags.get(flagId);
+    if (f) f.state = state;
   }
 
   applyDelta(d: S2C_SnapshotDelta): void {

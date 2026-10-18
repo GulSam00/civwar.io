@@ -16,7 +16,7 @@ for (const seed of [11, 12, 13]) {
     sim.step();
     if (st.tick % 5) continue;
     ticks++;
-    const pairs = combatPairs(st.flags, (a, b) => topo.touching(a, b), (a, b) => isAlly(st, a, b));
+    const pairs = combatPairs(st.flags.map((f) => ({ id: f.id, ownerId: f.ownerId, posTileId: f.posTileId, posture: f.posture, inCombat: f.inCombat, state: f.state, routed: f.routed, troops: f.troopsMilli, breakaway: f.breakaway })), (a, b) => topo.touching(a, b), (a, b) => isAlly(st, a, b));
     const byId = new Map(st.flags.map((f) => [f.id, f]));
     for (const p of pairs) {
       cp++;

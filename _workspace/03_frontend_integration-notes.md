@@ -430,3 +430,18 @@ server/·shared/ 는 손대지 않았다. 백엔드 f292640(§23 봇 세력 이�
 - 브라우저: 8092/5182 는 이 작업 전(11:58)부터 다른 프로세스가 점유 중이라 건드리지 않고 **8093/5183** 에서 확인. 진행 중 공개 방 카드 = 실제 지형 + 기지 점, 대기 방 = 분위기 그림 + "무작위", 두 카드 모두 "봇 보통" 태그. 다른 WS 클라이언트가 나를 대상으로 보낸 이모트 = 노란 피드 줄 + 노란 말풍선·화살표, 정보 카드로 봇에게 보낸 이모트 = "tester → 시슬다운 기사단: 가자!" + 흰 화살표, 서버 브로드캐스트에 `targetPlayerId` 실림, 1초 안 두 번째 = 토스트·메뉴 유지.
   스크린샷: `_workspace/screenshots/2026-10-18c_{room-cards-live-thumbnail.jpg, room-cards-closeup.png, emote-targeted-to-me.jpg, emote-targeted-to-me-closeup.png, emote-targeted-sent-and-received.jpg}`.
 - 원형 메뉴 이모트 고리의 대상 송신은 단위 테스트로만 확인(브라우저에서는 정보 카드 경로만).
+
+## 20. QA v4.5 경미 표시 3건 + 영토 이름 겹침 정리 (2026-10-19, 클라이언트만 — 서버·shared 변경 없음)
+
+### 고친 것
+- **m-5 `flagStats` 1초 주기**: `GameModel.applyEvent` 가 `flag_engaged → ENGAGED`, `flag_idle → IDLE`, `flag_recalled → RETURNING`, `flag_routed → RETURNING`(서버 `beginReturn`)으로 깃발 `state` 를 즉시 바꾼다(`setFlagState`). 다음 `flagStats` 가 오면 서버 값으로 덮어쓴다(권위 불변). 잘못된 주석(`gameModel.ts` 336 부근)도 정정. `flag_retargeted` 로 IDLE/RETURNING 에서 MARCHING 으로 돌아가는 경우는 이벤트가 state 를 싣지 않아 여전히 다음 `flagStats`(최대 0.8초)를 기다린다 — 표시 영향이 작아 그대로 둠.
+- **m-6 테크 상세 골드 행**: `TechDetailCtx.incomeNow`(= `incomeOf` = `production.rows` 합, 기지 골드 포함) 추가. 주어지면 행 "골드 순수입 (기지 포함, 지금 영토 기준)" 의 "지금" 이 HUD 순수입과 같고, 구매 후/없을 때는 GOLD 스탯 비(`techStatsOf`)로 환산한다(영토분·기지분 모두 goldPm 에 비례). 숫자는 gross 가 아니라 net(HUD 와 같은 기준). 없으면 예전 `goldWeight` 식. `TechWindow.tsx` 가 `incomeNow` 를 넘긴다. 서버는 틱마다 floor 하므로 환산값은 ±0.1/초 수준 근사.
+- **m-7 교전 연결선**: `combatPairs` 가 서버 `engagedPair` 와 같은 규칙: 양쪽 `combatEligible`(!routed ∧ 병력>0 ∧ !breakaway) ∧ inCombat ∧ 다른 주인 ∧ 비동맹 ∧ 접촉 ∧ **한쪽이 attackSide(공격 태세 ∧ state ≠ RETURNING)**. 원인은 attackSide 조건 누락(귀환 중 공격 깃발 ↔ 방어 깃발)과 routed/병력 0 미검사였다. `CombatFlagLike` 에 `state/routed/troops/breakaway` 추가(모델 FlagSnapshot 에 모두 있음). m-5 수정이 `state` 지연(한 프레임 어긋남)도 줄인다. `client/scripts/qa-v45-pairs.ts`: 봇 3판 3,600 샘플, 연결선 3,961개 중 서버에 없는 쌍 **0**(전 3/3,964).
+  - 한계: 클라이언트 `troops` 는 정수라, 서버 `troopsMilli` 가 1~999(표시 0)인 깃발은 서버엔 간선이 있으나 클라이언트는 선을 안 그린다(선이 빠지는 쪽, 드묾).
+- **영토 이름**(`render/territoryLabels.ts`, `renderer.ts`): 글자 최대 30→20px, 크기 계수 0.32→0.2. 큰 영토부터 놓고 겹치면 작은 쪽을 최소 크기로 줄이고 그래도 겹치면 생략(기존 로직 유지·테스트). 이름 기준점 = 소유 칸의 **가장 큰 연결 덩어리**(4방향, `topo.neighbors`) 무게중심에 가장 가까운 그 덩어리 칸(`TerritoryAnchor.pieceTiles`, 글자 크기도 이 덩어리 기준; 우선순위는 총 칸 수). 깃발(직전 프레임 위치)·기지 아이콘 사각형을 `obstacles` 로 받아, 겹치면 위·아래로 1~2줄 높이 비껴 놓고 비킬 자리가 없으면 투명도 0.4(`PlacedLabel.dim`)로 그린다.
+
+### 검증
+- `npm run typecheck` 통과 · `npm test` 32 파일 446 통과(신규 `client/test/uiOct19.test.ts` 13개: 이벤트 state 즉시 갱신·flagStats 덮어쓰기, 골드 행 incomeNow, 교전 쌍 규칙, 이름 크기 상한·겹침·조각난 영토·아이콘 비킴/흐림; `combatPairs.test.ts` 3개 추가, `uiOct14.test.ts` 1개 기준 갱신) · `npm run build:client` 통과.
+- `qa-recon-full.ts` 5판 `diffAgainstFull` 불일치 **0**(full 1,921·2,282회 등).
+- 브라우저(서버 8095 / 클라이언트 5185·5186, 봇 10, 4,500 tick 빨리 감기 후 같은 방을 이전·이후 빌드로 동시 관전, `client/scripts/shot-labels.ts`): `_workspace/screenshots/2026-10-19_territory-labels_full-map_{before,after}.png`. 이후: 이름이 작아지고 서로·기지 아이콘을 덜 덮는다. 왼쪽 위 모서리처럼 깃발이 몰린 곳은 이름이 흐리게 남는다.
+- 확인 못 한 것: 테크 창 골드 행을 브라우저에서 직접 열어 보지 않음(단위 테스트만). 실제 서버 대비 `incomeNow` 환산 오차는 측정하지 않음.

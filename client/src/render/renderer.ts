@@ -22,7 +22,7 @@ import { SHIELD_GLYPH, SWORD_GLYPH, combatPairs, declutter, glyphOf, pairGlyphKi
 import { UNIT_SHORT } from '../ui/text.js';
 import { fmtCompact } from '../ui/fmt.js';
 import { clampToView, emoteBubble } from './emoteBubble.js';
-import { layoutTerritoryLabels, territoryAnchors, type TerritoryAnchor } from './territoryLabels.js';
+import { LABEL_DIM_ALPHA, layoutTerritoryLabels, territoryAnchors, type TerritoryAnchor } from './territoryLabels.js';
 
 /**
  * 기지 부가 정보 (프로토콜 §21) — GameScreen.baseExtraOf 가 GameModel(baseProd 보간 · baseNames)에서 만든다.
@@ -219,7 +219,7 @@ export class GameRenderer {
    */
   private drawTerritoryNames(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView, now: number): void {
     if (this.labelsDirty && now - this.labelsAt >= LABEL_REFRESH_MS) {
-      this.labelAnchors = territoryAnchors(model.owners, topo.tileCount, (t) => topo.tileCenter(t), (t) => model.isLand(t));
+      this.labelAnchors = territoryAnchors(model.owners, topo.tileCount, (t) => topo.tileCenter(t), (t) => model.isLand(t), (t) => topo.neighbors(t));
       this.labelsDirty = false;
       this.labelsAt = now;
     }
@@ -233,6 +233,16 @@ export class GameRenderer {
     const baseCenters = model.baseTiles.map((t) => topo.tileCenter(t));
     // 2026-10-18: 이름 왼쪽 작은 문장(플레이어 색 방패) + 이름 아래 총 병력 ("2.55K")
     const emblemW = (size: number) => Math.round(size * 0.78) + 4;
+    // 2026-10-19: 깃발·기지 아이콘 자리 (직전 프레임 깃발 위치) — 이름이 이 위에 놓이면 비껴 놓거나 흐리게
+    const obstacles: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    for (const c of baseCenters) {
+      const q = worldToScreen(cam, c.x, c.y);
+      obstacles.push({ x0: q.x - s, y0: q.y - s, x1: q.x + s, y1: q.y + s * 1.6 });
+    }
+    for (const w of this.flagWorld.values()) {
+      const q = worldToScreen(cam, w.x, w.y);
+      obstacles.push({ x0: q.x - 12, y0: q.y - 12, x1: q.x + 12, y1: q.y + 12 });
+    }
     const placed = layoutTerritoryLabels(
       this.labelAnchors.filter((a) => model.players.get(a.owner)?.alive ?? true),
       (id) => (view.colorblind ? `${id}. ${view.nicknameOf(id)}` : view.nicknameOf(id)),
@@ -248,6 +258,7 @@ export class GameRenderer {
       },
       { w: cam.viewW, h: cam.viewH },
       (id) => fmtCompact(model.players.get(id)?.troops ?? 0),
+      obstacles,
     );
     ctx.save();
     ctx.textAlign = 'center';
@@ -260,7 +271,7 @@ export class GameRenderer {
       const ew = emblemW(l.size);
       const left = l.x - (tw + ew) / 2;
       const tx = left + ew + tw / 2;
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = l.dim ? LABEL_DIM_ALPHA : 0.9;
       drawEmblem(ctx, left + (ew - 4) / 2, l.y, Math.round(l.size * 0.78), playerColor(l.owner));
       ctx.lineWidth = Math.max(3, l.size * 0.22);
       ctx.strokeStyle = 'rgba(8,12,18,0.8)';

@@ -8,7 +8,7 @@ const topo = new SquareTopologyView(W, 10);
 const at = (r: number, c: number) => r * W + c;
 const touching = (a: number, b: number) => topo.touching(a, b);
 const noAlly = () => false;
-const flag = (id: number, ownerId: number, tile: number, posture: 0 | 1, inCombat = true): CombatFlagLike => ({ id, ownerId, posTileId: tile, posture, inCombat });
+const flag = (id: number, ownerId: number, tile: number, posture: 0 | 1, inCombat = true): CombatFlagLike => ({ id, ownerId, posTileId: tile, posture, inCombat, state: 'ENGAGED', routed: false, troops: 100, breakaway: false });
 
 describe('touching = 체비셰프 1', () => {
   it('같은 칸·상하좌우·대각선 = 접촉, 2칸 = 아님, 행 경계 넘김 없음', () => {
@@ -19,6 +19,23 @@ describe('touching = 체비셰프 1', () => {
     expect(topo.touching(at(5, 5), at(5, 7))).toBe(false);
     expect(topo.touching(at(5, 5), at(7, 6))).toBe(false);
     expect(topo.touching(at(3, 9), at(4, 0))).toBe(false); // 줄 끝 → 다음 줄 처음 (id 차 1 이지만 멀다)
+  });
+});
+
+describe('combatPairs — 서버 전투 간선 규칙 (combat.ts engagedPair)', () => {
+  it('둘 다 방어 태세면 간선 없음 (한쪽이 공격 태세여야)', () => {
+    expect(combatPairs([flag(1, 1, at(5, 5), 1), flag(2, 2, at(5, 6), 1)], touching, noAlly)).toEqual([]);
+  });
+  it('귀환 중인 공격 깃발은 공격 쪽이 아니다 — 적 방어 깃발과 선 없음, 상대가 공격이면 선 있음', () => {
+    const ret = { ...flag(1, 1, at(5, 5), 0), state: 'RETURNING' };
+    expect(combatPairs([ret, flag(2, 2, at(5, 6), 1)], touching, noAlly)).toEqual([]);
+    expect(combatPairs([ret, flag(2, 2, at(5, 6), 0)], touching, noAlly)).toHaveLength(1);
+  });
+  it('패주(routed)·병력 0·분리(breakaway) 깃발은 제외 (combatEligible)', () => {
+    const base = flag(1, 1, at(5, 5), 0);
+    for (const bad of [{ routed: true }, { troops: 0 }, { breakaway: true }]) {
+      expect(combatPairs([{ ...base, ...bad }, flag(2, 2, at(5, 6), 0)], touching, noAlly)).toEqual([]);
+    }
   });
 });
 

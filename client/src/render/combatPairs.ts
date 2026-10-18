@@ -1,9 +1,10 @@
 /**
  * 교전 시각화 (사용자 결정 2026-10-11): 교전 중인 두 깃발 사이 짧은 연결선 + 공격 태세 쪽 검, 방어 태세 쪽 방패(둘 다 공격 = 검 둘).
  *
- * 교전 쌍은 프로토콜이 주는 값만으로 클라이언트에서 계산한다 (§20):
- *   두 깃발 모두 서버 inCombat 비트가 켜져 있고, 주인이 다르고 동맹이 아니며, 위치 칸이 접촉(topology.touching —
- *   사각 = 체비셰프 1, 대각선 포함 8방향)이면 한 쌍. 서버의 전투 개시·편 묶기 판정과 같은 범위다.
+ * 교전 쌍은 프로토콜이 주는 값만으로 클라이언트에서 계산한다 (§20). 서버 전투 간선(combat.ts engagedPair)과 같은 규칙:
+ *   두 깃발 모두 combatEligible(!routed ∧ 병력>0 ∧ !breakaway) 이고 inCombat 비트가 켜져 있고,
+ *   주인이 다르고 동맹이 아니며(hostile), 위치 칸이 접촉(topology.touching — 사각 = 체비셰프 1, 대각선 포함 8방향)이고,
+ *   **한쪽이 attackSide(공격 태세 ∧ 귀환 중 아님)** 일 때만 한 쌍. (귀환 중 공격 깃발 ↔ 방어 깃발은 서버에 간선이 없다 — v4.2 [A-62])
  * 판정은 TopologyView.touching 만 부른다 (사각 전제 식은 topology.ts 에만).
  */
 import { POSTURE } from '@civwar/shared';
@@ -15,6 +16,20 @@ export interface CombatFlagLike {
   posTileId: number;
   posture: number;
   inCombat: boolean;
+  /** 아래 셋은 서버 combatEligible / attackSide 판정용 — 모델 FlagSnapshot 에 모두 있다 */
+  state: string;
+  routed: boolean;
+  troops: number;
+  breakaway: boolean;
+}
+
+/** 서버 combatEligible 과 같다 */
+export function combatEligible(f: Pick<CombatFlagLike, 'routed' | 'troops' | 'breakaway'>): boolean {
+  return !f.routed && f.troops > 0 && !f.breakaway;
+}
+/** 서버 attackSide 와 같다: 공격 태세이고 귀환 중이 아님 */
+export function attackSide(f: Pick<CombatFlagLike, 'posture' | 'state'>): boolean {
+  return f.posture === POSTURE.ATTACK && f.state !== 'RETURNING';
 }
 
 export interface CombatPair {
@@ -27,13 +42,14 @@ export interface CombatPair {
 
 /** 교전 쌍 목록 (a < b, (a, b) 오름차순). 같은 깃발이 여러 쌍에 들 수 있다(여럿이 한 편으로 싸울 때) */
 export function combatPairs<F extends CombatFlagLike>(flags: Iterable<F>, touching: (a: number, b: number) => boolean, isAlly: (a: number, b: number) => boolean): CombatPair[] {
-  const fighting = [...flags].filter((f) => f.inCombat).sort((x, y) => x.id - y.id);
+  const fighting = [...flags].filter((f) => f.inCombat && combatEligible(f)).sort((x, y) => x.id - y.id);
   const out: CombatPair[] = [];
   for (let i = 0; i < fighting.length; i++) {
     const f = fighting[i];
     for (let j = i + 1; j < fighting.length; j++) {
       const g = fighting[j];
       if (f.ownerId === g.ownerId || isAlly(f.ownerId, g.ownerId)) continue;
+      if (!attackSide(f) && !attackSide(g)) continue;
       if (!touching(f.posTileId, g.posTileId)) continue;
       out.push({ a: f.id, b: g.id, aAttack: f.posture === POSTURE.ATTACK, bAttack: g.posture === POSTURE.ATTACK });
     }
