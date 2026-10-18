@@ -255,7 +255,7 @@ export function EventFeed({ store }: { store: ClientStore }) {
   return (
     <div className="feed" aria-live="polite">
       {items.map((e) => (
-        <div key={e.id} className={`feed-row ${e.kind} ${e.mine ? 'mine' : ''} ${e.important ? 'important' : ''}`}>
+        <div key={e.id} className={`feed-row ${e.kind} ${e.mine ? 'mine' : ''} ${e.important ? 'important' : ''} ${e.toMe ? 'to-me' : ''}`}>
           <span className="feed-time">{fmtClock(e.tick * g.config.tickMs)}</span> {e.text}
         </div>
       ))}

@@ -184,7 +184,7 @@ export function contextMenuModel(inp: CtxInput): CtxMenuModel | null {
   segments.push({
     id: 'emote',
     label: '이모트',
-    hint: '말풍선 보내기 (모두에게 보입니다)',
+    hint: ownerId > 0 && ownerId !== me ? `${inp.names.nick(ownerId)}에게 말풍선 보내기 (모두에게 보입니다)` : '말풍선 보내기 (모두에게 보입니다)',
     detail: null,
     disabled: !inp.canCommand,
     reason: inp.canCommand ? null : '관전 중에는 이모트를 보낼 수 없습니다',

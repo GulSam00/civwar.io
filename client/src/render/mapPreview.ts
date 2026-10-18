@@ -2,7 +2,7 @@
  * 맵 미리보기 썸네일 — 지형 RLE + 스폰 + 기지를 작은 캔버스에 그린다.
  * 타일 그리기·좌표는 TopologyView 를 거친다 (사각 전제는 topology.ts 에만).
  */
-import { rleDecode } from '@civwar/shared';
+import { rleDecode, type MapThumbnail } from '@civwar/shared';
 import { createTopologyView } from './topology.js';
 import { PLAYER_HEX, tileRgba } from './palette.js';
 
@@ -127,4 +127,37 @@ export function randomPreviewTerrain(seed: number, width: number, height: number
 export function drawRandomPreview(canvas: HTMLCanvasElement, seed: number, width: number, height: number): void {
   const topo = createTopologyView('square', width, height);
   drawTerrain(canvas, topo, randomPreviewTerrain(seed, width, height));
+}
+
+/**
+ * §26.2 room_list.rooms[].thumbnail 풀기 — 축소 지형 RLE(길이 합 = width × height) + 기지 축소 칸 index.
+ * 형식이 어긋나면(길이 합 불일치·범위 밖 기지) null → 호출자는 분위기 그림으로 물러난다.
+ */
+export function decodeThumbnail(t: MapThumbnail): { width: number; height: number; terrain: Uint8Array; bases: number[] } | null {
+  const n = t.width * t.height;
+  if (!(t.width > 0 && t.height > 0) || !Array.isArray(t.terrain) || t.terrain.length % 2 !== 0) return null;
+  let sum = 0;
+  for (let i = 1; i < t.terrain.length; i += 2) sum += t.terrain[i];
+  if (sum !== n) return null;
+  const terrain = Uint8Array.from(rleDecode(t.terrain, n));
+  const bases = (t.bases ?? []).filter((b) => Number.isInteger(b) && b >= 0 && b < n);
+  return { width: t.width, height: t.height, terrain, bases };
+}
+
+/** §26.2 무작위 맵 방의 실제 축소 지형 + 기지 점. 그렸으면 true (형식 오류면 false — 호출자가 분위기 그림) */
+export function drawThumbnailPreview(canvas: HTMLCanvasElement, t: MapThumbnail): boolean {
+  const d = decodeThumbnail(t);
+  if (!d) return false;
+  const topo = createTopologyView('square', d.width, d.height);
+  const { ctx, k, ox, oy } = drawTerrain(canvas, topo, d.terrain);
+  const r = Math.max(1.5, Math.min(3, k * 0.6));
+  ctx.fillStyle = '#f5f1e6';
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 1;
+  for (const b of d.bases) {
+    const c = topo.tileCenter(b);
+    ctx.fillRect(ox + c.x * k - r, oy + c.y * k - r, r * 2, r * 2);
+    ctx.strokeRect(ox + c.x * k - r, oy + c.y * k - r, r * 2, r * 2);
+  }
+  return true;
 }

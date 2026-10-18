@@ -1,7 +1,7 @@
 /**
  * 플레이어 정보 카드 (2026-10-18 UI 개선 6 — OpenFront.io 참고). 순위표·상단 대상 바·외교 창의 이름을 누르면 열린다.
  * 색·이름·종류·관계, 점유율·병력(상한·회복)·골드(순수입)·테크 수, 기지(생산력·체력), 동맹 목록, 동맹 파기 횟수(§23 allyBreaks — 없으면 줄 숨김).
- * 버튼: 동맹 제안/파기/수락·거절(외교 창과 같은 규칙·쿨타임 — playerInfo.diplomacyAction), 이모트(전체 공개), 카메라 따라가기.
+ * 버튼: 동맹 제안/파기/수락·거절(외교 창과 같은 규칙·쿨타임 — playerInfo.diplomacyAction), 이모트(이 플레이어 대상 §26.3 — 전체 공개), 카메라 따라가기.
  * 제목 줄 드래그(넓은 화면). Esc 또는 × 로 닫는다.
  */
 import { useState } from 'react';
@@ -149,7 +149,7 @@ export function PlayerCard({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
         {act.kind === 'breaking' && <span className="tag warn-tag">해제까지 {clock(act.breakTicks)}</span>}
         {canAct && (
           <span className="emote-wrap">
-            <button className={`btn btn-sm icon-btn ${emoteOpen ? 'on' : ''}`} onClick={() => setEmoteOpen(!emoteOpen)} title="이모트 보내기 (모두에게 보입니다)" aria-label="이모트 보내기">
+            <button className={`btn btn-sm icon-btn ${emoteOpen ? 'on' : ''}`} onClick={() => setEmoteOpen(!emoteOpen)} title={d.id === me ? '이모트 보내기 (모두에게 보입니다)' : `${d.name}에게 이모트 (모두에게 보입니다)`} aria-label={d.id === me ? '이모트 보내기' : `${d.name}에게 이모트 보내기`}>
               <EmoteIcon size={15} /> 이모트
             </button>
             {emoteOpen && (
@@ -159,8 +159,8 @@ export function PlayerCard({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
                     key={code}
                     className="btn btn-sm"
                     onClick={() => {
-                      store.sendEmote(code);
-                      setEmoteOpen(false);
+                      // §26.3 이 카드의 플레이어를 향한 이모트 (내 카드면 대상 없음 — store 가 거른다)
+                      if (store.sendEmote(code, d.id)) setEmoteOpen(false);
                     }}
                   >
                     {t}

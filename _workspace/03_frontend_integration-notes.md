@@ -410,3 +410,23 @@ server/·shared/ 는 손대지 않았다. 백엔드 f292640(§23 봇 세력 이�
 - `client/test/contextRadial.test.ts` 24개 (여는 조건, 칸별 항목, 비활성 이유, 가운데 → 병종 → cmd_flag_issue, 수비 배치, 동맹·정보·따라가기·이모트, Esc·캔버스 클릭·다시 우클릭 닫기, 배치). `issueFlow.test.ts` 의 "선택 없음/남의 부대 + 우클릭 = null" 단언을 'menu' 로 갱신.
 - 브라우저(서버 8092 / 클라이언트 5182, 봇 9): 내 수도·적 땅(사거리 밖 이유)·중립 → 병종 고리 → `2` 로 실제 발령 수락, 바깥 HUD 클릭·드래그 유지·다시 우클릭 닫기, 정보 → 정보 카드. 콘솔 오류 없음.
   스크린샷: `_workspace/screenshots/2026-10-18b_{own-base,enemy-tile,unit-ring,disabled-tooltip}.jpg`.
+
+## 19. 프로토콜 §26 연결 — 방 카드 난이도·실제 썸네일 · 대상 이모트 (2026-10-18 3차 — 백엔드 7b515a5 이후)
+
+### 사용한 필드
+- `room_list.rooms[].botDifficulty` — `ui/roomCards.ts` 가 캐스트 없이 `r.botDifficulty` 로 읽는다. 카드에 `tag rc-diff diff-{EASY|NORMAL|HARD}` 태그("봇 쉬움/보통/어려움", 색 구분). 필드가 없는 옛 픽스처는 태그 숨김.
+- `room_list.rooms[].thumbnail` (`MapThumbnail | null`) — `render/mapPreview.ts decodeThumbnail()`(RLE 길이 합·기지 범위 검사) + `drawThumbnailPreview()`(`createTopologyView('square', w, h)` + 기존 `drawTerrain`, 기지 = 흰 점). `ui/Lobby.tsx RoomThumb`:
+  공식 맵 방 = 기존 번들 미리보기(서버 thumbnail 무시) / 무작위 + thumbnail = 실제 축소 지형(배지 없음, 툴팁 "이 판의 실제 지형") / 무작위 + null(대기·카운트다운) 또는 형식 오류 = 분위기 그림 + "무작위" 배지.
+- C2S `emote.targetPlayerId` — `store.sendEmote(code, targetPlayerId?)`. 정보 카드 = 그 카드의 플레이어, 원형 메뉴 이모트 고리 = 우클릭한 칸의 주인(다른 플레이어일 때). 오른쪽 위 HUD 이모트 버튼은 대상 없음. 자기 자신·0 이하는 필드를 빼고 보낸다(서버는 자기 대상을 이모트 전체 무시로 처리하므로).
+- S2C `emote_broadcast.targetPlayerId` — `store.emotes[].targetPlayerId`, 피드 `"A → B: 😀"`(대상이 나면 `"A → 나: …"` + 노란 강조 `.feed-row.to-me`), 캔버스 말풍선 `"A → B: 😀"` + 말풍선에서 B 영토 이름표(없으면 B 수도) 쪽 점선 화살표(화면 밖이면 가장자리에서 멈춤). 나를 향하면 노란 말풍선·화살표. 표시값은 `render/emoteBubble.ts`(순수 함수).
+
+### 판단한 것
+- 1초 1회 제한은 클라이언트가 먼저 막는다(`EMOTE_COOLDOWN_MS = 1000`, 대상·비대상 공유). 막히면 기존 토스트 "이모트는 1초에 한 번만 보낼 수 있습니다", 메뉴는 열린 채 유지. 연결이 없어 못 보낸 경우는 제한을 소모하지 않는다. 서버가 조용히 버리는 것은 알 수 없으므로(응답 없음) 클라이언트 판정이 유일한 알림이다.
+- 원형 메뉴 이모트 항목 툴팁: 칸 주인이 다른 플레이어면 "X에게 말풍선 보내기 (모두에게 보입니다)".
+
+### 검증
+- `client/test/v26.test.ts` 13개 (난이도 태그·없는 필드, 썸네일 카드 전달·공식 맵 무시, RLE 풀기·형식 오류, 송신 대상 유무·자기 대상, 1초 공유 제한·토스트, 연결 없음, 수신 store/피드/말풍선 문구, 화살표 가장자리). `contextRadial.test.ts` 이모트 송신 단언에 `targetPlayerId: 2` 추가, `uiOct18.test.ts` 캐스트 제거.
+- `npm run typecheck` 통과 · `npm test` 30 파일 428 통과 · `npm run build:client` 통과.
+- 브라우저: 8092/5182 는 이 작업 전(11:58)부터 다른 프로세스가 점유 중이라 건드리지 않고 **8093/5183** 에서 확인. 진행 중 공개 방 카드 = 실제 지형 + 기지 점, 대기 방 = 분위기 그림 + "무작위", 두 카드 모두 "봇 보통" 태그. 다른 WS 클라이언트가 나를 대상으로 보낸 이모트 = 노란 피드 줄 + 노란 말풍선·화살표, 정보 카드로 봇에게 보낸 이모트 = "tester → 시슬다운 기사단: 가자!" + 흰 화살표, 서버 브로드캐스트에 `targetPlayerId` 실림, 1초 안 두 번째 = 토스트·메뉴 유지.
+  스크린샷: `_workspace/screenshots/2026-10-18c_{room-cards-live-thumbnail.jpg, room-cards-closeup.png, emote-targeted-to-me.jpg, emote-targeted-to-me-closeup.png, emote-targeted-sent-and-received.jpg}`.
+- 원형 메뉴 이모트 고리의 대상 송신은 단위 테스트로만 확인(브라우저에서는 정보 카드 경로만).

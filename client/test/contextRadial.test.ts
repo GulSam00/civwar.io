@@ -278,7 +278,7 @@ describe('우클릭 원형 메뉴 — 동작', () => {
     ctl.ctxSegment('emote');
     expect(ix.ctx?.sub).toBe('emote');
     ctl.ctxEmote(15);
-    expect(sent).toEqual([{ type: 'emote', code: 15 }]);
+    expect(sent).toEqual([{ type: 'emote', code: 15, targetPlayerId: 2 }]); // §26.3 칸 주인 대상
     expect(ix.ctx).toBeNull();
   });
 });

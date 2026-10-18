@@ -1,8 +1,9 @@
 /**
  * 로비 공개 방 카드 (2026-10-18 UI 개선 7 — OpenFront.io 참고) — room_list.rooms[] 한 항목을 카드 표시값으로.
- * 프로토콜 RoomListing 필드만 쓴다. botDifficulty 는 RoomListing 에 없어(§2 room_list) 서버가 실어 보낼 때만 보인다.
+ * 프로토콜 RoomListing 필드만 쓴다. §26.1 botDifficulty 는 서버가 모든 방·모든 단계에 싣는다(타입이 옵셔널인 것은 옛 픽스처 호환 — 없으면 태그 숨김).
+ * §26.2 thumbnail = 진행 중·종료된 무작위 맵 방의 실제 축소 지형 (대기·카운트다운·공식 맵 방은 null).
  */
-import type { BotDifficultyName, OfficialMapInfo, RoomListing } from '@civwar/shared';
+import type { BotDifficultyName, MapThumbnail, OfficialMapInfo, RoomListing } from '@civwar/shared';
 import { fmtClock } from './text.js';
 
 export const SIZE_NAME: Record<string, string> = { S: '작음', M: '보통', L: '큼' };
@@ -30,8 +31,12 @@ export interface RoomCard {
   status: RoomCardStatus;
   /** "12초 후 시작" · "진행 4:31" · null */
   timeText: string | null;
-  /** 봇 난이도 (서버가 목록에 실어 보낼 때만 — 지금 프로토콜에는 없다) */
+  /** 봇 난이도 표시 이름 (§26.1 — "쉬움"/"보통"/"어려움"). 필드가 없으면 null */
   difficulty: string | null;
+  /** 난이도 원값 (태그 색) */
+  difficultyCode: BotDifficultyName | null;
+  /** §26.2 무작위 맵 실제 축소 지형 (공식 맵 방이거나 맵 생성 전이면 null) */
+  thumbnail: MapThumbnail | null;
   joinable: boolean;
   spectatable: boolean;
 }
@@ -47,7 +52,7 @@ export function roomCard(r: RoomListing, ageMs: number, officialMaps: readonly O
   if (status === 'waiting' && r.autoStartMs !== null) timeText = `${Math.max(0, Math.ceil((r.autoStartMs - ageMs) / 1000))}초 후 시작`;
   else if (status === 'live') timeText = `진행 ${fmtClock(r.elapsedMs + ageMs)}`;
   else if (status === 'over') timeText = `${fmtClock(r.elapsedMs)} 진행`;
-  const diff = (r as RoomListing & { botDifficulty?: BotDifficultyName }).botDifficulty;
+  const diff = r.botDifficulty ?? null;
   return {
     roomId: r.roomId,
     title,
@@ -63,7 +68,9 @@ export function roomCard(r: RoomListing, ageMs: number, officialMaps: readonly O
     spectators: r.spectatorCount,
     status,
     timeText,
-    difficulty: typeof diff === 'string' ? (DIFFICULTY_NAME[diff] ?? diff) : null,
+    difficulty: diff ? (DIFFICULTY_NAME[diff] ?? diff) : null,
+    difficultyCode: diff,
+    thumbnail: preset ? null : (r.thumbnail ?? null),
     joinable: r.joinable,
     spectatable: r.spectatable,
   };

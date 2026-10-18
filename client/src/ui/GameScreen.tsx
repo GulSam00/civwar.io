@@ -738,8 +738,7 @@ function EmoteMenu({ store }: { store: ClientStore }) {
               key={code}
               className="btn btn-sm"
               onClick={() => {
-                store.sendEmote(code);
-                setOpen(false);
+                if (store.sendEmote(code)) setOpen(false); // 대상 없음 (§26.3 — 오른쪽 위 버튼은 전체 말풍선)
               }}
             >
               {t}

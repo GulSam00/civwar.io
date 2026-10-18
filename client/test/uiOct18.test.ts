@@ -278,11 +278,11 @@ describe('7 로비 방 카드', () => {
     expect(roomCard({ ...base, phase: 'COUNTDOWN', autoStartMs: null }, 0)).toMatchObject({ status: 'starting', timeText: null });
     expect(roomCard({ ...base, phase: 'GAME_OVER', elapsedMs: 1800000, autoStartMs: null }, 0)).toMatchObject({ status: 'over', timeText: '30:00 진행' });
   });
-  it('공식 맵: 이름·썸네일 id·checksum·크기 등급, 봇 난이도는 서버가 실어 보낼 때만', () => {
+  it('공식 맵: 이름·썸네일 id·checksum·크기 등급, 봇 난이도(§26.1 — 필드 없는 옛 픽스처는 null)', () => {
     const r: RoomListing = { ...base, map: { kind: 'preset', mapId: 'isles' }, mapName: { ko: '군도', en: 'Isles' }, width: 108, height: 66 };
     const maps = [{ id: 'isles', name: { ko: '군도', en: 'Isles' }, sizeClass: 'L' as const, players: { min: 2, recommendedMin: 8, recommendedMax: 12, max: 12 }, checksum: 'sha256:x' }];
     expect(roomCard(r, 0, maps)).toMatchObject({ title: '군도', presetId: 'isles', checksum: 'sha256:x', sizeText: '108×66 · 큼', difficulty: null });
-    expect(roomCard({ ...r, botDifficulty: 'HARD' } as RoomListing, 0, maps).difficulty).toBe('어려움');
+    expect(roomCard({ ...r, botDifficulty: 'HARD' }, 0, maps).difficulty).toBe('어려움');
   });
   it('무작위 썸네일: 같은 방 = 같은 그림, 가장자리는 바다, 지형 코드 범위', () => {
     const a = randomPreviewTerrain(seedOf('room-a'), 40, 24);

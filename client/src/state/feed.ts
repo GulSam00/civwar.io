@@ -17,6 +17,8 @@ export interface FeedEntry {
   mine: boolean;
   important?: boolean;
   toast?: boolean;
+  /** §26.3 나를 향한 대상 이모트 (피드 줄 강조) */
+  toMe?: boolean;
 }
 
 export interface FeedCtx {
@@ -122,8 +124,15 @@ export function describeEvent(m: ServerMessage, c: FeedCtx): Draft | null {
       if (isMe(pr.toPlayerId) && m.reason === 'expired') return { kind: 'ally', mine: true, text: `${c.nick(pr.fromPlayerId)}의 동맹 제안이 만료됐습니다` };
       return null;
     }
-    case 'emote_broadcast':
-      return { kind: 'system', mine: isMe(m.playerId), text: `${who(m.playerId)}: ${EMOTE_TEXT[m.code] ?? `#${m.code}`}` };
+    case 'emote_broadcast': {
+      const face = EMOTE_TEXT[m.code] ?? `#${m.code}`;
+      // §26.3 대상 이모트: "A → B: 😀" (대상이 나면 강조). 대상 없는 이모트는 기존 "A: 😀"
+      if (typeof m.targetPlayerId === 'number') {
+        const toMe = isMe(m.targetPlayerId) && !isMe(m.playerId);
+        return { kind: 'system', mine: isMe(m.playerId) || isMe(m.targetPlayerId), text: `${who(m.playerId)} → ${who(m.targetPlayerId)}: ${face}`, ...(toMe ? { toMe: true } : {}) };
+      }
+      return { kind: 'system', mine: isMe(m.playerId), text: `${who(m.playerId)}: ${face}` };
+    }
     case 'alliance_lockout':
       if (m.phase === 'countdown') return { kind: 'ally', mine: false, text: '생존자 전원이 동맹 — 30초 뒤 모든 동맹이 강제 해제됩니다', important: true, toast: true };
       if (m.phase === 'dissolved') return { kind: 'ally', mine: false, text: '모든 동맹 강제 해제 · 60초간 재체결 금지', important: true, toast: true };

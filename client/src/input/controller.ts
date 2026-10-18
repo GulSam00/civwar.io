@@ -475,10 +475,11 @@ export class GameInputController {
     }
   }
 
-  /** 바깥 이모트 고리에서 고르기 */
+  /** 바깥 이모트 고리에서 고르기 — §26.3 칸 주인(다른 플레이어)이 있으면 그를 향한 이모트 */
   ctxEmote(code: number): void {
     if (!this.ix.ctx || !this.canCommand()) return;
-    this.store.sendEmote(code);
+    const owner = this.contextMenu()?.ownerId ?? 0;
+    if (!this.store.sendEmote(code, owner > 0 ? owner : null)) return; // 1초 제한 — 고리를 열어 둔다
     this.closeContextMenu();
   }
 

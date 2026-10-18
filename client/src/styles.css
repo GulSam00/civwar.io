@@ -1168,6 +1168,12 @@ kbd {
 .feed-row.ally {
   border-left-color: #7bd88f;
 }
+/* §26.3 나를 향한 이모트 */
+.feed-row.to-me {
+  border-left-color: #ffd54f;
+  color: #fff;
+  background: rgba(60, 48, 12, 0.85);
+}
 .feed-row.base {
   border-left-color: var(--warn);
 }
@@ -2707,6 +2713,25 @@ button.tb-who:hover {
   padding: 0 5px;
   font-size: 10px;
   color: var(--muted);
+}
+/* §26.1 봇 난이도 태그 */
+.rc-meta .rc-diff {
+  border: 1px solid transparent;
+  font-size: 10px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+.rc-diff.diff-EASY {
+  color: #7bd88f;
+  border-color: rgba(123, 216, 143, 0.5);
+}
+.rc-diff.diff-NORMAL {
+  color: #9ecbff;
+  border-color: rgba(158, 203, 255, 0.5);
+}
+.rc-diff.diff-HARD {
+  color: #ff8a80;
+  border-color: rgba(255, 138, 128, 0.55);
 }
 .rc-body {
   flex: 1;

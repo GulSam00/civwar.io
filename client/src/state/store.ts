@@ -22,6 +22,16 @@ import { GameModel } from './gameModel.js';
 import { describeEvent, type FeedEntry } from './feed.js';
 import { ERROR_TEXT, REJECT_TEXT } from '../ui/text.js';
 
+/** §26.3 세션당 1초 1회 (서버 제한과 같다 — 대상·비대상 공유) */
+export const EMOTE_COOLDOWN_MS = 1000;
+/** 화면에 띄우는 최근 이모트. targetPlayerId 는 대상 이모트일 때만 */
+export interface EmoteShown {
+  playerId: number;
+  code: number;
+  at: number;
+  targetPlayerId?: number;
+}
+
 export interface Toast {
   id: number;
   text: string;
@@ -283,12 +293,26 @@ export class ClientStore {
   respondAlly(proposalId: number, accept: boolean): number {
     return this.command({ type: 'cmd_ally_respond', proposalId, accept });
   }
-  /** 이모트 (§4 emote — 코드 0..15 의미는 클라이언트 정의, 위반·1초 1회 초과는 서버가 조용히 무시) */
-  sendEmote(code: number): void {
-    this.socket.send({ type: 'emote', code });
+  /**
+   * 이모트 (§4 emote — 코드 0..15 의미는 클라이언트 정의, 위반·1초 1회 초과는 서버가 조용히 무시).
+   * §26.3: targetPlayerId = 그 플레이어를 향한 이모트 (정보 카드·원형 메뉴). 자기 자신·0 이하는 대상 없음으로 보낸다
+   * (서버는 자기 대상을 이모트 전체 무시로 처리하므로). 1초 1회 제한은 대상 유무와 상관없이 하나 — 서버가 조용히
+   * 버리기 전에 여기서 막고 토스트로 알린다. 보냈으면 true.
+   */
+  sendEmote(code: number, targetPlayerId?: number | null): boolean {
+    const t = this.now();
+    if (t - this.lastEmoteAt < EMOTE_COOLDOWN_MS) {
+      this.toast('이모트는 1초에 한 번만 보낼 수 있습니다', 'info', 1500);
+      return false;
+    }
+    const target = typeof targetPlayerId === 'number' && targetPlayerId > 0 && targetPlayerId !== this.myPlayerId ? targetPlayerId : null;
+    const sent = this.socket.send(target === null ? { type: 'emote', code } : { type: 'emote', code, targetPlayerId: target });
+    if (sent) this.lastEmoteAt = t;
+    return sent;
   }
-  /** 최근 이모트 (렌더러가 수도 위 말풍선으로 그린다) */
-  emotes: { playerId: number; code: number; at: number }[] = [];
+  private lastEmoteAt = -Infinity;
+  /** 최근 이모트 (렌더러가 수도 위 말풍선으로 그린다). targetPlayerId = §26.3 대상 이모트 */
+  emotes: EmoteShown[] = [];
 
   breakAlly(allyPlayerId: number): number {
     return this.command({ type: 'cmd_ally_break', allyPlayerId });
@@ -499,7 +523,9 @@ export class ClientStore {
         return;
       case 'emote_broadcast': {
         const t = this.now();
-        this.emotes = [...this.emotes.filter((e) => t - e.at < 4000 && e.playerId !== m.playerId), { playerId: m.playerId, code: m.code, at: t }];
+        const shown: EmoteShown = { playerId: m.playerId, code: m.code, at: t };
+        if (typeof m.targetPlayerId === 'number') shown.targetPlayerId = m.targetPlayerId;
+        this.emotes = [...this.emotes.filter((e) => t - e.at < 4000 && e.playerId !== m.playerId), shown];
         return;
       }
       default:

@@ -3,7 +3,7 @@ import { BOT_DIFFICULTY_DEFAULT, MAP_SIZE_PRESETS, NICKNAME_MAX_LEN, type BotDif
 import type { ClientStore } from '../state/store.js';
 import { useStore } from './hooks.js';
 import { Help } from './Help.js';
-import { drawMapPreview, drawRandomPreview } from '../render/mapPreview.js';
+import { drawMapPreview, drawRandomPreview, drawThumbnailPreview } from '../render/mapPreview.js';
 import { loadOfficialMapChecked } from './officialMaps.js';
 import { estimatePacing, landOfRandom, landOfTerrain, pacingText } from './pacing.js';
 import { ROOM_STATUS_NAME, roomCard, seedOf, type RoomCard } from './roomCards.js';
@@ -263,27 +263,34 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
   );
 }
 
-/** 방 카드 썸네일: 공식 맵 = 번들 미리보기(MapThumb), 무작위 = 방 id 로 만든 분위기 그림(실제 지형 아님 — "무작위" 표시) */
+/**
+ * 방 카드 썸네일: 공식 맵 = 번들 미리보기(MapThumb), 무작위 + §26.2 thumbnail = 실제 축소 지형(진행 중·종료 방),
+ * 무작위 + thumbnail null(대기·카운트다운 — 맵 생성 전) = 방 id 로 만든 분위기 그림 + "무작위" 표시.
+ */
 function RoomThumb({ card, players }: { card: RoomCard; players: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [real, setReal] = useState(false);
   const w = card.width;
   const h = card.height;
+  const thumb = card.thumbnail;
   useEffect(() => {
     if (card.presetId || !ref.current) return;
-    drawRandomPreview(ref.current, seedOf(card.roomId), w || 72, h || 42);
-  }, [card.presetId, card.roomId, w, h]);
+    const ok = thumb ? drawThumbnailPreview(ref.current, thumb) : false;
+    if (!ok) drawRandomPreview(ref.current, seedOf(card.roomId), w || 72, h || 42);
+    setReal(ok);
+  }, [card.presetId, card.roomId, w, h, thumb]);
   if (card.presetId) return <MapThumb mapId={card.presetId} players={players} checksum={card.checksum} />;
   return (
-    <div className="map-thumb random-thumb">
+    <div className={`map-thumb ${real ? 'real-thumb' : 'random-thumb'}`} title={real ? '이 판의 실제 지형 (축소)' : '맵은 시작할 때 만들어집니다 — 분위기 그림'}>
       <canvas ref={ref} />
-      <span className="thumb-badge">무작위</span>
+      {!real && <span className="thumb-badge">무작위</span>}
     </div>
   );
 }
 
 /**
  * 방 찾기 (플레이테스트 후속 → 2026-10-18 UI 개선 7: 맵 썸네일 카드). 공개 방만 — 대기 중이면 입장, 진행 중이면 관전. 비공개 방은 코드로만.
- * 카드: 썸네일 · 맵 이름 · 크기 · 인원 n/최대 · 남은 시간(자동 시작)/경과 · 봇 난이도(서버가 보낼 때만) · 상태(대기/진행 중).
+ * 카드: 썸네일(§26.2 진행 중 무작위 맵 = 실제 축소 지형) · 맵 이름 · 크기 · 인원 n/최대 · 남은 시간(자동 시작)/경과 · 봇 난이도 태그(§26.1) · 상태(대기/진행 중).
  * 열려 있는 동안 5초마다 새로고침(서버 1초 1회 제한), 남은·경과 시간은 수신 시각 기준으로 로컬로 흐른다.
  */
 export function RoomBrowser({ store }: { store: ClientStore }) {
@@ -328,7 +335,11 @@ export function RoomBrowser({ store }: { store: ClientStore }) {
                     </b>
                   </span>
                   <span>{c.sizeText}</span>
-                  {c.difficulty && <span>봇 {c.difficulty}</span>}
+                  {c.difficulty && (
+                    <span className={`tag rc-diff diff-${c.difficultyCode ?? 'NORMAL'}`} title="봇 난이도">
+                      봇 {c.difficulty}
+                    </span>
+                  )}
                   {c.spectators > 0 && <span>관전 {c.spectators}</span>}
                 </div>
                 <div className="rc-foot">

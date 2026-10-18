@@ -21,6 +21,7 @@ import { drawGlyphParts, drawUnitGlyph } from './unitGlyphs.js';
 import { SHIELD_GLYPH, SWORD_GLYPH, combatPairs, declutter, glyphOf, pairGlyphKind, type CombatPair } from './combatPairs.js';
 import { UNIT_SHORT } from '../ui/text.js';
 import { fmtCompact } from '../ui/fmt.js';
+import { clampToView, emoteBubble } from './emoteBubble.js';
 import { layoutTerritoryLabels, territoryAnchors, type TerritoryAnchor } from './territoryLabels.js';
 
 /**
@@ -48,8 +49,8 @@ export interface RenderView {
   colorblind: boolean;
   /** 깃발 이동 방향 화살표: 모두 / 내 깃발만 / 숨김 (옵션 창, V 로 순환) */
   directions: 'all' | 'mine' | 'off';
-  /** 최근 이모트 (수도 위 말풍선) */
-  emotes: readonly { playerId: number; code: number; at: number }[];
+  /** 최근 이모트 (수도 위 말풍선). targetPlayerId = §26.3 대상 이모트 (대상 영토 이름표 쪽 화살표) */
+  emotes: readonly { playerId: number; code: number; at: number; targetPlayerId?: number }[];
   emoteText(code: number): string;
   nicknameOf(id: number): string;
   /** §21: 기지 생산력·지명 (없으면 생략) */
@@ -96,6 +97,8 @@ export class GameRenderer {
   /** 영토 이름 기준점 — 영토가 바뀌었을 때만, 최대 LABEL_REFRESH_MS 에 한 번 다시 계산 */
   private labelAnchors: TerritoryAnchor[] = [];
   private labelsDirty = true;
+  /** 이번 프레임에 그린 영토 이름표 화면 위치 (§26.3 대상 이모트 화살표 끝) */
+  private labelScreen = new Map<number, { x: number; y: number }>();
   private labelsAt = -Infinity;
   /** 마지막 프레임에 화면에 보인 깃발 위치 (미니맵·따라가기) */
   readonly flagWorld = new Map<number, Pt>();
@@ -220,6 +223,7 @@ export class GameRenderer {
       this.labelsDirty = false;
       this.labelsAt = now;
     }
+    this.labelScreen.clear();
     if (!this.labelAnchors.length) return;
     const cam = this.camera;
     const font = (size: number) => `800 ${size}px system-ui, "Malgun Gothic", sans-serif`;
@@ -250,6 +254,7 @@ export class GameRenderer {
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
     for (const l of placed) {
+      this.labelScreen.set(l.owner, { x: l.x, y: l.y });
       ctx.font = font(l.size);
       const tw = ctx.measureText(l.text).width;
       const ew = emblemW(l.size);
@@ -312,26 +317,71 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  /** 이모트 말풍선 — 그 플레이어의 수도(스폰) 위, 4초 동안 서서히 사라진다 */
+  /**
+   * 이모트 말풍선 — 그 플레이어의 수도(스폰) 위, 4초 동안 서서히 사라진다.
+   * §26.3 대상 이모트: "A → B: 😀" + 말풍선에서 B 영토 이름표(없으면 B 수도) 쪽 점선 화살표. 화면 밖이면 가장자리에서 멈춘다.
+   * 대상이 나면 노란 말풍선·화살표로 강조.
+   */
   private drawEmotes(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
     const t = Date.now();
+    const cam = this.camera;
+    const screenOfHome = (playerId: number) => {
+      const sp = model.spawns.find((s) => s.playerId === playerId);
+      if (!sp) return null;
+      const c = topo.tileCenter(sp.homeTileId);
+      return worldToScreen(cam, c.x, c.y);
+    };
     for (const e of view.emotes) {
       const age = t - e.at;
       if (age > 4000) continue;
-      const sp = model.spawns.find((s) => s.playerId === e.playerId);
-      if (!sp) continue;
-      const c = topo.tileCenter(sp.homeTileId);
-      const p = worldToScreen(this.camera, c.x, c.y);
-      const text = `${view.nicknameOf(e.playerId)}: ${view.emoteText(e.code)}`;
+      const p = screenOfHome(e.playerId);
+      if (!p) continue;
+      const b = emoteBubble(e, view.me, (id) => view.nicknameOf(id), (c) => view.emoteText(c));
+      const accent = b.toMe ? '#ffd54f' : playerDark(e.playerId);
       ctx.save();
       ctx.globalAlpha = age > 3000 ? (4000 - age) / 1000 : 1;
       ctx.font = 'bold 12px system-ui, "Malgun Gothic", sans-serif';
-      const w = ctx.measureText(text).width + 12;
+      const w = ctx.measureText(b.text).width + 12;
       const x = p.x - w / 2;
       const y = p.y - 46;
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.strokeStyle = playerDark(e.playerId);
-      ctx.lineWidth = 2;
+      if (b.target !== null) {
+        const goal = this.labelScreen.get(b.target) ?? screenOfHome(b.target);
+        if (goal) {
+          const from = { x: p.x, y: y + 10 };
+          const end = clampToView(from, goal, cam.viewW, cam.viewH);
+          const dx = end.x - from.x;
+          const dy = end.y - from.y;
+          const len = Math.hypot(dx, dy);
+          if (len > w / 2 + 16) {
+            const ux = dx / len;
+            const uy = dy / len;
+            // 말풍선 상자 가장자리에서 출발, 이름표 바로 앞(14px)에서 멈춘다
+            const exit = Math.min(ux ? w / 2 / Math.abs(ux) : Infinity, uy ? 10 / Math.abs(uy) : Infinity);
+            const sx = from.x + ux * exit;
+            const sy = from.y + uy * exit;
+            const ex = end.x - ux * (end.clamped ? 0 : 14);
+            const ey = end.y - uy * (end.clamped ? 0 : 14);
+            ctx.setLineDash([6, 4]);
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = b.toMe ? '#ffd54f' : 'rgba(255,255,255,0.85)';
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.beginPath();
+            ctx.moveTo(ex, ey);
+            ctx.lineTo(ex - ux * 10 - uy * 6, ey - uy * 10 + ux * 6);
+            ctx.lineTo(ex - ux * 10 + uy * 6, ey - uy * 10 - ux * 6);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+      }
+      ctx.fillStyle = b.toMe ? 'rgba(255,244,196,0.97)' : 'rgba(255,255,255,0.95)';
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = b.toMe ? 3 : 2;
       ctx.beginPath();
       ctx.rect(x, y, w, 20);
       ctx.moveTo(p.x - 5, y + 20);
@@ -342,7 +392,7 @@ export class GameRenderer {
       ctx.fillStyle = '#111';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(text, p.x, y + 10);
+      ctx.fillText(b.text, p.x, y + 10);
       ctx.restore();
     }
   }
