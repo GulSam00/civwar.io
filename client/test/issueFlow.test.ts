@@ -236,12 +236,14 @@ describe('출전 UI 상태기계', () => {
     expect(moves).toEqual([[7, BASE_B], [7, ENEMY_BASE], [7, id(0, 5)], [7, id(3, 2)]]);
     // 선택 유지 (연속 지시 가능)
     expect(ix.selectedFlagId).toBe(7);
-    // 남의 깃발 선택 · 선택 없음 · 맵 밖 = 아무 명령 없음
+    // 남의 깃발 선택 · 선택 없음 = 명령 없이 원형 메뉴 (2026-10-18, contextRadial.test) · 맵 밖 = 아무것도 없음
     const n = cmds().length;
     ix.selectedFlagId = 8;
-    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
+    expect(ctl.rightClickTile(id(2, 5))).toBe('menu');
+    ctl.closeContextMenu();
     ix.selectedFlagId = null;
-    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
+    expect(ctl.rightClickTile(id(2, 5))).toBe('menu');
+    ctl.closeContextMenu();
     ix.selectedFlagId = 7;
     expect(ctl.rightClickTile(-1)).toBeNull();
     expect(cmds()).toHaveLength(n);

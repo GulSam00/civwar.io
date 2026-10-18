@@ -57,3 +57,35 @@ export const CloseIcon = (p: P) => (
     <path d="M6 6l12 12M18 6L6 18" />
   </Svg>
 );
+
+/** 원형 메뉴 (2026-10-18) — 정보 */
+export const InfoIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v6M12 7.5h.01" />
+  </Svg>
+);
+
+/** 원형 메뉴 — 동맹 (맞잡은 두 고리) */
+export const AllyIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="9" cy="12" r="5" />
+    <circle cx="15" cy="12" r="5" />
+  </Svg>
+);
+
+/** 원형 메뉴 — 수비 배치 (기지 탑) */
+export const BaseIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M5 20V9l2-2 2 2V6h6v3l2-2 2 2v11z" />
+    <path d="M10 20v-4a2 2 0 0 1 4 0v4" />
+  </Svg>
+);
+
+/** 원형 메뉴 — 지정 불가 (금지) */
+export const BlockedIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M6 18L18 6" />
+  </Svg>
+);

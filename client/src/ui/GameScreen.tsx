@@ -27,6 +27,8 @@ import { ClockIcon, EmoteIcon, FullscreenIcon, HelpIcon, LeaveIcon } from './hud
 import { TechWindow } from './TechWindow.js';
 import { purchasableCount } from './techTree.js';
 import { Help } from './Help.js';
+import { ContextRadial } from './ContextRadial.js';
+import { clampRingCenter, ctxExtent, ctxScale } from '../input/contextMenu.js';
 
 /** 좁은 화면(모바일) = 관전·간단 보기 (PC 우선 결정) */
 function useNarrow(): boolean {
@@ -68,6 +70,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
   const miniRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const radialRef = useRef<HTMLDivElement>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
   const terrainRef = useRef<HTMLDivElement>(null);
   const flagActRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
@@ -145,6 +148,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       if (miniRef.current) renderer.drawMinimap(miniRef.current, game, store.viewerId);
       updateTooltip(tipRef.current, preview, ix, controller, route);
       positionRadial(radialRef.current, controller);
+      positionContext(ctxRef.current, controller);
       positionFlagActions(flagActRef.current, controller, narrowRef.current);
       updateTerrainTip(terrainRef.current, game, ix, store, narrowRef.current);
       updateTargetBar(targetRef.current, game, ix, store, narrowRef.current, now);
@@ -187,6 +191,9 @@ export function GameScreen({ store }: { store: ClientStore }) {
       />
       <div ref={radialRef} className="radial-anchor">
         {ctl && <IssueRadial store={store} ctl={ctl} />}
+      </div>
+      <div ref={ctxRef} className="ctx-anchor">
+        {ctl && <ContextRadial store={store} ctl={ctl} />}
       </div>
       <div ref={flagActRef} className="flag-actions-anchor">
         {ctl && !narrow && <FlagActions store={store} ctl={ctl} />}
@@ -234,7 +241,7 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
     if (el.style.display !== 'none') el.style.display = 'none';
     el.dataset.key = '';
   };
-  if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
+  if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick' || ix.ctx) return hide();
   const viewer = store.viewerId;
   const t = ix.hoverTile;
   const b = game.bases.get(t);
@@ -456,13 +463,40 @@ export function baseExtraOf(g: GameModel, tickFloat: number): (tile: number) => 
 /** 삼각 메뉴를 확정 지점 화면 위치로 (카메라 이동을 매 프레임 따라감) */
 function positionRadial(el: HTMLDivElement | null, ctl: GameInputController): void {
   if (!el) return;
-  const p = ctl.pickScreenPos();
+  const is = ctl.ix.issue;
+  // 원형 메뉴에서 연 병종 고리(via ctx)는 원형 메뉴가 그린다 — 삼각 메뉴 자리는 비운다
+  const p = is?.phase === 'pick' && is.via === 'ctx' ? null : ctl.pickScreenPos();
   if (!p) {
     if (el.style.display !== 'none') el.style.display = 'none';
     return;
   }
   el.style.display = 'block';
   el.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
+}
+
+/**
+ * 우클릭 원형 메뉴를 칸 중심 화면 위치로 (카메라를 매 프레임 따라감). 가장자리에서는 고리 전체가 보이게 안쪽으로 당기고,
+ * 원래 칸은 핀(--pin-x/y)으로 가리킨다. 작은 창은 배율(--ctx-scale)을 줄인다. data-side = 툴팁을 펼 쪽.
+ */
+function positionContext(el: HTMLDivElement | null, ctl: GameInputController): void {
+  if (!el) return;
+  const c = ctl.ix.ctx;
+  const p = c ? ctl.ctxScreenPos() : null;
+  const parent = el.parentElement;
+  if (!c || !p || !parent) {
+    if (el.style.display !== 'none') el.style.display = 'none';
+    return;
+  }
+  const W = parent.clientWidth;
+  const H = parent.clientHeight;
+  const s = ctxScale(W, H);
+  const q = clampRingCenter(p.x, p.y, W, H, ctxExtent(c.sub) * s, 6, 48); // 48 = 위쪽 HUD 줄
+  el.style.display = 'block';
+  el.style.setProperty('--ctx-scale', s.toFixed(3));
+  el.style.setProperty('--pin-x', `${((p.x - q.x) / s).toFixed(1)}px`);
+  el.style.setProperty('--pin-y', `${((p.y - q.y) / s).toFixed(1)}px`);
+  el.style.transform = `translate(${q.x}px, ${q.y}px)`;
+  el.dataset.side = q.x > W * 0.5 ? 'left' : 'right';
 }
 
 /**
@@ -500,7 +534,7 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
   let text: string | null = null;
   let kind = p?.kind ?? 'info';
   const g = ix.hoverTile;
-  if (ix.issue?.phase === 'pick') text = null; // 삼각 메뉴가 안내한다
+  if (ix.issue?.phase === 'pick' || ix.ctx) text = null; // 삼각 메뉴·원형 메뉴가 안내한다
   else if (ix.issue?.phase === 'aim') {
     if (g === ix.issue.base) {
       text = '같은 기지 다시 클릭 = 취소';
@@ -545,7 +579,7 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
 function IssueRadial({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
   usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
   const is = ctl.ix.issue;
-  if (!is || is.phase !== 'pick') return null;
+  if (!is || is.phase !== 'pick' || is.via === 'ctx') return null;
   const route = ctl.currentRoute();
   const postureLabel = is.posture === 'defend' ? '방어 태세' : is.posture === 'attack' ? '공격 태세' : '지정 불가?';
   return (

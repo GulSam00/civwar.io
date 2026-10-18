@@ -643,6 +643,261 @@ kbd {
 .radial-u2 {
   transform: translate(52px, 32px);
 }
+/* ───── 우클릭 원형 메뉴 (2026-10-18, ui/ContextRadial.tsx) — 칸 중심에 붙는다 (위치·배율은 렌더 루프) ───── */
+.ctx-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  display: none;
+  z-index: 7;
+}
+.ctx-radial {
+  --rc: var(--muted);
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: scale(var(--ctx-scale, 1));
+  transform-origin: 0 0;
+}
+.ctx-attack {
+  --rc: var(--atk);
+}
+.ctx-defend {
+  --rc: var(--def);
+}
+/* 고리 배경 (장식) */
+.ctx-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 216px;
+  height: 216px;
+  margin: -108px 0 0 -108px;
+  border-radius: 50%;
+  border: 54px solid rgba(10, 14, 20, 0.5);
+  pointer-events: none;
+}
+.ctx-ring-out {
+  width: 364px;
+  height: 364px;
+  margin: -182px 0 0 -182px;
+  border-width: 70px;
+  border-color: rgba(10, 14, 20, 0.4);
+}
+/* 원래 칸 (메뉴가 가장자리에서 안쪽으로 당겨졌을 때 칸을 가리킨다) */
+.ctx-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+  transform: translate(var(--pin-x, 0), var(--pin-y, 0));
+  pointer-events: none;
+}
+.ctx-owner {
+  position: absolute;
+  left: 0;
+  top: -132px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+.has-sub .ctx-owner {
+  top: -202px;
+}
+.ctx-center,
+.ctx-seg,
+.ctx-out {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.ctx-center {
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border-radius: 50%;
+  border: 3px solid var(--rc);
+  background: rgba(18, 26, 36, 0.96);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ctx-center .posture-icon,
+.ctx-center .hud-icon {
+  color: var(--rc);
+}
+.ctx-seg {
+  width: 62px;
+  height: 50px;
+  margin: -25px 0 0 -31px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: rgba(18, 26, 36, 0.95);
+  font-size: 12px;
+}
+.ctx-label {
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.ctx-out {
+  border: 2px solid var(--rc);
+  border-radius: 10px;
+  background: rgba(18, 26, 36, 0.95);
+}
+.ctx-unit {
+  width: 64px;
+  height: 56px;
+  margin: -28px 0 0 -32px;
+  font-size: 13px;
+}
+.ctx-unit kbd {
+  font-size: 10px;
+  line-height: 1;
+}
+.ctx-unit small {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ctx-emote {
+  --rc: var(--line);
+  width: 92px;
+  height: 30px;
+  margin: -15px 0 0 -46px;
+  border-radius: 15px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ctx-center:hover,
+.ctx-center:focus-visible,
+.ctx-center.on {
+  background: var(--rc);
+  outline: none;
+}
+.ctx-center:hover .posture-icon,
+.ctx-center:hover .hud-icon,
+.ctx-center.on .posture-icon,
+.ctx-center.on .hud-icon {
+  color: #fff;
+}
+.ctx-seg:hover,
+.ctx-seg:focus-visible,
+.ctx-seg.on,
+.ctx-out:hover,
+.ctx-out:focus-visible {
+  background: var(--panel-2);
+  border-color: var(--text);
+  outline: none;
+}
+.ctx-unit:hover,
+.ctx-unit:focus-visible {
+  background: var(--rc);
+}
+.ctx-unit:hover small {
+  color: var(--text);
+}
+/* 쓸 수 없음 — 색만이 아니라 점선 테두리 + 흐림 + 금지 커서 (이유는 툴팁) */
+.ctx-radial .is-disabled,
+.ctx-radial .is-disabled:hover,
+.ctx-radial .is-disabled:focus-visible {
+  border-style: dashed;
+  border-color: var(--line);
+  background: rgba(18, 26, 36, 0.94);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.ctx-radial .is-disabled > svg,
+.ctx-radial .is-disabled .ctx-label {
+  opacity: 0.55;
+}
+.ctx-radial .is-disabled .posture-icon,
+.ctx-radial .is-disabled .hud-icon {
+  color: var(--muted);
+}
+.has-sub .ctx-seg:not(.on):not(:hover) {
+  opacity: 0.7;
+}
+/* 툴팁·지형 상자 = 지형 정보 툴팁(.terrain-tip)과 같은 모양 */
+.ctx-tip,
+.ctx-terrain {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  min-width: 150px;
+  max-width: 280px;
+  background: rgba(10, 14, 20, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ctx-tip {
+  transform: translate(0, -50%);
+}
+.ctx-tip.side-left {
+  transform: translate(-100%, -50%);
+}
+.ctx-tip .tt-terrain,
+.ctx-terrain .tt-terrain {
+  padding-bottom: 2px;
+  margin-bottom: 1px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.ctx-tip-detail {
+  color: var(--muted);
+}
+.ctx-tip-reason {
+  color: var(--warn);
+}
+.ctx-terrain {
+  left: 0;
+  top: 0;
+}
+.ctx-terrain .tt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  white-space: nowrap;
+}
+.ctx-terrain .tt-k {
+  color: var(--muted);
+}
+.ctx-terrain .tt-v {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
 .cursor-tip[data-kind='attack'] {
   border-left-color: var(--atk);
 }

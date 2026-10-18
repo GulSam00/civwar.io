@@ -13,6 +13,8 @@
  *   내 깃발 선택 + 우클릭 = 항상 이동 (2026-10-14): 내 기지·내 땅 = 그 자리로 가서 방어, 적·중립 = 공격 — 태세는 서버가 도착지로 정한다
  *                 (예전 "선택 + 내 기지 좌클릭 = 귀환"은 폐기 — 귀환은 선택 부대 옆 [귀환] 버튼 / R)
  *   깃발 선택 중 맵 좌클릭 = 선택 해제 (출전 메뉴는 열지 않는다)
+ *   내 부대 선택 없이 우클릭 = 그 칸의 원형 메뉴 (2026-10-18, input/contextMenu.ts): 가운데 = 공격/방어 출전 → 바깥 병종 고리(1/2/3),
+ *                 고리 = 정보 · 동맹 · 이모트 · 따라가기 (+ 내 기지 = 수비 배치). Esc · 바깥 클릭 · 다시 우클릭 = 닫기
  *   F          선택 깃발 태세 전환      R  선택 깃발 회수(자동 귀환지)      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
  *   T 테크 · P 외교 · O 옵션 창 · C 색각 보조 · V 이동 방향 화살표(모두→내 것만→숨김) · ? 도움말 (React 패널 — Interaction 플래그)
@@ -26,7 +28,9 @@ import type { ClientStore } from '../state/store.js';
 import { troopsForRatio } from './preview.js';
 import { RouteCache, computeRoute, nearestOwnBase, type RoutePreview } from './route.js';
 import { defaultOptions, nextDirectionMode, saveOptions, type GameOptions } from '../ui/options.js';
-import { techStatsOf } from '../ui/techInfo.js';
+import { techStatsOf, unitCombatStats } from '../ui/techInfo.js';
+import { RangeCache, computePreview } from './preview.js';
+import { contextMenuModel, ctxUnitItems, type CtxMenuModel, type CtxMenuState, type CtxSegId, type CtxUnitItem } from './contextMenu.js';
 
 export type IssuePosture = 'attack' | 'defend' | 'blocked';
 
@@ -35,7 +39,8 @@ export type IssuePosture = 'attack' | 'defend' | 'blocked';
  *  aim  : 기지를 골랐고 목적지를 기다리는 중 (기지 → 커서 화살표)
  *  pick : 목적지까지 정해졌고 삼각 메뉴에서 병종을 고르는 중
  */
-export type IssueState = { phase: 'aim'; base: number } | { phase: 'pick'; base: number; anchor: number; posture: IssuePosture };
+export type IssueState = { phase: 'aim'; base: number } | { phase: 'pick'; base: number; anchor: number; posture: IssuePosture; via?: 'ctx' };
+// via = 'ctx': 우클릭 원형 메뉴 가운데 → 바깥 병종 고리에서 고르는 중 (삼각 메뉴 대신 원형 메뉴가 병종을 보여 준다)
 
 export class Interaction {
   /** 출전 진행 상태 (null = 없음) */
@@ -65,6 +70,8 @@ export class Interaction {
   leaveConfirm = false;
   /** 플레이어 정보 카드 (2026-10-18) — 열린 플레이어 id, null = 닫힘 */
   cardPlayerId: number | null = null;
+  /** 우클릭 원형 메뉴 (2026-10-18) — 열린 칸·바깥 고리, null = 닫힘 */
+  ctx: CtxMenuState | null = null;
   /** React 패널이 다시 그릴지 판단 */
   version = 0;
   bump(): void {
@@ -82,6 +89,7 @@ export class GameInputController {
   private routes = new RouteCache();
   private routeKey = '';
   private route: RoutePreview | null = null;
+  private range = new RangeCache();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -318,6 +326,7 @@ export class GameInputController {
   /** 출전 취소 */
   cancelIssue(): void {
     if (!this.ix.issue) return;
+    if (this.ix.issue.phase === 'pick' && this.ix.issue.via === 'ctx') this.ix.ctx = null; // 원형 메뉴의 병종 고리였다 → 메뉴째 닫는다
     this.ix.issue = null;
     this.ix.bump();
   }
@@ -325,6 +334,7 @@ export class GameInputController {
   /** 기지 → 커서 화살표 단계 시작 */
   beginAim(base: number): void {
     if (!this.canCommand() || !this.isMyBase(base)) return;
+    this.ix.ctx = null;
     this.ix.issue = { phase: 'aim', base };
     this.ix.selectedFlagId = null;
     this.ix.bump();
@@ -333,6 +343,7 @@ export class GameInputController {
   /** 목적지 확정 → 삼각 메뉴. base 가 없으면 가장 가까운 내 기지 */
   beginPick(anchor: number, base: number | null): void {
     if (!this.canCommand() || anchor < 0) return;
+    this.ix.ctx = null;
     const b = base ?? this.nearestBaseFor(anchor);
     if (b === null) {
       this.store.toast('출전할 내 기지가 없습니다', 'error', 2000);
@@ -351,8 +362,133 @@ export class GameInputController {
     const base = this.isMyBase(is.base) ? is.base : this.nearestBaseFor(is.anchor);
     if (base === null) return this.cancelIssue();
     this.store.issueFlag(u, this.troopsToSend(u), is.anchor, base);
+    if (is.via === 'ctx') this.ix.ctx = null;
     this.ix.issue = null;
     this.ix.bump();
+  }
+
+  // ───────────── 우클릭 원형 메뉴 (2026-10-18) ─────────────
+
+  /** 칸의 원형 메뉴 열기. 모델 준비 전·맵 밖이면 열지 않는다 (false) */
+  openContextMenu(tile: number): boolean {
+    const g = this.store.game;
+    if (!g?.ready || tile < 0 || tile >= g.tileCount) return false;
+    this.ix.issue = null;
+    this.ix.ctx = { tile, sub: null };
+    this.ix.bump();
+    return true;
+  }
+
+  closeContextMenu(): void {
+    if (!this.ix.ctx) return;
+    this.ix.ctx = null;
+    if (this.ix.issue?.phase === 'pick' && this.ix.issue.via === 'ctx') this.ix.issue = null;
+    this.ix.bump();
+  }
+
+  /** 바깥 고리 바꾸기 (같은 것을 다시 누르면 접는다). 병종 고리를 떠나면 그 출전 상태도 지운다 */
+  private setCtxSub(sub: CtxMenuState['sub']): void {
+    const c = this.ix.ctx;
+    if (!c) return;
+    const next = c.sub === sub ? null : sub;
+    if (c.sub === 'units' && next !== 'units' && this.ix.issue?.phase === 'pick' && this.ix.issue.via === 'ctx') this.ix.issue = null;
+    this.ix.ctx = { ...c, sub: next };
+    this.ix.bump();
+  }
+
+  /** 지금 열린 원형 메뉴의 내용 (닫혀 있으면 null). 매번 모델에서 다시 만든다 — 서버 상태가 바뀌면 바로 반영 */
+  contextMenu(): CtxMenuModel | null {
+    const c = this.ix.ctx;
+    const g = this.store.game;
+    if (!c || !g) return null;
+    const me = this.store.myPlayerId;
+    const topo = this.renderer.topo;
+    const canCmd = this.canCommand();
+    const preview = canCmd && me !== null && topo && g.terrain ? computePreview(g, topo, me, c.tile, this.range.get(g, topo, me)) : null;
+    const p = me !== null ? g.players.get(me) : undefined;
+    return contextMenuModel({
+      g,
+      tile: c.tile,
+      me,
+      spectating: this.store.spectating,
+      canCommand: canCmd,
+      base: canCmd ? this.nearestBaseFor(c.tile) : null,
+      preview,
+      followingId: this.store.followPlayerId,
+      names: this.store.names,
+      troopsFor: (u) => this.troopsToSend(u),
+      defFor: (u) => unitCombatStats(u, p?.techMask ?? 0, g.config.constants).def,
+    });
+  }
+
+  /** 바깥 병종 고리의 버튼 (창·검·기) */
+  contextUnits(): CtxUnitItem[] {
+    const g = this.store.game;
+    return g ? ctxUnitItems(g, (u) => this.troopsToSend(u)) : [];
+  }
+
+  /** 가운데 = 주 동작 → 바깥 병종 고리 (출전 상태 pick, via ctx — 경로 화살표·기지 하이라이트·1/2/3 은 기존 흐름 그대로) */
+  ctxCenter(): void {
+    const c = this.ix.ctx;
+    const m = this.contextMenu();
+    if (!c || !m) return;
+    if (c.sub === 'units') return this.setCtxSub(null); // 다시 누르면 접기
+    if (m.center.disabled || m.center.base === null || m.center.kind === 'blocked') return;
+    this.ix.issue = { phase: 'pick', base: m.center.base, anchor: c.tile, posture: m.center.kind, via: 'ctx' };
+    this.ix.selectedFlagId = null;
+    this.ix.ctx = { tile: c.tile, sub: 'units' };
+    this.ix.bump();
+  }
+
+  /** 고리 항목 누르기 (비활성이면 아무것도 안 함) */
+  ctxSegment(id: CtxSegId): void {
+    const m = this.contextMenu();
+    const c = this.ix.ctx;
+    if (!m || !c) return;
+    const seg = m.segments.find((s) => s.id === id);
+    if (!seg || seg.disabled) return;
+    switch (id) {
+      case 'info':
+        if (m.ownerId > 0) {
+          this.ix.cardPlayerId = m.ownerId;
+          return this.closeContextMenu();
+        }
+        return this.setCtxSub('terrain');
+      case 'ally': {
+        const a = m.allyAction;
+        if (a?.kind === 'propose') this.store.proposeAlly(m.ownerId);
+        else if (a?.kind === 'break') this.store.breakAlly(m.ownerId);
+        else if (a?.kind === 'respond') this.store.respondAlly(a.proposalId, true);
+        return this.closeContextMenu();
+      }
+      case 'emote':
+        return this.setCtxSub('emote');
+      case 'follow':
+        this.store.setFollow(this.store.followPlayerId === m.ownerId ? null : m.ownerId);
+        return this.closeContextMenu();
+      case 'station': {
+        if (!m.station || !this.canCommand()) return;
+        // 이 기지 칸에 앵커, 출발 = 이 기지 → 서버 기본 태세 = 방어 (내 땅 앵커)
+        this.store.issueFlag(m.station.unit, m.station.troops, c.tile, c.tile);
+        return this.closeContextMenu();
+      }
+    }
+  }
+
+  /** 바깥 이모트 고리에서 고르기 */
+  ctxEmote(code: number): void {
+    if (!this.ix.ctx || !this.canCommand()) return;
+    this.store.sendEmote(code);
+    this.closeContextMenu();
+  }
+
+  /** 원형 메뉴 중심의 화면 위치 (칸 중심 — 카메라를 따라간다) */
+  ctxScreenPos(): { x: number; y: number } | null {
+    const c = this.ix.ctx;
+    const topo = this.renderer.topo;
+    if (!c || !topo) return null;
+    const w = topo.tileCenter(c.tile);
+    return worldToScreen(this.renderer.camera, w.x, w.y);
   }
 
   private onTouch(e: TouchEvent, phase: 'start' | 'move' | 'end'): void {
@@ -405,6 +541,8 @@ export class GameInputController {
    */
   click(sx: number, sy: number, alt = false): void {
     const tile = this.pixelToTileId(sx, sy);
+    // 원형 메뉴 버튼도 DOM → 캔버스 클릭 = 바깥 클릭 = 닫기 (그 클릭은 다른 동작을 하지 않는다)
+    if (this.ix.ctx) return this.closeContextMenu();
     const is = this.ix.issue;
     // 삼각 메뉴 버튼은 DOM 이라 캔버스 클릭으로 오지 않는다 → 여기 오면 바깥 클릭
     if (is?.phase === 'pick') return this.cancelIssue();
@@ -434,22 +572,30 @@ export class GameInputController {
 
   private onContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    if (this.ix.issue) return this.cancelIssue(); // 출전 중 우클릭 = 취소
+    if (this.ix.ctx || this.ix.issue) return void this.rightClickTile(-1); // 열린 메뉴 닫기 · 출전 취소 (좌표 불필요)
     const p = this.local(e);
     this.rightClickTile(this.pixelToTileId(p.x, p.y));
   }
 
   /**
-   * 우클릭 라우팅 (테스트에서도 직접 호출). 내 깃발이 선택돼 있으면 어디든 "이동" — 내 기지도 귀환이 아니라 기지 위 방어.
-   * 반환: 보낸 명령 종류 (없으면 null)
+   * 우클릭 라우팅 (테스트에서도 직접 호출).
+   *  원형 메뉴가 열려 있음 → 닫기 (두 번째 우클릭) · 출전 중 → 취소
+   *  내 깃발 선택 → 어디든 "이동" (2026-10-14) — 내 기지도 귀환이 아니라 기지 위 방어
+   *  그 외(선택 없음·남의 깃발 선택) → 그 칸의 원형 메뉴 (2026-10-18)
+   * 반환: 'move' = 이동 명령을 보냄, 'menu' = 원형 메뉴를 염, null = 아무것도 안 함(닫기·취소 포함)
    */
-  rightClickTile(tile: number): 'move' | null {
+  rightClickTile(tile: number): 'move' | 'menu' | null {
+    if (this.ix.ctx) {
+      this.closeContextMenu();
+      return null;
+    }
     if (this.ix.issue) {
       this.cancelIssue();
       return null;
     }
     const id = this.ix.selectedFlagId;
-    if (tile < 0 || !this.myFlag(id) || !this.canCommand()) return null;
+    if (!this.myFlag(id)) return this.openContextMenu(tile) ? 'menu' : null;
+    if (tile < 0 || !this.canCommand()) return null;
     const f = this.store.game!.flags.get(id!)!;
     if (f.state === 'RETURNING') {
       this.store.toast('귀환 중 — 취소할 수 없습니다', 'info', 1800);
@@ -466,6 +612,7 @@ export class GameInputController {
     if (!f) return;
     this.ix.selectedFlagId = id;
     if (this.ix.issue) this.ix.issue = null;
+    this.ix.ctx = null;
     const topo = this.renderer.topo;
     const w = this.renderer.flagWorld.get(id) ?? topo?.tileCenter(f.posTileId);
     if (w) {
@@ -557,6 +704,7 @@ export class GameInputController {
     const i = mine.findIndex((f) => f.id === this.ix.selectedFlagId);
     const next = mine[(i + 1) % mine.length];
     this.ix.selectedFlagId = next.id;
+    if (this.ix.ctx) this.closeContextMenu();
     const c = topo.tileCenter(next.posTileId);
     this.renderer.camera.cx = c.x;
     this.renderer.camera.cy = c.y;
@@ -618,6 +766,8 @@ export class GameInputController {
         this.ix.bump();
         return;
       case 'escape':
+        // 원형 메뉴가 떠 있으면 그것만 닫는다 (가장 위에 뜬 것부터)
+        if (this.ix.ctx) return this.closeContextMenu();
         // 테크 창: 상세 패널이 열려 있으면 그것만 먼저 닫는다
         if (this.ix.panel === 'tech' && this.ix.techDetail !== null && !this.ix.helpOpen && !this.ix.optionsOpen && !this.ix.leaveConfirm) {
           this.ix.techDetail = null;
