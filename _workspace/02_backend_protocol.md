@@ -282,7 +282,7 @@ npm run selfplay -w @civwar/server -- [games=10] [seed0=1000] [S|M|L] [N=10] [NO
 
 | 명령 | 검증 순서 | 효과 |
 |---|---|---|
-| `cmd_ally_propose` | `BAD_TARGET`(자기·없음·탈락) → `ALLY_CUTOFF`(t ≥ 8400) → `ALLY_FROZEN`(lockout 후 재체결 금지 중) → `ALREADY_ALLIED`(ACTIVE/BREAKING) → `ALLY_LIMIT`(나 또는 상대가 이미 2개 — ACTIVE+BREAKING) → `ALLY_PENDING`(같은 상대에게 유효 제안 있음) | 상대가 나에게 낸 유효 제안이 있으면 **즉시 성립**(`ally_formed`). 아니면 제안 생성(`ally_proposed`, 만료 t+150) |
+| `cmd_ally_propose` | `BAD_TARGET`(자기·없음·탈락) → `ALLY_CUTOFF`(t ≥ `ALLIANCE_CUTOFF_TICK` = 7800, §24) → `ALLY_FROZEN`(lockout 후 재체결 금지 중) → `ALREADY_ALLIED`(ACTIVE/BREAKING) → `ALLY_LIMIT`(나 또는 상대가 이미 2개 — ACTIVE+BREAKING) → `ALLY_PENDING`(같은 상대에게 유효 제안 있음) | 상대가 나에게 낸 유효 제안이 있으면 **즉시 성립**(`ally_formed`). 아니면 제안 생성(`ally_proposed`, 만료 t+150) |
 | `cmd_ally_respond` | `NO_PROPOSAL`(없음·만료·내게 온 것 아님) → (accept=false 면 바로 거절 처리) → `BAD_TARGET`(제안자 탈락) → 위 cutoff/frozen/allied/limit | accept: `ally_formed`. decline: `ally_proposal_closed{reason:"declined"}`. 둘 다 `cmd_ack accepted:true` |
 | `cmd_ally_break` | `NOT_ALLIED`(ACTIVE 동맹 아님 — BREAKING 포함) → `MIN_DURATION`(성립 후 300 tick 미만) | `BREAKING`, `breakAtTick = t+150` → `ally_break_started`. 150 tick 뒤 3단계에서 `ally_broken{reason:"cooldown_elapsed"}` |
 
@@ -347,8 +347,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 {
   "type": "match_config", "seed": 20261008, "topology": "square",
   "width": 100, "height": 60, "totalLandTiles": 3622, "tickMs": 200, "hardTimeoutTick": 9600,
-  "endgameRush": { "tick": 8400, "costMultPermille": 750 },
-  "thresholdCurve": { "startPct": 60, "decayStartTick": 4800, "decayPerMinPermille": 1500, "floorPct": 45, "scale": 200 },
+  "endgameRush": { "tick": 7800, "costMultPermille": 600 },
+  "thresholdCurve": { "startPct": 60, "decayStartTick": 6000, "decayPerMinPermille": 3500, "floorPct": 25, "scale": 200 },
   "mapSource": "random", "botDifficulty": "NORMAL",
   "constants": { "TICK_MS": 200, "ENEMY_BASE": 11, "TERRAIN_COST_PERMILLE": [0,1000,1150,1300,800,1700,0], "...": "shared/constants.ts 의 대문자 상수 전부" }
 }
@@ -469,8 +469,8 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | type | 예시 | 시점 |
 |---|---|---|
 | `tech_purchased` | `{ "type":"tech_purchased","tick":120,"playerId":1,"nodeId":15,"cost":160,"newFlagCap":3,"techMask":32768 }` | 구매 성공 tick. **v4.3**: `axis`/`tier` 삭제 → `nodeId`, `techMask`(구매 후 보유 마스크) 추가 |
-| `threshold_update` | `{ "type":"threshold_update","tick":4800,"thresholdPct":60 }` | t ≥ 4800 이고 (t−4800) % 300 == 0, 바닥(45%) 도달 tick(7800)까지 = 총 11회 |
-| `endgame_rush` | `{ "type":"endgame_rush","tick":8400,"costMultPermille":750 }` | t == 8400, 1회. 이후 `snapshot_full.endgameRushActive = true` |
+| `threshold_update` | `{ "type":"threshold_update","tick":6000,"thresholdPct":60 }` | t ≥ 6000 이고 (t−6000) % 300 == 0, 바닥(25%) 도달 tick(9000)까지 = 총 11회 (§24) |
+| `endgame_rush` | `{ "type":"endgame_rush","tick":7800,"costMultPermille":600 }` | t == 7800 (§24), 1회. 이후 `snapshot_full.endgameRushActive = true` |
 | `player_eliminated` | `{ "type":"player_eliminated","tick":3000,"playerId":4,"byPlayerId":2,"annexedTiles":312 }` | **v4.4 (§21)**: 기지(수도 포함)를 모두 잃은 tick(12단계 — 그 tick 의 `base_captured` 뒤). `byPlayerId` = 마지막 기지를 점령해 **남은 땅 전부를 합병한** 플레이어(없으면 null → 땅은 중립). `annexedTiles`(추가) = 넘어간 칸 수, 칸 변경은 같은 tick `snapshot_delta.tileChanges` |
 | `bot_takeover` | `{ "type":"bot_takeover","tick":900,"playerId":2 }` | 끊긴 지 450 tick |
 | `player_reconnected` | `{ "type":"player_reconnected","tick":910,"playerId":2 }` | 끊긴 플레이어가 토큰으로 복귀 |
@@ -1527,3 +1527,114 @@ net_r    = net 를 gross_r 로 분배
 - 스크립트: `watch-game.ts`(AI 전용 판의 방장 자리도 세력 이름 → 로그 머리 표), `selfplay.ts`(우승자 세력 이름 표시 — 그 판 지명을 뺀 같은 함수), `qa-schema.ts`(full `allyBreaks` 필수, 델타 `allyBreaks?`), `qa-headless.ts`(재구성 비교에 allyBreaks 추가).
 - 테스트: `server/test/v46.test.ts`(신규 — 풀 무겹침·길이·고유·결정론·한 양식·지명 회피 시드 200개, allyBreaks 증가·full·델타 바뀐 때만), `server/test/rooms.test.ts`(카운트다운~시작 이름 불변·지명 비충돌·같은 시드 같은 이름, 프리셋 맵, 인게임 인계 뒤 사람 닉네임 유지, 카운트다운 이탈 자리 세력 이름. 기존 `'BOT 3'` 기대값 갱신).
 - 결과(2026-10-18): `npm run typecheck` 통과, `npm test` 26 파일 362 테스트 통과, `npm run smoke` PASSED, `qa:headless` 스키마 위반·순서 위반·재구성 불일치 0, `qa:ws` 78/78.
+
+## 24. 판 길이 레버 재조정 — 승리 기준 곡선(B) · 종반 러시(C) (프론트 영향 없음 — 2026-10-18, 사용자 선택 B+C)
+
+근거: 사용자가 2026-10-18에 **B(승리 기준 낮추기) + C(종반 러시 강화)** 를 골랐다. A(맵 축소)는 채택하지 않았다.
+문제(실측): 봇 판이 전부 32분 하드 타임아웃으로 끝났다(자가대전 20판 + 관전 1판). 30분 1위 점유율 ≈ 22~28%, 종료 시 25~28%라 기존 바닥 45%에 아무도 닿지 못했다.
+목표: 25~32분(표준 30분), 대부분 **점유율 승리**로 종료, 24분 이전 종료는 거의 없게.
+**메시지·필드 형식 변경 없음, `PROTOCOL_VERSION` 1 그대로.** 값만 바뀐다. 클라이언트는 `match_config.constants`·`match_config.endgameRush`·`match_config.thresholdCurve`·`threshold_update`·`endgame_rush` 를 읽으므로 코드 수정이 필요 없다.
+
+### 24.1 새 값 (전부 [A] — 사용자 확인 필요)
+
+| 상수 (`shared/src/constants.ts`) | 구값 | 새 값 | 항목 |
+|---|---|---|---|
+| `THRESHOLD_START_PCT` | 60 | 60 (그대로) | — |
+| `THRESHOLD_DECAY_START` | 4800 (16분) | **6000 (20분)** | [A-114] |
+| `THRESHOLD_DECAY_PER_MIN_PERMILLE` | 1500 (1.5 %p/분) | **3500 (3.5 %p/분)** | [A-115] |
+| `THRESHOLD_FLOOR_PCT` | 45 (26분 도달) | **25 (30분 = tick 9000 도달)** | [A-116] |
+| `ENDGAME_RUSH_TICK` | 8400 (28분) | **7800 (26분)** | [A-117] |
+| `ENDGAME_RUSH_COST_MULT_PERMILLE` | 750 (×0.75) | **600 (×0.6)** — 깃발 전투에는 여전히 미적용(점령 비용 `tileCost` 만) | [A-118] |
+| `ALLIANCE_CUTOFF_TICK` | 8400 | **= `ENDGAME_RUSH_TICK` (7800)** — 리터럴 대신 상수 참조로 묶음 | [A-117] 연동 |
+| `HARD_TIMEOUT_TICK` | 9600 (32분) | 9600 (그대로) | — |
+
+승리 기준 곡선(분 경계값): 20분 60% → 21분 56.5 → 22분 53 → 23분 49.5 → 24분 46 → 25분 42.5 → **26분 39(러시)** → 27분 35.5 → 28분 32 → 29분 28.5 → **30분 25(바닥)**.
+- 정수성: 분당 감쇠 = 3500 × 200 / 1000 = 700 단위(정수)라 분 경계값은 정확하다. tick 사이 값은 `floor` (2.33 단위/tick). 판정은 기존처럼 `thresholdScaled(t)` 정수 비교.
+- `threshold_update`: 20분~30분 분당 1회 = **총 11회** (구: 16~26분 11회, 개수 동일). 30분(9000)에 25% 를 보낸 뒤 멈춘다.
+- 실측 근거: 1위 점유율이 20분 ≈ 23%, 25분 ≈ 25% 다. "20분까지 60% 유지 → 이후 가파르게 하락" 곡선은 24분 기준이 46%라 24분 이전 조기 종료를 막고, 27~30분에 1위의 실제 점유율(28~33%)과 만난다. 바닥 25% 는 교착 판(1위 22~26%)도 일부 30~32분에 끝내기 위한 값이다.
+
+### 24.2 스윕 (selfplay, NORMAL 전원 — 같은 시드는 같은 맵·같은 초반)
+
+명령: `npm run selfplay -w @civwar/server -- <판> <시드> <크기> <인원>`. 스윕 동안에만 상수를 환경 변수로 덮어쓰는 임시 코드를 넣어 돌렸다(제거 완료, 커밋 대상 아님). 최종 값을 상수에 적용한 뒤 같은 시드(1000~1004)로 다시 돌려 스윕 결과와 판별로 똑같음을 확인했다.
+표기: `s`=감쇠 시작(분) `r`=감쇠 %p/분 `f`=바닥 % / `rush`=러시 분·배율 / `cap2x`=러시 중 기지 피해 상한 ×2 (실험, 미채택).
+"1위 @25/@30" 은 그 시각까지 간 판만 평균한다(일찍 끝난 판 제외 → n 표기). 그래서 남은 교착 판 위주라 값이 낮게 나온다.
+
+M 10인, 시드 1000~ :
+
+| 구성 | 판 | 평균 종료(분) | 최소 / 최대 | 점유율 / 시간 종료 | 1위 @20 / @25 / @30 (%) | 탈락/판 |
+|---|---|---|---|---|---|---|
+| 기존 (s16 r1.5 f45, rush 28 ×0.75) | 10 | 32.0 | 32.0 / 32.0 | 0 / 10 | 23.0 / 26.1 / 28.1 | 0.5 |
+| B: s12 r2.5 f30 | 10 | 27.9 | 23.3 / 32.0 | 6 / 4 | 23.0 / 21.3 (n=5) / 23.5 (n=5) | 0.4 |
+| B: s12 r2.5 f28 | 10 | 27.5 | 23.3 / 32.0 | 6 / 4 | 23.0 / 21.3 (n=5) / 21.9 (n=4) | 0.3 |
+| B: s14 r3.0 f27 | 10 | 27.4 | 23.4 / 32.0 | 7 / 3 | 23.0 / 21.3 (n=5) / 21.9 (n=4) | 0.3 |
+| B: s12 r3.0 f25 | 10 | 26.5 | 21.6 / 32.0 | 7 / 3 | 23.0 / 21.3 (n=5) / 21.9 (n=4) | 0.3 |
+| C: rush 26 ×0.6 | 10 | 32.0 | 32.0 / 32.0 | 0 / 10 | 23.0 / 26.1 / 29.2 | 0.6 |
+| C: rush 24 ×0.5 | 10 | 32.0 | 32.0 / 32.0 | 0 / 10 | 23.0 / 26.5 / 28.9 | 0.8 |
+| B+C: s12 r2.5 f30 + rush 26 ×0.6 | 10 | 27.7 | 23.3 / 32.0 | 6 / 4 | 23.0 / 21.3 (n=5) / 24.0 (n=5) | 0.3 |
+| B: s16 r3.0 f28 | 10 | 28.9 | 25.0 / 32.0 | 6 / 4 | 23.0 / 26.1 / 21.9 (n=4) | 0.4 |
+| B: s18 r3.5 f28 | 10 | 29.1 | 25.4 / 32.0 | 6 / 4 | 23.0 / 26.1 / 21.9 (n=4) | 0.4 |
+| B: s20 r4.0 f27 | 10 | 29.3 | 26.8 / 32.0 | 7 / 3 | 23.0 / 26.1 / 21.9 (n=4) | 0.4 |
+| B: s18 r3.5 f26 | 10 | 28.7 | 25.4 / 32.0 | 7 / 3 | 23.0 / 26.1 / 21.9 (n=4) | 0.4 |
+| B+C: s18 r3.5 f28 + rush 26 ×0.6 | 10 | 29.0 | 25.4 / 32.0 | 6 / 4 | 23.0 / 26.1 / 22.6 (n=4) | 0.4 |
+| B+C: s18 r3.5 f28 + rush 26 ×0.5 | 10 | 29.4 | 25.4 / 32.0 | 6 / 4 | 23.0 / 26.1 / 23.6 (n=5) | 0.4 |
+| B+C: s18 r3.5 f28 + rush 26 ×0.6 + cap2x | 10 | 29.0 | 25.4 / 32.0 | 6 / 4 | 23.0 / 26.1 / 23.1 (n=4) | 0.7 |
+| B+C: s20 r4.0 f27 + rush 26 ×0.6 + cap2x | 10 | 29.3 | 26.7 / 32.0 | 7 / 3 | 23.0 / 26.1 / 23.1 (n=4) | 0.8 |
+| B: s20 r4.0 f25 | 20 | 29.1 | 24.7 / 32.0 | 16 / 4 | 22.8 / 24.8 (n=19) / 22.3 (n=7) | 0.5 |
+| B+C: s20 r4.0 f25 + rush 26 ×0.6 | 20 | 28.8 | 24.7 / 32.0 | 16 / 4 | 22.8 / 24.8 (n=19) / 22.3 (n=5) | 0.6 |
+| B+C: s20 r4.0 f25 + rush 26 ×0.6 + cap2x | 20 | 28.9 | 24.7 / 32.0 | 15 / 5 | 22.8 / 24.8 (n=19) / 22.7 (n=6) | 0.7 |
+| **B+C: s20 r3.5 f25 + rush 26 ×0.6 (채택)** | 20 | **29.4** | **25.3** / 32.0 | **16 / 4** | 22.8 / 25.7 / 22.8 (n=7) | 0.7 |
+| B+C: s18 r3.0 f25 + rush 26 ×0.6 | 20 | 29.1 | 24.4 / 32.0 | 16 / 4 | 22.8 / 24.8 (n=19) / 22.6 (n=6) | 0.6 |
+| B+C: s20 r4.0 f27 + rush 26 ×0.6 | 20 | 29.4 | 24.7 / 32.0 | 12 / 8 | 22.8 / 24.8 (n=19) / 23.6 (n=9) | 0.6 |
+| B+C: s20 r4.0 f25 + rush 24 ×0.5 | 20 | 28.5 | 24.9 / 32.0 | 16 / 4 | 22.8 / 25.2 (n=19) / 22.6 (n=4) | 0.7 |
+| B+C: s20 r4.0 f24 + rush 26 ×0.6 | 20 | 28.5 | 24.7 / 32.0 | 17 / 3 | 22.8 / 24.8 (n=19) / 22.1 (n=4) | 0.6 |
+| 채택 곡선만 (러시 기존 28 ×0.75) | 20 | 29.7 | 25.3 / 32.0 | 15 / 5 | 22.8 / 25.7 / 22.8 (n=9) | 0.5 |
+| 채택 곡선 + rush 26 ×0.5 | 20 | 29.6 | 25.3 / 32.0 | 16 / 4 | 22.8 / 25.7 / 22.4 (n=5) | 0.6 |
+
+M 10인, 다른 시드(2000~, 과적합 확인):
+
+| 구성 | 판 | 평균 종료 | 최소 / 최대 | 점유율 / 시간 종료 | 1위 @20 / @25 / @30 | 탈락/판 |
+|---|---|---|---|---|---|---|
+| 기존 | 20 | 32.0 | 32.0 / 32.0 | 0 / 20 | 20.5 / 24.9 / 26.7 | 0.5 |
+| **채택** | 20 | **29.4** | **27.7** / 32.0 | **19 / 1** | 20.5 / 24.9 / 23.0 (n=5) | 0.5 |
+
+채택 값 M 10인 합계 40판: 평균 29.4분, 점유율 종료 35 / 시간 종료 5, 최소 25.3분(24분 이전 0판).
+
+관찰:
+1. **C 단독은 효과가 없다.** 러시 26분 ×0.6, 24분 ×0.5 모두 10/10 시간 종료. 러시는 모두에게 똑같이 싸지므로 30분 1위 점유율을 +1%p 정도만 올린다. 판을 끝내는 주 레버는 **B(곡선)** 다.
+2. **감쇠를 일찍 시작하면 24분 이전 종료가 생긴다.** 12~14분 시작(s12/s14)에서는 일찍 독주한 판(20분 26~29%)이 23~24분에 끝나 최소 21.6~23.4분이 나왔다. 20분 시작 + 가파른 하락이 "24분 이전 거의 없음"과 "30분 전후 종료"를 같이 맞춘다.
+3. **바닥이 27~28% 면 교착 판(1위 20~24%)이 남는다.** f27 은 12/20 만 점유율 종료, f25 는 16/20, f24 는 17/20. 25%(육지 1/4)를 채택했다. 24% 는 이득이 1판뿐이라 승리 의미를 더 깎을 이유가 약하다.
+4. 같은 곡선에서 러시 26 ×0.6 은 러시 기존값 대비 평균 −0.3분, 시간 종료 5 → 4, 탈락 0.5 → 0.7/판. 작지만 같은 방향이다. ×0.5 는 ×0.6 보다 나아진 게 없어 ×0.6 을 채택했다.
+5. 남는 시간 종료(M 40판 중 5판)는 1위 22~25% 의 완전 교착 판이다. 바닥을 더 낮추지 않는 한 남는다.
+
+### 24.3 S 7인 · L 12인 확인 (채택 값, 10판씩)
+
+| 크기·인원 | 구성 | 평균 종료 | 최소 / 최대 | 점유율 / 시간 종료 | 1위 @20 / @25 / @30 | 탈락/판 |
+|---|---|---|---|---|---|---|
+| S 7인 (시드 3000~) | 기존 | 29.5 | 25.1 / 32.0 | 5 / 5 | 35.3 / 37.1 / 37.8 (n=6) | 0.5 |
+| S 7인 | **채택** | **26.0** | 23.4 / 28.4 | 10 / 0 | 35.3 / 33.0 (n=6) / - | 0.5 |
+| L 12인 (시드 4000~) | 기존 | 32.0 | 32.0 / 32.0 | 0 / 10 | 19.6 / 21.9 / 23.2 | 0.4 |
+| L 12인 | **채택** | **31.0** | 29.2 / 32.0 | 5 / 5 | 19.6 / 21.9 / 20.6 (n=7) | 0.3 |
+
+- S 7인: 1인당 육지가 적어 1위가 20분에 이미 35% 라, 기준이 내려오는 24~26분에 끝난다(평균 26.0, 최소 23.4). 목표 대역 하단이지만 S 는 표준이 아니다(권장 5~6인, 7인은 최대). 방 설정 `pacingNote` 도 S 7인에 `estimate:23` 을 보여주므로(24.5) 짧은 판이 예상되는 설정으로 이미 안내된다.
+- L 12인: 1위가 20~23% 에 머물러 절반은 여전히 시간 종료(평균 31.0). 기존(10/10 시간 종료)보다는 낫다. 더 줄이려면 바닥을 더 낮추거나(승리 의미 약화) 맵·인원 레버가 필요한데, 이번 범위(A 미채택) 밖이다.
+
+### 24.4 시도했으나 채택하지 않은 것 — 러시 중 기지 피해 상한 ×2 [A — 미적용]
+
+- 아이디어: 종반 러시 동안 `BASE_HP_DMG_CAP_MILLI_PER_TICK`(300) 을 ×2(600) 로 올려 기지 함락 → 멸망·합병(§21)으로 큰 점유율 이동을 만든다.
+- 결과: 탈락/판은 0.4 → 0.7~0.8 로 늘었지만 종료 시각·점유율 종료 비율은 나아지지 않았다(29.0 vs 29.0, 15/20 vs 16/20). 깃발 하나의 원래 피해가 상한보다 작은 경우가 대부분이라 상한을 올려도 잘 걸리지 않는다. **적용하지 않았고, 코드에도 남기지 않았다.**
+- 러시 중 기지 체력 회복 차단 같은 다른 변형은, 상한 ×2 도 효과가 미미했던 결과로 보아 기대 효과가 작아 돌리지 않았다.
+
+### 24.5 클라이언트·방 설정 확인 (코드 수정 없음)
+
+- `client/src/ui/pacing.ts` `estimatePacing`/`pacingText` 와 서버 `server/src/room/settings.ts` `pacingNote` 는 `HARD_TIMEOUT_TICK`(그대로 9600)·`PACING_P_REF_LAND_PER_PLAYER`·`TARGET_LAND_RATIO_PERMILLE`·`MAP_SIZE_PRESETS` 만 읽는다. 승리 기준·러시 상수에 의존하지 않으므로 그대로 맞다. 추정식 기준값 `T_BASE 29.4분`은 채택 값의 M 10인 실측 평균(29.4분, 40판)과 일치한다. 참고: S 7인 추정 23분(실측 26.0), L 12인 추정 29분(실측 31.0).
+- `client/src/ui/Help.tsx` 승리 기준·종반 러시 문구는 `THRESHOLD_START_PCT`/`THRESHOLD_DECAY_START`/`THRESHOLD_FLOOR_PCT`/`ENDGAME_RUSH_TICK`/`ALLIANCE_CUTOFF_TICK`/`HARD_TIMEOUT_TICK` 을 import 해 표시한다. 그래서 자동으로 "20분부터 … 25%에서 멈춥니다", "26분부터 종반 러시", "26분부터 새 동맹 불가"가 된다.
+- `GameScreen.tsx` 러시 카운트다운은 `match_config.endgameRush.tick` 을, 피드 문구는 `endgame_rush.costMultPermille`(→ "×0.6")을, `playerInfo.ts` 는 `constants.ALLIANCE_CUTOFF_TICK` 을 읽는다.
+- 클라이언트 테스트 픽스처(`client/test/*.test.ts` 의 `endgameRush: { tick: 8400, … }` 등)는 상수와 무관한 자체 완결 가짜 `match_config` 라 손대지 않았다.
+
+### 24.6 서버 코드 · 테스트 · 검증
+
+- 코드: `shared/src/constants.ts` 상수 5개 값 변경 + `ALLIANCE_CUTOFF_TICK = ENDGAME_RUSH_TICK` 참조. 로직 변경은 없다(`victory.ts` `thresholdScaled`, `tick.ts` 러시·threshold_update, `rules.ts` `tileCost` 는 상수만 읽는다).
+- 테스트: `server/test/economy.test.ts` threshold 곡선·정수 판정 기대값을 새 곡선으로 갱신했다(20분 60, 21분 56.5, 24분 46, 26분 39, 29분 28.5, 30분 25, tick 사이 floor, 39%·25% 경계). `server/test/tick.test.ts` 는 threshold_update 11회 주석만 갱신(개수 동일). `qa-scenarios.ts` 동맹 마감 시나리오는 `ALLIANCE_CUTOFF_TICK` 을 import 하므로 수정이 필요 없다.
+- 결과(2026-10-18): `npm run typecheck` 통과, `npm test` 28 파일 408 테스트 통과, `npm run smoke` PASSED, `qa:scenarios` 87/87, `qa:headless` 스키마 위반·순서 위반·재구성 불일치 0.
+- 본문 예시 갱신: §5 `ALLY_CUTOFF` 조건, `match_config` 예시의 `endgameRush`·`thresholdCurve`, 이벤트 표의 `threshold_update`·`endgame_rush` 행. §10 항목 5 의 `[A-38]` 값은 당시 기록이라 그대로 둔다.
+- **GDD 반영 필요(game-designer)**: GDD 6.1 승리 기준 곡선, 3.1 종반 러시, 6.2 동맹 마감 시각, 5.4 페이싱 결론을 위 값으로.
