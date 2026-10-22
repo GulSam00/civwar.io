@@ -15,6 +15,9 @@
  *   --out DIR             출력 디렉터리 (기본 server/maps/candidates). 공식 채택 = 파일을 server/maps/official/ 로 옮기고
  *                         id 를 파일명과 같게 고친다(checksum 은 terrain+spawns+bases 만 덮으므로 id·name 수정은 무방)
  *
+ * v4.9 (§30): 스폰 순서(최원점 순)와 권장 인원별 최적 부분집합(spawnSets)은 노출도 비용으로 자동 계산해 파일에 싣는다.
+ *   후보 선별은 `node server/scripts/eval-maps.cjs <후보 디렉터리> [상위 N]` (노출도 균등 점수, 낮을수록 좋음).
+ *
  * 출력: 파일마다 한 줄 요약(시드, 실제 사용 시드, 육지, 기지, 스폰 최소 간격, 앞 2개 스폰 간격) — 후보 선별용.
  * 생성 불변식(2.4 I1~I4, 기지 2N)은 generateMap 이 보장한다(실패 시 seed+1). 로더는 형식·checksum 만 본다.
  */
@@ -22,7 +25,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MAP_GEN_DEFAULT, MAP_SIZE_PRESETS, WATER_MODE, type MapGenConfig, type MapSizeClass } from '@civwar/shared';
+import { isClaimable } from '@civwar/shared';
 import { generateMapForSize } from '../src/map/generate.js';
+import { arrangePresetSpawns, computeExposure } from '../src/map/spawnSelect.js';
 import { presetFromMap } from '../src/map/presets.js';
 
 function arg(name: string): string | undefined {
@@ -55,7 +60,13 @@ for (let k = 0; k < count; k++) {
   const baseId = arg('id');
   const id = baseId ? (count > 1 ? `${baseId}-${seed}` : baseId) : `cand-${size.toLowerCase()}-${seed}`;
   const map = generateMapForSize(seed, size, preset.max, water);
-  const file = presetFromMap(map, { id, name: { ko: arg('name-ko') ?? id, en: arg('name-en') ?? id }, sizeClass: size });
+  // v4.9 (§30): 스폰 순서(최원점 순)와 권장 인원별 최적 부분집합(spawnSets)을 노출도 비용으로 정한다
+  const landMask = new Uint8Array(map.terrain.length);
+  const landTiles: number[] = [];
+  for (let t = 0; t < map.terrain.length; t++) if (isClaimable(map.terrain[t])) (landMask[t] = 1), landTiles.push(t);
+  const ex = computeExposure(map.topology, landMask, landTiles);
+  const arrangement = arrangePresetSpawns(map.topology, ex, map.spawns.map((s) => s.homeTileId), preset.recommended[0], preset.recommended[1]);
+  const file = presetFromMap(map, { id, name: { ko: arg('name-ko') ?? id, en: arg('name-en') ?? id }, sizeClass: size, arrangement });
   const path = join(outDir, `${id}.json`);
   writeFileSync(path, JSON.stringify(file) + '\n', 'utf8');
   let minSep = Infinity;

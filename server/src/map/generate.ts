@@ -1,7 +1,7 @@
 /**
  * 맵 생성 (GDD v4.0 2.4 + v2.1 2.6 placeBases, v4.1 2.8 c: 격자 W×H 를 인자로 받는다).
  *
- * v4.1 확인: 인원 의존 파라미터는 스폰 수(placeSpawns 의 count — 최원점 순차 배치, 고정 간격 상수 없음)와
+ * v4.1 확인: 인원 의존 파라미터는 스폰 수(selectSpawns 의 count — v4.9 부터 노출도 균등 선택, spawnSelect.ts)와
  * 기지 수(수도 N + 셀당 1개 = 2N)뿐이며 둘 다 N 만 받는다. 격자 크기는 1단계 육지 비율(permille)·지형 쿼터(육지 비례)로만 들어가므로
  * "인원 → 격자" lookup 을 인자로 바꿔도 다른 단계는 수정이 필요 없다.
  *
@@ -40,6 +40,7 @@ import {
 } from '@civwar/shared';
 import { SquareTopology, TerrainGraph } from '../topology/square.js';
 import { Mulberry32 } from './rng.js';
+import { selectSpawns } from './spawnSelect.js';
 
 export const INF = 1 << 29;
 
@@ -210,26 +211,6 @@ function generateLand(rng: Mulberry32, topo: SquareTopology): Uint8Array {
     p += ratioPm < LAND_RATIO_MIN_PERMILLE ? CA_LAND_P_STEP_PERMILLE : -CA_LAND_P_STEP_PERMILLE;
   }
   return land;
-}
-
-// ───────────────────────────── 3단계: 스폰 ─────────────────────────────
-
-function placeSpawns(topo: SquareTopology, landTiles: readonly number[], waterDist: Int32Array, count: number): number[] {
-  let first = -1;
-  for (const t of landTiles) if (first === -1 || waterDist[t] > waterDist[first]) first = t; // 오름차순 순회 → 동률 tileId 최소
-  const spawns = [first];
-  const minD = new Int32Array(topo.tileCount()).fill(INF);
-  for (let k = 1; k < count; k++) {
-    const last = spawns[spawns.length - 1];
-    let best = -1;
-    for (const t of landTiles) {
-      const d = topo.distance(t, last);
-      if (d < minD[t]) minD[t] = d;
-      if (best === -1 || minD[t] > minD[best]) best = t;
-    }
-    spawns.push(best);
-  }
-  return spawns;
 }
 
 // ───────────────────────────── 3단계: 기지 (v2.1 2.6) ─────────────────────────────
@@ -405,7 +386,8 @@ function generateOnce(seed: number, W: number, H: number, playerCount: number, c
   // (e) 나머지 = 평원
 
   // 3단계: 스폰 · 기지
-  const spawnTiles = placeSpawns(topo, landTiles, waterDist, playerCount);
+  // v4.9 (§30): 노출도 균등 스폰 (옛 "물에서 가장 먼 칸 + 최원점" 폐기)
+  const spawnTiles = selectSpawns(topo, land, landTiles, waterDist, playerCount);
   const initialOwners = new Uint8Array(n);
   const spawns: SpawnPlacement[] = spawnTiles.map((tileId, i) => ({ playerId: i + 1, tileId, homeTileId: tileId }));
   for (const s of spawns) {

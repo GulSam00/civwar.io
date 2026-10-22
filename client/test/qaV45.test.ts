@@ -184,7 +184,8 @@ describe('QA v4.5 — 클라이언트 route.ts 방어 경로 = 서버 nextStep/d
 describe('QA v4.5 — 멸망·합병 경계면', () => {
   it('player_eliminated.annexedTiles ↔ 같은 tick delta.tileChanges, 멸망자 잔여 칸 0, 직후 새 부트스트랩 = 이어 받은 모델(소유·기지 소유자)', () => {
     let elims = 0;
-    for (const seed of [7002, 7004]) {
+    for (const seed of [7002, 7004, 7006, 7008, 7010, 7012]) {
+      if (elims >= 2) break;
       const state = mkState(seed, 12, seed === 7002 ? 'S' : 'M', true);
       state.players[1].isBot = false;
       state.players[1].disconnectedSinceTick = 0;

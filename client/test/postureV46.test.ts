@@ -281,7 +281,7 @@ function openArea(s: GameState, r: number): number {
   throw new Error('no open area');
 }
 function scenario() {
-  const map = generateMapForPlayers(4242, 8);
+  const map = generateMapForPlayers(4244, 8);
   const state = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true })));
   const c = openArea(state, 8);
   for (const t of state.graph.disk(c, 8)) state.map.terrain[t] = TERRAIN.PLAIN;

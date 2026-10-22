@@ -196,19 +196,27 @@ export function mapFromPreset(p: PresetMapFile, N: number): GeneratedMap {
 
 /**
  * 생성기 출력 → 프리셋 파일 (제작 도구용, 2.8 f "제작 = 1회성 작업").
- * map 은 players.max 인원으로 생성한 것이어야 한다(spawns 길이 = max). spawns 순서 = 생성기의 최원점 배치 순서
- * (첫 스폰 = 물에서 가장 먼 칸, 이후 기존 스폰들로부터 가장 먼 칸) → 앞쪽 N개가 서로 멀다.
+ * map 은 players.max 인원으로 생성한 것이어야 한다(spawns 길이 = max). v4.9: spawns 순서·spawnSets 는 arrangePresetSpawns 결과
+ * (최원점 순 + 권장 인원별 최적 부분집합, 노출도 균등 — §30). arrangement 가 없으면 생성기 슬롯 순서 그대로.
  */
 export function presetFromMap(
   map: GeneratedMap,
-  meta: { id: string; name: { ko: string; en: string }; sizeClass: MapSizeClass; players?: PresetMapFile['players']; generator?: string },
+  meta: {
+    id: string;
+    name: { ko: string; en: string };
+    sizeClass: MapSizeClass;
+    players?: PresetMapFile['players'];
+    generator?: string;
+    /** v4.9: arrangePresetSpawns 결과 — 있으면 spawns 순서·spawnSets 를 이것으로 쓴다 (없으면 생성기 슬롯 순서) */
+    arrangement?: { spawns: number[]; spawnSets: Record<string, number[]> };
+  },
 ): PresetMapFile {
   const sz = MAP_SIZE_PRESETS[meta.sizeClass];
   const players = meta.players ?? { min: MIN_PLAYERS, recommendedMin: sz.recommended[0], recommendedMax: sz.recommended[1], max: sz.max };
   if (map.spawns.length !== players.max) throw new Error(`map has ${map.spawns.length} spawns, players.max = ${players.max}`);
   const body = {
     terrain: rleEncode(map.terrain),
-    spawns: map.spawns.map((s) => s.homeTileId),
+    spawns: meta.arrangement ? meta.arrangement.spawns.slice() : map.spawns.map((s) => s.homeTileId),
     bases: map.baseTiles.slice(),
   };
   const file: PresetMapFile = {
@@ -221,8 +229,9 @@ export function presetFromMap(
     sizeClass: meta.sizeClass,
     players,
     ...body,
+    ...(meta.arrangement && Object.keys(meta.arrangement.spawnSets).length > 0 ? { spawnSets: meta.arrangement.spawnSets } : {}),
     origin: {
-      generator: meta.generator ?? 'v4.5', // v4.5: 물 ≈ 10%·통행 불가 생성기
+      generator: meta.generator ?? 'v4.9', // v4.5: 물 ≈ 10%·통행 불가 생성기, v4.9: 노출도 균등 스폰 (§30)
       seed: map.seed,
       genConfig: { waterMode: map.config.waterMode === WATER_MODE.SHALLOW_QUOTA ? 'SHALLOW_QUOTA' : 'BORDER_ONLY', shallowPermille: map.config.shallowPermille },
     },

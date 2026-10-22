@@ -1,5 +1,5 @@
 /**
- * [QA v4.5 — 커밋 금지] 공식 맵 9장: checksum 재계산, 물 통행 불가, 육지 한 덩어리, 물 비율, 스폰·기지 육지, 문서 표(§22.1)와 대조.
+ * [QA v4.5 — 커밋 금지] 공식 맵 9장: checksum 재계산, 물 통행 불가, 육지 한 덩어리, 물 비율, 스폰·기지 육지, 문서 표(§30.5)와 대조.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,9 +9,10 @@ import { SquareTopology, TerrainGraph } from '../src/topology/square.js';
 import { createGameState } from '../src/game/state.js';
 
 const DOC: Record<string, [number, number, number]> = {
-  'official-s-01': [1030, 2700, 10.7], 'official-s-02': [1025, 2721, 10.0], 'official-s-03': [1002, 2733, 9.6],
-  'official-m-01': [1005, 5495, 8.4], 'official-m-02': [1003, 5469, 8.9], 'official-m-03': [1026, 5451, 9.2],
-  'official-l-01': [1006, 6363, 10.7], 'official-l-02': [1024, 6469, 9.2], 'official-l-03': [1022, 6350, 10.9],
+  // v4.9 (§30): 노출도 균등 스폰으로 재선정 (후보 시드 2000~2059)
+  'official-s-01': [2028, 2765, 8.6], 'official-s-02': [2001, 2695, 10.9], 'official-s-03': [2059, 2692, 11.0],
+  'official-m-01': [2040, 5429, 9.5], 'official-m-02': [2029, 5485, 8.6], 'official-m-03': [2022, 5366, 10.6],
+  'official-l-01': [2036, 6478, 9.1], 'official-l-02': [2021, 6432, 9.8], 'official-l-03': [2012, 6368, 10.7],
 };
 let bad = 0;
 const ok = (n: string, c: boolean, d = '') => { if (!c) bad++; console.log(`${c ? '  ok  ' : ' FAIL '} ${n}${c ? '' : ' — ' + d}`); };
@@ -28,8 +29,8 @@ for (const f of files) {
   for (let i = 0; i < n; i++) (isClaimable(terrain[i]) ? land++ : water++);
   const [seed, dl, dw] = DOC[id];
   const wp = Math.round((water / n) * 1000) / 10;
-  ok(`${id} 문서 표(§22.1)와 일치: 시드 ${seed}, 육지 ${dl}, 물 ${dw}%`, raw.origin?.seed === seed && land === dl && Math.abs(wp - dw) < 0.06, `seed ${raw.origin?.seed} land ${land} water ${wp}%`);
-  ok(`${id} origin.generator = v4.5`, raw.origin?.generator === 'v4.5', String(raw.origin?.generator));
+  ok(`${id} 문서 표(§30.5)와 일치: 시드 ${seed}, 육지 ${dl}, 물 ${dw}%`, raw.origin?.seed === seed && land === dl && Math.abs(wp - dw) < 0.06, `seed ${raw.origin?.seed} land ${land} water ${wp}%`);
+  ok(`${id} origin.generator = v4.9`, raw.origin?.generator === 'v4.9', String(raw.origin?.generator));
   ok(`${id} 물 비율 8.5~11.5%`, wp >= 8.5 && wp <= 11.5, `${wp}`);
   const topo = new SquareTopology(raw.width, raw.height);
   const graph = new TerrainGraph(topo, terrain);
