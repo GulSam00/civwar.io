@@ -461,6 +461,8 @@ export const BOT_COUNTER_MARGIN_PERMILLE = 1200; // [A-32]
 export const BOT_BLOCK_ATTACK_RATIO_PERMILLE = 500; // [A-32]
 /** v4.7 (§29) A5: 봇은 전투 시작 후 이 tick(10초) 동안 후퇴·회수·재지정하지 않는다 (봇 전용 — 사람·시스템 규칙과 무관) [A-127] */
 export const BOT_MIN_ENGAGE_TICKS = 50;
+/** v4.8 (§29.5) A5 후속 [A-135]: 내 실효력(병력×위력)이 교전 상대 합의 이 비(‰) 미만이면 최소 교전 시간 억제를 해제한다 (봇 전용) */
+export const BOT_ENGAGE_BREAK_RATIO_PERMILLE = 200; // 1:5 (시험 100~1000 중 채택, §29.5)
 
 // ══ 봇 성향 aggression (사용자 결정 2026-10-09, 3차-2 후속) ══
 // 봇마다 aggressionPermille ∈ [0, 1000] (0 = 수비적, 1000 = 공격적) 을 (룸 시드, playerId) 정수 해시로 배정.

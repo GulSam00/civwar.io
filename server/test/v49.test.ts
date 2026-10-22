@@ -4,7 +4,7 @@
  *  - 봇 전용: 전투 시작 후 BOT_MIN_ENGAGE_TICKS(50) 동안 후퇴·회수·재지정 명령을 내지 않는다
  */
 import { describe, expect, it } from 'vitest';
-import { BOT_DIFFICULTY, BOT_MIN_ENGAGE_TICKS, DISENGAGE_TICKS, POSTURE, TERRAIN, UNIT, isClaimable, type ServerMessage } from '@civwar/shared';
+import { BOT_DIFFICULTY, BOT_ENGAGE_BREAK_RATIO_PERMILLE, BOT_MIN_ENGAGE_TICKS, DISENGAGE_TICKS, POSTURE, TERRAIN, UNIT, isClaimable, type ServerMessage } from '@civwar/shared';
 import { decideBot } from '../src/game/bot.js';
 import { generateMapForPlayers } from '../src/map/generate.js';
 import { NEUTRAL, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
@@ -139,6 +139,20 @@ describe('v4.7 A5 — 봇 최소 교전 시간 (§29)', () => {
     expect(cmdsOf()).toHaveLength(0);
     def.combatSinceTick = s.tick - BOT_MIN_ENGAGE_TICKS;
     expect(cmdsOf().map((c) => c.type)).toContain('cmd_flag_recall');
+  });
+
+  it('v4.8 (§29.5) 극단적 병력비(1:5 이하)면 50틱 안에도 회수한다 — 1:2.5 는 계속 억제', () => {
+    const cmdsOf = (s: GameState, id: number) => decideBot(s, 2, s.tick, BOT_DIFFICULTY.NORMAL).filter((c) => 'flagId' in c && c.flagId === id && c.type === 'cmd_flag_recall');
+    const mild = fight(2500, 1000);
+    mild.def.combatSinceTick = mild.s.tick - 5;
+    expect(cmdsOf(mild.s, mild.def.id)).toHaveLength(0);
+    const extreme = fight(20000, 3000); // 1:6.7
+    extreme.def.combatSinceTick = extreme.s.tick - 5;
+    expect(cmdsOf(extreme.s, extreme.def.id).length).toBeGreaterThan(0);
+  });
+
+  it('예외 임계 상수 = 1:5', () => {
+    expect(BOT_ENGAGE_BREAK_RATIO_PERMILLE).toBe(200);
   });
 
   it('상수 = 50틱(10초)', () => {

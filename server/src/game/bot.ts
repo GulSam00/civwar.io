@@ -35,6 +35,7 @@ import {
   BOT_NEUTRAL_BIAS_TICK,
   BOT_PREEMPT_FACTOR_PERMILLE,
   BOT_MIN_ENGAGE_TICKS,
+  BOT_ENGAGE_BREAK_RATIO_PERMILLE,
   BOT_RETREAT_RATIO_PERMILLE,
   BOT_STALL_SWITCH_PERMILLE,
   BOT_THREAT_LOOKAHEAD,
@@ -331,9 +332,23 @@ function issue(ctx: Ctx, unit: Unit, troops: number, anchor: number): boolean {
   ctx.slots += 1;
   return true;
 }
-/** v4.7 (§29) A5 [A-127]: 전투 시작 후 BOT_MIN_ENGAGE_TICKS 가 지나기 전엔 후퇴·회수·재지정 명령을 내지 않는다 */
+/**
+ * v4.7 (§29) A5 [A-127]: 전투 시작 후 BOT_MIN_ENGAGE_TICKS 가 지나기 전엔 후퇴·회수·재지정 명령을 내지 않는다.
+ * v4.8 (§29.5) [A-135]: 단, 내 실효력이 교전 상대 합의 BOT_ENGAGE_BREAK_RATIO_PERMILLE(‰) 미만이면 억제하지 않는다.
+ */
 function engageLocked(ctx: Ctx, f: Readonly<Flag>): boolean {
-  return f.inCombat && f.combatSinceTick !== null && ctx.t - f.combatSinceTick < BOT_MIN_ENGAGE_TICKS;
+  if (!(f.inCombat && f.combatSinceTick !== null && ctx.t - f.combatSinceTick < BOT_MIN_ENGAGE_TICKS)) return false;
+  return !extremelyOutmatched(ctx, f);
+}
+/** 교전 상대 대비 내 실효력(병력 × flagValue)이 BOT_ENGAGE_BREAK_RATIO_PERMILLE 미만인가 (maintain 후퇴 판정과 같은 눈금) */
+function extremelyOutmatched(ctx: Ctx, f: Readonly<Flag>): boolean {
+  const foes = combatFoes(ctx, f);
+  if (!foes.length) return false;
+  const group = [f, ...foes];
+  const myEff = Math.floor(f.troopsMilli / 1000) * flagValue(ctx.state, f, group);
+  let enEff = 0;
+  for (const g of foes) enEff += Math.floor(g.troopsMilli / 1000) * flagValue(ctx.state, g, group);
+  return myEff * 1000 < enEff * BOT_ENGAGE_BREAK_RATIO_PERMILLE;
 }
 /** 재지정 — 도착지가 내 땅(= 방어 태세)인데 지금 위치에서 적 땅 없이 못 가면 내지 않는다 (v4.5). 냈으면 true */
 function retarget(ctx: Ctx, f: Readonly<Flag>, anchor: number): boolean {
