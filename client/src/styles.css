@@ -536,114 +536,7 @@ kbd {
 .terrain-tip .tt-baseHp .tt-v {
   color: var(--warn);
 }
-/* 출전 삼각(라디얼) 메뉴 — 확정 지점 화면 좌표에 붙는다 (위치는 렌더 루프가 transform 으로) */
-.radial-anchor {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-  display: none;
-  z-index: 5;
-}
-.radial {
-  --rc: var(--muted);
-  position: absolute;
-  left: 0;
-  top: 0;
-}
-.radial-attack {
-  --rc: var(--atk);
-}
-.radial-defend {
-  --rc: var(--def);
-}
-.radial-center {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform: translate(-50%, -50%);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 3px solid var(--rc);
-  background: rgba(10, 14, 20, 0.6);
-  pointer-events: none;
-}
-.radial-center b,
-.radial-center small {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  text-shadow: 0 1px 2px #000;
-}
-.radial-center b {
-  top: 74px;
-  font-size: 12px;
-  color: var(--text);
-  background: rgba(10, 14, 20, 0.88);
-  border: 1px solid var(--rc);
-  border-radius: 4px;
-  padding: 1px 6px;
-}
-.radial-center small {
-  top: 96px;
-  font-size: 11px;
-  color: var(--text);
-  background: rgba(10, 14, 20, 0.8);
-  border-radius: 4px;
-  padding: 0 5px;
-}
-.radial-btn {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 64px;
-  height: 52px;
-  margin: -26px 0 0 -32px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  border: 2px solid var(--rc);
-  border-radius: 10px;
-  background: rgba(18, 26, 36, 0.95);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-}
-.radial-btn:hover,
-.radial-btn:focus-visible {
-  background: var(--rc);
-  outline: none;
-}
-.radial-btn kbd {
-  font-size: 10px;
-  line-height: 1;
-}
-.radial-btn small {
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.radial-btn:hover small {
-  color: var(--text);
-}
-/* 삼각형 꼭짓점: 위 = 창병, 왼쪽 아래 = 검병, 오른쪽 아래 = 기병 */
-.radial-u0 {
-  transform: translate(0, -58px);
-}
-.radial-u1 {
-  transform: translate(-52px, 32px);
-}
-.radial-u2 {
-  transform: translate(52px, 32px);
-}
-/* ───── 우클릭 원형 메뉴 (2026-10-18, ui/ContextRadial.tsx) — 칸 중심에 붙는다 (위치·배율은 렌더 루프) ───── */
+/* ───── 병종 고리 (2026-10-22, ui/UnitRing.tsx) — 출전 지점 칸 중심에 붙는다 (위치·배율은 렌더 루프) ───── */
 .ctx-anchor {
   position: absolute;
   left: 0;
@@ -679,13 +572,6 @@ kbd {
   border: 54px solid rgba(10, 14, 20, 0.5);
   pointer-events: none;
 }
-.ctx-ring-out {
-  width: 364px;
-  height: 364px;
-  margin: -182px 0 0 -182px;
-  border-width: 70px;
-  border-color: rgba(10, 14, 20, 0.4);
-}
 /* 원래 칸 (메뉴가 가장자리에서 안쪽으로 당겨졌을 때 칸을 가리킨다) */
 .ctx-pin {
   position: absolute;
@@ -716,11 +602,7 @@ kbd {
   border: 1px solid var(--line);
   pointer-events: none;
 }
-.has-sub .ctx-owner {
-  top: -202px;
-}
 .ctx-center,
-.ctx-seg,
 .ctx-out {
   position: absolute;
   left: 0;
@@ -749,15 +631,6 @@ kbd {
 .ctx-center .hud-icon {
   color: var(--rc);
 }
-.ctx-seg {
-  width: 62px;
-  height: 50px;
-  margin: -25px 0 0 -31px;
-  border: 2px solid var(--line);
-  border-radius: 12px;
-  background: rgba(18, 26, 36, 0.95);
-  font-size: 12px;
-}
 .ctx-label {
   line-height: 1.1;
   white-space: nowrap;
@@ -782,30 +655,9 @@ kbd {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.ctx-emote {
-  --rc: var(--line);
-  width: 92px;
-  height: 30px;
-  margin: -15px 0 0 -46px;
-  border-radius: 15px;
-  font-size: 12px;
-  white-space: nowrap;
+.ctx-center {
+  cursor: default;
 }
-.ctx-center:hover,
-.ctx-center:focus-visible,
-.ctx-center.on {
-  background: var(--rc);
-  outline: none;
-}
-.ctx-center:hover .posture-icon,
-.ctx-center:hover .hud-icon,
-.ctx-center.on .posture-icon,
-.ctx-center.on .hud-icon {
-  color: #fff;
-}
-.ctx-seg:hover,
-.ctx-seg:focus-visible,
-.ctx-seg.on,
 .ctx-out:hover,
 .ctx-out:focus-visible {
   background: var(--panel-2);
@@ -837,12 +689,8 @@ kbd {
 .ctx-radial .is-disabled .hud-icon {
   color: var(--muted);
 }
-.has-sub .ctx-seg:not(.on):not(:hover) {
-  opacity: 0.7;
-}
 /* 툴팁·지형 상자 = 지형 정보 툴팁(.terrain-tip)과 같은 모양 */
-.ctx-tip,
-.ctx-terrain {
+.ctx-tip {
   position: absolute;
   z-index: 2;
   pointer-events: none;
@@ -865,8 +713,7 @@ kbd {
 .ctx-tip.side-left {
   transform: translate(-100%, -50%);
 }
-.ctx-tip .tt-terrain,
-.ctx-terrain .tt-terrain {
+.ctx-tip .tt-terrain {
   padding-bottom: 2px;
   margin-bottom: 1px;
   border-bottom: 1px solid var(--line);
@@ -877,26 +724,6 @@ kbd {
 }
 .ctx-tip-reason {
   color: var(--warn);
-}
-.ctx-terrain {
-  left: 0;
-  top: 0;
-}
-.ctx-terrain .tt-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  white-space: nowrap;
-}
-.ctx-terrain .tt-k {
-  color: var(--muted);
-}
-.ctx-terrain .tt-v {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-variant-numeric: tabular-nums;
 }
 .cursor-tip[data-kind='attack'] {
   border-left-color: var(--atk);

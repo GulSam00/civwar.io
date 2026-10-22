@@ -28,8 +28,8 @@ import { ClockIcon, EmoteIcon, FullscreenIcon, HelpIcon, LeaveIcon } from './hud
 import { TechWindow } from './TechWindow.js';
 import { purchasableCount } from './techTree.js';
 import { Help } from './Help.js';
-import { ContextRadial } from './ContextRadial.js';
-import { clampRingCenter, ctxExtent, ctxScale } from '../input/contextMenu.js';
+import { UnitRing } from './UnitRing.js';
+import { RING_EXTENT, clampRingCenter, ringScale } from '../input/unitRing.js';
 
 /** 좁은 화면(모바일) = 관전·간단 보기 (PC 우선 결정) */
 function useNarrow(): boolean {
@@ -70,7 +70,6 @@ export function GameScreen({ store }: { store: ClientStore }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
-  const radialRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<HTMLDivElement>(null);
   const terrainRef = useRef<HTMLDivElement>(null);
   const flagActRef = useRef<HTMLDivElement>(null);
@@ -119,7 +118,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       let preview: CursorPreview | null = null;
       const canCmd = controller.canCommand();
       if (!canCmd && ix.issue) controller.cancelIssue();
-      // 예고 대상 칸: 삼각 메뉴 = 확정 지점, 기지→커서 화살표 = 커서, 내 깃발 선택 = 커서(우클릭 재지정)
+      // 예고 대상 칸: 병종 고리 = 확정 지점, 기지→커서 화살표 = 커서, 내 깃발 선택 = 커서(우클릭 재지정)
       const pv = ix.issue?.phase === 'pick' ? ix.issue.anchor : ix.issue?.phase === 'aim' || controller.myFlag(ix.selectedFlagId) ? ix.hoverTile : -1;
       if (game && me !== null && renderer.topo && canCmd && pv >= 0) {
         // §27.3: 쿨타임 중인 내 깃발의 우클릭 이동 예고는 붙들린(현재) 태세 — 도착지 기본 태세가 아니다
@@ -152,8 +151,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       );
       if (miniRef.current) renderer.drawMinimap(miniRef.current, game, store.viewerId);
       updateTooltip(tipRef.current, preview, ix, controller, route);
-      positionRadial(radialRef.current, controller);
-      positionContext(ctxRef.current, controller);
+      positionRing(ctxRef.current, controller);
       positionFlagActions(flagActRef.current, controller, narrowRef.current);
       updateTerrainTip(terrainRef.current, game, ix, store, narrowRef.current);
       updateTargetBar(targetRef.current, game, ix, store, narrowRef.current, now);
@@ -194,11 +192,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
           if (ctl && id > 0) openCard(ctl, id);
         }}
       />
-      <div ref={radialRef} className="radial-anchor">
-        {ctl && <IssueRadial store={store} ctl={ctl} />}
-      </div>
       <div ref={ctxRef} className="ctx-anchor">
-        {ctl && <ContextRadial store={store} ctl={ctl} />}
+        {ctl && <UnitRing store={store} ctl={ctl} />}
       </div>
       <div ref={flagActRef} className="flag-actions-anchor">
         {ctl && !narrow && <FlagActions store={store} ctl={ctl} />}
@@ -238,7 +233,7 @@ function HelpLayer({ ctl }: { ctl: GameInputController }) {
 
 /**
  * 지형 정보 툴팁 — 맵 캔버스 위 칸에서만(HUD·패널 위 제외), 커서 왼쪽 위에 둔다(출전 안내 툴팁은 오른쪽 아래).
- * 삼각 메뉴가 떠 있는 동안은 숨긴다(메뉴·경로를 가리지 않게).
+ * 병종 고리가 떠 있는 동안은 숨긴다(고리·경로를 가리지 않게).
  */
 function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix: Interaction, store: ClientStore, narrow: boolean): void {
   if (!el) return;
@@ -246,7 +241,7 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix:
     if (el.style.display !== 'none') el.style.display = 'none';
     el.dataset.key = '';
   };
-  if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick' || ix.ctx) return hide();
+  if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
   const viewer = store.viewerId;
   const t = ix.hoverTile;
   const b = game.bases.get(t);
@@ -465,37 +460,22 @@ export function baseExtraOf(g: GameModel, tickFloat: number): (tile: number) => 
   };
 }
 
-/** 삼각 메뉴를 확정 지점 화면 위치로 (카메라 이동을 매 프레임 따라감) */
-function positionRadial(el: HTMLDivElement | null, ctl: GameInputController): void {
-  if (!el) return;
-  const is = ctl.ix.issue;
-  // 원형 메뉴에서 연 병종 고리(via ctx)는 원형 메뉴가 그린다 — 삼각 메뉴 자리는 비운다
-  const p = is?.phase === 'pick' && is.via === 'ctx' ? null : ctl.pickScreenPos();
-  if (!p) {
-    if (el.style.display !== 'none') el.style.display = 'none';
-    return;
-  }
-  el.style.display = 'block';
-  el.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
-}
-
 /**
- * 우클릭 원형 메뉴를 칸 중심 화면 위치로 (카메라를 매 프레임 따라감). 가장자리에서는 고리 전체가 보이게 안쪽으로 당기고,
+ * 병종 고리를 출전 지점 칸 중심 화면 위치로 (카메라를 매 프레임 따라감). 가장자리에서는 고리 전체가 보이게 안쪽으로 당기고,
  * 원래 칸은 핀(--pin-x/y)으로 가리킨다. 작은 창은 배율(--ctx-scale)을 줄인다. data-side = 툴팁을 펼 쪽.
  */
-function positionContext(el: HTMLDivElement | null, ctl: GameInputController): void {
+function positionRing(el: HTMLDivElement | null, ctl: GameInputController): void {
   if (!el) return;
-  const c = ctl.ix.ctx;
-  const p = c ? ctl.ctxScreenPos() : null;
+  const p = ctl.pickScreenPos();
   const parent = el.parentElement;
-  if (!c || !p || !parent) {
+  if (!p || !parent) {
     if (el.style.display !== 'none') el.style.display = 'none';
     return;
   }
   const W = parent.clientWidth;
   const H = parent.clientHeight;
-  const s = ctxScale(W, H);
-  const q = clampRingCenter(p.x, p.y, W, H, ctxExtent(c.sub) * s, 6, 48); // 48 = 위쪽 HUD 줄
+  const s = ringScale(W, H);
+  const q = clampRingCenter(p.x, p.y, W, H, RING_EXTENT * s, 6, 48); // 48 = 위쪽 HUD 줄
   el.style.display = 'block';
   el.style.setProperty('--ctx-scale', s.toFixed(3));
   el.style.setProperty('--pin-x', `${((p.x - q.x) / s).toFixed(1)}px`);
@@ -506,7 +486,7 @@ function positionContext(el: HTMLDivElement | null, ctl: GameInputController): v
 
 /**
  * 선택한 내 부대 옆 [귀환]/[태세 변경] 버튼 — 깃발 보간 위치를 매 프레임 따라간다 (2026-10-14).
- * 내 깃발이 아니거나 명령할 수 없거나 좁은 화면이면 숨긴다. 삼각 메뉴가 떠 있으면 겹치지 않게 숨긴다.
+ * 내 깃발이 아니거나 명령할 수 없거나 좁은 화면이면 숨긴다. 병종 고리가 떠 있으면 겹치지 않게 숨긴다.
  */
 function positionFlagActions(el: HTMLDivElement | null, ctl: GameInputController, narrow: boolean): void {
   if (!el) return;
@@ -539,11 +519,11 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
   let text: string | null = null;
   let kind = p?.kind ?? 'info';
   const g = ix.hoverTile;
-  if (ix.issue?.phase === 'pick' || ix.ctx) text = null; // 삼각 메뉴·원형 메뉴가 안내한다
+  if (ix.issue?.phase === 'pick') text = null; // 병종 고리가 안내한다
   else if (ix.issue?.phase === 'aim') {
     if (g === ix.issue.base) {
-      text = '같은 기지 다시 클릭 = 취소';
-      kind = 'info';
+      text = '클릭 = 이 기지에 수비 배치 (병종 선택) · 우클릭·Esc = 취소';
+      kind = 'defend';
     } else if (p) text = `클릭 = 병종 선택 · ${p.label}${routeText(route, p.kind)}`;
   } else if (ctl.canCommand() && g >= 0) {
     const myFlag = ctl.myFlag(ix.selectedFlagId);
@@ -576,40 +556,6 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
   const x = flipX ? ix.hoverX - 12 - el.offsetWidth : ix.hoverX + 16;
   const y = flipY ? ix.hoverY - 12 - el.offsetHeight : ix.hoverY + 18;
   el.style.transform = `translate(${Math.max(4, x)}px, ${Math.max(4, y)}px)`;
-}
-
-/**
- * 삼각(라디얼) 병종 메뉴 — 확정 지점 둘레에 창(위)·검(왼쪽 아래)·기(오른쪽 아래).
- * 색 = 기본 태세 예고(내 땅 = 방어 푸름, 적·중립 = 공격 붉음, 불가 = 회색). 고르면 cmd_flag_issue.
- */
-function IssueRadial({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
-  usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
-  const is = ctl.ix.issue;
-  if (!is || is.phase !== 'pick' || is.via === 'ctx') return null;
-  const route = ctl.currentRoute();
-  const postureLabel = is.posture === 'defend' ? '방어 태세' : is.posture === 'attack' ? '공격 태세' : '지정 불가?';
-  return (
-    <div className={`radial radial-${is.posture}`} role="menu" aria-label={`병종 선택 · ${postureLabel}`} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => (e.preventDefault(), ctl.cancelIssue())}>
-      <div className="radial-center">
-        <b>{postureLabel}</b>
-        <small>{routeText(route, is.posture).replace(/^ · /, '') || ' '}</small>
-      </div>
-      {([0, 1, 2] as Unit[]).map((u) => (
-        <button
-          key={u}
-          role="menuitem"
-          className={`radial-btn radial-u${u}`}
-          onClick={() => ctl.chooseUnit(u)}
-          title={`${UNIT_NAME[u]} · 단축키 ${u + 1}`}
-          aria-label={`${UNIT_NAME[u]} ${ctl.troopsToSend(u)}명 · 단축키 ${u + 1}`}
-        >
-          <kbd>{u + 1}</kbd>
-          <UnitIcon unit={u} size={22} />
-          <small>{ctl.troopsToSend(u)}</small>
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputController; narrow: boolean }) {
@@ -824,7 +770,7 @@ function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: S
 
 /**
  * 하단 바 — 병력 비율 파라미터 + 골드 수지(사용자 요청 2026-10-10: 깃발 유지비로 초당 얼마가 나가는지, 순수입).
- * 병종은 삼각 메뉴에서 고른다(v4.2 출전 UI). 유지비는 서버 upkeepPm 으로 계산(upkeep.ts), 다음 깃발 미리보기는
+ * 병종은 병종 고리에서 고른다(우클릭 · 기지 조준). 유지비는 서버 upkeepPm 으로 계산(upkeep.ts), 다음 깃발 미리보기는
  * 서버 값과 식이 맞을 때만 보인다.
  */
 function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {

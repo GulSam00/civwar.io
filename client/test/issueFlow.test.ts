@@ -1,7 +1,8 @@
 /**
- * v4.2 출전 UI 입력 상태기계 (design-decisions「GDD v4.2 2차 검토 결정」 깃발 출전 UI 변경).
- *  지점 클릭 → 최근접 기지 하이라이트 → 삼각 메뉴 → 발령 / 기지 클릭 → 화살표 → 지점 → 삼각 메뉴 → 발령
- *  취소(바깥 클릭·우클릭·Esc) / 선택 깃발 + 내 기지 클릭 → 그 기지로 귀환(cmd_flag_recall.baseTileId)
+ * 출전 UI 입력 상태기계 (2026-10-22 조작 변경 반영).
+ *  우클릭(내 부대 선택 없음) → 최근접 기지 하이라이트 + 병종 고리 → 발령 / 내 기지 클릭 → 화살표 → 지점 → 병종 고리 → 발령
+ *  화살표 중 그 기지 자신 클릭 = 그 기지에 수비 배치(병종 고리, 방어)
+ *  취소(바깥 클릭·다시 우클릭·Esc) / 좌클릭 = 소유자 정보 카드 (unitRing.test 가 고리 규칙·카드 우선순위를 따로 검증)
  * 소켓 없이 store 의 송신만 가로채 실제 와이어 shape 을 확인한다. 화면 좌표 → 타일은 테스트에서 항등으로 바꾼다.
  */
 import { describe, expect, it } from 'vitest';
@@ -112,16 +113,16 @@ describe('진격 경로 (서버 가중 경로 복제)', () => {
 });
 
 describe('출전 UI 상태기계', () => {
-  it('지점 클릭 → 최근접 기지 하이라이트 + 삼각 메뉴 → 병종 선택 = cmd_flag_issue(originBaseTileId = 그 기지)', () => {
+  it('지점 우클릭 → 최근접 기지 하이라이트 + 병종 고리 → 병종 선택 = cmd_flag_issue(originBaseTileId = 그 기지)', () => {
     const { ctl, ix, cmds } = setup();
-    ctl.click(id(4, 6), 0); // 아래쪽 중립 → B 가 더 가깝다
+    expect(ctl.rightClickTile(id(4, 6))).toBe('ring'); // 아래쪽 중립 → B 가 더 가깝다
     expect(ix.issue).toEqual({ phase: 'pick', base: BASE_B, anchor: id(4, 6), posture: 'attack' });
     const route = ctl.currentRoute()!;
     expect(route.path[0]).toBe(BASE_B);
     expect(route.path.at(-1)).toBe(id(4, 6));
     expect(route.reachable).toBe(true);
     expect(route.corridor.length).toBeGreaterThan(0); // 공격: 경로 옆 중립 칸 음영
-    expect(cmds()).toHaveLength(0); // 메뉴만 떴다
+    expect(cmds()).toHaveLength(0); // 고리만 떴다
     ctl.chooseUnit(2);
     expect(cmds()).toHaveLength(1);
     expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', unit: 2, anchorTileId: id(4, 6), originBaseTileId: BASE_B });
@@ -129,28 +130,29 @@ describe('출전 UI 상태기계', () => {
     expect(ix.issue).toBeNull();
   });
 
-  it('위쪽 지점은 기지 A, 내 땅 클릭은 방어 태세 예고 (경로 회랑 없음)', () => {
+  it('위쪽 지점은 기지 A, 내 땅 우클릭은 방어 태세 예고 (경로 회랑 없음)', () => {
     const { ctl, ix } = setup();
-    ctl.click(id(0, 5), 0);
+    ctl.rightClickTile(id(0, 5));
     expect(ix.issue).toMatchObject({ phase: 'pick', base: BASE_A, posture: 'attack' });
-    ctl.click(id(0, 0), 0); // 바깥 클릭 = 취소
+    ctl.click(id(0, 0), 0); // 바깥(맵) 클릭 = 취소 — 그 클릭은 카드를 열지 않는다
     expect(ix.issue).toBeNull();
-    ctl.click(id(3, 2), 0); // 내 땅
+    expect(ix.cardPlayerId).toBeNull();
+    ctl.rightClickTile(id(3, 2)); // 내 땅
     expect(ix.issue).toMatchObject({ phase: 'pick', posture: 'defend' });
     expect(ctl.currentRoute()!.corridor).toHaveLength(0);
   });
 
-  it('삼각 메뉴가 떠 있을 때 1/2/3 키로 병종 선택, 메뉴 없으면 숫자키는 아무 일도 안 함', () => {
+  it('병종 고리가 떠 있을 때 1/2/3 키로 병종 선택, 메뉴 없으면 숫자키는 아무 일도 안 함', () => {
     const { ctl, ix, cmds } = setup();
     key(ctl, '1');
     expect(cmds()).toHaveLength(0);
     expect(ix.issue).toBeNull();
-    ctl.click(id(2, 5), 0);
+    ctl.rightClickTile(id(2, 5));
     key(ctl, '2');
     expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', unit: 1 });
   });
 
-  it('기지 클릭 → 화살표(aim, 커서 따라감) → 지점 클릭 → 삼각 메뉴 → 그 기지에서 발령', () => {
+  it('기지 클릭 → 화살표(aim, 커서 따라감) → 지점 클릭 → 병종 고리 → 그 기지에서 발령', () => {
     const { ctl, ix, cmds } = setup();
     ctl.click(BASE_A, 0);
     expect(ix.issue).toEqual({ phase: 'aim', base: BASE_A });
@@ -166,17 +168,26 @@ describe('출전 UI 상태기계', () => {
     expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', unit: 0, anchorTileId: id(5, 7), originBaseTileId: BASE_A });
   });
 
-  it('취소: aim 중 같은 기지 재클릭 · 우클릭 · Esc, Alt+다른 내 기지 = 출발 기지 변경', () => {
+  it('수비 배치: 기지 클릭 → 조준 중 그 기지 자신 재클릭 → 방어 고리 → 그 기지로 발령 (앵커 = 출발 = 그 기지)', () => {
     const { ctl, ix, cmds } = setup();
-    ctl.click(BASE_A, 0);
-    ctl.click(BASE_A, 0);
+    ctl.click(BASE_B, 0);
+    expect(ix.issue).toEqual({ phase: 'aim', base: BASE_B });
+    ctl.click(BASE_B, 0);
+    expect(ix.issue).toEqual({ phase: 'pick', base: BASE_B, anchor: BASE_B, posture: 'defend' });
+    expect(ctl.ringModel()).toMatchObject({ kind: 'defend', label: '방어', base: BASE_B });
+    ctl.chooseUnit(1);
+    expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', unit: 1, anchorTileId: BASE_B, originBaseTileId: BASE_B });
     expect(ix.issue).toBeNull();
+  });
+
+  it('취소: aim 중 우클릭 · Esc, 고리 중 바깥 클릭, Alt+다른 내 기지 = 출발 기지 변경', () => {
+    const { ctl, ix, cmds } = setup();
     ctl.click(BASE_A, 0);
     ctl.click(BASE_B, 0, true);
     expect(ix.issue).toEqual({ phase: 'aim', base: BASE_B });
     (ctl as unknown as { onContextMenu(e: Partial<MouseEvent>): void }).onContextMenu({ preventDefault() {} });
     expect(ix.issue).toBeNull();
-    ctl.click(id(2, 5), 0);
+    ctl.rightClickTile(id(2, 5));
     key(ctl, 'Escape');
     expect(ix.issue).toBeNull();
     expect(cmds()).toHaveLength(0);
@@ -202,13 +213,13 @@ describe('출전 UI 상태기계', () => {
     ctl.click(BASE_B, 0); // 내 기지 좌클릭
     expect(cmds()).toHaveLength(0);
     expect(ix.selectedFlagId).toBeNull();
-    expect(ix.issue).toBeNull(); // 출전도 아님
+    expect(ix.issue).toBeNull(); // 출전도 아님 (깃발 선택 중이라 조준도 시작하지 않는다)
     ix.selectedFlagId = 7;
     ctl.click(ENEMY_BASE, 0); // 적 기지 좌클릭
     expect(cmds()).toHaveLength(0);
     expect(ix.selectedFlagId).toBeNull();
     ix.selectedFlagId = 7;
-    ctl.click(id(0, 6), 0); // 빈 땅 = 선택 해제만 (출전 메뉴 안 뜸)
+    ctl.click(id(0, 6), 0); // 빈 땅 = 선택 해제만 (출전 고리 안 뜸)
     expect(ix.selectedFlagId).toBeNull();
     expect(ix.issue).toBeNull();
     // R = 자동 귀환지 회수 (baseTileId 없음)
@@ -236,20 +247,20 @@ describe('출전 UI 상태기계', () => {
     expect(moves).toEqual([[7, BASE_B], [7, ENEMY_BASE], [7, id(0, 5)], [7, id(3, 2)]]);
     // 선택 유지 (연속 지시 가능)
     expect(ix.selectedFlagId).toBe(7);
-    // 남의 깃발 선택 · 선택 없음 = 명령 없이 원형 메뉴 (2026-10-18, contextRadial.test) · 맵 밖 = 아무것도 없음
+    // 남의 깃발 선택 · 선택 없음 = 명령 없이 병종 고리 (2026-10-22) · 맵 밖 = 아무것도 없음
     const n = cmds().length;
     ix.selectedFlagId = 8;
-    expect(ctl.rightClickTile(id(2, 5))).toBe('menu');
-    ctl.closeContextMenu();
+    expect(ctl.rightClickTile(id(2, 5))).toBe('ring');
+    ctl.cancelIssue();
     ix.selectedFlagId = null;
-    expect(ctl.rightClickTile(id(2, 5))).toBe('menu');
-    ctl.closeContextMenu();
+    expect(ctl.rightClickTile(id(2, 5))).toBe('ring');
+    ctl.cancelIssue();
     ix.selectedFlagId = 7;
     expect(ctl.rightClickTile(-1)).toBeNull();
     expect(cmds()).toHaveLength(n);
-    // 출전 메뉴가 떠 있으면 우클릭 = 출전 취소 (이동 아님)
+    // 병종 고리가 떠 있으면 우클릭 = 출전 취소 (이동 아님)
     ix.selectedFlagId = null;
-    ctl.click(id(2, 5), 0);
+    ctl.rightClickTile(id(2, 5));
     expect(ix.issue).not.toBeNull();
     ix.selectedFlagId = 7;
     expect(ctl.rightClickTile(id(2, 5))).toBeNull();
@@ -266,9 +277,9 @@ describe('출전 UI 상태기계', () => {
     expect(cmds()).toHaveLength(0);
   });
 
-  it('내 부대 칩 클릭(focusFlag) = 선택 + 카메라를 그 부대로, 출전 메뉴는 닫는다', () => {
+  it('내 부대 칩 클릭(focusFlag) = 선택 + 카메라를 그 부대로, 병종 고리는 닫는다', () => {
     const { ctl, ix } = setup([flag({ id: 7, posTileId: id(4, 5) })]);
-    ctl.click(id(2, 5), 0);
+    ctl.rightClickTile(id(2, 5));
     expect(ix.issue).not.toBeNull();
     ctl.focusFlag(7);
     expect(ix.selectedFlagId).toBe(7);
@@ -279,10 +290,10 @@ describe('출전 UI 상태기계', () => {
     expect(ix.selectedFlagId).toBe(7);
   });
 
-  it('관전·탈락이면 출전 메뉴를 열지 않는다', () => {
+  it('관전·탈락이면 병종 고리를 열지 않는다', () => {
     const { store, ctl, ix } = setup();
     store.game!.players.get(1)!.alive = false;
-    ctl.click(id(2, 5), 0);
+    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
     expect(ix.issue).toBeNull();
   });
 
@@ -291,7 +302,7 @@ describe('출전 UI 상태기계', () => {
     store.onMessage({ type: 'game_over', finalTick: 30, winnerId: 2, reason: 'threshold', standings: [] });
     expect(store.game!.gameOver).not.toBeNull();
     expect(ctl.canCommand()).toBe(false);
-    ctl.click(id(2, 5), 0);
+    expect(ctl.rightClickTile(id(2, 5))).toBeNull();
     expect(ix.issue).toBeNull();
     ctl.click(BASE_A, 0);
     expect(ix.issue).toBeNull();
