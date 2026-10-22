@@ -34,6 +34,7 @@ import {
   BOT_INTERCEPT_RATIO_PERMILLE,
   BOT_NEUTRAL_BIAS_TICK,
   BOT_PREEMPT_FACTOR_PERMILLE,
+  BOT_MIN_ENGAGE_TICKS,
   BOT_RETREAT_RATIO_PERMILLE,
   BOT_STALL_SWITCH_PERMILLE,
   BOT_THREAT_LOOKAHEAD,
@@ -330,8 +331,13 @@ function issue(ctx: Ctx, unit: Unit, troops: number, anchor: number): boolean {
   ctx.slots += 1;
   return true;
 }
+/** v4.7 (§29) A5 [A-127]: 전투 시작 후 BOT_MIN_ENGAGE_TICKS 가 지나기 전엔 후퇴·회수·재지정 명령을 내지 않는다 */
+function engageLocked(ctx: Ctx, f: Readonly<Flag>): boolean {
+  return f.inCombat && f.combatSinceTick !== null && ctx.t - f.combatSinceTick < BOT_MIN_ENGAGE_TICKS;
+}
 /** 재지정 — 도착지가 내 땅(= 방어 태세)인데 지금 위치에서 적 땅 없이 못 가면 내지 않는다 (v4.5). 냈으면 true */
 function retarget(ctx: Ctx, f: Readonly<Flag>, anchor: number): boolean {
+  if (engageLocked(ctx, f)) return false;
   if (ctx.state.owners[anchor] === ctx.me && !defendReachable(ctx.state, ctx.me, f.posTileId, anchor)) return false;
   // v4.6 (§27): 도착지 기본 태세가 지금 태세와 다른데 태세 쿨타임 중이면 서버는 태세를 못 바꾼 채 이동만 한다 — 봇은 쿨타임이 끝날 때까지 미룬다
   const def = ctx.state.owners[anchor] === ctx.me ? POSTURE.DEFEND : POSTURE.ATTACK;
@@ -342,6 +348,7 @@ function retarget(ctx: Ctx, f: Readonly<Flag>, anchor: number): boolean {
 }
 /** v4.2 8.7 3b: 봇 회수는 항상 가장 가까운 내 기지를 지정한다 (없으면 자동) */
 function recall(ctx: Ctx, f: Readonly<Flag>): void {
+  if (engageLocked(ctx, f)) return;
   push(ctx, { type: 'cmd_flag_recall', clientSeq: seq(ctx), flagId: f.id, baseTileId: nearestBase(ctx, f.posTileId) });
   ctx.touched.add(f.id);
 }

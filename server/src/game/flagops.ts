@@ -267,8 +267,11 @@ export function recallFlag(state: GameState, playerId: number, msg: C2S_CmdFlagR
     if (!validTile(state, base) || !state.map.isBase[base]) return { reason: 'NOT_BASE' };
     if (state.owners[base] !== playerId) return { reason: 'NOT_OWNED_BASE' };
   }
+  const wasInCombat = f.inCombat;
   startDisengageIfInCombat(state, f, t, out);
   beginReturn(state, f, base);
+  // v4.7 (§29) A3 [A-128]: 교전 중 회수도 이탈 대기(3초, ×0.5) 동안 접촉 간선을 유지한다 — 상대가 방어 태세여도 공짜로 끊기지 않는다
+  if (wasInCombat) f.disengageHold = true;
   out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
   return { flagId: f.id, posture: f.posture };
 }
