@@ -9,7 +9,7 @@
  *   loss(s)  = floor(T * raw(s) / Σraw)       — T = 편 수 * L (총량 불변)
  */
 import { BASE_BUFF, CHANNEL_COUNT, COMBAT_VMIN, DISENGAGE_VALUE_PERMILLE_V2, MORALE_FLOOR, MORALE_FULL, MORALE_MAX, MORALE_MULT_CAP, POSTURE_W, TERRAIN_BUFF, UNIT_STAT } from './constants.js';
-import { techChannelPm, techMoraleFullBonus } from './tech.js';
+import { TECH_POINT_PERMILLE, techChannelPts, techMoraleFullBonus } from './tech.js';
 
 /** 깃발 한 개의 전투 입력 (서버 Flag / 클라이언트 FlagSnapshot 에서 만든다) */
 export interface CombatFlagInput {
@@ -40,8 +40,9 @@ export function channelValues(f: CombatFlagInput): number[] {
   const mm = moraleMultiplier(f.unit, f.morale, f.statPm);
   for (let c = 0; c < CHANNEL_COUNT; c++) {
     const b = f.onOwnBase ? BASE_BUFF[f.posture][c] : TERRAIN_BUFF[f.terrain][f.posture][c];
-    let x = Math.floor((UNIT_STAT[c][f.unit] * b) / 1000);
-    if (stat) x = Math.floor((x * techChannelPm(stat, f.unit, c)) / 1000);
+    // 2026-10-24: 테크는 병종 기본에 점수를 **더한 뒤** 지형·기지 배율을 곱한다 (절대값 전환)
+    const unitBase = UNIT_STAT[c][f.unit] + (stat ? TECH_POINT_PERMILLE * techChannelPts(stat, f.unit, c) : 0);
+    let x = Math.floor((unitBase * b) / 1000);
     x = Math.floor((x * mm) / 1000);
     if (f.disengage) x = Math.floor((x * DISENGAGE_VALUE_PERMILLE_V2) / 1000);
     out[c] = Math.max(1, x);

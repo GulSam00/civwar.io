@@ -67,20 +67,20 @@ describe('Simulation', () => {
   it('테크 구매 (v4.3): 수락·선행 미보유·이미 보유·골드 부족', () => {
     const sim = makeSim();
     sim.state.players[1].goldMilli = 100_000; // 100 골드 < 160
-    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 1, nodeId: 16 }); // MOB-2A (부모 MOB-1 없음)
-    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 2, nodeId: 5 }); // ECO-1 — 골드 부족
+    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 1, nodeId: 19 }); // MOB-2A (부모 MOB-1 없음)
+    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 2, nodeId: 6 }); // ECO-1 — 골드 부족
     let out = sim.step();
     const acks = out.personal.map((p) => p.msg);
     expect(acks).toContainEqual({ type: 'cmd_ack', clientSeq: 1, accepted: false, reason: 'PREREQ_MISSING' });
     expect(acks).toContainEqual({ type: 'cmd_ack', clientSeq: 2, accepted: false, reason: 'INSUFFICIENT' });
     sim.state.players[1].goldMilli = 1_000_000;
-    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 3, nodeId: 5 });
-    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 4, nodeId: 5 });
+    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 3, nodeId: 6 });
+    sim.enqueue(1, 1, { type: 'cmd_buy_tech', clientSeq: 4, nodeId: 6 });
     out = sim.step();
     expect(out.personal.map((p) => p.msg)).toContainEqual({ type: 'cmd_ack', clientSeq: 3, accepted: true });
     expect(out.personal.map((p) => p.msg)).toContainEqual({ type: 'cmd_ack', clientSeq: 4, accepted: false, reason: 'ALREADY_OWNED' });
-    expect(out.broadcast.find((m) => m.type === 'tech_purchased')).toMatchObject({ playerId: 1, nodeId: 5, cost: 160, techMask: 1 << 5 });
-    expect(sim.state.players[1].techMask).toBe(1 << 5);
+    expect(out.broadcast.find((m) => m.type === 'tech_purchased')).toMatchObject({ playerId: 1, nodeId: 6, cost: 160, techMask: 2 ** 6 });
+    expect(sim.state.players[1].techMask).toBe(2 ** 6);
     expect(sim.state.players[1].goldMilli).toBeLessThan(1_000_000 - 160_000 + 10_000);
   });
 

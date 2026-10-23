@@ -1,5 +1,5 @@
 /**
- * 테크 노드 아이콘 32종 (01b 2.3 "아이콘" 열 · 5.1 아이콘 스타일 가이드 [A-81]).
+ * 테크 노드 아이콘 42종 (2026-10-24 개편, 원본 01b 2.3 "아이콘" 열 · 5.1 아이콘 스타일 가이드 [A-81]).
  * 인라인 SVG, viewBox 0 0 24 24, 선 굵기 2, 둥근 끝·모서리, stroke="currentColor", 면 채움 없음, 글자·숫자 없음.
  * 아이콘 자체는 한 색 — 갈래 색은 노드 테두리·보유 채움에만 쓴다(TechWindow).
  * 병종 갈래(창·검·기)의 미니 기호와 갈래 머리글은 render/unitGlyphs.ts 의 병종 아이콘(UnitIcon)을 재사용한다.
@@ -13,7 +13,8 @@ const circ = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}a${r} ${r} 
 /** (cx, cy) 반지름 rx·ry 타원 */
 const ell = (cx: number, cy: number, rx: number, ry: number) => `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`;
 
-export const TECH_ICON_PATHS: readonly (readonly string[])[] = [
+/** 2026-10-24 개편 전(32노드) id 순서 그림. 새 id 로 다시 짠 표는 TECH_ICON_PATHS */
+const OLD_ICONS: readonly (readonly string[])[] = [
   // 0 MIL-1 훈련장 — 짚 허수아비에 꽂힌 검
   [circ(8, 5.5, 2.5), 'M8 8v13', 'M3.5 12h9', 'M5 21h6', 'M21 3l-5.5 5.5', 'M14 7l3 3', 'M15.5 8.5l-3.5 3.5'],
   // 1 MIL-2A 공격 교리 — 앞을 향한 깃발 + 화살촉
@@ -78,6 +79,76 @@ export const TECH_ICON_PATHS: readonly (readonly string[])[] = [
   ['M3 21L16 8', 'M14.5 6.5L22 2l-4.5 7.5z', 'M5.5 13l5.5 5.5', 'M5.5 13L3 21l8-2.5'],
   // 31 CAV-3 역참 — 이정표 + 말굽
   ['M6 22V3', 'M6 5h9l2.5 2.5L15 10H6', 'M12 13.5v4a3.5 3.5 0 0 0 7 0v-4', 'M10.5 13.5h3', 'M17.5 13.5h3'],
+];
+
+
+/**
+ * 2026-10-24 테크 개편(42노드) id 순서 — 기존 그림은 OLD_ICONS 번호로 재사용하고, 새·바뀐 노드만 새로 그린다.
+ * 새 id: MIL 0..5, ECO 6..11, TER 12..17, MOB 18..23, SPE 24..29, SWO 30..35, CAV 36..41
+ */
+export const TECH_ICON_PATHS: readonly (readonly string[])[] = [
+  // MIL: 훈련장 · 공성 전술 · 성벽 보강 · 공격 교리 · 방어 교리 · (군기)
+  OLD_ICONS[0],
+  OLD_ICONS[3],
+  OLD_ICONS[2],
+  OLD_ICONS[1],
+  OLD_ICONS[4],
+  // 5 MIL-4 군기 — 별이 달린 군기
+  ['M6 21V3', 'M6 4h12l-3 4 3 4H6', 'M12 15.5l.9 1.9 2.1.3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.4 2.1-.3z'],
+  // ECO: 세금 징수 · 상업 · 군수 · 조폐국 · 곡창 · (국고)
+  OLD_ICONS[5],
+  OLD_ICONS[6],
+  OLD_ICONS[7],
+  OLD_ICONS[8],
+  OLD_ICONS[9],
+  // 11 ECO-4 국고 — 뚜껑 열린 보물 상자
+  ['M4 11h16v9H4z', 'M4 11a8 5 0 0 1 16 0', 'M12 14v3', 'M10 15.5h4'],
+  // TER: 개척민 · 확장(측량) · 요새화 · 도로망 · 기지 재건 · (수도 승격)
+  OLD_ICONS[10],
+  OLD_ICONS[11],
+  // 14 TER-2B 요새화 — 성탑
+  ['M5 21V8h3V5h3v3h2V5h3v3h3v13z', 'M10 21v-5h4v5', 'M3 21h18'],
+  OLD_ICONS[13],
+  // 16 TER-3B 기지 재건 — 기지 위에 올리는 망치
+  ['M3 21h18', 'M6 21v-8h12v8', 'M9 13v-3h6v3', 'M16 3l5 5-2 2-5-5z', 'M14.5 5.5L8 12'],
+  // 17 TER-4 수도 승격 — 별이 뜬 궁성
+  ['M5 21v-9h14v9', 'M2 21h20', 'M10 21v-4h4v4', 'M12 2l1.6 3.4 3.7.5-2.7 2.6.7 3.6L12 10.2l-3.3 1.9.7-3.6-2.7-2.6 3.7-.5z'],
+  // MOB: 행군로 · 강행군 · 철수 훈련 · 참모부 · 급속 귀환 · (야영 정비)
+  OLD_ICONS[15],
+  OLD_ICONS[16],
+  OLD_ICONS[17],
+  OLD_ICONS[18],
+  OLD_ICONS[19],
+  // 23 MOB-4 야영 정비 — 막사 텐트
+  OLD_ICONS[14],
+  // SPE: 장창 대열 · 주둔 진지 · 방진 · 고슴도치 진 · 버티는 대열 · (철벽)
+  OLD_ICONS[20],
+  OLD_ICONS[21],
+  // 26 SPE-2B 방진 — 가로로 엮은 창 대열
+  ['M5 21V6', 'M12 21V6', 'M19 21V6', 'M3.5 6L5 2l1.5 4z', 'M10.5 6L12 2l1.5 4z', 'M17.5 6L19 2l1.5 4z', 'M3 14h18'],
+  OLD_ICONS[23],
+  // 28 SPE-3B 버티는 대열 — 두 줄이 그어진 방패
+  ['M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z', 'M8.5 11.5h7', 'M8.5 15h7'],
+  // 29 SPE-4 철벽 — 줄눈 있는 성벽 한 장
+  ['M3 21V9h18v12z', 'M3 15h18', 'M9 9v6', 'M15 15v6', 'M3 9l2-4h14l2 4'],
+  // SWO: 검술 · 사슬 갑옷 · 돌격 보병 · 철갑 보병 · 정예 보병 · (백전노장)
+  OLD_ICONS[24],
+  OLD_ICONS[25],
+  OLD_ICONS[26],
+  // 33 SWO-3A 철갑 보병 — 투구
+  ['M5 15a7 7 0 0 1 14 0v3H5z', 'M5 18h14', 'M12 8v4', 'M9 12h6'],
+  OLD_ICONS[27],
+  // 35 SWO-4 백전노장 — 월계관 두른 검
+  ['M12 2l2 3v11h-4V5z', 'M7 16h10', 'M12 16v4', 'M4 8c0 4 2 7 5 8', 'M20 8c0 4-2 7-5 8'],
+  // CAV: 군마 · 마구간 · 기병창 · 역참 · 돌격 기세 · (철기)
+  OLD_ICONS[28],
+  OLD_ICONS[29],
+  OLD_ICONS[30],
+  OLD_ICONS[31],
+  // 40 CAV-3B 돌격 기세 — 앞으로 뻗는 속도선과 화살촉
+  ['M4 7h6', 'M2 11h7', 'M4 15h6', 'M12 5l8 7-8 7', 'M12 12h6'],
+  // 41 CAV-4 철기 — 별이 박힌 말굽
+  ['M6.5 4v7.5a5.5 5.5 0 0 0 11 0V4', 'M4.5 4h4', 'M15.5 4h4', 'M12 9l.9 1.9 2.1.3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.4 2.1-.3z'],
 ];
 
 export function TechIcon({ nodeId, size = 24, title, style, className }: { nodeId: number; size?: number; title?: string; style?: CSSProperties; className?: string }) {

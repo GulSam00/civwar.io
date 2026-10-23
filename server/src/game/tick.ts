@@ -18,6 +18,7 @@ import {
   BASE_REGEN_DELAY_TICK,
   BASE_PROD_MAX_PERMILLE,
   BASE_PROD_RECOVER_PER_MIN_PERMILLE,
+  techBaseRecoverPm,
   DISCONNECT_GRACE_TICK,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENDGAME_RUSH_TICK,
@@ -124,7 +125,10 @@ export function stage8_baseRegen(state: GameState, t: number): void {
   for (const b of state.bases) {
     // v4.4 [A-85]: 생산력 선형 회복 (피해·소유와 무관, 매 tick)
     if (b.prodScaled < BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN) {
-      b.prodScaled = Math.min(BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN, b.prodScaled + BASE_PROD_RECOVER_PER_MIN_PERMILLE);
+      // 2026-10-24 기지 재건(TER-3B): 기지 소유자의 회복 속도 배율 (무소유·무테크 1000)
+      const own = state.players[state.owners[b.tileId]];
+      const recover = own ? Math.floor((BASE_PROD_RECOVER_PER_MIN_PERMILLE * techBaseRecoverPm(own.statPm)) / 1000) : BASE_PROD_RECOVER_PER_MIN_PERMILLE;
+      b.prodScaled = Math.min(BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN, b.prodScaled + recover);
     }
     if (b.damagedThisTick) {
       b.damagedThisTick = false;

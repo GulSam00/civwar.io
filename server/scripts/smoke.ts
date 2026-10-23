@@ -140,10 +140,10 @@ async function main(): Promise<void> {
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 101)).reason === 'ALREADY_OWNED', '이미 보유 → ALREADY_OWNED');
     a.send({ type: 'cmd_buy_tech', clientSeq: 102, nodeId: 3 });
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 102)).reason === 'PREREQ_MISSING', '부모 미보유 → PREREQ_MISSING');
-    a.send({ type: 'cmd_buy_tech', clientSeq: 103, nodeId: 5 });
+    a.send({ type: 'cmd_buy_tech', clientSeq: 103, nodeId: 6 }); // ECO-1 (2026-10-24 개편 id 6)
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 103)).reason === 'INSUFFICIENT', '골드 부족 → INSUFFICIENT');
-    a.send({ type: 'cmd_buy_tech', clientSeq: 2, nodeId: 32 });
-    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 2)).reason === 'BAD_REQUEST', '형식 오류(nodeId 32) → cmd_ack BAD_REQUEST');
+    a.send({ type: 'cmd_buy_tech', clientSeq: 2, nodeId: 42 });
+    ok((await a.wait('cmd_ack', (m) => m.clientSeq === 2)).reason === 'BAD_REQUEST', '형식 오류(nodeId 42) → cmd_ack BAD_REQUEST');
     const sfT = await a.wait('snapshot_full', (m) => m.tick > tp1.tick);
     ok(sfT.players.find((p) => p.id === 1)?.techMask === 1 && sfT.players.find((p) => p.id === 1)?.techCount === 1, 'snapshot_full.players[].techMask/techCount');
     a.send({ type: 'cmd_flag_issue', clientSeq: 3, unit: 1, troops: 50, anchorTileId: 0 });

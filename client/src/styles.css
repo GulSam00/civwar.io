@@ -1513,11 +1513,13 @@ kbd {
   box-shadow: 0 0 0 3px #fff;
 }
 /* 잠김: 회색 점선, 아이콘 40% */
-.tnode.s-locked {
+.tnode.s-locked,
+.tnode.s-blocked {
   border: 2px dashed #6b7a8a;
   background: #141b23;
 }
-.tnode.s-locked > .tech-icon {
+.tnode.s-locked > .tech-icon,
+.tnode.s-blocked > .tech-icon {
   opacity: 0.4;
 }
 /* 골드 부족: 갈래 색 얇은 실선 + 진행 링 */
@@ -1618,7 +1620,8 @@ kbd {
   flex-direction: column;
   align-items: center;
 }
-.tnode-label.s-locked .tn-name {
+.tnode-label.s-locked .tn-name,
+.tnode-label.s-blocked .tn-name {
   color: var(--muted);
 }
 .tn-price {
@@ -1678,7 +1681,8 @@ kbd {
   background: var(--bc);
   color: #0d141c;
 }
-.twd-icon.s-locked {
+.twd-icon.s-locked,
+.twd-icon.s-blocked {
   border-style: dashed;
   border-color: #6b7a8a;
 }
@@ -1694,7 +1698,8 @@ kbd {
   color: #7bd88f;
 }
 .twd-state.s-short,
-.twd-state.s-locked {
+.twd-state.s-locked,
+.twd-state.s-blocked {
   color: var(--muted);
 }
 .twd-state.s-pending {
@@ -1793,7 +1798,8 @@ kbd {
   border: 3px double var(--bc);
   color: var(--warn);
 }
-.tnode-mini.s-locked {
+.tnode-mini.s-locked,
+.tnode-mini.s-blocked {
   border: 1.5px dashed #6b7a8a;
 }
 

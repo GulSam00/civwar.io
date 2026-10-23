@@ -8,6 +8,7 @@ import {
   TECH_NODES,
   techMaskWith,
   techOwned,
+  techExclusiveBlocker,
   techPrereqMet,
   techStatValues,
   type C2S_CmdBuyTech,
@@ -89,6 +90,7 @@ function buyTech(state: GameState, playerId: number, msg: C2S_CmdBuyTech, t: num
   if (!Number.isInteger(nodeId) || nodeId < 0 || nodeId >= TECH_NODE_COUNT) return ack(out, playerId, msg.clientSeq, 'BAD_REQUEST');
   if (techOwned(p.techMask, nodeId)) return ack(out, playerId, msg.clientSeq, 'ALREADY_OWNED');
   if (!techPrereqMet(p.techMask, nodeId)) return ack(out, playerId, msg.clientSeq, 'PREREQ_MISSING');
+  if (techExclusiveBlocker(p.techMask, nodeId) !== null) return ack(out, playerId, msg.clientSeq, 'EXCLUSIVE_BLOCKED'); // 2026-10-24: 양자택일 상대 보유
   const cost = techCost(TECH_NODES[nodeId].tier, p.techPurchased);
   if (p.goldMilli < cost * 1000) return ack(out, playerId, msg.clientSeq, 'INSUFFICIENT');
   p.goldMilli -= cost * 1000;

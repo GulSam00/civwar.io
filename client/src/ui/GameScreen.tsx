@@ -16,7 +16,7 @@ import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
-import { fmtPm, goldPerSecond, unitCombatStats } from './techInfo.js';
+import { fmtPm, fmtPts, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
 import { disengageTicksOf } from '../state/disengage.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
@@ -951,17 +951,17 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
         <div className="muted">{status}</div>
         <div className="combat-stats" aria-label="전투값">
           <div className={`cs-row ${atkNow ? 'now' : ''}`}>
-            <PostureIcon posture={POSTURE.ATTACK} size={13} /> 공격력 <b>{fmtPm(cs.atk)}</b>
+            <PostureIcon posture={POSTURE.ATTACK} size={13} /> 공격력 <b>{fmtPts(cs.atk)}</b>
             <span className="muted small">
               {' '}
-              기본 {fmtPm(cs.atkBase)} · 테크 {fmtPm(cs.atkTechPm)}
+              기본 {fmtPts(cs.atkBase)} · 테크 +{cs.atkTechPts}
             </span>
           </div>
           <div className={`cs-row ${!atkNow ? 'now' : ''}`}>
-            <PostureIcon posture={POSTURE.DEFEND} size={13} /> 방어력 <b>{fmtPm(cs.def)}</b>
+            <PostureIcon posture={POSTURE.DEFEND} size={13} /> 방어력 <b>{fmtPts(cs.def)}</b>
             <span className="muted small">
               {' '}
-              기본 {fmtPm(cs.defBase)} · 테크 {fmtPm(cs.defTechPm)}
+              기본 {fmtPts(cs.defBase)} · 테크 +{cs.defTechPts}
             </span>
           </div>
           {onOwnBase && (

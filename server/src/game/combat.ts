@@ -18,7 +18,8 @@ import {
   UNIT_DEF_PERMILLE,
   flagScalar,
   sideLossDetail,
-  techCombatPm,
+  TECH_POINT_PERMILLE,
+  techCombatPts,
   techDisengageTicks,
   techMoraleDropPm,
   techMoraleRecoverPm,
@@ -107,7 +108,7 @@ export function onOwnBase(state: Readonly<GameState>, f: Readonly<Flag>): boolea
  * v4.5 (사용자 2026-10-15): 내 기지 칸 위면 **태세 무관 ×1.5** [A-106]
  *   - 방어 태세: 지형 항 = COMBAT_BASE_DEF_PERMILLE 1500 (지형 보정을 대체 — 곱하지 않음, v4.4 그대로)
  *   - 공격 태세: floor(UNIT_ATK × COMBAT_BASE_ATK_PERMILLE 1500 / 1000) (공격 태세엔 원래 지형 항이 없다)
- * v4.3: 테크 배율 = techCombatPm — 공격 태세 COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 COMBAT_DEF + COMBAT_DEF_<unit>.
+ * 2026-10-24: 테크는 점수(techCombatPts) — 병종 기본 ‰ 에 10‰/점을 **더한 뒤** 기지·지형 배율을 곱한다 (공격 COMBAT_ATK + COMBAT_ATK_<unit>, 방어 COMBAT_DEF + COMBAT_DEF_<unit>).
  * v4.5: 물 위 깃발이 없어져 상륙 배율(LANDING_COMBAT) 항 삭제. group 인자는 호출 호환용.
  */
 export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, _group: readonly Readonly<Flag>[]): number {
@@ -115,15 +116,15 @@ export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, _group:
   const terrain = state.map.terrain;
   const base = onOwnBase(state, f);
   let v: number;
+  const owner = state.players[f.ownerId];
+  const pts = TECH_POINT_PERMILLE * techCombatPts(owner.statPm, f.unit, f.posture === POSTURE.DEFEND);
   if (f.posture === POSTURE.ATTACK) {
-    v = UNIT_ATK_PERMILLE[f.unit];
+    v = UNIT_ATK_PERMILLE[f.unit] + pts;
     if (base) v = Math.floor((v * COMBAT_BASE_ATK_PERMILLE) / 1000);
   } else {
     const td = base ? COMBAT_BASE_DEF_PERMILLE : COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[terrain[f.posTileId]];
-    v = Math.floor((UNIT_DEF_PERMILLE[f.unit] * td) / 1000);
+    v = Math.floor(((UNIT_DEF_PERMILLE[f.unit] + pts) * td) / 1000);
   }
-  const owner = state.players[f.ownerId];
-  v = Math.floor((v * techCombatPm(owner.statPm, f.unit, f.posture === POSTURE.DEFEND)) / 1000);
   if (f.disengageUntilTick !== null) v = Math.floor((v * DISENGAGE_VALUE_PERMILLE) / 1000);
   return Math.max(1, v);
 }

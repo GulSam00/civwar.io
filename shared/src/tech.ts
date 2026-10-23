@@ -16,7 +16,7 @@ import {
 
 /** 노드 표 불변식 — 모듈 로드 시 1회 검사 (위반이면 서버가 뜨지 않는다) */
 function validateTechNodes(nodes: readonly TechNodeDef[]): void {
-  if (nodes.length !== TECH_NODE_COUNT || TECH_NODE_COUNT > 32) throw new Error('TECH_NODES: 노드 수');
+  if (nodes.length !== TECH_NODE_COUNT || TECH_NODE_COUNT > 53) throw new Error('TECH_NODES: 노드 수 (techMask 는 53비트 안전 정수)');
   if (TECH_STAT_BASE.length !== TECH_STAT_COUNT) throw new Error('TECH_STAT_BASE: 길이');
   const setOf = new Map<number, number>();
   const addOf = new Set<number>();
@@ -28,6 +28,14 @@ function validateTechNodes(nodes: readonly TechNodeDef[]): void {
       const p = nodes[n.parent];
       if (!p || p.branch !== n.branch || p.tier !== n.tier - 1) throw new Error(`TECH_NODES[${i}] parent 갈래·티어`);
     }
+    if (n.parentAlt !== undefined) {
+      const p = nodes[n.parentAlt];
+      if (n.parent === null || !p || p.branch !== n.branch || p.tier !== n.tier - 1 || n.parentAlt === n.parent) throw new Error(`TECH_NODES[${i}] parentAlt`);
+    }
+    if (n.exclusive !== undefined) {
+      const q = nodes[n.exclusive];
+      if (!q || q.exclusive !== i || q.branch !== n.branch || q.tier !== n.tier) throw new Error(`TECH_NODES[${i}] exclusive 는 같은 갈래·티어에서 서로 대칭이어야 한다`);
+    }
     if (n.op === 'set') {
       if (setOf.has(n.stat)) throw new Error(`TECH_NODES[${i}] 같은 스탯 set 노드 둘`);
       setOf.set(n.stat, i);
@@ -37,31 +45,46 @@ function validateTechNodes(nodes: readonly TechNodeDef[]): void {
 }
 validateTechNodes(TECH_NODES);
 
-/** 노드 i 보유 여부 (mask = uint32) */
+// 2026-10-24: 노드가 32개를 넘어 마스크를 비트 연산(32비트) 대신 **53비트 안전 정수** 산술로 다룬다 (필드·프로토콜 모양 불변, 노드 ≤ 53).
+const POW2 = Array.from({ length: 53 }, (_, i) => 2 ** i);
+
+/** 노드 i 보유 여부 (mask = 안전 정수, 비트 i = 노드 i) */
 export function techOwned(mask: number, nodeId: number): boolean {
-  return ((mask >>> nodeId) & 1) === 1;
+  return Math.floor(mask / POW2[nodeId]) % 2 === 1;
 }
 
-/** mask 에 노드 추가 (uint32 유지 — 비트 31 도 양수) */
+/** mask 에 노드 추가 (이미 보유면 그대로) */
 export function techMaskWith(mask: number, nodeId: number): number {
-  return (mask | (1 << nodeId)) >>> 0;
+  return techOwned(mask, nodeId) ? mask : mask + POW2[nodeId];
+}
+
+/** mask 에서 노드 제거 (표시용 "없을 때" 계산) */
+export function techMaskWithout(mask: number, nodeId: number): number {
+  return techOwned(mask, nodeId) ? mask - POW2[nodeId] : mask;
 }
 
 /** 보유 노드 수 (popcount) */
 export function techCount(mask: number): number {
-  let m = mask >>> 0;
+  let m = mask;
   let k = 0;
-  while (m) {
-    m &= m - 1;
-    k++;
+  while (m > 0) {
+    k += m % 2;
+    m = Math.floor(m / 2);
   }
   return k;
 }
 
-/** 선행 조건: 부모가 없거나(T1) 부모를 보유 [A-66] */
+/** 선행 조건: 부모가 없거나(T1) 부모(또는 대체 부모)를 보유 [A-66] */
 export function techPrereqMet(mask: number, nodeId: number, nodes: readonly TechNodeDef[] = TECH_NODES): boolean {
-  const p = nodes[nodeId].parent;
-  return p === null || techOwned(mask, p);
+  const n = nodes[nodeId];
+  if (n.parent === null) return true;
+  return techOwned(mask, n.parent) || (n.parentAlt !== undefined && techOwned(mask, n.parentAlt));
+}
+
+/** 양자택일 상대를 이미 보유해 살 수 없으면 그 노드 id, 아니면 null (2026-10-24) */
+export function techExclusiveBlocker(mask: number, nodeId: number, nodes: readonly TechNodeDef[] = TECH_NODES): number | null {
+  const x = nodes[nodeId].exclusive;
+  return x !== undefined && techOwned(mask, x) ? x : null;
 }
 
 /** [A-69·A-70] cost(node, n) = floor(BASE[tier-1] × (1000 + 60 × n) / 1000), n = 지금까지 산 노드 수 */
@@ -87,16 +110,19 @@ export function techStatValues(mask: number, nodes: readonly TechNodeDef[] = TEC
 
 // ── 스탯 읽기 도우미 (서버 계산식과 클라이언트 표시가 같은 식을 쓰도록) ──
 
-/** 깃발 전투값 테크 배율 ‰ — 공격 태세 = COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 = COMBAT_DEF + COMBAT_DEF_<unit> */
-export function techCombatPm(stat: readonly number[], unit: number, defend: boolean): number {
+/** 점수 → ‰ (1점 = 10‰). 병종 기본 ‰ 에 이 값을 더한다 (2026-10-24 절대값 전환) */
+export const TECH_POINT_PERMILLE = 10;
+
+/** 깃발 전투값 테크 **점수** — 공격 태세 = COMBAT_ATK + COMBAT_ATK_<unit>, 방어 태세 = COMBAT_DEF + COMBAT_DEF_<unit> */
+export function techCombatPts(stat: readonly number[], unit: number, defend: boolean): number {
   return defend ? stat[TECH_STAT.COMBAT_DEF] + stat[TECH_STAT.COMBAT_DEF_SPEAR + unit] : stat[TECH_STAT.COMBAT_ATK] + stat[TECH_STAT.COMBAT_ATK_SPEAR + unit];
 }
 
 /**
- * §33 (전투 모델 2): 채널별 테크 배율 ‰ — 태세와 무관하게 COMBAT_ATK* -> ATK 채널, COMBAT_DEF* -> DEF 채널 [A-D6].
- * 같은 태세에서는 techCombatPm 과 같은 값이다.
+ * §33 (전투 모델 2): 채널별 테크 점수 — 태세와 무관하게 COMBAT_ATK* -> ATK 채널, COMBAT_DEF* -> DEF 채널 [A-D6].
+ * 같은 태세에서는 techCombatPts 와 같은 값이다.
  */
-export function techChannelPm(stat: readonly number[], unit: number, channel: number): number {
+export function techChannelPts(stat: readonly number[], unit: number, channel: number): number {
   return channel === 0 ? stat[TECH_STAT.COMBAT_ATK] + stat[TECH_STAT.COMBAT_ATK_SPEAR + unit] : stat[TECH_STAT.COMBAT_DEF] + stat[TECH_STAT.COMBAT_DEF_SPEAR + unit];
 }
 
@@ -115,9 +141,24 @@ export function techMoraleFullBonus(stat: readonly number[], unit: number): numb
   return (stat[TECH_STAT.MORALE_FULL_BONUS] ?? 0) + (stat[TECH_STAT.MORALE_FULL_BONUS_SPEAR + unit] ?? 0);
 }
 
-/** 깃발 이동속도 테크 배율 ‰ = SPEED + SPEED_<unit> */
-export function techSpeedPm(stat: readonly number[], unit: number): number {
+/** 깃발 이동속도 테크 **점수** = SPEED + SPEED_<unit> */
+export function techSpeedPts(stat: readonly number[], unit: number): number {
   return stat[TECH_STAT.SPEED] + stat[TECH_STAT.SPEED_SPEAR + unit];
+}
+
+/** 2026-10-24: 기지 체력 피해 배율 ‰ (요새화로 줄어든다). 구 서버 설정이면 1000 */
+export function techBaseDmgPm(stat: readonly number[]): number {
+  return stat[TECH_STAT.BASE_DMG] ?? 1000;
+}
+
+/** 2026-10-24: 기지 생산력 회복 속도 배율 ‰ (기지 재건). 구 서버 설정이면 1000 */
+export function techBaseRecoverPm(stat: readonly number[]): number {
+  return stat[TECH_STAT.BASE_RECOVER] ?? 1000;
+}
+
+/** 2026-10-24: 수도 기지 생산 배율 ‰ (수도 승격). 구 서버 설정이면 1000 */
+export function techCapitalProdPm(stat: readonly number[]): number {
+  return stat[TECH_STAT.CAPITAL_PROD] ?? 1000;
 }
 
 /**

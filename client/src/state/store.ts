@@ -60,6 +60,7 @@ const PENDING_TECH_MS = 5000;
 export const TECH_REJECT_TEXT: Partial<Record<string, string>> = {
   INSUFFICIENT: '골드가 부족합니다',
   PREREQ_MISSING: '선행 노드를 먼저 사야 합니다',
+  EXCLUSIVE_BLOCKED: '같은 단계의 다른 노드를 이미 골랐습니다',
   ALREADY_OWNED: '이미 보유한 노드입니다',
   BAD_REQUEST: '잘못된 테크 요청입니다',
 };

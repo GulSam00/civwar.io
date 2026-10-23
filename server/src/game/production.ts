@@ -15,7 +15,7 @@
  *         net    = gross − floor(gross × 유지비 / 1000) (총액에 한 번), 행 = gross 행 비례 분배
  *   분배 = 각 몫 floor, 잔여는 가중치 최대(동률 = 앞) 행에 → 행 합 = 총합 (정확히). 병력 상한은 그대로(전체 칸 수 기준).
  */
-import { CAPITAL_PROD_TILES, BASE_PROD_TILES, GOLD_RATE_PERMILLE, TECH_STAT } from '@civwar/shared';
+import { CAPITAL_PROD_TILES, BASE_PROD_TILES, GOLD_RATE_PERMILLE, TECH_STAT, techCapitalProdPm } from '@civwar/shared';
 import { applyRegenMult, baseGoldWeight, baseRegenBaseMilli, garrisonUpkeepPermille, terrRegenBaseMilli } from './economy.js';
 import { baseProdPm, type GameState, type PlayerState, type ProductionYield } from './state.js';
 
@@ -36,7 +36,10 @@ export function distribute(total: number, weights: readonly number[]): number[] 
 
 /** v4.5 [A-107]: 기지 칸의 환산 칸 수 — 시작 수도였던 칸(누가 갖고 있든) 100, 그 밖의 기지 60 */
 export function baseEqTiles(state: Readonly<GameState>, tileId: number): number {
-  return state.capitalTiles.has(tileId) ? CAPITAL_PROD_TILES : BASE_PROD_TILES;
+  if (!state.capitalTiles.has(tileId)) return BASE_PROD_TILES;
+  // 2026-10-24 수도 승격(TER-4): 그 칸을 지금 소유한 플레이어의 수도 생산 배율
+  const own = state.players[state.owners[tileId]];
+  return own ? Math.floor((CAPITAL_PROD_TILES * techCapitalProdPm(own.statPm)) / 1000) : CAPITAL_PROD_TILES;
 }
 
 export interface ProductionResult {

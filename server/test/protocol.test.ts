@@ -17,7 +17,7 @@ describe('입력 검증', () => {
     expect(parseClientMessage('{"type":"nope"}').ok).toBe(false);
   });
   it('cmd_* 형식 오류는 clientSeq 를 돌려줘 BAD_REQUEST ack 가 가능', () => {
-    const r = parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 7, nodeId: 32 }));
+    const r = parseClientMessage(JSON.stringify({ type: 'cmd_buy_tech', clientSeq: 7, nodeId: 42 }));
     expect(r).toMatchObject({ ok: false, clientSeq: 7 });
   });
   it('정상/비정상 메시지', () => {

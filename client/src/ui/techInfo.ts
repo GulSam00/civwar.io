@@ -12,7 +12,8 @@ import {
   TICK_MS,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
-  techCombatPm,
+  TECH_POINT_PERMILLE,
+  techCombatPts,
   techNodeCost,
   techStatValues,
   type TechNodeDef,
@@ -54,10 +55,8 @@ export function goldPerSecond(goldWeight: number, techMask: number, upkeepPm: nu
 /**
  * 부대 전투값 (2026-10-14 사용자 요청: 부대 클릭 → 공격력·방어력, 지형 보정 제외).
  * 서버 flagValue(server/src/game/combat.ts)와 같은 단계별 floor:
- *   공격 = floor(UNIT_ATK_PERMILLE[unit] × techCombatPm(stat, unit, 공격) / 1000)
- *   방어 = floor(UNIT_DEF_PERMILLE[unit] × techCombatPm(stat, unit, 방어) / 1000)
- * techCombatPm = 군사 공통(COMBAT_ATK/COMBAT_DEF) + 병종 갈래 증분 — 즉 "병종 기본 × 태세별 테크(군사 + 병종)".
- * 지형(방어 태세 언덕·산 등)·상륙·이탈 대기 배율은 넣지 않는다. 값은 ‰ (1000 = ×1.00).
+ * 2026-10-24 절대 점수: 전투값(‰) = 병종 기본(‰) + 10 × 테크 점수 (techCombatPts = 군사 공통 + 병종 갈래).
+ * 지형(방어 태세 언덕·산 등)·기지·이탈 대기 배율은 넣지 않는다. 화면에는 점수(= ‰ / 10)로 보인다.
  */
 export interface UnitCombatStats {
   /** 공격 태세 전투값 ‰ */
@@ -67,25 +66,30 @@ export interface UnitCombatStats {
   /** 병종 기본값 ‰ */
   atkBase: number;
   defBase: number;
-  /** 테크 배율 ‰ (군사 + 병종 갈래) */
-  atkTechPm: number;
-  defTechPm: number;
+  /** 테크 점수 (군사 + 병종 갈래) */
+  atkTechPts: number;
+  defTechPts: number;
 }
 
 export function unitCombatStats(unit: number, techMask: number, consts?: Consts): UnitCombatStats {
   const stat = techStatsOf(techMask, consts);
   const atkBase = c<readonly number[]>(consts, 'UNIT_ATK_PERMILLE', UNIT_ATK_PERMILLE)[unit] ?? 1000;
   const defBase = c<readonly number[]>(consts, 'UNIT_DEF_PERMILLE', UNIT_DEF_PERMILLE)[unit] ?? 1000;
-  const atkTechPm = techCombatPm(stat, unit, false);
-  const defTechPm = techCombatPm(stat, unit, true);
+  const atkTechPts = techCombatPts(stat, unit, false);
+  const defTechPts = techCombatPts(stat, unit, true);
   return {
-    atk: Math.floor((atkBase * atkTechPm) / 1000),
-    def: Math.floor((defBase * defTechPm) / 1000),
+    atk: atkBase + TECH_POINT_PERMILLE * atkTechPts,
+    def: defBase + TECH_POINT_PERMILLE * defTechPts,
     atkBase,
     defBase,
-    atkTechPm,
-    defTechPm,
+    atkTechPts,
+    defTechPts,
   };
+}
+
+/** ‰ → 점수 (1000‰ = 100점) — 전투값 표시 */
+export function fmtPts(pm: number): string {
+  return String(Math.round(pm / TECH_POINT_PERMILLE));
 }
 
 /** ‰ → "×1.30" (소수 둘째 자리) */

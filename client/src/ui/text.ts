@@ -37,6 +37,7 @@ export const REJECT_TEXT: Record<CmdRejectReason, string> = {
   NOT_IN_GAME: '게임 중이 아닙니다',
   TECH_ORDER: '선행 테크가 필요합니다',
   PREREQ_MISSING: '선행 테크가 필요합니다',
+  EXCLUSIVE_BLOCKED: '같은 단계의 다른 노드를 이미 골랐습니다',
   ALREADY_OWNED: '이미 보유한 테크입니다',
   RATE_LIMITED: '명령이 너무 빠릅니다',
   NOT_IMPLEMENTED: '아직 지원하지 않는 명령입니다',

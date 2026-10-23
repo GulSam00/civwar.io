@@ -23,9 +23,9 @@ describe('테크', () => {
   it('골드 수입 §8 (유지비 차감, ECO 노드 반영)', () => {
     const r = goldPerSecond(2700, 0, 0);
     expect(r.gross).toBeCloseTo((Math.floor((2700 * 2080 * 1000) / 1e9) * 5) / 1000, 9);
-    const e = goldPerSecond(100000, 1 << 5, 0); // ECO-1 +8%
+    const e = goldPerSecond(100000, 2 ** 6, 0); // ECO-1(id 6) +8%
     expect(e.gross).toBeCloseTo((Math.floor((100000 * 2080 * 1080) / 1e9) * 5) / 1000, 9);
-    const u = goldPerSecond(100000, 1 << 5, 300);
+    const u = goldPerSecond(100000, 2 ** 6, 300);
     expect(u.net).toBeLessThan(u.gross);
   });
 });

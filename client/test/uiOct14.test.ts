@@ -11,7 +11,9 @@ import {
   TECH_STAT,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
-  techCombatPm,
+  TECH_POINT_PERMILLE,
+  techCombatPts,
+  techMaskWith,
   techStatValues,
   type FlagSnapshot,
   type S2C_MatchConfig,
@@ -60,7 +62,7 @@ describe('창 드래그 — 화면 가장자리 자르기', () => {
 describe('부대 공격력·방어력 (지형 보정 제외)', () => {
   // 노드 찾기: 군사 공통 공격(COMBAT_ATK) 노드 하나, 창병 방어 증분(COMBAT_DEF_SPEAR) 노드 하나
   const nodeFor = (stat: number) => TECH_NODES.find((n) => n.stat === stat);
-  const maskOf = (...ids: number[]) => ids.reduce((m, i) => (m | (1 << i)) >>> 0, 0);
+  const maskOf = (...ids: number[]) => ids.reduce((m, i) => techMaskWith(m, i), 0);
   /** 노드 i 와 그 조상 전부 (선행 조건 충족 mask) */
   const withAncestors = (id: number): number[] => {
     const out: number[] = [];
@@ -73,14 +75,14 @@ describe('부대 공격력·방어력 (지형 보정 제외)', () => {
       const s = unitCombatStats(u, 0);
       expect(s.atk).toBe(UNIT_ATK_PERMILLE[u]);
       expect(s.def).toBe(UNIT_DEF_PERMILLE[u]);
-      expect(s.atkTechPm).toBe(1000);
-      expect(s.defTechPm).toBe(1000);
+      expect(s.atkTechPts).toBe(0);
+      expect(s.defTechPts).toBe(0);
     }
     expect(fmtPm(unitCombatStats(0, 0).def)).toBe('×1.30');
     expect(fmtPm(unitCombatStats(2, 0).def)).toBe('×0.70');
   });
 
-  it('서버 flagValue 와 같은 식: floor(병종 기본 × techCombatPm(태세) / 1000) — 군사 공통 + 병종 갈래', () => {
+  it('서버 flagValue 와 같은 식: 병종 기본 + 10 × techCombatPts(태세) — 군사 공통 + 병종 갈래 (절대 점수)', () => {
     const atkNode = nodeFor(TECH_STAT.COMBAT_ATK);
     const defSpear = nodeFor(TECH_STAT.COMBAT_DEF_SPEAR);
     expect(atkNode).toBeDefined();
@@ -89,8 +91,8 @@ describe('부대 공격력·방어력 (지형 보정 제외)', () => {
     const stat = techStatValues(mask);
     for (const u of [0, 1, 2]) {
       const s = unitCombatStats(u, mask);
-      expect(s.atk).toBe(Math.floor((UNIT_ATK_PERMILLE[u] * techCombatPm(stat, u, false)) / 1000));
-      expect(s.def).toBe(Math.floor((UNIT_DEF_PERMILLE[u] * techCombatPm(stat, u, true)) / 1000));
+      expect(s.atk).toBe(UNIT_ATK_PERMILLE[u] + TECH_POINT_PERMILLE * techCombatPts(stat, u, false));
+      expect(s.def).toBe(UNIT_DEF_PERMILLE[u] + TECH_POINT_PERMILLE * techCombatPts(stat, u, true));
     }
     // 공격 노드는 공격만, 창병 방어 노드는 창병 방어만 올린다
     expect(unitCombatStats(1, mask).atk).toBeGreaterThan(UNIT_ATK_PERMILLE[1]);

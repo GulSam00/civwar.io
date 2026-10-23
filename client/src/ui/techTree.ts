@@ -12,10 +12,15 @@ import {
   TECH_STAT,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
-  techCombatPm,
+  TECH_POINT_PERMILLE,
+  techCombatPts,
+  techExclusiveBlocker,
+  techMaskWith,
+  techMaskWithout,
+  UNIT_SPEED_PERMILLE,
   techOwned,
   techPrereqMet,
-  techSpeedPm,
+  techSpeedPts,
   type TechNodeDef,
 } from '@civwar/shared';
 import { goldPerSecond, techCost, techNodes, techStatsOf } from './techInfo.js';
@@ -29,7 +34,8 @@ function c<T>(consts: Consts, name: string, fallback: T): T {
 
 // ───────────── 노드 상태 ─────────────
 
-export type TechNodeState = 'owned' | 'pending' | 'buyable' | 'short' | 'locked';
+/** blocked = 양자택일 상대 노드를 이미 보유해 이 노드는 고를 수 없다 (재정·행정 2티어, 2026-10-24) */
+export type TechNodeState = 'owned' | 'pending' | 'buyable' | 'short' | 'locked' | 'blocked';
 
 export interface TechNodeView {
   node: TechNodeDef;
@@ -53,6 +59,7 @@ export interface TechPlayerLike {
 export function techNodeState(p: TechPlayerLike, node: TechNodeDef, nodes: readonly TechNodeDef[], cost: number, pending?: ReadonlySet<number>): TechNodeState {
   if (techOwned(p.techMask, node.id)) return 'owned';
   if (pending?.has(node.id)) return 'pending';
+  if (techExclusiveBlocker(p.techMask, node.id, nodes) !== null) return 'blocked';
   if (!techPrereqMet(p.techMask, node.id, nodes)) return 'locked';
   return p.gold >= cost ? 'buyable' : 'short';
 }
@@ -156,34 +163,44 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   let fmt: (v: number[]) => string;
   if (stat === S.ATK_COST) (label = '적 땅 점령비용 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.DEF_COST) (label = '내 땅 피점령비용 배율'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.COMBAT_ATK) (label = '공격 태세 전투값 배율 (전 병종)'), (fmt = (v) => x3(v[stat]));
-  else if (stat === S.COMBAT_DEF) (label = '방어 태세 전투값 배율 (전 병종)'), (fmt = (v) => x3(v[stat]));
+  else if (stat === S.COMBAT_ATK) (label = '공격 점수 (전 병종)'), (fmt = (v) => `+${v[stat]}`);
+  else if (stat === S.COMBAT_DEF) (label = '방어 점수 (전 병종)'), (fmt = (v) => `+${v[stat]}`);
   else if (stat === S.GOLD) (label = '골드 생산 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.UPKEEP_COEF) (label = '깃발 유지비 계수'), (fmt = (v) => pmText(v[stat]));
   else if (stat === S.REGEN) (label = '병력 재생 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.NEUTRAL_COST) (label = '중립 땅 점령비용 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.TROOP_CAP) (label = '병력 상한 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.SUPPLY_COEF) (label = '보급선 비용 계수 (칸당)'), (fmt = (v) => pmText(v[stat]));
-  else if (stat === S.SPEED) (label = '이동속도 배율 (전 병종 공통)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.SPEED) (label = '이동 점수 (전 병종 공통)'), (fmt = (v) => `+${v[stat]}`);
   // v4.5 (§22.7): 스탯 11 = 이탈 대기 tick (MOB-2B 철수 훈련 15 → 10), 13 = 귀환 속도 ‰ (MOB-3B 급속 귀환 1500 → 2200)
   else if (stat === S.DISENGAGE_TICKS) (label = '이탈 대기 시간'), (fmt = (v) => `${((v[stat] * ((consts?.TICK_MS as number | undefined) ?? 200)) / 1000).toFixed(1)}초`);
   else if (stat === S.SLOT_BONUS) (label = '깃발 슬롯 보너스'), (fmt = (v) => `+${v[stat]}`);
   else if (stat === S.RETURN_SPEED) (label = '귀환 속도 배율 (회수·자동 귀환·패주)'), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.COMBAT_ATK_SPEAR && stat <= S.COMBAT_ATK_CAVALRY) {
     const unit = stat - S.COMBAT_ATK_SPEAR;
-    label = `${u(S.COMBAT_ATK_SPEAR)} 공격 태세 전투 공격력`;
-    fmt = (v) => String(Math.floor((ATK[unit] * techCombatPm(v, unit, false)) / 1000));
+    label = `${u(S.COMBAT_ATK_SPEAR)} 공격`;
+    fmt = (v) => String(Math.round(ATK[unit] / TECH_POINT_PERMILLE) + techCombatPts(v, unit, false));
   } else if (stat >= S.COMBAT_DEF_SPEAR && stat <= S.COMBAT_DEF_CAVALRY) {
     const unit = stat - S.COMBAT_DEF_SPEAR;
-    label = `${u(S.COMBAT_DEF_SPEAR)} 방어 태세 전투 방어력`;
-    fmt = (v) => String(Math.floor((DEF[unit] * techCombatPm(v, unit, true)) / 1000));
+    label = `${u(S.COMBAT_DEF_SPEAR)} 방어`;
+    fmt = (v) => String(Math.round(DEF[unit] / TECH_POINT_PERMILLE) + techCombatPts(v, unit, true));
   } else if (stat >= S.SPEED_SPEAR && stat <= S.SPEED_CAVALRY) {
     const unit = stat - S.SPEED_SPEAR;
-    label = `${u(S.SPEED_SPEAR)} 이동속도 배율 (공통 포함)`;
-    fmt = (v) => x2(techSpeedPm(v, unit));
+    label = `${u(S.SPEED_SPEAR)} 이동`;
+    fmt = (v) => String(Math.round(c<readonly number[]>(consts, 'UNIT_SPEED_PERMILLE', UNIT_SPEED_PERMILLE)[unit] / TECH_POINT_PERMILLE) + techSpeedPts(v, unit));
   } else if (stat >= S.UPKEEP_WEIGHT_SPEAR && stat <= S.UPKEEP_WEIGHT_CAVALRY) (label = `${u(S.UPKEEP_WEIGHT_SPEAR)} 유지비 가중치`), (fmt = (v) => (v[stat] / 1000).toFixed(2));
   else if (stat >= S.CONVERT_SPEAR && stat <= S.CONVERT_CAVALRY) (label = `${u(S.CONVERT_SPEAR)} 편성비 (병력 1당 풀 차감)`), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.CAPTURE_MULT_SPEAR && stat <= S.CAPTURE_MULT_CAVALRY) (label = `${u(S.CAPTURE_MULT_SPEAR)} 점령비용 배율`), (fmt = (v) => x2(v[stat]));
+  // 2026-10-24: 사기(전투 모델 2)·기지 효과
+  else if (stat === S.MORALE_DROP) (label = '사기 감소율 (전 병종)'), (fmt = (v) => x2(v[stat]));
+  else if (stat >= S.MORALE_DROP_SPEAR && stat <= S.MORALE_DROP_CAVALRY) (label = `${u(S.MORALE_DROP_SPEAR)} 사기 감소율`), (fmt = (v) => x2(v[S.MORALE_DROP] + v[stat]));
+  else if (stat === S.MORALE_RECOVER) (label = '사기 회복 (전 병종)'), (fmt = (v) => x2(v[stat]));
+  else if (stat >= S.MORALE_RECOVER_SPEAR && stat <= S.MORALE_RECOVER_CAVALRY) (label = `${u(S.MORALE_RECOVER_SPEAR)} 사기 회복`), (fmt = (v) => x2(v[S.MORALE_RECOVER] + v[stat]));
+  else if (stat === S.MORALE_FULL_BONUS) (label = '기세 보너스 (전 병종)'), (fmt = (v) => `+${v[stat] / 10}%p`);
+  else if (stat >= S.MORALE_FULL_BONUS_SPEAR && stat <= S.MORALE_FULL_BONUS_CAVALRY) (label = `${u(S.MORALE_FULL_BONUS_SPEAR)} 기세 보너스`), (fmt = (v) => `+${(v[S.MORALE_FULL_BONUS] + v[stat]) / 10}%p`);
+  else if (stat === S.BASE_DMG) (label = '기지 체력 피해 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.BASE_RECOVER) (label = '기지 생산력 회복 속도'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.CAPITAL_PROD) (label = '수도 생산 배율'), (fmt = (v) => x2(v[stat]));
   else (label = `스탯 ${stat}`), (fmt = (v) => String(v[stat]));
   const b = fmt(before);
   const a = fmt(after);
@@ -193,10 +210,10 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
 /** 공통 전투 배율 노드(MIL-2A/3B)의 병종별 실제 전투값 행 */
 function combatUnitsRow(defend: boolean, before: number[], after: number[], consts: Consts): StatRow {
   const base = defend ? c<readonly number[]>(consts, 'UNIT_DEF_PERMILLE', UNIT_DEF_PERMILLE) : c<readonly number[]>(consts, 'UNIT_ATK_PERMILLE', UNIT_ATK_PERMILLE);
-  const val = (v: number[]) => [0, 1, 2].map((u) => Math.floor((base[u] * techCombatPm(v, u, defend)) / 1000)).join(' / ');
+  const val = (v: number[]) => [0, 1, 2].map((u) => Math.round(base[u] / TECH_POINT_PERMILLE) + techCombatPts(v, u, defend)).join(' / ');
   const b = val(before);
   const a = val(after);
-  return { label: `${defend ? '방어' : '공격'} 전투값 창 / 검 / 기`, before: b, after: a, changed: b !== a };
+  return { label: `${defend ? '방어' : '공격'} 창 / 검 / 기`, before: b, after: a, changed: b !== a };
 }
 
 export interface TechDetail {
@@ -209,10 +226,9 @@ export interface TechDetail {
 
 /** 상세 패널 수치 행. 다른 보유 노드까지 합친 실제 값(§19.3 techStatValues) */
 export function techDetailRows(node: TechNodeDef, ctx: TechDetailCtx): TechDetail {
-  const bit = (1 << node.id) >>> 0;
   const owned = techOwned(ctx.techMask, node.id);
-  const maskBefore = owned ? (ctx.techMask & ~bit) >>> 0 : ctx.techMask >>> 0;
-  const maskAfter = (maskBefore | bit) >>> 0;
+  const maskBefore = owned ? techMaskWithout(ctx.techMask, node.id) : ctx.techMask;
+  const maskAfter = techMaskWith(maskBefore, node.id);
   const before = techStatsOf(maskBefore, ctx.consts);
   const after = techStatsOf(maskAfter, ctx.consts);
   const S = TECH_STAT;
@@ -251,6 +267,10 @@ export function techScopeText(node: TechNodeDef): string {
     const unit = (s - S.COMBAT_ATK_SPEAR) % 3;
     return `${UNIT_NAME[unit]} 깃발에만 적용`;
   }
+  if ((s >= S.MORALE_FULL_BONUS_SPEAR && s <= S.MORALE_FULL_BONUS_CAVALRY) || (s >= S.MORALE_DROP_SPEAR && s <= S.MORALE_DROP_CAVALRY) || (s >= S.MORALE_RECOVER_SPEAR && s <= S.MORALE_RECOVER_CAVALRY)) {
+    return `${UNIT_NAME[(s - S.MORALE_FULL_BONUS_SPEAR) % 4]} 깃발에만 적용`;
+  }
+  if (s === S.BASE_DMG || s === S.BASE_RECOVER || s === S.CAPITAL_PROD) return '내 기지에 적용';
   if (s === S.COMBAT_ATK) return '공격 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
   if (s === S.COMBAT_DEF) return '방어 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
   if (s === S.DISENGAGE_TICKS) return '교전 중 회수·재지정으로 빠져나갈 때';
@@ -280,7 +300,8 @@ export function techLayout(nodes: readonly TechNodeDef[]): TechNodePos[] {
     }
     const sibs = nodes.filter((m) => m.parent === n.parent).sort((a, b) => a.id - b.id);
     const parentX = fx.get(n.parent) ?? 0.5;
-    if (n.tier === 2) fx.set(n.id, sibs.length === 1 ? parentX : 0.25 + (0.5 * sibs.indexOf(n)) / (sibs.length - 1));
+    if (n.tier === 4) fx.set(n.id, 0.5); // T4 는 두 T3 한가운데 (부모·대체 부모 둘 다에서 선이 내려온다)
+    else if (n.tier === 2) fx.set(n.id, sibs.length === 1 ? parentX : 0.25 + (0.5 * sibs.indexOf(n)) / (sibs.length - 1));
     else fx.set(n.id, sibs.length === 1 ? parentX : parentX + (sibs.indexOf(n) - (sibs.length - 1) / 2) * 0.2);
   }
   return nodes.map((n) => ({ id: n.id, branch: n.branch, tier: n.tier, fx: fx.get(n.id) ?? 0.5 }));
@@ -294,5 +315,7 @@ export function techAncestors(nodes: readonly TechNodeDef[], id: number): Set<nu
     out.add(cur);
     cur = nodes[cur]?.parent ?? null;
   }
+  const alt = nodes[id]?.parentAlt;
+  if (alt !== undefined) out.add(alt);
   return out;
 }

@@ -187,9 +187,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(det.reduce((a, d) => a + d.lossMilli, 0)).toBe(9_000_000);
   });
 
-  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 44, 앞 32칸 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
-    expect(TECH_STAT_COUNT).toBe(44);
-    expect(NO_TECH.length).toBe(44);
+  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 47, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
+    expect(TECH_STAT_COUNT).toBe(47);
+    expect(NO_TECH.length).toBe(47);
     expect(TECH_STAT_BASE.slice(0, 32).length).toBe(32);
     const f = inp(U.CAVALRY, POSTURE.ATTACK);
     expect(channelValues(f)).toEqual(channelValues({ ...f, statPm: NO_TECH.slice(0, 32) }));
@@ -198,10 +198,11 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
   it('테크 채널별 적용 (A-D6): COMBAT_ATK 는 태세와 무관하게 ATK 채널에만', () => {
     const st = NO_TECH.slice();
-    st[TECH_STAT.COMBAT_ATK] = 1140;
+    st[TECH_STAT.COMBAT_ATK] = 14; // 2026-10-24: 점수 (+14점 = +140‰, 병종 기본에 더한 뒤 지형 배율)
     const base = channelValues(inp(U.SWORD, POSTURE.DEFEND, { morale: 800 }));
     const up = channelValues(inp(U.SWORD, POSTURE.DEFEND, { morale: 800, statPm: st }));
-    expect(up[0]).toBe(Math.floor((base[0] * 1140) / 1000));
+    expect(up[0]).toBeGreaterThan(base[0]);
+    expect(Math.abs(up[0] - Math.floor((base[0] * 1140) / 1000))).toBeLessThanOrEqual(2); // 병종 기본 1000 → 1140 (배율을 곱하기 전에 더한다)
     expect(up[1]).toBe(base[1]);
   });
 });
@@ -210,12 +211,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167) 변경으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
  */
 const GOLDEN = {
-  G1: { stream: 'dce65c535fb2a555f5a344549b116b14ae1427e5bf789efbfd9ea4511dc6901f', state: 'a3792d96b55d40566e130e02cddc8f5d0425701c22852fa565cb0a3652ded24f' },
-  G2: { stream: '173343b07fb4ddbd4254d135826536adccda20ad867cd307d23f20994053297b', state: '1c2b1f8d56c0f8f2f28d480b6d6f2e8877921fb27045b1986c91f468210973fb' },
-  G3: { stream: 'd81c3d74409793921f0150f5db4191589b08e4c2c371b40eb62c1a0b806b1279', state: '188bcba4aea1eb2e5dc8b0e6657c3c30ec8236606c02e8bb8ec1c5bccb116422' },
+  G1: { stream: 'a6797a51a00afe4cd3d22bb7d2c6f3142d1970ffba242354923f747f3ec0bd15', state: '000b32fe6e86911929148423d01df3712b9372915c81cd1fe503d1092999b1e8' },
+  G2: { stream: '2dfb8c44b51b08ea7c4aa26b1819e5444b65262bce687913efc703bed4fa072d', state: '7219bf904bc405dc895fe4cf055b11ed6c8f53e54da5705ae7954aaf78646702' },
+  G3: { stream: '229211179ec7a98b3b8fa7899cc5d0719003d90617bd9028affe5ce64932d32c', state: '7dea210bcbed75df4ba436cc8ae51e74c75fe19cb07dccf345be9ebc72cdff99' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

@@ -5,7 +5,7 @@
  * 보는 플레이어 = store.viewerId (관전·탈락·종료 후 따라가기 대상의 트리도 볼 수 있다, 구매는 나만·명령 가능할 때만).
  */
 import { useEffect, useState } from 'react';
-import { TECH_BRANCH_COUNT, TECH_BRANCH_NAME, type TechNodeDef, type Unit } from '@civwar/shared';
+import { TECH_BRANCH_COUNT, TECH_BRANCH_NAME, techOwned, type TechNodeDef, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameInputController } from '../input/controller.js';
 import { usePolled } from './hooks.js';
@@ -20,7 +20,7 @@ import { useDraggableWindow } from './draggable.js';
 export const TECH_BRANCH_COLOR = ['#e8826a', '#e6b93f', '#62c472', '#62aef2', '#aab7c5', '#aab7c5', '#aab7c5'] as const;
 /** 갈래 0..3 = 공통, 4..6 = 병종(창·검·기) */
 const unitOfBranch = (b: number): Unit | null => (b >= 4 ? ((b - 4) as Unit) : null);
-const ROMAN = ['I', 'II', 'III'] as const;
+const ROMAN = ['I', 'II', 'III', 'IV'] as const;
 
 export const STATE_NAME: Record<TechNodeState, string> = {
   owned: '보유',
@@ -28,6 +28,7 @@ export const STATE_NAME: Record<TechNodeState, string> = {
   buyable: '구매 가능',
   short: '골드 부족',
   locked: '잠김',
+  blocked: '선택 불가',
 };
 
 function closeTech(ctl: GameInputController): void {
@@ -146,7 +147,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
 
 const COL = 118;
 const GROUP_GAP = 20;
-const ROW = 96;
+const ROW = 84;
 const TOP = 30;
 const LEFT = 24;
 const NODE = 44;
@@ -178,7 +179,7 @@ function TechGrid({
     return { x: colLeft(l.branch) + l.fx * COL, y: TOP + (l.tier - 1) * ROW + NODE / 2 + 4 };
   };
   const width = colLeft(TECH_BRANCH_COUNT - 1) + COL;
-  const height = TOP + 3 * ROW - 8;
+  const height = TOP + 4 * ROW - 8;
   return (
     <div className="tw-grid-wrap">
       <div className="tw-grid" style={{ width, height }}>
@@ -195,26 +196,28 @@ function TechGrid({
           </div>
         ))}
         <svg className="tw-lines" width={width} height={height} aria-hidden="true">
-          {views.map(({ node }) => {
-            if (node.parent === null) return null;
-            const a = pos(node.parent);
-            const b = pos(node.id);
-            const parentOwned = views[node.parent].state === 'owned';
-            const hot = hoverPath?.has(node.id) && hoverPath.has(node.parent);
-            return (
-              <line
-                key={node.id}
-                x1={a.x}
-                y1={a.y + NODE / 2 + 2}
-                x2={b.x}
-                y2={b.y - NODE / 2 - 2}
-                stroke={parentOwned ? TECH_BRANCH_COLOR[node.branch] : '#6b7a8a'}
-                strokeWidth={(parentOwned ? 2 : 1) + (hot ? 2 : 0)}
-                strokeDasharray={parentOwned ? undefined : '4 3'}
-                opacity={hoverPath && !hot ? 0.55 : 1}
-              />
-            );
-          })}
+          {views.flatMap(({ node }) =>
+            [node.parent, node.parentAlt ?? null].map((par, k) => {
+              if (par === null) return null;
+              const a = pos(par);
+              const b = pos(node.id);
+              const parentOwned = views[par].state === 'owned';
+              const hot = hoverPath?.has(node.id) && hoverPath.has(par);
+              return (
+                <line
+                  key={`${node.id}-${k}`}
+                  x1={a.x}
+                  y1={a.y + NODE / 2 + 2}
+                  x2={b.x}
+                  y2={b.y - NODE / 2 - 2}
+                  stroke={parentOwned ? TECH_BRANCH_COLOR[node.branch] : '#6b7a8a'}
+                  strokeWidth={(parentOwned ? 2 : 1) + (hot ? 2 : 0)}
+                  strokeDasharray={parentOwned ? undefined : '4 3'}
+                  opacity={hoverPath && !hot ? 0.55 : 1}
+                />
+              );
+            }),
+          )}
         </svg>
         {views.map((v) => {
           const p = pos(v.node.id);
@@ -228,8 +231,8 @@ function TechGrid({
 function BranchMark({ branch, size = 14 }: { branch: number; size?: number }) {
   const u = unitOfBranch(branch);
   if (u !== null) return <UnitIcon unit={u} size={size} title={`${TECH_BRANCH_NAME[branch]} 갈래`} />;
-  // 공통 갈래 = 그 갈래 1티어 노드 아이콘 (MIL-1 0, ECO-1 5, TER-1 10, MOB-1 15)
-  return <TechIcon nodeId={branch * 5} size={size} />;
+  // 공통 갈래 = 그 갈래 1티어 노드 아이콘 (갈래당 6노드: MIL-1 0, ECO-1 6, TER-1 12, MOB-1 18)
+  return <TechIcon nodeId={branch * 6} size={size} />;
 }
 
 function TechNodeButton({
@@ -283,7 +286,7 @@ function TechNodeButton({
             <UnitIcon unit={unit} size={11} />
           </span>
         )}
-        {state === 'locked' && (
+        {(state === 'locked' || state === 'blocked') && (
           <span className="tnode-badge tr" aria-hidden="true">
             <StateGlyph kind="lock" size={11} />
           </span>
@@ -301,7 +304,7 @@ function TechNodeButton({
       </button>
       <div className={`tnode-label s-${state}`} style={{ left: x - labelWidth / 2, top: y + NODE / 2 + (state === 'owned' ? 8 : 4), width: labelWidth }} aria-hidden="true">
         <span className="tn-name">{node.name}</span>
-        {state === 'owned' ? null : state === 'locked' ? null : (
+        {state === 'owned' ? null : state === 'locked' || state === 'blocked' ? null : (
           <span key={techCount} className="tn-price">
             {cost.toLocaleString()}
           </span>
@@ -332,10 +335,10 @@ function NarrowTree({
   const dots = purchasableByBranch(views);
   const layout = techLayout(nodes);
   const W = 240;
-  const RW = 84;
+  const RW = 76;
   const inTab = views.filter((v) => v.node.branch === tab);
   const pos = (id: number) => ({ x: 8 + layout[id].fx * W, y: 8 + NODE / 2 + (layout[id].tier - 1) * RW });
-  const height = 8 + 3 * RW;
+  const height = 8 + 4 * RW;
   return (
     <>
       <div className="tw-tabs" role="tablist" aria-label="갈래">
@@ -357,24 +360,26 @@ function NarrowTree({
       </div>
       <div className="tw-vtree" style={{ width: W + 16, height }}>
         <svg className="tw-lines" width={W + 16} height={height} aria-hidden="true">
-          {inTab.map(({ node }) => {
-            if (node.parent === null) return null;
-            const a = pos(node.parent);
-            const b = pos(node.id);
-            const owned = views[node.parent].state === 'owned';
-            return (
-              <line
-                key={node.id}
-                x1={a.x}
-                y1={a.y + NODE / 2 + 2}
-                x2={b.x}
-                y2={b.y - NODE / 2 - 2}
-                stroke={owned ? TECH_BRANCH_COLOR[node.branch] : '#6b7a8a'}
-                strokeWidth={owned ? 2 : 1}
-                strokeDasharray={owned ? undefined : '4 3'}
-              />
-            );
-          })}
+          {inTab.flatMap(({ node }) =>
+            [node.parent, node.parentAlt ?? null].map((par, k) => {
+              if (par === null) return null;
+              const a = pos(par);
+              const b = pos(node.id);
+              const owned = views[par].state === 'owned';
+              return (
+                <line
+                  key={`${node.id}-${k}`}
+                  x1={a.x}
+                  y1={a.y + NODE / 2 + 2}
+                  x2={b.x}
+                  y2={b.y - NODE / 2 - 2}
+                  stroke={owned ? TECH_BRANCH_COLOR[node.branch] : '#6b7a8a'}
+                  strokeWidth={owned ? 2 : 1}
+                  strokeDasharray={owned ? undefined : '4 3'}
+                />
+              );
+            }),
+          )}
         </svg>
         {inTab.map((v) => {
           const p = pos(v.node.id);
@@ -412,7 +417,9 @@ function TechDetailPanel({
   const { node, state } = view;
   const color = TECH_BRANCH_COLOR[node.branch];
   const parent = node.parent !== null ? nodes[node.parent] : null;
-  const parentOwned = parent ? ((viewer.techMask >>> parent.id) & 1) === 1 : true;
+  const parentAlt = node.parentAlt !== undefined ? nodes[node.parentAlt] : null;
+  const parentOwned = parent ? techOwned(viewer.techMask, parent.id) || (parentAlt !== null && techOwned(viewer.techMask, parentAlt.id)) : true;
+  const rival = node.exclusive !== undefined ? nodes[node.exclusive] : null;
   const price = techPriceInfo(node.tier, viewer.techCount, consts);
   // §21.4: 순수입 = production 합 (생산력 반영)
   const inc = incomeOf(g, viewer.id) ?? { net: 0 };
@@ -437,8 +444,10 @@ function TechDetailPanel({
           : mine
             ? '구매 불가 (탈락·관전)'
             : '보기 전용'
-        : state === 'locked'
-          ? '선행 노드 필요'
+        : state === 'blocked'
+          ? `${rival?.name ?? '다른 노드'} 선택됨`
+          : state === 'locked'
+            ? '선행 노드 필요'
           : state === 'short'
             ? '골드 부족'
             : `구매 — ${price.cost.toLocaleString()} 골드`;
@@ -478,12 +487,21 @@ function TechDetailPanel({
         <dd>
           {parent ? (
             <>
-              {parent.name} <span className={parentOwned ? 'ok-text' : 'warn-text'}>{parentOwned ? '✓ 보유' : '✗ 미보유'}</span>
+              {parent.name}
+              {parentAlt ? ` 또는 ${parentAlt.name}` : ''} <span className={parentOwned ? 'ok-text' : 'warn-text'}>{parentOwned ? '✓ 보유' : '✗ 미보유'}</span>
             </>
           ) : (
             '없음 (1티어)'
           )}
         </dd>
+        {rival && (
+          <>
+            <dt>택일</dt>
+            <dd>
+              {rival.name} <span className={techOwned(viewer.techMask, rival.id) ? 'warn-text' : 'muted'}>{techOwned(viewer.techMask, rival.id) ? '✗ 선택됨' : '와 둘 중 하나'}</span>
+            </dd>
+          </>
+        )}
         {!owned && (
           <>
             <dt>가격</dt>
@@ -520,14 +538,14 @@ function TechDetailPanel({
 }
 
 function Legend() {
-  const items: TechNodeState[] = ['owned', 'buyable', 'short', 'pending', 'locked'];
+  const items: TechNodeState[] = ['owned', 'buyable', 'short', 'pending', 'locked', 'blocked'];
   return (
     <div className="tw-legend small" aria-label="노드 상태 범례">
       {items.map((s) => (
         <span key={s} className="tw-legend-item">
           <span className={`tnode-mini s-${s}`} style={{ ['--bc' as string]: TECH_BRANCH_COLOR[3] }} aria-hidden="true">
             {s === 'owned' && <StateGlyph kind="check" size={9} />}
-            {s === 'locked' && <StateGlyph kind="lock" size={9} />}
+            {(s === 'locked' || s === 'blocked') && <StateGlyph kind="lock" size={9} />}
             {s === 'pending' && <StateGlyph kind="clock" size={9} />}
           </span>
           {STATE_NAME[s]}

@@ -22,10 +22,11 @@ function techOf(...codes: string[]): Pick<PlayerState, 'techMask' | 'techPurchas
 
 describe('병력 (3.2)', () => {
   it('시작 troopCap = 208', () => expect(troopCap(player())).toBe(208));
-  // v4.3: 4780 × 1.06 = 5066.8 → 5066 / 4780 × 1.14 = 5449.2 → 5449
-  it('TER-2B 징병소 capMult 1.06, + TER-3B 1.14', () => {
-    expect(troopCap(player({ tiles: 390, ...techOf('TER-1', 'TER-2B') }))).toBe(5066);
-    expect(troopCap(player({ tiles: 390, ...techOf('TER-1', 'TER-2B', 'TER-3B') }))).toBe(5449);
+  // 2026-10-24 테크 개편: 병력 상한 노드(징병소·상비군)를 뺐다 — 행정 갈래 전부 사도 상한은 그대로
+  it('병력 상한은 테크로 변하지 않는다 (TROOP_CAP 노드 없음)', () => {
+    const base = troopCap(player({ tiles: 390 }));
+    expect(base).toBe(4780);
+    expect(troopCap(player({ tiles: 390, ...techOf('TER-1', 'TER-2A', 'TER-3A', 'TER-4') }))).toBe(base);
   });
   it('regen = round((0.8 + 0.5√9) × (1 − 150/208) × 1000)', () => {
     // 2.3 × 58/208 × 1000 = 641.35 → 641

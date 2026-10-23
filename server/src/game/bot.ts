@@ -56,6 +56,8 @@ import {
   techConvertPm,
   techDisengageTicks,
   techOwned,
+  techExclusiveBlocker,
+  techMaskWith,
   techPrereqMet,
   type BotDifficultyParams,
   type C2S_GameCommand,
@@ -121,31 +123,37 @@ function nodeIdOf(code: string): number {
   return n.id;
 }
 /**
- * v4.3 8.5 테크 우선순위 [botIndex % 4] (01b 6.2, A-82) — 노드 코드 16개. 부모가 항상 자식보다 앞 (로드 시 검사).
+ * 2026-10-24 테크 개편(4티어 42노드) 우선순위 [techStyle] — 노드 코드. 부모가 항상 자식보다 앞이고 양자택일 노드는 한쪽만 (로드 시 검사).
  * 규칙(6.1): 결정마다 목록에서 아직 안 산 첫 노드를 살 수 있으면 산다, 못 사면 기다린다(건너뛰지 않음).
  */
 export const TECH_PRIORITY_CODES: readonly (readonly string[])[] = [
   // 0 확장형
-  ['TER-1', 'CAV-1', 'MOB-1', 'TER-2A', 'ECO-1', 'TER-2B', 'MOB-2A', 'CAV-2A', 'ECO-2B', 'TER-3B', 'CAV-3', 'MIL-1', 'ECO-2A', 'MOB-3A', 'TER-3A', 'MIL-2A'],
-  // 1 경제형
-  ['ECO-1', 'TER-1', 'ECO-2A', 'ECO-2B', 'CAV-1', 'ECO-3A', 'MOB-1', 'CAV-2A', 'ECO-3B', 'SPE-1', 'MIL-1', 'MOB-2A', 'CAV-3', 'TER-2B', 'SPE-2A', 'MOB-3A'],
-  // 2 수비형
-  // v4.5 (01c A-96 ①): MOB-1 바로 뒤에 MOB-2B 철수 훈련, 맨 끝 TER-3B 제거
-  ['SPE-1', 'MIL-1', 'ECO-1', 'SPE-2A', 'MIL-2B', 'CAV-1', 'ECO-2B', 'SPE-3', 'MIL-3B', 'MOB-1', 'MOB-2B', 'TER-1', 'TER-2B', 'MOB-2A', 'MOB-3A', 'SPE-2B'],
-  // 3 기동형 — v4.5 (01c A-96 ①, MOB-3B 는 ② 급속 귀환 채택에 맞춰 조정): MOB-2B 10 → 8번째.
-  //   MOB-3B 는 제안(11번째, ① 질서 있는 회수 기준)보다 뒤 13번째 — ② 귀환 속도는 골드당 효과가 약하다(01c 1.2: 슬롯 ≈ 60초)
-  ['MOB-1', 'CAV-1', 'MOB-2A', 'CAV-2B', 'ECO-1', 'CAV-2A', 'MOB-3A', 'MOB-2B', 'MIL-1', 'MIL-2A', 'CAV-3', 'MIL-3A', 'MOB-3B', 'ECO-2B', 'TER-1', 'SWO-1'],
+  ['TER-1', 'CAV-1', 'MOB-1', 'TER-2A', 'ECO-1', 'MOB-2A', 'CAV-2B', 'ECO-2A', 'TER-3A', 'MIL-1', 'CAV-3B', 'MOB-3A', 'MIL-2A', 'ECO-3A', 'TER-4', 'MIL-3A'],
+  // 1 재정형
+  ['ECO-1', 'TER-1', 'ECO-2A', 'CAV-1', 'ECO-3A', 'MOB-1', 'CAV-2B', 'ECO-4', 'SPE-1', 'MIL-1', 'TER-2A', 'MOB-2A', 'CAV-3B', 'TER-3A', 'MIL-2A', 'SPE-2B'],
+  // 2 수비형 (철수 훈련 MOB-2B 를 MOB-1 바로 뒤에)
+  ['SPE-1', 'MIL-1', 'ECO-1', 'SPE-2B', 'MIL-2B', 'CAV-1', 'ECO-2B', 'SPE-3A', 'MIL-3B', 'MOB-1', 'MOB-2B', 'TER-1', 'TER-2B', 'SPE-4', 'MOB-3B', 'ECO-3B'],
+  // 3 기동형
+  ['MOB-1', 'CAV-1', 'MOB-2A', 'CAV-2B', 'ECO-1', 'CAV-2A', 'MOB-3A', 'MOB-2B', 'MIL-1', 'MIL-2A', 'CAV-3B', 'MIL-3A', 'MOB-3B', 'CAV-3A', 'CAV-4', 'ECO-2B', 'TER-1'],
 ];
 /** 6.1 병종 치환 — 검병 고정 봇(EASY, fixedUnit = SWORD): 기병 노드를 부모 관계가 같은 자리의 검병 노드로 */
-export const TECH_SWORD_SWAP: Readonly<Record<string, string>> = { 'CAV-1': 'SWO-1', 'CAV-2A': 'SWO-2B', 'CAV-2B': 'SWO-2A', 'CAV-3': 'SWO-3' };
+export const TECH_SWORD_SWAP: Readonly<Record<string, string>> = {
+  'CAV-1': 'SWO-1',
+  'CAV-2A': 'SWO-2B',
+  'CAV-2B': 'SWO-2A',
+  'CAV-3A': 'SWO-3B',
+  'CAV-3B': 'SWO-3A',
+  'CAV-4': 'SWO-4',
+};
 export const TECH_PRIORITY: readonly (readonly number[])[] = TECH_PRIORITY_CODES.map((l) => l.map(nodeIdOf));
 export const TECH_PRIORITY_SWORD: readonly (readonly number[])[] = TECH_PRIORITY_CODES.map((l) => l.map((c) => nodeIdOf(TECH_SWORD_SWAP[c] ?? c)));
-/** 6.1 "부모가 항상 자식보다 앞" — 서버 시작 시 assert */
+/** 6.1 "부모가 항상 자식보다 앞, 양자택일 상대는 없음" — 서버 시작 시 assert */
 for (const list of [...TECH_PRIORITY, ...TECH_PRIORITY_SWORD]) {
   let mask = 0;
   for (const id of list) {
     if (!techPrereqMet(mask, id)) throw new Error(`TECH_PRIORITY: ${TECH_NODES[id].code} 의 부모가 앞에 없음`);
-    mask = (mask | (1 << id)) >>> 0;
+    if (techExclusiveBlocker(mask, id) !== null) throw new Error(`TECH_PRIORITY: ${TECH_NODES[id].code} 는 양자택일 상대가 앞에 있음`);
+    mask = techMaskWith(mask, id);
   }
 }
 
@@ -802,14 +810,14 @@ function buyTech(ctx: Ctx): void {
   const lists = ctx.params.fixedUnit === UNIT.SWORD ? TECH_PRIORITY_SWORD : TECH_PRIORITY;
   let next = -1;
   for (const id of lists[ctx.params.techStyle ?? (ctx.me - 1) % 4]) {
-    if (!techOwned(p.techMask, id)) {
+    if (!techOwned(p.techMask, id) && techExclusiveBlocker(p.techMask, id) === null) {
       next = id;
       break;
     }
   }
   if (next < 0) {
-    for (let tier = 1; tier <= 3 && next < 0; tier++)
-      for (const n of TECH_NODES) if (n.tier === tier && !techOwned(p.techMask, n.id) && techPrereqMet(p.techMask, n.id)) {
+    for (let tier = 1; tier <= 4 && next < 0; tier++)
+      for (const n of TECH_NODES) if (n.tier === tier && !techOwned(p.techMask, n.id) && techPrereqMet(p.techMask, n.id) && techExclusiveBlocker(p.techMask, n.id) === null) {
         next = n.id;
         break;
       }

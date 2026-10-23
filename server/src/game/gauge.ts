@@ -6,6 +6,7 @@
 import {
   BASE_CAPTURE_LOCK_TICK,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
+  techBaseDmgPm,
   BASE_HP_MAX_MILLI,
   BASE_HP_CAPTURE_MILLI,
   BASE_PROD_CAPTURE_PERMILLE,
@@ -192,9 +193,9 @@ function applyTilePushes(state: GameState, X: number, list: Push[], t: number, o
  * 총 적용량 = min(Σwant, BASE_HP_DMG_CAP_MILLI_PER_TICK, hp) — 체력보다 많이 깎지 않는다(초과 피해에 병력을 쓰지 않게).
  * 총량이 Σwant 보다 작으면 원래 피해 비례로 floor 분배, 잔여 milli 는 (want DESC, 순서 ASC) 로 1씩 — 결정론, 합 = 총 적용량.
  */
-export function splitBaseDamage(want: readonly number[], hp: number): number[] {
+export function splitBaseDamage(want: readonly number[], hp: number, cap: number = BASE_HP_DMG_CAP_MILLI_PER_TICK): number[] {
   const sum = want.reduce((a, b) => a + b, 0);
-  const total = Math.max(0, Math.min(sum, BASE_HP_DMG_CAP_MILLI_PER_TICK, hp));
+  const total = Math.max(0, Math.min(sum, cap, hp));
   if (total === sum) return want.slice();
   const out = want.map((w) => Math.floor((total * w) / sum));
   let rem = total - out.reduce((a, b) => a + b, 0);
@@ -218,9 +219,14 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
     const f = flagById(state, h.flagId);
     if (f) hits.push({ f, h });
   }
+  // 2026-10-24 요새화(TER-2B): 기지 소유자의 피해 배율 (중립 기지는 1000)
+  const owner = state.players[state.owners[B]];
+  const dmgPm = owner ? techBaseDmgPm(owner.statPm) : 1000;
+  // 피해 상한(tick 당 합)에도 같은 배율을 곱한다 — 상한에 걸리는 큰 공격에도 효과가 있게
   const applied = splitBaseDamage(
-    hits.map((x) => x.h.dmg),
+    hits.map((x) => (dmgPm === 1000 ? x.h.dmg : Math.max(1, Math.floor((x.h.dmg * dmgPm) / 1000)))),
     base.hpMilli,
+    dmgPm === 1000 ? BASE_HP_DMG_CAP_MILLI_PER_TICK : Math.max(1, Math.floor((BASE_HP_DMG_CAP_MILLI_PER_TICK * dmgPm) / 1000)),
   );
   for (let i = 0; i < hits.length; i++) {
     const { f, h } = hits[i];

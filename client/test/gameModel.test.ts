@@ -205,11 +205,12 @@ describe('GameModel — 단위', () => {
 
   it('troopCap·flagCap 문서식 (§8)', () => {
     const m = bootstrap();
-    // v4.3: 10 TER-1, 12 TER-2B(상한 +6%), 15 MOB-1, 16 MOB-2A, 18 MOB-3A(슬롯 +1)
+    // 2026-10-24 개편: 병력 상한 노드는 없다. MOB-1(18), MOB-2A(19), MOB-3A(21, 슬롯 +1)
+    const mk = (...ids: number[]) => ids.reduce((x, i) => x + 2 ** i, 0);
     expect(m.troopCapOf({ tiles: 9, techMask: 0 })).toBe(208);
-    expect(m.troopCapOf({ tiles: 9, techMask: (1 << 10) | (1 << 12) })).toBe(220);
-    expect(m.flagCapOf({ tiles: 600, techMask: (1 << 15) | (1 << 16) | (1 << 18) })).toBe(6);
-    expect(m.flagCapOf({ tiles: 1200, techMask: 0xffffffff })).toBe(7);
-    expect(m.flagCapOf({ tiles: 9, techMask: (1 << 15) | (1 << 16) | (1 << 18) })).toBe(4);
+    expect(m.troopCapOf({ tiles: 9, techMask: mk(12, 13, 15, 17) })).toBe(208);
+    expect(m.flagCapOf({ tiles: 600, techMask: mk(18, 19, 21) })).toBe(6);
+    expect(m.flagCapOf({ tiles: 1200, techMask: 2 ** 42 - 1 })).toBe(7);
+    expect(m.flagCapOf({ tiles: 9, techMask: mk(18, 19, 21) })).toBe(4);
   });
 });

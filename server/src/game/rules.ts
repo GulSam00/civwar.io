@@ -25,7 +25,8 @@ import {
   isClaimable,
   techCaptureMultPm,
   techReturnSpeedPm,
-  techSpeedPm,
+  TECH_POINT_PERMILLE,
+  techSpeedPts,
 } from '@civwar/shared';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 
@@ -210,7 +211,7 @@ export function moveCostPermille(state: Readonly<GameState>, _p: Readonly<Player
 
 /**
  * speedMilli (4.4) — v4.2 [A-63]: RETURNING(패주 포함)이면 × RETURN_SPEED_PERMILLE / 1000 (같은 floor 안에서 곱한다 — 프로토콜 §10).
- * v4.3: 테크 배율 = techSpeedPm(SPEED + SPEED_<unit>) — 최대 1400. 최대 분자 140 × 1450 × 1400 × 1500 ≈ 4.3e11 < 2^53.
+ * 2026-10-24: 테크는 점수(techSpeedPts) — 병종 기본 ‰ 에 10‰/점을 더한다. 최대 분자 140 × 2000 × 1500 ≈ 4.2e8 < 2^53.
  */
 export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: number): number {
   const p = state.players[f.ownerId];
@@ -218,7 +219,7 @@ export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: n
   return Math.max(
     1,
     Math.floor(
-      (FLAG_SPEED_BASE_MILLI * UNIT_SPEED_PERMILLE[f.unit] * techSpeedPm(p.statPm, f.unit) * ret) / (moveCostPermille(state, p, t) * 1_000_000),
+      (FLAG_SPEED_BASE_MILLI * (UNIT_SPEED_PERMILLE[f.unit] + TECH_POINT_PERMILLE * techSpeedPts(p.statPm, f.unit)) * 1000 * ret) / (moveCostPermille(state, p, t) * 1_000_000),
     ),
   );
 }

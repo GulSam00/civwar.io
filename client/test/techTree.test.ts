@@ -1,12 +1,14 @@
-/** v4.3 테크 창: 노드 상태 5종, 가격 표시, 상세 패널 지금/구매 후 수치, 대기 시간, 격자 배치 */
+/** 테크 창(2026-10-24 개편: 4티어 42노드·절대 점수·양자택일): 노드 상태 6종, 가격 표시, 상세 패널 지금/구매 후 수치, 대기 시간, 격자 배치 */
 import { describe, expect, it } from 'vitest';
-import { TECH_NODES, TECH_STAT, techMaskWith } from '@civwar/shared';
+import { TECH_NODES, TECH_STAT, techMaskWith, techOwned } from '@civwar/shared';
 import { fmtWait, purchasableByBranch, purchasableCount, secondsToAfford, techAncestors, techDetailRows, techLayout, techNodeState, techNodeViews, techPriceInfo } from '../src/ui/techTree.js';
 import { TECH_ICON_PATHS } from '../src/ui/techIcons.js';
 
 const mask = (...ids: number[]) => ids.reduce((m, i) => techMaskWith(m, i), 0);
+const id = (code: string): number => TECH_NODES.find((n) => n.code === code)!.id;
+const nd = (code: string) => TECH_NODES[id(code)];
 
-describe('노드 상태 (01b 5.1 [A-79])', () => {
+describe('노드 상태 (01b 5.1 [A-79] + 양자택일)', () => {
   it('T1 = 부모 없음 → 골드에 따라 구매 가능 / 골드 부족', () => {
     expect(techNodeState({ techMask: 0, techCount: 0, gold: 160 }, TECH_NODES[0], TECH_NODES, 160)).toBe('buyable');
     expect(techNodeState({ techMask: 0, techCount: 0, gold: 159 }, TECH_NODES[0], TECH_NODES, 160)).toBe('short');
@@ -20,15 +22,28 @@ describe('노드 상태 (01b 5.1 [A-79])', () => {
     expect(techNodeState(p, TECH_NODES[1], TECH_NODES, 381, new Set([1]))).toBe('pending');
     expect(techNodeState(p, TECH_NODES[3], TECH_NODES, 742)).toBe('locked'); // MIL-3A 부모 MIL-2A 미보유
   });
+  it('양자택일 상대 보유 = 선택 불가(blocked), 잠김보다 먼저 판정', () => {
+    const p = { techMask: mask(id('ECO-1'), id('ECO-2A')), techCount: 2, gold: 99999 };
+    expect(techNodeState(p, nd('ECO-2B'), TECH_NODES, 400)).toBe('blocked');
+    expect(techNodeState(p, nd('ECO-3B'), TECH_NODES, 700)).toBe('locked'); // 부모 ECO-2B 미보유
+    expect(techNodeState({ techMask: mask(id('MIL-1'), id('MIL-2A')), techCount: 2, gold: 99999 }, nd('MIL-2B'), TECH_NODES, 400)).toBe('buyable'); // 군사는 택일 아님
+  });
+  it('T4 는 T3A 또는 T3B 중 하나만 있어도 열린다', () => {
+    const own = (...codes: string[]) => ({ techMask: mask(...codes.map(id)), techCount: codes.length, gold: 99999 });
+    expect(techNodeState(own('MOB-1', 'MOB-2A', 'MOB-3A'), nd('MOB-4'), TECH_NODES, 1300)).toBe('buyable');
+    expect(techNodeState(own('MOB-1', 'MOB-2B', 'MOB-3B'), nd('MOB-4'), TECH_NODES, 1300)).toBe('buyable');
+    expect(techNodeState(own('MOB-1', 'MOB-2A'), nd('MOB-4'), TECH_NODES, 1300)).toBe('locked');
+  });
   it('views: 진행 링 = gold / cost (상한 1), 배지 수 = 구매 가능 수', () => {
-    const p = { techMask: mask(5), techCount: 1, gold: 200 };
+    const p = { techMask: mask(id('ECO-1')), techCount: 1, gold: 200 };
     const v = techNodeViews(p);
     // n=1 → T1 169, T2 381
     expect(v[0].cost).toBe(169);
     expect(v[0].state).toBe('buyable');
-    expect(v[6].cost).toBe(381);
-    expect(v[6].state).toBe('short');
-    expect(v[6].progress).toBeCloseTo(200 / 381, 6);
+    const t2 = v[id('ECO-2A')];
+    expect(t2.cost).toBe(381);
+    expect(t2.state).toBe('short');
+    expect(t2.progress).toBeCloseTo(200 / 381, 6);
     expect(v[0].progress).toBe(1);
     // T1 6개(ECO-1 보유 제외) 모두 169 ≤ 200, T2 는 381 > 200
     expect(purchasableCount(p)).toBe(6);
@@ -46,6 +61,7 @@ describe('가격 표시 (+6% 누진, §19.3)', () => {
     expect(p.cost).toBe(1204);
     expect(p.surchargePct).toBe(72);
     expect(techPriceInfo(2, 8).cost).toBe(532);
+    expect(techPriceInfo(4, 0)).toEqual({ cost: 1200, base: 1200, purchased: 0, surchargePct: 0, nextCost: 1272 }); // 2026-10-24 T4
   });
   it('match_config.constants 값 우선', () => {
     expect(techPriceInfo(1, 2, { TECH_NODE_BASE_COST: [100, 200, 300], TECH_PROGRESSIVE_COEF_PERMILLE: 100 }).cost).toBe(120);
@@ -60,38 +76,42 @@ describe('가격 표시 (+6% 누진, §19.3)', () => {
   });
 });
 
-describe('상세 패널 지금 → 구매 후', () => {
-  it('SPE-3 고슴도치 진: 장창 대열 보유 시 1365 → 1430 (01b 예시)', () => {
-    const d = techDetailRows(TECH_NODES[23], { techMask: mask(20, 21) });
+describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
+  it('SPE-3A 고슴도치 진: 장창 대열·방진 보유 시 창병 방어 150 → 170', () => {
+    const d = techDetailRows(nd('SPE-3A'), { techMask: mask(id('SPE-1'), id('SPE-2B')) });
     expect(d.owned).toBe(false);
-    expect(d.rows[0]).toMatchObject({ before: '1365', after: '1430', changed: true });
+    expect(d.rows[0]).toMatchObject({ label: '창병 방어', before: '150', after: '170', changed: true }); // 기본 130 + 점수 20 → +20
   });
   it('보유 노드는 "없을 때 → 보유" (다른 보유 노드 합산 유지)', () => {
-    const d = techDetailRows(TECH_NODES[0], { techMask: mask(0, 1, 3) }); // MIL-1 + MIL-3A 보유 → 950 vs 910
+    const d = techDetailRows(nd('MIL-1'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }); // +10 와 +20 보유
     expect(d.owned).toBe(true);
     expect(d.beforeLabel).toBe('없을 때');
-    expect(d.rows[0]).toMatchObject({ before: '×0.95', after: '×0.91' });
+    expect(d.rows[0]).toMatchObject({ before: '+20', after: '+30' });
   });
-  it('set 노드: 병참 유지비 계수 90‰ → 72‰, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
-    expect(techDetailRows(TECH_NODES[7], { techMask: mask(5) }).rows[0]).toMatchObject({ before: '90‰', after: '72‰' });
-    expect(techDetailRows(TECH_NODES[17], { techMask: mask(15) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
+  it('set 노드: 군수 유지비 계수 90‰ → 72‰, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
+    expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ before: '90‰', after: '72‰' });
+    expect(techDetailRows(nd('MOB-2B'), { techMask: mask(id('MOB-1')) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
   });
-  it('공통 전투 노드는 병종별 실제 전투값 행을 붙인다', () => {
-    const d = techDetailRows(TECH_NODES[1], { techMask: mask(0) }); // 공격 교리 +3%
-    expect(d.rows[0]).toMatchObject({ before: '×1.000', after: '×1.030' });
-    expect(d.rows[1]).toMatchObject({ before: '870 / 1000 / 1180', after: '896 / 1030 / 1215' });
+  it('공통 전투 노드는 병종별 실제 전투 점수 행을 붙인다', () => {
+    const d = techDetailRows(nd('MIL-3A'), { techMask: mask(id('MIL-1'), id('MIL-2A')) }); // 공격 교리 +20, 훈련장 +10 보유
+    expect(d.rows[0]).toMatchObject({ before: '+10', after: '+30' });
+    expect(d.rows[1]).toMatchObject({ label: '공격 창 / 검 / 기', before: '97 / 110 / 128', after: '117 / 130 / 148' });
   });
-  it('병종 이동속도는 공통 MOB 를 합친 값', () => {
-    const d = techDetailRows(TECH_NODES[28], { techMask: mask(15) }); // 행군로 +15% 보유, 군마 +10%
-    expect(d.rows[0]).toMatchObject({ before: '×1.15', after: '×1.25' });
+  it('병종 이동은 공통 MOB 를 합친 값', () => {
+    const d = techDetailRows(nd('CAV-1'), { techMask: mask(id('MOB-1')) }); // 행군로 +10 보유, 군마 +10
+    expect(d.rows[0]).toMatchObject({ label: '기병 이동', before: '155', after: '165' }); // 기본 145
   });
-  it('실제 값 행: 골드 수입, 병력 상한, 슬롯 (콜백)', () => {
-    const g = techDetailRows(TECH_NODES[5], { techMask: 0, goldWeight: 100000, upkeepPm: 0 });
+  it('사기·기지 스탯 행 (재정·행정·병종 T3·T4)', () => {
+    expect(techDetailRows(nd('CAV-4'), { techMask: mask(id('CAV-1'), id('CAV-2B'), id('CAV-3B')) }).rows[0]).toMatchObject({ label: '기병 사기 감소율', before: '×1.00', after: '×0.70' });
+    expect(techDetailRows(nd('CAV-3B'), { techMask: mask(id('CAV-1'), id('CAV-2B')) }).rows[0]).toMatchObject({ before: '+0%p', after: '+5%p' });
+    expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.80' });
+    expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2A'), id('TER-3A')) }).rows[0]).toMatchObject({ label: '수도 생산 배율', before: '×1.00', after: '×1.30' });
+  });
+  it('실제 값 행: 골드 수입, 슬롯 (콜백)', () => {
+    const g = techDetailRows(nd('ECO-1'), { techMask: 0, goldWeight: 100000, upkeepPm: 0 });
     expect(g.rows[1].label).toContain('골드 수입');
     expect(g.rows[1].changed).toBe(true);
-    const cap = techDetailRows(TECH_NODES[12], { techMask: mask(10), troopCap: (m) => (m & (1 << 12) ? 1060 : 1000) });
-    expect(cap.rows[1]).toMatchObject({ before: '1,000', after: '1,060' });
-    const slot = techDetailRows(TECH_NODES[18], { techMask: mask(15, 16), flagCap: (m) => 3 + ((m >>> 18) & 1) });
+    const slot = techDetailRows(nd('MOB-3A'), { techMask: mask(id('MOB-1'), id('MOB-2A')), flagCap: (m) => 3 + (techOwned(m, id('MOB-3A')) ? 1 : 0) });
     expect(slot.rows[0]).toMatchObject({ before: '+0', after: '+1' });
     expect(slot.rows[1]).toMatchObject({ before: '3', after: '4' });
   });
@@ -105,21 +125,23 @@ describe('상세 패널 지금 → 구매 후', () => {
 });
 
 describe('격자 배치 · 아이콘', () => {
-  it('T1 가운데, T2 좌/우, T3 부모 아래', () => {
+  it('T1 가운데, T2 좌/우, T3 부모 아래, T4 가운데', () => {
     const l = techLayout(TECH_NODES);
-    expect(l[0].fx).toBe(0.5);
-    expect(l[1].fx).toBe(0.25);
-    expect(l[2].fx).toBe(0.75);
-    expect(l[3].fx).toBe(0.25);
-    expect(l[4].fx).toBe(0.75);
-    expect(l[23].fx).toBe(0.25); // SPE-3 ← SPE-2A
-    expect(l[27].fx).toBe(0.75); // SWO-3 ← SWO-2B
+    expect(l[id('MIL-1')].fx).toBe(0.5);
+    expect(l[id('MIL-2A')].fx).toBe(0.25);
+    expect(l[id('MIL-2B')].fx).toBe(0.75);
+    expect(l[id('MIL-3A')].fx).toBe(0.25);
+    expect(l[id('MIL-3B')].fx).toBe(0.75);
+    expect(l[id('SPE-3B')].fx).toBe(0.25); // SPE-3B ← SPE-2A
+    expect(l[id('SPE-3A')].fx).toBe(0.75); // SPE-3A ← SPE-2B
+    for (const n of TECH_NODES.filter((x) => x.tier === 4)) expect(l[n.id].fx).toBe(0.5);
   });
-  it('선행 경로 = 루트까지', () => {
-    expect([...techAncestors(TECH_NODES, 19)].sort((a, b) => a - b)).toEqual([15, 17, 19]);
+  it('선행 경로 = 루트까지 (T4 는 대체 부모도 포함)', () => {
+    expect([...techAncestors(TECH_NODES, id('MOB-3B'))].sort((a, b) => a - b)).toEqual([id('MOB-1'), id('MOB-2B'), id('MOB-3B')].sort((a, b) => a - b));
+    expect([...techAncestors(TECH_NODES, id('MIL-4'))].sort((a, b) => a - b)).toEqual([0, 1, 3, 4, 5]);
   });
-  it('노드 32개 모두 아이콘이 있다', () => {
-    expect(TECH_ICON_PATHS).toHaveLength(32);
+  it('노드 42개 모두 아이콘이 있다', () => {
+    expect(TECH_ICON_PATHS).toHaveLength(42);
     for (const p of TECH_ICON_PATHS) expect(p.length).toBeGreaterThan(0);
   });
 });

@@ -97,7 +97,7 @@ export function parseClientMessage(raw: string): ParseResult {
       return { ok: true, msg: { type, clientSeq: seq!, flagId: m.flagId, posture: m.posture as 0 | 1 } };
     case 'cmd_buy_tech':
       // v4.3 [A-83]: { nodeId } (구 { axis, tier } 폐기)
-      if (!inRange(m.nodeId, 0, TECH_NODE_COUNT - 1)) return bad('nodeId must be 0..31');
+      if (!inRange(m.nodeId, 0, TECH_NODE_COUNT - 1)) return bad(`nodeId must be 0..${TECH_NODE_COUNT - 1}`);
       return { ok: true, msg: { type, clientSeq: seq!, nodeId: m.nodeId } };
     case 'cmd_ally_propose':
       if (!inRange(m.targetPlayerId, 1, MAX_PLAYERS)) return bad('targetPlayerId');

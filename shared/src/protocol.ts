@@ -46,6 +46,7 @@ export type CmdRejectReason =
   | 'TECH_ORDER'
   /** v4.3: cmd_buy_tech — 부모 노드 미보유 */
   | 'PREREQ_MISSING'
+  | 'EXCLUSIVE_BLOCKED' // 2026-10-24: 양자택일(재정·행정 T2) 상대 노드를 이미 보유
   /** v4.3: cmd_buy_tech — 이미 보유한 노드 */
   | 'ALREADY_OWNED'
   | 'RATE_LIMITED'
