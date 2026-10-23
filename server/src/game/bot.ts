@@ -61,6 +61,8 @@ import {
   type Posture,
   type Unit,
 } from '@civwar/shared';
+import { tileTieHash } from '../map/rng.js';
+import { ANNEX } from './annex.js';
 import { flagValue } from './combat.js';
 import { flagCap, techCost, troopCap } from './economy.js';
 import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
@@ -139,6 +141,12 @@ for (const list of [...TECH_PRIORITY, ...TECH_PRIORITY_SWORD]) {
     mask = (mask | (1 << id)) >>> 0;
   }
 }
+
+/** §32: 앵커 후보 동률 해시 소금 (전 봇 공통 — playerId 에 의존하지 않는다) */
+const BOT_TIE_SALT = 0x2f6b9a1d;
+/** 진단 전용(slot-bias.ts LEGACY_TIE=1): true 면 §32 이전처럼 동률을 tileId 최소로 푼다. 게임 로직에서는 건드리지 않는다 */
+export const botDiag = { legacyTie: false };
+const tieLess = (a: number, b: number): boolean => (botDiag.legacyTie ? a < b : tileTieHash(BOT_TIE_SALT, a) < tileTieHash(BOT_TIE_SALT, b));
 
 interface Anchor {
   /** 발령 앵커 = 깊은 앵커 (v4.2 [A-65]) */
@@ -459,6 +467,24 @@ function plowDepth(troops: number, cost: number): number {
   return Math.min(BOT_DEEP_MAX, Math.max(BOT_DEEP_MIN, Math.floor(troops / (3 * cost))));
 }
 
+/**
+ * §31 [A-141]: 상대의 마지막 기지(= 점령하면 멸망·합병)면 정리 보상(인계 병력 + 정액 병력 + 골드, 골드 1 = 병력 1로 환산)을
+ * 칸 수(보상 / 칸당 비용)로 바꿔 mass 에 더한 비율만큼 점수를 올린다. 보상이 0 이면 점수 불변.
+ */
+function lastBaseBountyScore(ctx: Ctx, o: number, b: number, tq: number, score: number): number {
+  const { state, me } = ctx;
+  const victim = state.players[o];
+  if (!victim || victim.baseTiles.length !== 1) return score;
+  let assets = victim.troopsMilli;
+  for (const f of state.flags) if (f.ownerId === o) assets += f.troopsMilli;
+  const reward = Math.floor((assets * ANNEX.assetPermille) / 1_000_000) + ANNEX.bountyTroops + Math.floor((victim.goldMilli * ANNEX.goldPermille) / 1_000_000) + ANNEX.bountyGold;
+  if (reward <= 0) return score;
+  const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, b, o), b);
+  const mass = Math.max(1, Math.min(Math.floor(tq / cost), 3 * plowDepth(tq, cost)));
+  const gainTiles = Math.floor(reward / cost);
+  return Math.floor((score * (mass + gainTiles)) / mass);
+}
+
 function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, from: number, troops: number): number {
   const { state, me, p, t } = ctx;
   const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, anchor, o), anchor);
@@ -554,7 +580,7 @@ function deepAnchor(ctx: Ctx, a: number, troops: number): number {
       } else if (k === bk) {
         if (bc < 0) bc = costAt(best);
         const c = costAt(u);
-        if (c < bc || (c === bc && u < best)) {
+        if (c < bc || (c === bc && tieLess(u, best))) { // §32
           best = u;
           bc = c;
         }
@@ -611,7 +637,7 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor
         if (anchors.some(([ao, at]) => (ao === o || ao === ANY_HOSTILE) && state.graph.distance(at, x) <= FRONT_RADIUS)) continue;
         if (plowPos.some((pp) => state.graph.distance(pp, x) <= BOT_PLOW_SPACING)) continue;
         const c = tileCost(state, pseudoAttack(me, UNIT.SWORD, x, o), x);
-        if (c < ac) {
+        if (c < ac || (c === ac && tieLess(x, a))) { // §32: 동률은 tileId 가 아니라 해시 순 (위·왼쪽 편향 제거)
           a = x;
           ac = c;
         }
@@ -656,6 +682,7 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor
       for (const d of state.flags) if (d.ownerId === o && d.posture === POSTURE.DEFEND && isLive(d) && guardContains(state, d, b)) guarded = true;
       if (!guarded) score = Math.floor((score * BOT_BASE_UNGUARDED_PERMILLE) / 1000);
       if (capitals.has(b)) score = Math.floor((score * BOT_BASE_CAPITAL_PERMILLE) / 1000);
+      if (!neutralBase) score = lastBaseBountyScore(ctx, o, b, tq, score); // §31 [A-141]: 마지막 기지 = 멸망 보상만큼 가치 가산
       const danger = anchorDanger(ctx, b);
       if (danger > 0) {
         const q = Math.floor((ctx.pool * commit) / 1000);
@@ -746,7 +773,7 @@ function buyTech(ctx: Ctx): void {
   const p = ctx.p;
   const lists = ctx.params.fixedUnit === UNIT.SWORD ? TECH_PRIORITY_SWORD : TECH_PRIORITY;
   let next = -1;
-  for (const id of lists[(ctx.me - 1) % 4]) {
+  for (const id of lists[ctx.params.techStyle ?? (ctx.me - 1) % 4]) {
     if (!techOwned(p.techMask, id)) {
       next = id;
       break;

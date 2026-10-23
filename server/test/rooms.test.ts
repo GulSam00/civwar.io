@@ -226,7 +226,10 @@ describe('룸 흐름 — 비공개 방 설정·시작', () => {
     room.startNow(A.s);
     vi.advanceTimersByTime(3000);
     expect(lastOf(A.inbox, 'match_config')).toMatchObject({ mapSource: 'preset', mapId: 'sample-m-01', width: 100, height: 60, botDifficulty: 'NORMAL' });
-    expect(lastOf(A.inbox, 'map_init')!.spawns.map((s) => s.tileId)).toEqual(loadFixture().spawns.slice(0, 3));
+    // §32: 슬롯 배정이 섞이므로 순서는 보장하지 않고, 위치 집합이 spawns 앞 3개와 같은지만 본다
+    const sp = lastOf(A.inbox, 'map_init')!.spawns;
+    expect(sp.map((s) => s.playerId)).toEqual([1, 2, 3]);
+    expect(sp.map((s) => s.tileId).sort((a, b) => a - b)).toEqual(loadFixture().spawns.slice(0, 3).sort((a, b) => a - b));
   });
 
   it('공개 방: 고정 설정(10인·M·NORMAL·guaranteed), 설정 변경 거절, 30초 자동 시작 → 봇 충원', () => {

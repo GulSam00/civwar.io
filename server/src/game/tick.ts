@@ -39,6 +39,7 @@ import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stag
 import { stage4_moveFlags } from './movement.js';
 import { destOf, fieldKey } from './rules.js';
 import { troopCap } from './economy.js';
+import { ANNEX } from './annex.js';
 import { computeProduction } from './production.js';
 import { newOutbox, type Outbox } from './outbox.js';
 import { DeltaTracker, buildSnapshotFull } from './snapshot.js';
@@ -170,19 +171,38 @@ export function stage12_elimination(state: GameState, t: number, out: Outbox): v
     p.alive = false;
     p.eliminatedTick = t;
     p.conqueredBy = by;
-    state.ledger.eliminated += p.troopsMilli;
+    // 약소국 정리 보상 (§31): 풀·깃발 병력 인계분 + 정액 현상금, 골드 인계분 + 정액 현상금 — 합병자(생존)에게만
+    let assetMilli = p.troopsMilli;
     p.troopsMilli = 0;
+    let goldMilli = p.goldMilli;
     p.goldMilli = 0;
     p.goldWeight = 0;
     // 모든 깃발 즉시 소멸 (환불 없음)
     for (const f of state.flags.filter((x) => x.ownerId === id)) {
-      state.ledger.eliminated += f.troopsMilli;
+      assetMilli += f.troopsMilli;
       f.troopsMilli = 0;
       removeFlag(state, f, t, 'eliminated', 0, out);
     }
+    const heir = by !== null ? state.players[by] : null;
+    let gotTroops = 0;
+    let gotGold = 0;
+    if (heir && heir.alive) {
+      const room = Math.max(0, troopCap(heir) * 1000 - heir.troopsMilli);
+      const fromAssets = Math.min(room, Math.floor((assetMilli * ANNEX.assetPermille) / 1000));
+      const bounty = Math.min(room - fromAssets, ANNEX.bountyTroops * 1000);
+      heir.troopsMilli += fromAssets + bounty;
+      assetMilli -= fromAssets; // 인계된 만큼은 소멸이 아니다
+      state.ledger.regen += bounty; // 새로 생긴 병력 (회계상 생산)
+      gotTroops = Math.floor((fromAssets + bounty) / 1000);
+      const g = Math.floor((goldMilli * ANNEX.goldPermille) / 1000) + ANNEX.bountyGold * 1000;
+      heir.goldMilli += g;
+      heir.goldEarnedMilli += 0; // 누적 획득 골드(타이브레이커)에는 넣지 않는다
+      gotGold = Math.floor(g / 1000);
+    }
+    state.ledger.eliminated += assetMilli;
     // 모든 동맹·제안 즉시 해제 (쿨다운 없이)
     dropPlayerDiplomacy(state, id, t, out);
-    out.broadcast.push({ type: 'player_eliminated', tick: t, playerId: id, byPlayerId: by, annexedTiles: annexed });
+    out.broadcast.push({ type: 'player_eliminated', tick: t, playerId: id, byPlayerId: by, annexedTiles: annexed, bountyTroops: gotTroops, bountyGold: gotGold });
   }
 }
 

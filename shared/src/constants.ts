@@ -155,6 +155,15 @@ export const BASE_PROD_RECOVER_PER_MIN_PERMILLE = 167;
 /** 생산 내역(production) 델타 주기 — 1초 */
 export const PRODUCTION_DELTA_INTERVAL = 5;
 
+
+// ══ 약소국 정리 보상 (사용자 2026-10-23, 프로토콜 §31, [A-141]~) ══
+/** 마지막 기지를 점령해 멸망시킨(합병 받는) 플레이어가 받는 보상. 0 = 없음 */
+export const ANNEX_ASSET_PERMILLE = 500; // 멸망자 풀·깃발 병력 인계 비율 ‰
+export const ANNEX_GOLD_PERMILLE = 1000; // 멸망자 골드 인계 비율 ‰
+export const ANNEX_BOUNTY_TROOPS = 100; // 정액 병력 현상금
+export const ANNEX_BOUNTY_GOLD = 100; // 정액 골드 현상금
+export const ANNEX_FULL_PROD = 1; // 1 이면 마지막 기지 점령 시 생산력 ×0.5 면제
+
 // ══ v4.5 기지 생산 (사용자 2026-10-15, 프로토콜 §22 — 2026-10-14 "생산 지역" 해석 폐기) ══
 /** 기지 한 칸의 생산 = 영토(평원) 이 칸 수만큼 — 사용자 확정 */
 export const BASE_PROD_TILES = 60;
@@ -430,6 +439,8 @@ export interface BotDifficultyParams {
   fixedUnit: number | null;
   /** 봇 성향 0..1000 (서버 전용, 생략 = 500 중립). PlayerState.bot 에만 채워진다 */
   aggressionPermille?: number;
+  /** 테크 우선순위 목록 번호 0..3 (서버 전용, 생략 = (playerId-1) % 4 — §32 이전 동작). PlayerState.bot 에만 채워진다 */
+  techStyle?: number;
 }
 export const BOT_DIFFICULTY: Readonly<Record<BotDifficultyName, Readonly<BotDifficultyParams>>> = {
   EASY: { decisionInterval: 30, reserveRatioPermille: 450, minDefenseRatioPermille: 100, fixedUnit: 1 /* SWORD */ },

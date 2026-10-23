@@ -21,6 +21,7 @@ import {
 } from '@civwar/shared';
 import type { GeneratedMap } from '../map/generate.js';
 import { assignPlaceNames } from '../map/placeNames.js';
+import { relabelSpawns, shuffledSlots } from '../map/slots.js';
 import type { MapGraph } from '../topology/topology.js';
 
 export const NEUTRAL = 0;
@@ -275,6 +276,10 @@ export interface PlayerSetup {
   botDifficulty?: BotDifficultyName;
   /** 봇 성향 강제 (테스트·진단용). 생략 시 botAggressionPermille(aggressionSeed, playerId) */
   aggressionPermille?: number;
+  /** §32: 이 플레이어가 받을 맵 스폰 슬롯(map.spawns 인덱스, 0 기반). 생략 시 playerId-1. 전원이 0..N-1 의 순열을 이뤄야 한다 */
+  spawnSlot?: number;
+  /** §32: 봇 테크 우선순위 목록 번호 0..3 강제 (진단용). 생략 시 시드 기반 균형 배정 */
+  techStyle?: number;
 }
 
 /**
@@ -298,6 +303,14 @@ export function createGameState(
 ): GameState {
   const N = map.playerCount;
   if (setup.length !== N) throw new Error(`setup ${setup.length} != map players ${N}`);
+  // §32: 플레이어 ↔ 스폰 슬롯 배정 (spawnSlot 이 있으면 map 을 다시 라벨링 — spawns[p-1].playerId === p 유지)
+  if (setup.some((s) => s.spawnSlot !== undefined)) {
+    const slotOf: number[] = new Array(N);
+    for (const s of setup) slotOf[s.playerId - 1] = s.spawnSlot ?? s.playerId - 1;
+    map = relabelSpawns(map, slotOf);
+  }
+  // §32: 봇 테크 우선순위 목록은 playerId 가 아니라 시드 기반 균형 배정 (목록 0..3 이 N 명에 고르게, 누가 받을지는 시드가 정한다)
+  const styleRank = shuffledSlots(aggressionSeed ^ 0x7ec4, N);
   const players: PlayerState[] = new Array(N + 1);
   for (const s of setup) {
     const spawn = map.spawns[s.playerId - 1];
@@ -306,7 +319,7 @@ export function createGameState(
       isBot: s.isBot,
       botControlled: s.isBot,
       botDifficulty: s.botDifficulty ?? botDifficulty,
-      bot: { ...BOT_DIFFICULTY[s.botDifficulty ?? botDifficulty], aggressionPermille: s.aggressionPermille ?? botAggressionPermille(aggressionSeed, s.playerId) },
+      bot: { ...BOT_DIFFICULTY[s.botDifficulty ?? botDifficulty], aggressionPermille: s.aggressionPermille ?? botAggressionPermille(aggressionSeed, s.playerId), techStyle: s.techStyle ?? styleRank[s.playerId - 1] % 4 },
       connected: s.connected,
       disconnectedSinceTick: null,
       alive: true,

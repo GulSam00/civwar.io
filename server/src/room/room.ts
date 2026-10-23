@@ -22,6 +22,7 @@ import {
 } from '@civwar/shared';
 import { generateMapForSize, type GeneratedMap } from '../map/generate.js';
 import { buildThumbnail } from '../map/thumbnail.js';
+import { shuffledSlots } from '../map/slots.js';
 import { mapFromPreset, type MapCatalog } from '../map/presets.js';
 import { assignFactionNames, assignPlaceNames, factionCore } from '../map/placeNames.js';
 import { applyRoomOptions, mapLimits, plannedPlayers, settingsEcho, type RoomSettings } from './settings.js';
@@ -421,11 +422,13 @@ export class Room {
   private beginGame(): void {
     if (this.phase !== 'COUNTDOWN' || this.disposed) return;
     const map = this.buildMap(this.members.size);
-    const setup = [...this.members.values()]
-      .sort((a, b) => a.playerId - b.playerId)
-      .map((m) => ({ playerId: m.playerId, isBot: m.isBot, connected: m.isBot || !!m.session?.socket }));
     // 봇 성향 시드 = 룸 맵 시드. 프리셋 맵은 시드가 파일 고정이라 룸 시드를 따로 뽑는다
     const aggressionSeed = this.settings.map.kind === 'preset' ? this.seed() : map.seed;
+    // §32: 플레이어 → 스폰 슬롯 무작위 배정 (시드 결정론). 방장(playerId 1)이 항상 슬롯 0 을 받지 않는다
+    const slotOf = shuffledSlots(aggressionSeed, this.members.size);
+    const setup = [...this.members.values()]
+      .sort((a, b) => a.playerId - b.playerId)
+      .map((m) => ({ playerId: m.playerId, isBot: m.isBot, connected: m.isBot || !!m.session?.socket, spawnSlot: slotOf[m.playerId - 1] }));
     const state = createGameState(map, setup, this.settings.botDifficulty, aggressionSeed);
     this.reconcileFactionNames(state.baseNames);
     for (const s of setup) {

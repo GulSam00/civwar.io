@@ -24,7 +24,8 @@ import type { Outbox } from './outbox.js';
 import { combatEligible, type FlagPresence } from './combat.js';
 import { isGarrison } from './economy.js';
 import { availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
-import { baseProdPm, isAlly, setTileOwner, type Flag, type GameState } from './state.js';
+import { ANNEX } from './annex.js';
+import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } from './state.js';
 
 // ───────────────────────── 5. AP 예산 누적 ─────────────────────────
 
@@ -239,11 +240,12 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
   if (base.hpMilli <= 0 && winner) {
     const w = winner;
     const from = state.owners[B];
+    const lastBase = from !== NEUTRAL && state.players[from].baseTiles.length === 1; // §31: 이 함락 = 멸망
     setTileOwner(state, B, w.ownerId);
     base.hpMilli = BASE_HP_CAPTURE_MILLI;
     base.lockUntilTick = t + BASE_CAPTURE_LOCK_TICK;
     // v4.4 (§21): 생산력 = 현재 값 × 0.5 (중립 기지 포함). 이후 8단계가 선형 회복
-    const prodPm = Math.floor((baseProdPm(base) * BASE_PROD_CAPTURE_PERMILLE) / 1000);
+    const prodPm = lastBase && ANNEX.fullProd ? baseProdPm(base) : Math.floor((baseProdPm(base) * BASE_PROD_CAPTURE_PERMILLE) / 1000);
     base.prodScaled = prodPm * TICKS_PER_MIN;
     for (const f of hitters) f.targetTileId = null;
     out.broadcast.push({

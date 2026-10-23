@@ -162,7 +162,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   tech_purchased: { tick: 'int', playerId: 'int', nodeId: range(0, 31), cost: 'int', newFlagCap: range(3, 7), techMask: range(0, 0xffffffff) },
   threshold_update: { tick: 'int', thresholdPct: 'num' },
   endgame_rush: { tick: 'int', costMultPermille: 'int' },
-  player_eliminated: { tick: 'int', playerId: 'int', byPlayerId: 'int|null', annexedTiles: 'int' },
+  player_eliminated: { tick: 'int', playerId: 'int', byPlayerId: 'int|null', annexedTiles: 'int', bountyTroops: 'int', bountyGold: 'int' }, // §31: 정리 보상 (서버는 항상 싣는다)
   bot_takeover: { tick: 'int', playerId: 'int' },
   player_reconnected: { tick: 'int', playerId: 'int' },
   emote_broadcast: { tick: 'int', playerId: 'int', code: range(0, 15), 'targetPlayerId?': range(1, 12) },

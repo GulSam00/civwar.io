@@ -631,6 +631,9 @@ export interface S2C_PlayerEliminated {
   byPlayerId: number | null;
   /** v4.4 (§21, 추가만): byPlayerId 에게 넘어간 칸 수 (중립으로 돌아갔으면 0). 칸 변경 자체는 같은 tick snapshot_delta.tileChanges. 서버는 항상 싣는다 */
   annexedTiles?: number;
+  /** §31 (추가만, 약소국 정리 보상): byPlayerId 가 받은 병력(풀에 더해짐) / 골드. 서버는 항상 싣는다. byPlayerId 가 null 이면 0 */
+  bountyTroops?: number;
+  bountyGold?: number;
 }
 export interface S2C_BotTakeover {
   type: 'bot_takeover';

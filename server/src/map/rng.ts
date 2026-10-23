@@ -19,3 +19,14 @@ export class Mulberry32 {
     return this.nextU32() < Math.floor((permille * 4294967296) / 1000);
   }
 }
+
+/**
+ * 타일 동률 깨기용 정수 해시 (§32) — rng 를 쓰지 않는 순수 함수. 동률을 "tileId 가장 작은 칸" 으로 풀면 늘 위·왼쪽이 먼저 뽑혀
+ * 방향 편향(위쪽 스폰이 약해짐)이 생기므로, 의미 없는 대신 방향성도 없는 순서로 푼다. 부동소수·Math.random 없음.
+ */
+export function tileTieHash(salt: number, t: number): number {
+  let h = (salt ^ Math.imul(t + 0x9e3779b1, 0x85ebca6b)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
