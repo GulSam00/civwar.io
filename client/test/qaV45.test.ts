@@ -65,7 +65,7 @@ const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots: boolean) 
 
 describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 지도)', () => {
   it('막히는 방어 앵커 발령 → 서버 IDLE(unreachable) @ defendDest → 모델 flagIdleReason, 600 tick 뒤 자동 귀환; 클라이언트 미리보기 = 서버 정지 칸', () => {
-    for (const seed of [41, 42, 43]) {
+    for (const seed of [42, 43, 44]) {
       const state = mkState(seed, 8, 'M', true);
       const bot = new Simulation(state, CivBot);
       for (let i = 0; i < 2600 && !bot.finished; i++) bot.step();

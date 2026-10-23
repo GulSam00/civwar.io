@@ -208,11 +208,14 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 // ───────────────────────── 2) 모델 1 비트 동일 (골든 해시) ─────────────────────────
 
-/** 변경 전 코드(HEAD)에서 server/scripts/_golden.ts 로 뽑은 값. 방송·개인 메시지 전 tick JSON + 최종 상태 */
+/**
+ * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
+ * 2026-10-24 봇 '약한 적 우선'(A-167) 변경으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
+ */
 const GOLDEN = {
-  G1: { stream: '280e5f742e65fca19a56b9989cbcffd187b9cad2efed5938da4f6c237809ec9e', state: 'ec9d733e69a4d9dbe85315539d25f6f221928c830ab45fe15a157d4be17009b6' },
-  G2: { stream: 'f2aa009c6f1c36ed964e7bda9740eb4aeed08f2da8525c9fd0bc30795b9b1ef7', state: 'dff6c53d3c35abc90f10b582fbe056b3e9fb154fd26da2cbc6ea6daffab2bea9' },
-  G3: { stream: 'f3659cf8d212f2206256fef17742386cf99950c606b517a9c134b374d053665a', state: 'a5d86cb066cc009c9e47ef9ca5715298035dd4f38e4393e57a094c800340a971' },
+  G1: { stream: 'dce65c535fb2a555f5a344549b116b14ae1427e5bf789efbfd9ea4511dc6901f', state: 'a3792d96b55d40566e130e02cddc8f5d0425701c22852fa565cb0a3652ded24f' },
+  G2: { stream: '173343b07fb4ddbd4254d135826536adccda20ad867cd307d23f20994053297b', state: '1c2b1f8d56c0f8f2f28d480b6d6f2e8877921fb27045b1986c91f468210973fb' },
+  G3: { stream: 'd81c3d74409793921f0150f5db4191589b08e4c2c371b40eb62c1a0b806b1279', state: '188bcba4aea1eb2e5dc8b0e6657c3c30ec8236606c02e8bb8ec1c5bccb116422' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

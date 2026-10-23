@@ -101,6 +101,12 @@ export const BOT_PLOW_SPACING = 2;
  * v4.4 기지 방어 (사용자 2026-10-14, §10-104·105 에이전트 선택): 적대 공격 깃발이 내 기지에서 이 거리 안이면 그 기지에 방어 깃발을 세운다.
  * 마지막 기지(멸망·합병 직결)는 더 넓게 본다.
  */
+/**
+ * 2026-10-24 [A-167]: 약한 적 우선. 상대 총병력(풀 + 깃발)이 내 총병력의 이 비율(‰) 미만이면 점수 가산(성향 무관, 성향 계수 적용 뒤에 곱함).
+ * 비율 0 에서 최대 BOT_WEAK_MAX_PERMILLE, 임계에서 1000 으로 선형. 상한으로 몰려치기 방지. 수치는 추후 밸런스 패치에서 일괄 조정.
+ */
+export const BOT_WEAK_RATIO_PERMILLE = 500;
+export const BOT_WEAK_MAX_PERMILLE = 1500;
 export const BOT_BASE_GUARD_RADIUS = 4;
 export const BOT_LAST_BASE_GUARD_RADIUS = 8;
 /** v4.4: 마지막 기지가 아닌 기지는 최근 이 tick 안에 체력 피해를 받았을 때만 수비대를 세운다 (8.1 기지 위협의 25 tick 과 같은 눈금) */
@@ -504,9 +510,15 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
   const march = state.graph.distance(from >= 0 ? from : originFor(state, p, anchor), anchor);
   let guardN = 0;
   let enemyDefend = 0;
+  let foeAssets = 0;
+  let myAssets = p.troopsMilli;
   if (o !== NEUTRAL) {
+    foeAssets = state.players[o].troopsMilli;
     for (const d of state.flags) {
-      if (d.ownerId !== o || d.posture !== POSTURE.DEFEND || !isLive(d)) continue;
+      if (d.ownerId === me) myAssets += d.troopsMilli;
+      if (d.ownerId !== o) continue;
+      foeAssets += d.troopsMilli;
+      if (d.posture !== POSTURE.DEFEND || !isLive(d)) continue;
       enemyDefend++;
       if (guardContains(state, d, anchor)) guardN++;
     }
@@ -523,6 +535,11 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
       if (b.hpMilli < BASE_HP_MAX_MILLI / 2) score = Math.floor((score * 140) / 100);
     }
     score = Math.floor((score * ctx.k.enemyAnchorWeightPermille) / 1000); // 성향: 적 앵커 선호
+    const ratio = Math.floor((foeAssets * 1000) / Math.max(1, myAssets));
+    if (ratio < BOT_WEAK_RATIO_PERMILLE) {
+      const mult = 1000 + Math.floor(((BOT_WEAK_RATIO_PERMILLE - ratio) * (BOT_WEAK_MAX_PERMILLE - 1000)) / BOT_WEAK_RATIO_PERMILLE);
+      score = Math.floor((score * mult) / 1000); // 약한 적 우선(성향 무관)
+    }
   }
   return score;
 }
