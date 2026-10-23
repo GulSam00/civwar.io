@@ -102,7 +102,9 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(d.rows[0]).toMatchObject({ label: '기병 이동', before: '155', after: '165' }); // 기본 145
   });
   it('사기·기지 스탯 행 (재정·행정·병종 T3·T4)', () => {
-    expect(techDetailRows(nd('CAV-4'), { techMask: mask(id('CAV-1'), id('CAV-2B'), id('CAV-3B')) }).rows[0]).toMatchObject({ label: '기병 사기 감소율', before: '×1.00', after: '×0.70' });
+    expect(techDetailRows(nd('MIL-4'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }).rows[0]).toMatchObject({ label: '사기 감소율 (전 병종)', before: '×1.00', after: '×0.85' });
+    expect(techDetailRows(nd('SWO-4'), { techMask: mask(id('SWO-1'), id('SWO-2B'), id('SWO-3B')) }).rows[0]).toMatchObject({ label: '검병 사기 감소율', before: '×1.00', after: '×0.80' });
+    expect(techDetailRows(nd('SWO-3B'), { techMask: mask(id('SWO-1'), id('SWO-2B')) }).rows[0]).toMatchObject({ label: '검병 점령 소모 배율', before: '×0.75', after: '×0.65' });
     expect(techDetailRows(nd('CAV-3B'), { techMask: mask(id('CAV-1'), id('CAV-2B')) }).rows[0]).toMatchObject({ before: '+0%p', after: '+5%p' });
     expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.80' });
     expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2A'), id('TER-3A')) }).rows[0]).toMatchObject({ label: '수도 생산 배율', before: '×1.00', after: '×1.30' });

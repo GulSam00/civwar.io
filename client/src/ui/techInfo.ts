@@ -13,6 +13,7 @@ import {
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
   TECH_POINT_PERMILLE,
+  techCaptureMultPm,
   techCombatPts,
   techNodeCost,
   techStatValues,
@@ -69,6 +70,8 @@ export interface UnitCombatStats {
   /** 테크 점수 (군사 + 병종 갈래) */
   atkTechPts: number;
   defTechPts: number;
+  /** 점령(영토·기지 공격) 병력 소모 배율 ‰ — 병종 기본 × 테크, 1000 = ×1.00 (2026-10-24) */
+  capturePm: number;
 }
 
 export function unitCombatStats(unit: number, techMask: number, consts?: Consts): UnitCombatStats {
@@ -84,6 +87,7 @@ export function unitCombatStats(unit: number, techMask: number, consts?: Consts)
     defBase,
     atkTechPts,
     defTechPts,
+    capturePm: techCaptureMultPm(stat, unit),
   };
 }
 

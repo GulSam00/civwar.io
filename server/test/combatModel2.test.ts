@@ -211,12 +211,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
  */
 const GOLDEN = {
-  G1: { stream: 'a6797a51a00afe4cd3d22bb7d2c6f3142d1970ffba242354923f747f3ec0bd15', state: '000b32fe6e86911929148423d01df3712b9372915c81cd1fe503d1092999b1e8' },
-  G2: { stream: '2dfb8c44b51b08ea7c4aa26b1819e5444b65262bce687913efc703bed4fa072d', state: '7219bf904bc405dc895fe4cf055b11ed6c8f53e54da5705ae7954aaf78646702' },
-  G3: { stream: '229211179ec7a98b3b8fa7899cc5d0719003d90617bd9028affe5ce64932d32c', state: '7dea210bcbed75df4ba436cc8ae51e74c75fe19cb07dccf345be9ebc72cdff99' },
+  G1: { stream: 'd71337b3534474c6374cd0c32ed1dd2f22cd2335f14b5a3a17e7c7edc5815c32', state: 'c9813d5deed86756b71d0c800c66ca4931e372e62a3f80d7526308aa39cc8baa' },
+  G2: { stream: '7e488cda3c5c449864ca3aa120ef366ec154f9fc55c8803f568bd93927b9f85e', state: '3d11e890bca9282885e8c4d98d5a64bd5953992f7b47f47bbf4ce612bb45e650' },
+  G3: { stream: '2648fa2f5c7e129aeaf66e511a0ec36bb366efd903bc5ecdbc05817922341c78', state: 'c459ea7baa6b72a68c14f362092ed34b341b5d44adeca35038de07b2847c24c0' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
@@ -274,7 +274,7 @@ describe('모델 1 비트 동일 (COMBAT_MODEL=1 이 기본값)', () => {
 
   it('모델 1 메시지에는 새 필드가 없다 (match_config.combatModel · flags[].morale · moraleChanged · sides[].atk 등)', () => {
     const seen = { cfg: false, full: false, delta: false, combat: false };
-    playHash(1000, NORMAL10, 1300, 1, (out, s) => {
+    playHash(1000, NORMAL10, 2600, 1, (out, s) => { // 2026-10-24: 점령 소모 개편 뒤 첫 교전이 늦어져 1300 → 2600
       for (const m of out.broadcast) {
         if (m.type === 'snapshot_full') {
           seen.full = true;

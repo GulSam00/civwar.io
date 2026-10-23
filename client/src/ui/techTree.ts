@@ -190,7 +190,7 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
     fmt = (v) => String(Math.round(c<readonly number[]>(consts, 'UNIT_SPEED_PERMILLE', UNIT_SPEED_PERMILLE)[unit] / TECH_POINT_PERMILLE) + techSpeedPts(v, unit));
   } else if (stat >= S.UPKEEP_WEIGHT_SPEAR && stat <= S.UPKEEP_WEIGHT_CAVALRY) (label = `${u(S.UPKEEP_WEIGHT_SPEAR)} 유지비 가중치`), (fmt = (v) => (v[stat] / 1000).toFixed(2));
   else if (stat >= S.CONVERT_SPEAR && stat <= S.CONVERT_CAVALRY) (label = `${u(S.CONVERT_SPEAR)} 편성비 (병력 1당 풀 차감)`), (fmt = (v) => x2(v[stat]));
-  else if (stat >= S.CAPTURE_MULT_SPEAR && stat <= S.CAPTURE_MULT_CAVALRY) (label = `${u(S.CAPTURE_MULT_SPEAR)} 점령비용 배율`), (fmt = (v) => x2(v[stat]));
+  else if (stat >= S.CAPTURE_MULT_SPEAR && stat <= S.CAPTURE_MULT_CAVALRY) (label = `${u(S.CAPTURE_MULT_SPEAR)} 점령 소모 배율`), (fmt = (v) => x2(v[stat]));
   // 2026-10-24: 사기(전투 모델 2)·기지 효과
   else if (stat === S.MORALE_DROP) (label = '사기 감소율 (전 병종)'), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.MORALE_DROP_SPEAR && stat <= S.MORALE_DROP_CAVALRY) (label = `${u(S.MORALE_DROP_SPEAR)} 사기 감소율`), (fmt = (v) => x2(v[S.MORALE_DROP] + v[stat]));

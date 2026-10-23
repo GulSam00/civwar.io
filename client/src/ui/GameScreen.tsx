@@ -964,6 +964,9 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
               기본 {fmtPts(cs.defBase)} · 테크 +{cs.defTechPts}
             </span>
           </div>
+          <div className="cs-row">
+            점령 소모 <b>{fmtPm(cs.capturePm)}</b>
+          </div>
           {onOwnBase && (
             <div className="cs-base">
               기지 위 <b>×1.5</b>

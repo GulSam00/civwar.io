@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  UNIT_ATK_MULT_PERMILLE,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
   BASE_HP_MAX_MILLI,
   BASE_PROD_TILES,
@@ -133,7 +134,8 @@ describe('v4.5 중립 점령비용 고정 (√칸 항 폐기)', () => {
     s.map.terrain[X!] = TERRAIN.PLAIN;
     const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: home });
     const c0 = tileCost(s, f, X!);
-    expect(c0).toBe(Math.ceil((NEUTRAL_BASE * TERRAIN_COST_PERMILLE[TERRAIN.PLAIN]) / 1000));
+    // 2026-10-24: 병종 점령 소모 배율(검병 0.85)이 곱해진다 — 크기와 무관한 것은 그대로
+    expect(c0).toBe(Math.ceil((((NEUTRAL_BASE * TERRAIN_COST_PERMILLE[TERRAIN.PLAIN]) / 1000) * UNIT_ATK_MULT_PERMILLE[UNIT.SWORD]) / 1000));
     p.tiles = 2500; // 크기만 바꾼다 (파생값 직접 조작 — 비용식이 tiles 를 읽지 않음을 확인)
     expect(tileCost(s, f, X!)).toBe(c0);
   });
