@@ -9,11 +9,20 @@ import {
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
   DISENGAGE_VALUE_PERMILLE,
+  MORALE_DROP_PER_TICK,
+  MORALE_MAX,
+  MORALE_RECOVER,
+  MORALE_RECOVER_BASE,
   POSTURE,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
+  flagScalar,
+  sideLossDetail,
   techCombatPm,
   techDisengageTicks,
+  techMoraleDropPm,
+  techMoraleRecoverPm,
+  type CombatFlagInput,
 } from '@civwar/shared';
 import { beginReturn } from './flagops.js';
 import type { Outbox } from './outbox.js';
@@ -23,9 +32,14 @@ export interface CombatSidePlan {
   key: number; // 편 안 최소 ownerId
   ownerIds: number[];
   flagIds: number[]; // ASC
-  power: number; // W_s
+  power: number; // W_s (모델 2: ω 평균 스칼라)
   troopsMilli: number; // 4a 시점 편 병력
   lossMilli: number; // Ls
+  /** §33 모델 2 에서만: 편 채널값·손실 비율 ‰·평균 사기 (combat_started 선택 필드의 원천) */
+  atk?: number;
+  def?: number;
+  lossPermille?: number;
+  morale?: number;
 }
 export interface CombatGroupPlan {
   key: number; // 무리 안 최소 flagId
@@ -97,6 +111,7 @@ export function onOwnBase(state: Readonly<GameState>, f: Readonly<Flag>): boolea
  * v4.5: 물 위 깃발이 없어져 상륙 배율(LANDING_COMBAT) 항 삭제. group 인자는 호출 호환용.
  */
 export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, _group: readonly Readonly<Flag>[]): number {
+  if (state.combatModel === 2) return flagScalar(combatInput(state, f)); // §33: 호환 스칼라 (ω 평균, 사기 포함)
   const terrain = state.map.terrain;
   const base = onOwnBase(state, f);
   let v: number;
@@ -111,6 +126,41 @@ export function flagValue(state: Readonly<GameState>, f: Readonly<Flag>, _group:
   v = Math.floor((v * techCombatPm(owner.statPm, f.unit, f.posture === POSTURE.DEFEND)) / 1000);
   if (f.disengageUntilTick !== null) v = Math.floor((v * DISENGAGE_VALUE_PERMILLE) / 1000);
   return Math.max(1, v);
+}
+
+/**
+ * §33 (전투 모델 2): 깃발 -> shared/combatMath 입력. 봇 가상 깃발(troopsMilli·morale 없음)도 받는다 (사기 1000 가정).
+ * disengage 를 주면 이탈 대기 여부를 덮어쓴다 (봇의 이탈 3초 손실 추정용).
+ */
+export function combatInput(state: Readonly<GameState>, f: Readonly<Flag>, disengage?: boolean): CombatFlagInput {
+  return {
+    unit: f.unit,
+    posture: f.posture,
+    terrain: state.map.terrain[f.posTileId],
+    onOwnBase: onOwnBase(state, f),
+    troopsMilli: f.troopsMilli ?? 0,
+    morale: f.morale ?? MORALE_MAX,
+    disengage: disengage ?? (f.disengageUntilTick !== null && f.disengageUntilTick !== undefined),
+    statPm: state.players[f.ownerId].statPm,
+  };
+}
+
+/**
+ * §33 모델 2 전용 (봇 후퇴 판단): 깃발 f 한 개 대 foes(한 편으로 합산)의 이번 tick 정확 손실(milli). 같은 L/T 식, 편 2개.
+ * 현행 스칼라 근사(병력 x v)와 달리 sideLossShares 와 같은 참값이다.
+ */
+export function engageLossPerTick(state: Readonly<GameState>, f: Readonly<Flag>, foes: readonly Readonly<Flag>[], disengageMe?: boolean): { mine: number; foes: number } {
+  const all = [f, ...foes];
+  let S = 0;
+  let R = 0;
+  for (const x of all) {
+    S += x.troopsMilli;
+    R += x.initialTroops * 1000;
+  }
+  const n = all.length;
+  const L = Math.max(Math.floor((S * COMBAT_LOSS_BP) / (n * 10000)), Math.floor((R * COMBAT_LOSS_FLOOR_BP) / (n * 10000)), COMBAT_MIN_LOSS_MILLI);
+  const det = sideLossDetail([[combatInput(state, f, disengageMe)], foes.map((g) => combatInput(state, g))], 2 * L);
+  return { mine: det[0].lossMilli, foes: det[1].lossMilli };
 }
 
 /** 무리 안 소유자들을 isAlly 로 union-find. 편 안에 적대 쌍이 생기면(비이행 동맹) 그 편은 ownerId별로 쪼갠다 [A-12] */
@@ -204,12 +254,27 @@ export function stage4a_flagCombatPhaseA(state: Readonly<GameState>, _t: number)
       }
       return { key: os[0], ownerIds: os, flagIds: members.map((x) => x.id), power: Math.max(1, Math.floor(wsum / sum)), troopsMilli: sum, lossMilli: 0 };
     });
-    const inv = sides.map((s) => Math.floor(1_000_000_000 / s.power));
-    const sumInv = inv.reduce((a, b) => a + b, 0);
-    const raw = inv.map((iv) => Math.floor((T * iv) / sumInv));
-    let rem = T - raw.reduce((a, b) => a + b, 0);
-    for (let i = 0; rem > 0; i = (i + 1) % sides.length, rem--) raw[i] += 1;
-    sides.forEach((s, i) => (s.lossMilli = Math.min(raw[i], s.troopsMilli)));
+    if (state.combatModel === 2) {
+      // §33: 채널 비교 + ω 합성 (shared/combatMath.sideLossDetail). 총량 T 는 현행과 같다
+      const det = sideLossDetail(
+        sides.map((s) => comp.filter((x) => s.ownerIds.includes(x.ownerId)).map((x) => combatInput(state, x))),
+        T,
+      );
+      sides.forEach((s, i) => {
+        s.lossMilli = det[i].lossMilli;
+        s.atk = det[i].atk;
+        s.def = det[i].def;
+        s.lossPermille = det[i].lossPermille;
+        s.morale = det[i].morale;
+      });
+    } else {
+      const inv = sides.map((s) => Math.floor(1_000_000_000 / s.power));
+      const sumInv = inv.reduce((a, b) => a + b, 0);
+      const raw = inv.map((iv) => Math.floor((T * iv) / sumInv));
+      let rem = T - raw.reduce((a, b) => a + b, 0);
+      for (let i = 0; rem > 0; i = (i + 1) % sides.length, rem--) raw[i] += 1;
+      sides.forEach((s, i) => (s.lossMilli = Math.min(raw[i], s.troopsMilli)));
+    }
 
     // 편 내부: 현재 병력 비례, 잔여 milli 는 (troopsMilli DESC, flagId ASC) 로 1씩 (4.9 정렬표)
     for (const s of sides) {
@@ -252,6 +317,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     if (!plan.groupOf.has(f.id) || f.troopsMilli > 0 || f.routed) continue;
     f.troopsMilli = 0;
     f.routed = true;
+    if (state.combatModel === 2) f.morale = 0; // §33: 패주 시 사기 0
     f.inCombat = false;
     f.disengageUntilTick = null;
     f.disengageHold = false;
@@ -297,7 +363,26 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     if (nb) out.broadcast.push({ type: 'flag_blocked', tick: t, flagId: f.id, byFlagIds: by! });
     else out.broadcast.push({ type: 'flag_unblocked', tick: t, flagId: f.id });
   }
+  if (state.combatModel === 2) stage4c_updateMorale(state, new Set(routedNow)); // §33: 4b 끝, flagId ASC
   trackCombatEvents(state, plan, routedNow, brokeAway, t, out);
+}
+
+/**
+ * §33 사기 갱신 (모델 2 전용, 4b 마지막 — inCombat 이 확정된 뒤, flagId ASC, 정수 ‰).
+ * 교전 중: -drop(unit) · 비전투: +3, 자기 기지 칸 위 +10. 이번 tick 패주한 깃발은 건너뛴다(0 유지).
+ */
+export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>): void {
+  for (const f of state.flags) {
+    if (skip.has(f.id)) continue;
+    const stat = state.players[f.ownerId].statPm;
+    if (f.inCombat) {
+      const drop = Math.max(1, Math.floor((MORALE_DROP_PER_TICK[f.unit] * techMoraleDropPm(stat, f.unit)) / 1000));
+      f.morale = Math.max(0, f.morale - drop);
+    } else {
+      const rec = Math.floor(((onOwnBase(state, f) ? MORALE_RECOVER_BASE : MORALE_RECOVER) * techMoraleRecoverPm(stat, f.unit)) / 1000);
+      f.morale = Math.min(MORALE_MAX, f.morale + rec);
+    }
+  }
 }
 
 /** combat_started / combat_ended (표시 전용 — 규칙에 영향 없음) */
@@ -325,7 +410,13 @@ function trackCombatEvents(state: GameState, plan: FlagCombatPlan, routedNow: nu
         tick: t,
         groupKey: g.key,
         flagIds: g.flagIds.slice(),
-        sides: g.sides.map((s) => ({ sideKey: s.key, ownerIds: s.ownerIds.slice(), troops: Math.floor(s.troopsMilli / 1000), power: s.power })),
+        sides: g.sides.map((s) => ({
+          sideKey: s.key,
+          ownerIds: s.ownerIds.slice(),
+          troops: Math.floor(s.troopsMilli / 1000),
+          power: s.power,
+          ...(state.combatModel === 2 ? { atk: s.atk, def: s.def, lossPermille: s.lossPermille, morale: s.morale } : {}),
+        })),
       });
     }
     for (const id of g.flagIds) if (routedSet.has(id) && !routedUnion.has(id)) rec.routed.push(id);

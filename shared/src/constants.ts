@@ -322,9 +322,22 @@ export const TECH_STAT = {
   CAPTURE_MULT_SPEAR: 29, // 그 플레이어의 UNIT_ATK_MULT_PERMILLE[unit] (점령비용 병종 배율, 값 자체)
   CAPTURE_MULT_SWORD: 30,
   CAPTURE_MULT_CAVALRY: 31,
+  // §33 (전투 모델 2) 예약 칸 — 노드는 아직 없다. 기본값은 모두 효과 없음 (공통 1000 / 가산 0 / 병종별 0)
+  MORALE_FULL_BONUS: 32, // 사기 만땅 곱 가산 ‰ (공통). FULL(unit) = MORALE_FULL + 공통 + 병종별
+  MORALE_FULL_BONUS_SPEAR: 33,
+  MORALE_FULL_BONUS_SWORD: 34,
+  MORALE_FULL_BONUS_CAVALRY: 35,
+  MORALE_DROP: 36, // 사기 감소율 배율 ‰ (공통 1000 + 병종별 가산)
+  MORALE_DROP_SPEAR: 37,
+  MORALE_DROP_SWORD: 38,
+  MORALE_DROP_CAVALRY: 39,
+  MORALE_RECOVER: 40, // 사기 회복 배율 ‰ (공통 1000 + 병종별 가산)
+  MORALE_RECOVER_SPEAR: 41,
+  MORALE_RECOVER_SWORD: 42,
+  MORALE_RECOVER_CAVALRY: 43,
 } as const;
 export type TechStat = (typeof TECH_STAT)[keyof typeof TECH_STAT];
-export const TECH_STAT_COUNT = 32;
+export const TECH_STAT_COUNT = 44; // §33: 32 -> 44 (사기 예약 12칸 추가, 앞 32칸 불변)
 /** 무테크 스탯 값 (인덱스 = TECH_STAT). 값 자체가 상수인 스탯은 그 상수를 그대로 쓴다 */
 export const TECH_STAT_BASE: readonly number[] = [
   1000, 1000, 1000, 1000, 1000, GARRISON_UPKEEP_PERMILLE, 1000, 1000, 1000, SUPPLY_COEF_PERMILLE,
@@ -335,6 +348,9 @@ export const TECH_STAT_BASE: readonly number[] = [
   UNIT_GARRISON_PERMILLE[0], UNIT_GARRISON_PERMILLE[1], UNIT_GARRISON_PERMILLE[2],
   UNIT_CONVERT_PERMILLE[0], UNIT_CONVERT_PERMILLE[1], UNIT_CONVERT_PERMILLE[2],
   UNIT_ATK_MULT_PERMILLE[0], UNIT_ATK_MULT_PERMILLE[1], UNIT_ATK_MULT_PERMILLE[2],
+  0, 0, 0, 0, // MORALE_FULL_BONUS (+ 병종별)
+  1000, 0, 0, 0, // MORALE_DROP
+  1000, 0, 0, 0, // MORALE_RECOVER
 ];
 
 /** [A-69] 티어별 기본 가격 (인덱스 = tier-1) */
@@ -515,6 +531,52 @@ export const POSTURE_COOLDOWN_TICKS = 25; // 사용자 확정 튜닝 레버
 // DISENGAGE_TICKS 는 깃발 절로 옮겼다 (v4.5 — TECH_STAT_BASE 가 참조)
 export const DISENGAGE_VALUE_PERMILLE = 500; // [A-31]
 export const ANY_HOSTILE = 254; // targetOwnerId 예약값 [A-27]
+// ══ §33 전투 모델 2 (v4.9, 2026-10-23 설계 05_combat_redesign_draft.md rev.4) ══
+// COMBAT_MODEL = 기본 모델 (1 = 현행, 2 = 채널 비교 + 사기). 서버는 환경변수 COMBAT_MODEL=2 또는 createGameState 인자로 덮어쓴다.
+// 모델 1 에서는 아래 상수를 아무도 읽지 않는다 (현행 상수는 삭제하지 않는다).
+export const COMBAT_MODEL: 1 | 2 = 1;
+export const CHANNEL_COUNT = 2;
+/** 채널 번호 (채널을 늘리면 뒤에 붙인다) */
+export const CHANNEL = { ATK: 0, DEF: 1 } as const;
+/** UNIT_STAT[채널][병종] — 병종 기본 능력치 (현행 ATK/DEF 표와 같은 값) */
+export const UNIT_STAT: readonly (readonly number[])[] = [UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE];
+/**
+ * TERRAIN_BUFF[지형][태세][채널] ‰ — 인덱스 = TERRAIN(0..6), 태세 = POSTURE(0 공격, 1 방어), 채널 = CHANNEL.
+ * 깃발이 서 있는 자기 칸의 지형만 읽는다. 기지 칸은 BASE_BUFF 가 대체한다.
+ */
+export const TERRAIN_BUFF: readonly (readonly (readonly number[])[])[] = [
+  [[1000, 1000], [1000, 1000]], // DEEP (깃발이 서지 않음)
+  [[1000, 1000], [1000, 1000]], // PLAIN
+  [[1000, 1000], [1000, 1050]], // FERTILE
+  [[1100, 1000], [1000, 1300]], // HILLS
+  [[1100, 1000], [1000, 950]], // DESERT
+  [[1000, 1150], [1000, 1600]], // MOUNTAIN
+  [[1000, 1000], [1000, 1000]], // SHALLOW (깃발이 서지 않음)
+];
+/** BASE_BUFF[태세][채널] ‰ — 자기 기지 칸(수도 포함). 지형 항을 대체하며 두 채널 모두 적용 */
+export const BASE_BUFF: readonly (readonly number[])[] = [
+  [1300, 1300],
+  [1300, 1300],
+];
+/** POSTURE_W[태세][채널] ‰ — 합성 가중 ω: 자기 태세 채널 600 / 반대 채널 400 */
+export const POSTURE_W: readonly (readonly number[])[] = [
+  [600, 400],
+  [400, 600],
+];
+export const COMBAT_GAMMA = 2; // 대비 지수 (구현은 정수 역제곱 고정; 값은 표시·문서용)
+export const COMBAT_VMIN = 100; // 편 채널값 하한
+export const DISENGAGE_VALUE_PERMILLE_V2 = 700; // 이탈 대기 배율 (현행 500)
+// 사기 (깃발 단위, ‰ 0..1000)
+export const MORALE_MAX = 1000;
+export const MORALE_FLOOR = 600; // 사기 0 의 곱 ‰ (-40%)
+export const MORALE_FULL = 1100; // 사기 1000 의 곱 ‰ (+10%)
+export const MORALE_MULT_CAP = 1500; // 곱 상한 (테크 기세 가산 후에도)
+/** 교전 tick 당 사기 감소 ‰ — 인덱스 = UNIT (창 3 / 검 6 / 기 10) */
+export const MORALE_DROP_PER_TICK = [3, 6, 10] as const;
+export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
+export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
+export const MORALE_DELTA_INTERVAL = 5; // 델타 moraleChanged 주기 (tick)
+
 // 폐기·구현 금지: COMBAT_HOME_DEF_PERMILLE, COMBAT_TERRAIN_DEF_PERMILLE(A-16), UNIT_POWER, LOSER_ATTRITION_RATIO 등
 
 // ══ 로비 (v4.1 2.8 h — 사용자 승인값 + 백엔드 결정) ══

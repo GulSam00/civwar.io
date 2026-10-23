@@ -382,6 +382,8 @@ export interface S2C_MatchConfig {
   mapId?: string;
   /** v4.1: 방 봇 난이도 (봇 인계 포함 전 봇 공통) */
   botDifficulty: BotDifficultyName;
+  /** §33 (추가만): 전투 모델. 2 일 때만 싣는다 (없으면 1 = 현행) */
+  combatModel?: 1 | 2;
   /** shared/constants.ts 의 export 전체(함수·타입 제외) */
   constants: Record<string, unknown>;
 }
@@ -451,6 +453,8 @@ export interface FlagSnapshot {
   halted?: boolean;
   /** v4.2 [A-61] (추가만): cmd_flag_recall{baseTileId} 로 지정한 귀환 기지. null = 자동. 서버는 항상 싣는다 */
   returnBaseTileId?: number | null;
+  /** §33 (추가만): 사기 ‰ 0..1000. 전투 모델 2 일 때만 싣는다 (없으면 사기 개념 없음) */
+  morale?: number;
   // v4.6 (§27): pendingPosture 필드 제거 — 태세 전환은 즉시 적용되고 대기 상태가 없다
 }
 
@@ -574,6 +578,11 @@ export interface S2C_SnapshotDelta {
    * 노출 소모·AP 지출은 포함하지 않는다. 표시용 "−n/틱" = lossMilli / 1000. 서버는 항상 싣는다(빈 배열 가능)
    */
   combatLoss?: [number, number][];
+  /**
+   * §33 (추가만, 전투 모델 2 에서만): [flagId, morale ‰] — MORALE_DELTA_INTERVAL(5) tick 마다 마지막으로 보낸 값과 다른 깃발만.
+   * 한 번도 보내지 않은 깃발의 사기는 1000(MORALE_MAX). snapshot_full 의 flags[].morale 이 기준점이다.
+   */
+  moraleChanged?: [number, number][];
 }
 
 export interface S2C_CmdAck {
@@ -749,7 +758,12 @@ export interface CombatSide {
   sideKey: number;
   ownerIds: number[];
   troops: number;
-  power: number; // 편 실효값 W (permille)
+  power: number; // 편 실효값 W (permille). §33 모델 2: ω 평균 스칼라(사기·이탈 반영)
+  /** §33 (추가만, 모델 2 에서만): 편 채널값 V_ATK / V_DEF (‰), 이번 tick 편 손실 비율 ‰ (Σ = 1000 근방), 병력 가중 평균 사기 ‰ */
+  atk?: number;
+  def?: number;
+  lossPermille?: number;
+  morale?: number;
 }
 export interface S2C_CombatStarted {
   type: 'combat_started';

@@ -8,6 +8,8 @@ import {
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENDGAME_RUSH_TICK,
   HARD_TIMEOUT_TICK,
+  MORALE_DELTA_INTERVAL,
+  MORALE_MAX,
   PLAYER_DELTA_INTERVAL,
   PRODUCTION_DELTA_INTERVAL,
   POSTURE,
@@ -73,6 +75,7 @@ export function buildMatchConfig(state: Readonly<GameState>): S2C_MatchConfig {
     mapSource: m.source.kind,
     ...(m.source.kind === 'preset' ? { mapId: m.source.mapId } : {}),
     botDifficulty: state.botDifficulty,
+    ...(state.combatModel === 2 ? { combatModel: 2 as const } : {}),
     constants: constantsTable(),
   };
 }
@@ -137,7 +140,7 @@ function playerDelta(p: Readonly<PlayerState>): PlayerDelta {
   };
 }
 
-function flagSnap(f: Readonly<Flag>): FlagSnapshot {
+function flagSnap(f: Readonly<Flag>, model: 1 | 2): FlagSnapshot {
   return {
     id: f.id,
     ownerId: f.ownerId,
@@ -161,6 +164,7 @@ function flagSnap(f: Readonly<Flag>): FlagSnapshot {
     breakaway: f.breakaway,
     halted: f.halted,
     returnBaseTileId: f.returnBaseTileId,
+    ...(model === 2 ? { morale: f.morale } : {}),
   };
 }
 
@@ -171,7 +175,7 @@ export function buildSnapshotFull(state: Readonly<GameState>): S2C_SnapshotFull 
     tick: t,
     owners: rleEncode(state.owners),
     players: state.players.filter(Boolean).map(playerSnap),
-    flags: state.flags.map(flagSnap),
+    flags: state.flags.map((f) => flagSnap(f, state.combatModel)),
     bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b.hpMilli), prodPm: baseProdPm(b) })),
     alliances: state.alliances.map((a) => ({ a: a.a, b: a.b, state: a.state, sinceTick: a.sinceTick, breakAtTick: a.breakAtTick })),
     thresholdPct: thresholdPct(t),
@@ -211,6 +215,8 @@ export class DeltaTracker {
   private flagFlag = new Map<number, string>();
   private flagProg = new Map<number, number>();
   private flagRetBase = new Map<number, number | null>();
+  /** §33 (모델 2): 마지막으로 보낸 사기. 없으면 MORALE_MAX 로 간주 */
+  private flagMorale = new Map<number, number>();
   private baseHp = new Map<number, number>();
   private baseProd = new Map<number, number>();
   private production = new Map<number, string>();
@@ -232,6 +238,8 @@ export class DeltaTracker {
     this.flagFlag.clear();
     this.flagProg.clear();
     this.flagRetBase.clear();
+    this.flagMorale.clear();
+    if (state.combatModel === 2) for (const f of state.flags) this.flagMorale.set(f.id, f.morale);
     for (const f of state.flags) {
       this.flagProg.set(f.id, progressPct(f.progressMilli));
       this.flagRetBase.set(f.id, f.returnBaseTileId);
@@ -317,7 +325,17 @@ export class DeltaTracker {
         d.flagTargets.push([f.id, f.targetTileId]);
       }
     }
+    if (state.combatModel === 2 && t % MORALE_DELTA_INTERVAL === 0) {
+      d.moraleChanged = [];
+      for (const f of state.flags) {
+        if ((this.flagMorale.get(f.id) ?? MORALE_MAX) !== f.morale) {
+          this.flagMorale.set(f.id, f.morale);
+          d.moraleChanged.push([f.id, f.morale]);
+        }
+      }
+    }
     for (const id of state.changes.flagsGone) {
+      this.flagMorale.delete(id);
       this.flagPos.delete(id);
       this.flagStat.delete(id);
       this.flagTarget.delete(id);

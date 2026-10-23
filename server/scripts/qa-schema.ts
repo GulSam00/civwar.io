@@ -84,6 +84,7 @@ const flagSnap = obj({
   targetOwnerId: (v, p, e) => { if (!isInt(v) || !((v as number) <= 12 || v === 254)) e.push(`${p}: 0..12|254 기대 ${v}`); },
   state: FLAG_STATE, targetTileId: 'int|null', progressPct: range(0, 99), stalled: 'bool', inCombat: 'bool', routed: 'bool', blocked: 'bool',
   disengaging: 'bool', postureCooldownUntilTick: 'int', disengageUntilTick: 'int|null', breakaway: 'bool', halted: 'bool', returnBaseTileId: 'int|null',
+  'morale?': range(0, 1000), // §33: 전투 모델 2 에서만
 });
 /** v4.5 §22 — 기지 행 + 영토 행 */
 const production = obj({
@@ -131,7 +132,8 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     seed: 'int', topology: ['enum', 'square'], width: 'int', height: 'int', totalLandTiles: 'int', tickMs: 'int', hardTimeoutTick: 'int',
     endgameRush: obj({ tick: 'int', costMultPermille: 'int' }),
     thresholdCurve: obj({ startPct: 'num', decayStartTick: 'int', decayPerMinPermille: 'int', floorPct: 'num', scale: 'int' }),
-    mapSource: ['enum', 'random', 'preset'], 'mapId?': 'str', botDifficulty: DIFF, constants: (v, p, e) => { if (typeof v !== 'object' || !v) e.push(`${p}: object`); },
+    mapSource: ['enum', 'random', 'preset'], 'mapId?': 'str', botDifficulty: DIFF, 'combatModel?': ['enum', 2], // §33: 모델 2 에서만
+    constants: (v, p, e) => { if (typeof v !== 'object' || !v) e.push(`${p}: object`); },
   },
   map_init: { terrain: arr('int'), spawns: arr(obj({ playerId: 'int', tileId: 'int', homeTileId: 'int' })), bases: arr('int'), baseNames: arr('str') },
   snapshot_full: {
@@ -155,6 +157,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     baseProd: arr(tuple('int', range(0, 1000))),
     production: arr(production),
     combatLoss: arr(tuple('int', 'int')), // v4.5 §22
+    'moraleChanged?': arr(tuple('int', range(0, 1000))), // §33: 모델 2 에서 MORALE_DELTA_INTERVAL(5) tick 마다 (빈 배열 가능)
   },
   cmd_ack: { clientSeq: 'int', accepted: 'bool', 'reason?': ['enum', ...DOC_REJECT], 'flagId?': 'int', 'posture?': POSTURE, 'postureHeld?': 'bool' },
   error: { code: ['enum', ...DOC_ERROR], message: 'str' },
@@ -175,7 +178,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   flag_progress_lost: { tick: 'int', flagId: 'int', tileId: 'int', cause: ['enum', 'captured_by_other', 'target_lost', 'decayed'] },
   flag_idle: { tick: 'int', flagId: 'int', reason: ['enum', 'front_cleared', 'guard_lost', 'allied', 'unreachable'] /* v4.5 §22.12 */, autoRecallTick: 'int' },
   flag_ended: { tick: 'int', flagId: 'int', reason: ['enum', 'exhausted', 'recalled', 'attrited', 'eliminated', 'routed_returned'], refunded: 'int' },
-  combat_started: { tick: 'int', groupKey: 'int', flagIds: arr('int'), sides: arr(obj({ sideKey: 'int', ownerIds: arr('int'), troops: 'int', power: 'int' })) },
+  combat_started: { tick: 'int', groupKey: 'int', flagIds: arr('int'), sides: arr(obj({ sideKey: 'int', ownerIds: arr('int'), troops: 'int', power: 'int', 'atk?': 'int', 'def?': 'int', 'lossPermille?': range(0, 1000), 'morale?': range(0, 1000) })) }, // atk/def/lossPermille/morale: §33 모델 2 에서만 (넷 다 함께)
   combat_ended: { tick: 'int', groupKey: 'int', winnerSideKey: 'int|null', routedFlagIds: arr('int') },
   flag_routed: { tick: 'int', flagId: 'int', returnTileId: 'int' },
   flag_posture_changed: { tick: 'int', flagId: 'int', posture: POSTURE, cooldownUntilTick: 'int', auto: 'bool', targetOwnerId: 'int' },

@@ -92,6 +92,29 @@ export function techCombatPm(stat: readonly number[], unit: number, defend: bool
   return defend ? stat[TECH_STAT.COMBAT_DEF] + stat[TECH_STAT.COMBAT_DEF_SPEAR + unit] : stat[TECH_STAT.COMBAT_ATK] + stat[TECH_STAT.COMBAT_ATK_SPEAR + unit];
 }
 
+/**
+ * §33 (전투 모델 2): 채널별 테크 배율 ‰ — 태세와 무관하게 COMBAT_ATK* -> ATK 채널, COMBAT_DEF* -> DEF 채널 [A-D6].
+ * 같은 태세에서는 techCombatPm 과 같은 값이다.
+ */
+export function techChannelPm(stat: readonly number[], unit: number, channel: number): number {
+  return channel === 0 ? stat[TECH_STAT.COMBAT_ATK] + stat[TECH_STAT.COMBAT_ATK_SPEAR + unit] : stat[TECH_STAT.COMBAT_DEF] + stat[TECH_STAT.COMBAT_DEF_SPEAR + unit];
+}
+
+/** §33: 사기 감소율 배율 ‰ (공통 + 병종별). 구 서버 설정(칸 없음)이면 1000 */
+export function techMoraleDropPm(stat: readonly number[], unit: number): number {
+  return (stat[TECH_STAT.MORALE_DROP] ?? 1000) + (stat[TECH_STAT.MORALE_DROP_SPEAR + unit] ?? 0);
+}
+
+/** §33: 사기 회복 배율 ‰ (공통 + 병종별). 구 서버 설정이면 1000 */
+export function techMoraleRecoverPm(stat: readonly number[], unit: number): number {
+  return (stat[TECH_STAT.MORALE_RECOVER] ?? 1000) + (stat[TECH_STAT.MORALE_RECOVER_SPEAR + unit] ?? 0);
+}
+
+/** §33: 사기 만땅 곱 가산 ‰ (공통 + 병종별, 기세). 구 서버 설정이면 0 */
+export function techMoraleFullBonus(stat: readonly number[], unit: number): number {
+  return (stat[TECH_STAT.MORALE_FULL_BONUS] ?? 0) + (stat[TECH_STAT.MORALE_FULL_BONUS_SPEAR + unit] ?? 0);
+}
+
 /** 깃발 이동속도 테크 배율 ‰ = SPEED + SPEED_<unit> */
 export function techSpeedPm(stat: readonly number[], unit: number): number {
   return stat[TECH_STAT.SPEED] + stat[TECH_STAT.SPEED_SPEAR + unit];

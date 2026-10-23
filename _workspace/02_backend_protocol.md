@@ -2430,3 +2430,86 @@ M 맵 10인 NORMAL 봇, 시드 1000~1039 (40판), 12분 이후만 계측.
 - 타입체크(shared·server·client) 통과, 전체 vitest 515건 통과.
 
 변경 파일: `server/src/map/slots.ts`(신규), `server/src/map/rng.ts`(`tileTieHash`), `server/src/game/state.ts`(spawnSlot·techStyle), `server/src/game/bot.ts`(buyTech·동률 해시·botDiag), `server/src/room/room.ts`(beginGame 슬롯 배정), `shared/src/constants.ts`(`BotDifficultyParams.techStyle?`), `server/scripts/slot-bias.ts`(신규), `server/test/slots.test.ts`(신규), `server/test/rooms.test.ts`.
+
+
+---
+
+## 33. 전투 모델 2 (`COMBAT_MODEL` 병존 플래그) — 채널 비교 + 사기 (추가만, 기본값 = 현행 — 2026-10-23, 사용자 결정)
+
+설계 원본: `_workspace/05_combat_redesign_draft.md` rev.4. **기본값은 모델 1(현행)이고 모델 1 경로는 변경 전과 비트 단위로 같다.** 모델 2는 켜는 방법이 아래 하나뿐이다. 적용 여부(기본값 변경)는 사용자가 결정한다.
+
+### 33.1 켜는 법
+- 서버 프로세스 환경변수 `COMBAT_MODEL=2` (예: `COMBAT_MODEL=2 npm run dev:server`). `1` 또는 미설정 = 현행. 방 설정(`lobby_update_settings`)에는 노출하지 않는다 (프로토콜 변경 없음).
+- 코드: `createGameState(map, setup, botDifficulty, seed, combatModel?)` 5번째 인자(테스트·스크립트용). 기본값 `defaultCombatModel()` = 환경변수 → `shared COMBAT_MODEL`(1).
+- `GameState.combatModel: 1 | 2`, `Flag.morale`(‰ 0..1000, 시작 1000; 모델 1에서는 1000 고정이고 아무도 읽지 않는다).
+
+### 33.2 규칙 (설계 2·5절 그대로)
+- 채널값 `a_c(f)` (ATK/DEF) = 병종 기본 × 지형표/기지(×1300 양 채널, 지형 항 대체) × 테크 채널 × 사기 곱 × 이탈(×0.7), 단계마다 floor, 최소 1. 편 채널값 V_c = 병력 가중 평균(하한 100), λ_c = 정수 역제곱(γ=2) 비율, 합성 `raw = ωA·λ_ATK + ωD·λ_DEF` (ω 600/400), 편 손실 = floor(T·raw/Σraw), 잔여는 편 key ASC 로 1 milli 씩, 편 병력 상한. **T = 편 수 × L (현행 식, 불변).**
+- 사기: 교전(`inCombat`) tick 마다 창 −3 / 검 −6 / 기 −10 ‰, 비전투 +3, 자기 기지 칸 위 비전투 +10. 곱 `min(1500, 600 + floor((1100+테크가산−600)·m/1000))` (m=1000→1100, 800→1000, 0→600). 패주 시 0.
+- tick 순서: 4a(읽기, `sideLossDetail`) → 4b(손실·inCombat·패주·이탈) → **4b 끝에서 `stage4c_updateMorale` (flagId ASC)** → 이후 단계. 이번 tick 패주한 깃발은 갱신을 건너뛴다(0 유지).
+- 순수 함수: `shared/src/combatMath.ts` (`channelValues`, `moraleMultiplier`, `flagScalar`, `sideLossDetail`, `sideLossShares`, `groupTotalLoss`). 서버·봇·클라이언트가 같은 함수를 쓴다.
+- 신규 상수(`shared/constants.ts`, 모두 `match_config.constants` 에 실림): `COMBAT_MODEL`, `CHANNEL`, `CHANNEL_COUNT`, `UNIT_STAT`, `TERRAIN_BUFF`, `BASE_BUFF`, `POSTURE_W`, `COMBAT_GAMMA`, `COMBAT_VMIN`, `DISENGAGE_VALUE_PERMILLE_V2`, `MORALE_MAX/FLOOR/FULL/MULT_CAP`, `MORALE_DROP_PER_TICK`, `MORALE_RECOVER`, `MORALE_RECOVER_BASE`, `MORALE_DELTA_INTERVAL`. 현행 상수는 삭제하지 않았다.
+- 테크 예약 스탯 12칸: `TECH_STAT` 32..43 (`MORALE_FULL_BONUS`, `MORALE_DROP`, `MORALE_RECOVER` 각 공통 1 + 병종별 3). `TECH_STAT_COUNT` 32 → **44**, `TECH_STAT_BASE` 길이 44(앞 32칸 불변, 새 칸 기본값은 효과 없음). 노드는 만들지 않았다. 도우미 `techChannelPm`, `techMoraleDropPm`, `techMoraleRecoverPm`, `techMoraleFullBonus` (칸이 없는 구 설정이면 기본값으로 대체).
+
+### 33.3 프로토콜 변경 (추가만 · 모델 2에서만 전송)
+| 위치 | 변경 |
+|---|---|
+| `match_config` | `combatModel: 2` (모델 1 에서는 키 없음). `constants` 에 33.2 상수와 확장된 `TECH_STAT`/`TECH_STAT_BASE`(길이 44)·`TECH_STAT_COUNT`(44) — **이 상수 변경은 모델 1 서버에서도 나간다**(추가만) |
+| `snapshot_full.flags[]` | `morale: 0..1000` |
+| `snapshot_delta` | `moraleChanged: [flagId, morale][]` — `t % 5 == 0` 인 tick 에만(빈 배열 가능), 마지막으로 보낸 값과 다른 깃발만. 한 번도 안 보낸 깃발은 1000. 기준점은 `snapshot_full` |
+| `combat_started.sides[]` | `power`(유지, 의미: ω 평균 스칼라·사기·이탈 반영) + `atk`, `def`(편 채널값 ‰), `lossPermille`(첫 tick 편 손실 비율 ‰, Σ≈1000), `morale`(병력 가중 평균 ‰). 넷 다 함께 |
+`server/scripts/qa-schema.ts` 갱신 완료(위 필드 모두 옵셔널로 등록, 모델 1 메시지에는 없음을 테스트가 단언).
+
+### 33.4 클라이언트 영향 (`client/` 는 수정하지 않음)
+- 모델 1 서버 + 현 클라이언트: **영향 없음** (새 필드 없음, `TECH_STAT_BASE` 길이만 44. 클라이언트는 `match_config` 값으로 `techStatValues` 를 계산하므로 문제 없음 — 타입체크·클라이언트 테스트 통과).
+- 모델 2 서버 + 현 클라이언트: 동작은 하나 **표시가 틀린다** — 교전 예상/툴팁이 현행 식(`flagValue` 계열)을 쓰면 승패 방향이 다르고, 사기·`lossPermille` 은 표시되지 않는다. 필요한 작업: 사기 막대(1.0 경계 m=800), 교전 막대(`lossPermille`), 타일 툴팁(지형표 4절), 예상 UI 는 `shared/combatMath` 사용, 테크 문구(`COMBAT_ATK/DEF` = 공격력/방어력 채널), `moraleChanged` 보간(`inCombat` + 병종 감소율 상수, 1초마다 서버 값으로 정정).
+
+### 33.5 봇 (`bot.ts`, 모델 2에서만 분기)
+- `valueAs`(가상 깃발)는 사기 1000 가정, `flagValue` 는 호환 스칼라 → 요격·배치 계산은 그대로.
+- 후퇴 판단(`maintain` 3번)과 `extremelyOutmatched` 는 스칼라 대신 `combat.engageLossPerTick`(정확 손실, 편 2개) 으로 "버티는 시간 비"(병력/tick 손실)를 비교. 이탈 3초 손실 추정도 정확 함수(이탈 ×0.7 반영). 사기 < 400 이고 지는 중이면 교대(회수) [A-163].
+- `BOT_ENGAGE_BREAK_RATIO_PERMILLE`, `BOT_INTERCEPT_RATIO_PERMILLE`, `retreatRatioPermille` 은 **재튜닝하지 않았다**(값 그대로).
+
+### 33.6 이탈·패주·재출전·병합
+- 이탈 대기: `inCombat` 이므로 사기 계속 감소, ×0.7. 이탈 완료·교전 종료 후 회복. 대치(blocked)는 비전투 → 회복. 패주 시 사기 0.
+- **재출전·병합·분할은 코드에 존재하지 않는다**(귀환 도착 시 깃발은 삭제되고 병력은 풀로 돌아가며, 새로 발령하면 새 깃발=사기 1000). 따라서 설계 5.7 의 "재출전 이어받음 / 병합 가중 평균"은 **구현 대상이 없어 비활성**이다. 재지정(retarget)·태세 전환은 같은 깃발 객체라 사기가 자연히 유지된다.
+
+### 33.7 검증
+
+**모델 1 비트 동일 증명**: 변경 전 코드에서 `server/scripts/_golden.ts` 로 (방송 메시지 + 개인 메시지 전 tick JSON 연쇄 sha256, 최종 owners·flags·players·ledger sha256)를 뽑아 `server/test/combatModel2.test.ts` 에 고정. 변경 후 코드가 세 시나리오(G1 10인 NORMAL 시드 1000 4500 tick / G2 혼합 난이도 8인 시드 77 3000 tick / G3 10인 시드 1003 한 판 끝(9700 tick, 전투 591회))에서 **전부 같은 해시**. 기존 515건 테스트는 수정 없이 통과(전체 543건 = 515 + 신규 28).
+
+**테스트 (신규 `server/test/combatModel2.test.ts` 28건)**: 문서 시나리오 숫자 재현(2.7 두 3×3 표, 지형 4종, 이탈 67.1, 기지 68.0/62.8/37.2, 사기 곱 경계·5.2 표·5.5 시계열), 총량 보존·편 순서·병력 상한·혼합 ω·정수 범위, 테크 예약 칸 무효과, 모델 1 골든 3종 + 새 필드 부재, 모델 2 결정론, 매 tick 회계 불변식 0·사기 범위·교전 감소/비전투 증가·스키마 통과(`validateMessage`), `match_config`, 4a 손실 == `sideLossShares`, 사기 −3/−6/−10·+3·+10·패주 0, `flagValue` 호환.
+
+### 33.8 자가대전 비교 (M 10인 NORMAL, 시드 1000~1019, 같은 시드·설정, 20판)
+
+| 지표 | 모델 1 (현행) | 모델 2 |
+|---|---|---|
+| 교전 길이 중간값 / p90 (그룹, 초) | 6.0 / 16.6 | 6.0 / 15.8 |
+| (첫 시작 기준) | 10.2 / 21.6 | 9.8 / 18.2 |
+| 병종 발령 비율 % 창/검/기 (개수) | 23.8 / 6.9 / 69.3 | 17.4 / 9.4 / 73.2 |
+| (병력 가중) | 15.7 / 13.7 / 70.7 | 13.2 / 17.3 / 69.5 |
+| 패주/판 (창/검/기) | 245.3 (110.0/11.9/123.5) | 185.5 (54.9/12.2/118.5) |
+| **멸망/판** | **0.85** | **0.10** |
+| 멸망 시각 중간값 (분) | 26.9 | 20.0 |
+| 판 길이 평균 (최소~최대, 분) | 30.20 (27.2~32.0) | 29.78 (28.2~32.0) |
+| 종료 사유 | threshold 13 / timeout 7 | threshold 16 / timeout 4 |
+| 플레이어 기지 점령/판 | 12.7 | 11.3 |
+| 약소국(기지 1개·≤60칸, 기지 2개 이상이었다가 줄어든 경우) 플레이어/판 · 접촉률 · 멸망률 | 1.60 · 100% · **25%** | 1.25 · 100% · **0%** |
+| 전투 손실 병력/판 | 248,587 | 240,083 |
+
+레버 탐색(모델 2, `BASE_BUFF` 1300 → 1200 / 1100): 멸망/판 0.10 → 0.25 / 0.30 (현행 0.85 에는 못 미침), 기지 점령/판 12.0 / 10.4, 판 길이 30.26 / 29.76분.
+
+**지표 정의 [A-162]**: "마지막 기지 공격 도달률"의 기존 리뷰 정의가 없어 *약소국 기지(생존자 중 기지 1개·≤60칸, 그 전에 기지 2개 이상이었던 경우)의 칸 또는 이웃(거리≤1)에 적대 공격 태세 깃발이 접촉한 비율*로 정의했다. 이 정의로는 **양 모델 모두 100% 도달**(16/16, 18/18판)이라 도달률 자체는 병목이 아니다. 병목은 **도달 후 함락**이다.
+
+### 33.9 [A] 항목
+- **[A-160]** 모델 선택은 환경변수/인자뿐(방 설정·프로토콜 노출 없음). `constantsTable()` 은 자동 노출이라 새 상수·확장 `TECH_STAT` 이 모델 1 `match_config` 에도 실린다(추가만).
+- **[A-161]** 사기 갱신은 `stage4b` 끝에서 호출(별도 tick 단계 아님), 이번 tick 패주 깃발은 건너뜀.
+- **[A-162]** 마지막 기지 지표 정의(위).
+- **[A-163]** 봇 교대 규칙: `BOT_MORALE_SHAKEN=400` 미만이고 버티는 시간 비 < 1 이면 회수. 편 2개(나 대 합산 적)로 근사.
+- **[A-164]** 델타 `moraleChanged` 는 모델 2 의 `t%5==0` tick 에 항상 존재(빈 배열 포함), 다른 tick 에는 키 없음.
+- **[A-165]** `combatInput` 은 가상 깃발(병력·사기 없음)을 받아 사기 1000, 병력 0 으로 처리.
+
+### 33.10 남은 이슈·관찰
+1. **모델 2 는 멸망을 거의 없앤다**(0.85 → 0.10/판, 약소국 멸망 25% → 0%). 설계 2.9 가 예측한 "약소국 정리 병목"이 실제로 확인됐다. 기지 ×1.3 양 채널 + 사기가 기병 위주 봇의 기지 돌파를 막는다. `BASE_BUFF` 하향은 일부만 회복(1200: 0.25). 판 길이는 유지(29.8분, 25~32 안).
+2. 병종 쏠림: 기병 발령 비율이 69%(현행) → 73%(모델 2)로 약간 늘어 "한 병종 60% 초과 금지" 판정 기준은 현행에서도 이미 넘고 모델 2가 해결하지 못한다(설계는 기병 감소 압력을 예상했으나 반대). 창병 패주는 크게 줄었다(110 → 55/판).
+3. 봇 상수 재튜닝·사기 감소율 레버(`MORALE_DROP_PER_TICK`)는 탐색하지 않았다. 기병 기세 테크 노드는 없다(설계대로).
+4. 클라이언트는 모델 2 표시를 지원하지 않는다(33.4).

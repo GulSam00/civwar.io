@@ -47,6 +47,7 @@ import {
   FLAG_SPEND_RATE_PERMILLE,
   FRONT_RADIUS,
   MAX_ALLIES_PER_PLAYER,
+  MORALE_MAX,
   POSTURE,
   TECH_NODES,
   TERRAIN,
@@ -63,7 +64,7 @@ import {
 } from '@civwar/shared';
 import { tileTieHash } from '../map/rng.js';
 import { ANNEX } from './annex.js';
-import { flagValue } from './combat.js';
+import { engageLossPerTick, flagValue } from './combat.js';
 import { flagCap, techCost, troopCap } from './economy.js';
 import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
@@ -238,6 +239,9 @@ function withSelf<T>(ctx: Ctx, f: Readonly<Flag>, fn: () => T): T {
 
 // ───────────────────────── 공용 헬퍼 ─────────────────────────
 
+/** §33 [A-163]: 모델 2 에서 사기가 이 값(‰) 미만이고 교전에서 지고 있으면 봇이 교대(회수)한다 */
+const BOT_MORALE_SHAKEN = 400;
+
 const isLive = (f: Readonly<Flag>): boolean => !f.routed && f.state !== 'RETURNING' && f.troopsMilli > 0;
 
 function hostilePlayer(state: Readonly<GameState>, me: number, o: number): boolean {
@@ -246,7 +250,7 @@ function hostilePlayer(state: Readonly<GameState>, me: number, o: number): boole
 
 /** 가상 깃발의 실효 전투값 (4.15 d·e) — flagValue 를 그대로 쓴다 */
 function valueAs(state: Readonly<GameState>, ownerId: number, unit: Unit, posture: Posture, tile: number): number {
-  const fake = { ownerId, unit, posture, posTileId: tile, disengageUntilTick: null } as unknown as Flag;
+  const fake = { ownerId, unit, posture, posTileId: tile, disengageUntilTick: null, morale: MORALE_MAX } as unknown as Flag; // morale: §33 모델 2 가상 깃발은 사기 만땅 가정
   return flagValue(state, fake, []);
 }
 
@@ -352,6 +356,13 @@ function engageLocked(ctx: Ctx, f: Readonly<Flag>): boolean {
 function extremelyOutmatched(ctx: Ctx, f: Readonly<Flag>): boolean {
   const foes = combatFoes(ctx, f);
   if (!foes.length) return false;
+  if (ctx.state.combatModel === 2) {
+    // §33: 스칼라(병력 x v) 대신 정확 손실 비율 -> 버티는 시간 비 (hold = 병력 / tick 손실)
+    const e = engageLossPerTick(ctx.state, f, foes);
+    let enT = 0;
+    for (const g of foes) enT += g.troopsMilli;
+    return f.troopsMilli * e.foes * 1000 < enT * e.mine * BOT_ENGAGE_BREAK_RATIO_PERMILLE;
+  }
   const group = [f, ...foes];
   const myEff = Math.floor(f.troopsMilli / 1000) * flagValue(ctx.state, f, group);
   let enEff = 0;
@@ -983,6 +994,18 @@ function maintain(ctx: Ctx): void {
       const foes = combatFoes(ctx, f);
       if (!foes.length || f.disengageUntilTick !== null) continue;
       const group = [f, ...foes];
+      if (state.combatModel === 2) {
+        // §33: 정확 손실 비율로 판단. 사기가 BOT_MORALE_SHAKEN 미만이고 지고 있으면(버티는 시간 비 < 1) 교대(회수)
+        const e = engageLossPerTick(state, f, foes);
+        let enT = 0;
+        for (const g of foes) enT += g.troopsMilli;
+        const lhs = f.troopsMilli * e.foes * 1000;
+        if (lhs < enT * e.mine * ctx.k.retreatRatioPermille || (f.morale < BOT_MORALE_SHAKEN && lhs < enT * e.mine * 1000)) {
+          const myLoss = engageLossPerTick(state, f, foes, true).mine * techDisengageTicks(ctx.p.statPm);
+          if (f.troopsMilli - myLoss >= FLAG_MIN_TROOPS * 3 * 1000) recall(ctx, f);
+        }
+        continue;
+      }
       const myV = flagValue(state, f, group);
       const myEff = myTroops * myV;
       let enEff = 0;

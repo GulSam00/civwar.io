@@ -4,6 +4,8 @@
  */
 import {
   BASE_HP_INIT_MILLI,
+  COMBAT_MODEL,
+  MORALE_MAX,
   BASE_PROD_MAX_PERMILLE,
   TICKS_PER_MIN,
   BOT_DIFFICULTY,
@@ -108,6 +110,8 @@ export interface Flag {
    * 방어↔방어로 바뀌어도 이탈 비용(3초 ×0.5) 없이 끊기지 않게 한다. 직렬화하지 않는다 (disengageUntilTick 이 null 이 되면 함께 false)
    */
   disengageHold: boolean;
+  /** §33 (전투 모델 2): 사기 ‰ 0..1000 (시작 1000). 모델 1 에서는 1000 고정이고 아무도 읽지 않는다 */
+  morale: number;
 }
 
 export interface BaseState {
@@ -192,6 +196,8 @@ export interface TickChanges {
 }
 
 export interface GameState {
+  /** §33: 전투 모델 (1 = 현행, 2 = 채널 비교 + 사기). 환경변수 COMBAT_MODEL 또는 createGameState 인자 */
+  readonly combatModel: 1 | 2;
   readonly map: GeneratedMap;
   /** v4.4 (§21): 기지 지명 — map.baseTiles 와 같은 순서 */
   readonly baseNames: readonly string[];
@@ -295,11 +301,20 @@ export function botAggressionPermille(seed: number, playerId: number): number {
 
 /** botDifficulty = 방 봇 난이도 (2.8 g — 방 단위 하나, bot_takeover 도 따른다). PlayerSetup.botDifficulty 가 있으면 그 자리만 덮어쓴다 */
 /** aggressionSeed = 룸 시드 (생략 시 map.seed — 프리셋 맵은 룸이 따로 넘긴다) */
+/** §33: 기본 전투 모델 — 환경변수 COMBAT_MODEL(1|2) 이 있으면 그 값, 없으면 shared COMBAT_MODEL (1) */
+export function defaultCombatModel(): 1 | 2 {
+  const e = typeof process !== 'undefined' ? process.env?.COMBAT_MODEL : undefined;
+  if (e === '2') return 2;
+  if (e === '1') return 1;
+  return COMBAT_MODEL === 2 ? 2 : 1;
+}
+
 export function createGameState(
   map: GeneratedMap,
   setup: readonly PlayerSetup[],
   botDifficulty: BotDifficultyName = BOT_DIFFICULTY_DEFAULT,
   aggressionSeed: number = map.seed,
+  combatModel: 1 | 2 = defaultCombatModel(),
 ): GameState {
   const N = map.playerCount;
   if (setup.length !== N) throw new Error(`setup ${setup.length} != map players ${N}`);
@@ -353,6 +368,7 @@ export function createGameState(
   bases.forEach((b, i) => baseIndexOf.set(b.tileId, i));
 
   const state: GameState = {
+    combatModel,
     map,
     baseNames: assignPlaceNames(aggressionSeed, map.baseTiles.length),
     capitalTiles: new Set(map.spawns.map((sp) => sp.homeTileId)),
@@ -467,6 +483,7 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     halted: false,
     returnBaseTileId: null,
     disengageHold: false,
+    morale: MORALE_MAX,
     ...partial,
   };
 }

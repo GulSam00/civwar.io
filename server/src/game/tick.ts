@@ -304,7 +304,7 @@ export class Simulation {
     stage3_timers(state, t, out); // 3
     stage4_moveFlags(state, t, out); // 4
     const combat = stage4a_flagCombatPhaseA(state, t); // 4a (읽기 전용)
-    stage4b_flagCombatPhaseB(state, combat, t, out); // 4b
+    stage4b_flagCombatPhaseB(state, combat, t, out); // 4b (§33 모델 2: 끝에서 stage4c_updateMorale — flagId ASC)
     stage5_accumulateBudget(state, t); // 5
     const push = stage6_combatPhaseA(state, t); // 6 (읽기 전용)
     const pushedSet = stage7_combatPhaseB(state, push, t, out); // 7
