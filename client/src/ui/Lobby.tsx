@@ -32,7 +32,6 @@ export function Lobby({ store }: { store: ClientStore }) {
     <div className="lobby">
       <div className={`lobby-card ${panel === 'browse' ? 'wide' : ''}`}>
         <h1 className="logo">civwar.io</h1>
-        <p className="tagline">깃발을 보내 땅을 넓히세요. 30분 안에 가장 넓은 나라가 이깁니다.</p>
         <label className="field">
           <span>닉네임</span>
           <input
@@ -93,7 +92,7 @@ export function Lobby({ store }: { store: ClientStore }) {
         <ConnectionLine store={store} />
       </div>
       <p className="hint">
-        PC 권장 · 마우스 (칸 우클릭 → 병종 고르기로 출전 · 영토 좌클릭 = 정보) ·{' '}
+        PC 권장 ·{' '}
         <button className="btn-link" onClick={() => setHelp(true)}>
           규칙 도움말
         </button>
@@ -254,7 +253,7 @@ export function CreateRoomPanel({ store }: { store: ClientStore }) {
         </select>
       </label>
       <p className={outOfRec || pacing?.includes('넘어') ? 'warn' : 'muted small'}>
-        혼자 시작하면 {startPlayers}명.{outOfRec ? ` 이 맵의 추천 인원(${rec[0]}~${rec[1]})을 벗어납니다.` : ''} {pacing ?? ''}
+        {startPlayers}명{outOfRec ? ` · 추천 ${rec[0]}~${rec[1]} 밖` : ''} {pacing ?? ''}
       </p>
       <button className="btn btn-primary" onClick={submit}>
         방 만들기
@@ -360,7 +359,6 @@ export function RoomBrowser({ store }: { store: ClientStore }) {
           );
         })}
       </ul>
-      <p className="muted small">비공개 방은 목록에 나오지 않습니다 — 방 코드로 입장하세요.</p>
     </div>
   );
 }

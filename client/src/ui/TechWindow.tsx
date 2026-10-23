@@ -99,7 +99,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
     return (
       <div ref={rootRef} className={`tech-window ${narrow ? 'tw-narrow' : ''}`} style={drag.style} role="dialog" aria-label="테크">
         {head}
-        <p className="muted">순위표에서 플레이어 이름을 누르면 그 플레이어의 테크 트리가 보입니다.</p>
+        
       </div>
     );
   }
@@ -133,7 +133,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
       ) : (
         <div className="tw-body">
           <TechGrid views={views} nodes={nodes} techCount={viewer.techCount} selectedId={selected?.node.id ?? null} hoverPath={hoverPath} onHover={setHover} onPick={pick} />
-          {detail ?? <div className="tw-detail tw-detail-empty muted">노드를 누르면 효과·가격·선행 조건을 봅니다.{canBuy ? ' 구매는 상세 창의 버튼으로 합니다.' : ''}</div>}
+          {detail ?? <div className="tw-detail tw-detail-empty muted">노드 선택</div>}
         </div>
       )}
       {narrow && detail}
@@ -269,7 +269,7 @@ function TechNodeButton({
         onBlur={() => onHover?.(null)}
         aria-label={label}
         aria-pressed={selected}
-        title={`${node.name} — ${node.desc}`}
+        title={node.name}
       >
         <TechIcon nodeId={node.id} size={24} />
         {state === 'short' && (
@@ -459,7 +459,6 @@ function TechDetailPanel({
           ×
         </button>
       </div>
-      <p className="twd-desc">{node.desc}</p>
       <div className="twd-stats" role="table" aria-label={`${detail.beforeLabel} → ${detail.afterLabel}`}>
         {detail.rows.map((r, i) => (
           <div key={i} className={`twd-row ${r.changed ? 'chg' : ''}`} role="row">
@@ -473,7 +472,7 @@ function TechDetailPanel({
           </div>
         ))}
       </div>
-      <p className="muted small">{techScopeText(node)} · 다른 보유 노드까지 합친 실제 값</p>
+      <p className="muted small">{techScopeText(node)}</p>
       <dl className="twd-facts">
         <dt>선행</dt>
         <dd>
@@ -504,7 +503,7 @@ function TechDetailPanel({
           </>
         )}
       </dl>
-      {!owned && <p className="muted small">하나 살 때마다 남은 모든 노드 가격이 6% 오릅니다 (갈래 무관, 다음 구매 시 이 노드 {price.nextCost.toLocaleString()}). 효과는 즉시, 되돌릴 수 없음.</p>}
+      {!owned && <p className="muted small">다음 구매 시 {price.nextCost.toLocaleString()}</p>}
       <button
         className={`btn twd-buy ${enabled ? 'btn-primary' : ''}`}
         disabled={!enabled}
@@ -534,7 +533,6 @@ function Legend() {
           {STATE_NAME[s]}
         </span>
       ))}
-      <span className="muted"> · T 열기/닫기 · Esc 닫기</span>
     </div>
   );
 }

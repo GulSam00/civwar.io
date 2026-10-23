@@ -39,7 +39,6 @@ function OptionsPanel({ ctl, onClose }: { ctl: GameInputController; onClose: () 
           <label className="opt-row">
             <input type="checkbox" checked={o.colorblind} onChange={(e) => ctl.setColorblind(e.target.checked)} />
             <span>색각 보조</span>
-            <small className="muted">영토 무늬 · 플레이어 번호</small>
             <kbd>C</kbd>
           </label>
         </section>
@@ -62,7 +61,7 @@ function OptionsPanel({ ctl, onClose }: { ctl: GameInputController; onClose: () 
           <h3>지형 툴팁</h3>
           <label className="opt-row">
             <input type="checkbox" checked={o.tooltip} onChange={(e) => ctl.setOptions({ tooltip: e.target.checked })} />
-            <span>맵 위에 마우스를 올리면 칸 정보 보기</span>
+            <span>칸 정보</span>
           </label>
           <fieldset className="opt-fields" disabled={!o.tooltip}>
             <legend className="muted small">표시할 항목</legend>
@@ -74,7 +73,6 @@ function OptionsPanel({ ctl, onClose }: { ctl: GameInputController; onClose: () 
             ))}
           </fieldset>
         </section>
-        <p className="muted small opt-foot">설정은 이 브라우저에 저장됩니다.</p>
       </div>
     </div>
   );

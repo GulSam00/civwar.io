@@ -102,7 +102,6 @@ export function DiplomacyPanel({ store, ctl }: { store: ClientStore; ctl: GameIn
           );
         })}
       </ul>
-      <p className="muted small">동맹끼리는 공격할 수 없습니다. 점유율은 개인 기준 — 동맹 합산으로는 이기지 못합니다.</p>
     </div>
   );
 }

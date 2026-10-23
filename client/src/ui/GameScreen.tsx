@@ -522,23 +522,23 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
   if (ix.issue?.phase === 'pick') text = null; // 병종 고리가 안내한다
   else if (ix.issue?.phase === 'aim') {
     if (g === ix.issue.base) {
-      text = '클릭 = 이 기지에 수비 배치 (병종 선택) · 우클릭·Esc = 취소';
+      text = '수비 배치';
       kind = 'defend';
-    } else if (p) text = `클릭 = 병종 선택 · ${p.label}${routeText(route, p.kind)}`;
+    } else if (p) text = `${p.label}${routeText(route, p.kind)}`;
   } else if (ctl.canCommand() && g >= 0) {
     const myFlag = ctl.myFlag(ix.selectedFlagId);
     // 2026-10-14: 선택 부대 우클릭 = 항상 이동 (내 기지 = 기지 위로 가서 방어, 태세는 서버가 도착지로 정한다)
     if (myFlag && p?.held && p.kind !== 'blocked') text = `우클릭 = 이동 → ${p.label}`;
     else if (myFlag && ctl.isMyBase(g)) {
-      text = '우클릭 = 이 기지로 이동해 방어';
+      text = '이동 · 방어';
       kind = 'defend';
     } else if (myFlag && ctl.isBaseTile(g) && p?.kind !== 'blocked') {
-      text = '우클릭 = 이 기지로 이동해 공격';
+      text = '이동 · 공격';
       kind = 'attack';
     } else if (myFlag && p && p.kind !== 'blocked') text = `우클릭 = 이동 → ${p.label}`;
     else if (myFlag && p) text = p.label;
     else if (!myFlag && ix.selectedFlagId === null && ctl.isMyBase(g)) {
-      text = '클릭 = 이 기지에서 출전 (목적지를 고르세요)';
+      text = '출전 기지';
       kind = 'info';
     }
   }
@@ -653,9 +653,7 @@ function LeaveDialog({ store, ctl }: { store: ClientStore; ctl: GameInputControl
     <div className="overlay" onClick={close}>
       <div className="gameover-card leave-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h2>게임에서 나갈까요?</h2>
-        <p>
-          내 자리는 연결이 끊긴 상태로 남고, <b>90초 뒤 봇이 대신 조종</b>합니다. 나가면 이 판으로 <b>다시 돌아올 수 없습니다</b>.
-        </p>
+        <p>90초 뒤 봇이 대신 조종 · 재입장 불가</p>
         <div className="actions">
           <button className="btn" autoFocus onClick={close}>
             계속하기
@@ -791,7 +789,7 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
     const extra = ([0, 1, 2] as Unit[]).map((u) => nextFlagExtraPm(g, me, rule ?? lastRule.current, u));
     const showExtra = extra.every((e) => e !== null);
     gold = (
-      <div className="gold-flow" title="유지비 = 배치된 깃발 때문에 골드 수입에서 빠지는 몫 (서버 값)">
+      <div className="gold-flow">
         <span>
           골드 순수입 <b className={inc.net <= 0 ? 'warn-text' : ''}>+{inc.net.toFixed(1)}/초</b>
         </span>
@@ -967,13 +965,12 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
             </span>
           </div>
           {onOwnBase && (
-            <div className="cs-base" title="자기 기지 칸 위: 방어는 지형 보정 대신 ×1.5, 공격도 ×1.5 (태세 무관)">
-              기지 위 <b>×1.5</b> <span className="muted small">(공격·방어 모두)</span>
+            <div className="cs-base">
+              기지 위 <b>×1.5</b>
             </div>
           )}
-          <div className="muted small cs-note">병종 기본 × 테크(군사·병종) · 지형·기지 보정 제외 · 지금 태세 = 굵게</div>
         </div>
-        {f.state === 'MARCHING' && eta !== undefined && <div>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 <span className="muted small">(영토 변화·대치·전투 제외)</span></div>}
+        {f.state === 'MARCHING' && eta !== undefined && <div>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 </div>}
         {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div>진척도 {f.progressPct}%</div>}
       </div>
       {mine && (
@@ -985,7 +982,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           <button className="btn" disabled={f.routed || returning} onClick={() => ctl.recallSelected()} title="단축키 R">
             <kbd>R</kbd> 귀환
           </button>
-          <span className="muted small">{returning ? '귀환 중 — 취소 불가' : '우클릭 = 이동 (내 땅·기지 = 방어, 적·중립 = 공격)'}</span>
+          {returning && <span className="muted small">귀환 중</span>}
         </div>
       )}
     </div>
