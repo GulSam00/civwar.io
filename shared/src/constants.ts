@@ -554,9 +554,10 @@ export const TERRAIN_BUFF: readonly (readonly (readonly number[])[])[] = [
   [[1000, 1000], [1000, 1000]], // SHALLOW (깃발이 서지 않음)
 ];
 /** BASE_BUFF[태세][채널] ‰ — 자기 기지 칸(수도 포함). 지형 항을 대체하며 두 채널 모두 적용 */
+// 2026-10-23 레버 조정(측정 없음, [A-166]): 1300 → 1200. 자가대전 20판에서 1300 은 멸망 0.10/판, 1200 은 0.25, 1100 은 0.30(현행 모델 1 은 0.85) — 기본 모델이 1 이라 영향 없음
 export const BASE_BUFF: readonly (readonly number[])[] = [
-  [1300, 1300],
-  [1300, 1300],
+  [1200, 1200],
+  [1200, 1200],
 ];
 /** POSTURE_W[태세][채널] ‰ — 합성 가중 ω: 자기 태세 채널 600 / 반대 채널 400 */
 export const POSTURE_W: readonly (readonly number[])[] = [
