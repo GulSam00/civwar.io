@@ -119,8 +119,8 @@ export function subSizePx(size: number): number {
 }
 
 export const LABEL_MIN_PX = 11;
-/** 2026-10-19: 30 → 20 (전체 맵 보기에서 이름이 서로·아이콘을 덮던 문제) */
-export const LABEL_MAX_PX = 20;
+/** 2026-10-19: 30 → 20 (전체 맵 보기에서 이름이 서로·아이콘을 덮던 문제), 2026-10-24: 20 → 17 (큰 나라 이름이 기지 이름·HUD 를 덮던 문제) */
+export const LABEL_MAX_PX = 17;
 /** 월드 단위 글자 크기 = √칸 수 × 이 값 (칸 1 = 월드 1). 0.32 → 0.2 */
 export const LABEL_WORLD_PER_SQRT_TILE = 0.2;
 /** 아이콘 위에 놓일 때 이름 투명도 */
@@ -155,6 +155,8 @@ export function layoutTerritoryLabels(
   sub?: (owner: number) => string,
   /** 피할 화면 사각형 (깃발·기지 아이콘). 겹치면 위·아래로 비껴 놓고, 그래도 안 되면 흐리게 */
   obstacles: readonly Rect[] = [],
+  /** 절대 가리면 안 되는 화면 사각형 (HUD 패널). 겹치면 줄여 보고 그래도 겹치면 생략한다 (2026-10-24) */
+  blocked: readonly Rect[] = [],
 ): PlacedLabel[] {
   const placed: PlacedLabel[] = [];
   const rects: Rect[] = [];
@@ -174,12 +176,13 @@ export function layoutTerritoryLabels(
       const r0 = rectOf(p.x, p.y, w, size, below);
       if (r0.x1 < 0 || r0.y1 < 0 || r0.x0 > view.w || r0.y0 > view.h) break; // 화면 밖
       if (rects.some((q) => overlaps(q, r0))) continue; // 이미 놓인(더 큰 영토) 이름과 겹침 → 줄여 보기 / 생략
+      if (blocked.some((q) => overlaps(q, r0))) continue; // HUD 패널 아래 → 줄여 보기 / 생략
       // 아이콘(깃발·기지)과 겹치면 위·아래로 한두 줄 높이 비껴 본다 (다른 이름·아이콘 모두 피하는 자리만). 없으면 제자리에 흐리게
       let fit: { y: number; r: Rect; clear: boolean } = { y: p.y, r: r0, clear: !obstacles.some((q) => overlaps(q, r0)) };
       if (!fit.clear) {
-        for (const dy of [-h * 0.9, h * 0.9, -h * 1.8, h * 1.8]) {
+        for (const dy of [-h * 0.9, h * 0.9, -h * 1.8, h * 1.8, -h * 2.7, h * 2.7]) {
           const r = rectOf(p.x, p.y + dy, w, size, below);
-          if (rects.some((q) => overlaps(q, r)) || obstacles.some((q) => overlaps(q, r))) continue;
+          if (rects.some((q) => overlaps(q, r)) || obstacles.some((q) => overlaps(q, r)) || blocked.some((q) => overlaps(q, r))) continue;
           fit = { y: p.y + dy, r, clear: true };
           break;
         }

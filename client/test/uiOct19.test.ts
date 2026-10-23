@@ -95,8 +95,8 @@ describe('m-7 교전 연결선 = 서버 engagedPair 와 같은 규칙', () => {
 describe('영토 이름 정리', () => {
   const measure = (t: string, size: number) => t.length * size * 0.6;
   const id = (x: number, y: number) => ({ x, y });
-  it('글자 최대 크기 20px (예전 30)', () => {
-    expect(LABEL_MAX_PX).toBe(20);
+  it('글자 최대 크기 17px (2026-10-24: 20 → 17, 예전 30)', () => {
+    expect(LABEL_MAX_PX).toBe(17);
   });
   it('겹치면 큰 영토 이름이 남고 작은 쪽은 줄거나 사라진다', () => {
     const anchors = [
@@ -132,5 +132,15 @@ describe('영토 이름 정리', () => {
     expect(dimmed.y).toBe(base.y);
     expect(dimmed.dim).toBe(true);
     expect(LABEL_DIM_ALPHA).toBeLessThan(0.9);
+  });
+  it('2026-10-24 HUD 패널(blocked) 아래로는 놓이지 않는다 — 줄여 보고 안 되면 생략, 비킬 자리는 위아래로 3줄까지', () => {
+    const a = [{ owner: 1, x: 300, y: 300, tiles: 2500 }];
+    const panel = { x0: 0, y0: 0, x1: 800, y1: 600 }; // 화면 전체가 패널 → 생략
+    expect(layoutTerritoryLabels(a, () => 'AB', id, 6, measure, { w: 800, h: 600 }, undefined, [], [panel])).toEqual([]);
+    const base = layoutTerritoryLabels(a, () => 'AB', id, 6, measure, { w: 800, h: 600 })[0];
+    const strip = { x0: 250, y0: base.y - 8, x1: 350, y1: base.y + 8 }; // 이름 자리에 걸친 아이콘 → 비껴 놓음
+    const moved = layoutTerritoryLabels(a, () => 'AB', id, 6, measure, { w: 800, h: 600 }, undefined, [strip])[0];
+    expect(moved.y).not.toBe(base.y);
+    expect(LABEL_MAX_PX).toBeLessThanOrEqual(17);
   });
 });

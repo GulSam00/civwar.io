@@ -214,6 +214,27 @@ export class GameRenderer {
     this.drawEmotes(ctx, model, topo, view);
   }
 
+  private hudCache: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  private hudAt = -1e9;
+  /** 영토 이름이 가리면 안 되는 HUD 패널(순위표·이벤트 피드·미니맵·상단 줄·부대 창)의 화면 사각형. 0.4초마다 DOM 에서 다시 읽는다 */
+  private hudRects(now: number): { x0: number; y0: number; x1: number; y1: number }[] {
+    if (now - this.hudAt < 400) return this.hudCache;
+    this.hudAt = now;
+    const out: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    try {
+      const c = this.canvas.getBoundingClientRect();
+      for (const el of document.querySelectorAll('.scoreboard, .feed, .minimap, .hud-top, .top-cluster, .flag-panel, .target-bar, .tech-window, .bottom-dock')) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) continue;
+        out.push({ x0: r.left - c.left, y0: r.top - c.top, x1: r.right - c.left, y1: r.bottom - c.top });
+      }
+    } catch {
+      /* DOM 없음(테스트) */
+    }
+    this.hudCache = out;
+    return out;
+  }
+
   /**
    * 영토 이름 (2026-10-14) — 영토 한가운데(무게중심에 가장 가까운 자기 칸). 기준점 계산은 영토가 바뀌었을 때 최대 1초에 한 번,
    * 화면 배치·겹침 정리는 매 프레임(플레이어 수만큼). 색각 보조면 플레이어 번호를 앞에 붙인다.
@@ -236,10 +257,15 @@ export class GameRenderer {
     const emblemW = (size: number) => Math.round(size * 0.78) + 4;
     // 2026-10-19: 깃발·기지 아이콘 자리 (직전 프레임 깃발 위치) — 이름이 이 위에 놓이면 비껴 놓거나 흐리게
     const obstacles: { x0: number; y0: number; x1: number; y1: number }[] = [];
-    for (const c of baseCenters) {
-      const q = worldToScreen(cam, c.x, c.y);
-      obstacles.push({ x0: q.x - s, y0: q.y - s, x1: q.x + s, y1: q.y + s * 1.6 });
-    }
+    // 2026-10-24: 기지 지명(체력 바 위 글자)과 생산 바도 아이콘의 일부로 본다 — 이름이 기지 이름 글자를 덮지 않게
+    model.baseTiles.forEach((tile, i) => {
+      const q = worldToScreen(cam, baseCenters[i].x, baseCenters[i].y);
+      const capital = model.capitalTiles.has(tile);
+      const name = cam.zoom >= (capital ? 7 : 9) ? view.baseExtra?.(tile)?.name : undefined;
+      const half = Math.max(s, name ? name.length * (capital ? 12 : 11) * 0.55 + 6 : 0);
+      obstacles.push({ x0: q.x - half, y0: q.y - s / 2 - (name ? 30 : s / 2), x1: q.x + half, y1: q.y + s * 1.6 });
+    });
+    const blocked = this.hudRects(now);
     for (const w of this.flagWorld.values()) {
       const q = worldToScreen(cam, w.x, w.y);
       obstacles.push({ x0: q.x - 12, y0: q.y - 12, x1: q.x + 12, y1: q.y + 12 });
@@ -260,6 +286,7 @@ export class GameRenderer {
       { w: cam.viewW, h: cam.viewH },
       (id) => fmtCompact(model.players.get(id)?.troops ?? 0),
       obstacles,
+      blocked,
     );
     ctx.save();
     ctx.textAlign = 'center';
