@@ -132,16 +132,16 @@ export const BASE_RELAX_MIN_CAPITAL_DIST = 9;
 export const BASE_RELAX_MIN_WATER_DIST = 1;
 
 // ══ 기지 체력 ══
-/** 패치 5차 (사용자 2026-10-25) [A]: 기지 체력은 기지별 — 일반·중립 기지 10000, 처음 수도였던 칸 20000(점령당해도 수도 체력 유지). 구 22500 공통 */
+/** 패치 5차 (사용자 2026-10-25) [A]: 기지 체력은 기지별 — 일반·중립 기지 10000, 처음 수도였던 칸 15000(점령당해도 수도 체력 유지). 구 22500 공통 */
 export const BASE_HP_MILLI = 10000;
-export const CAPITAL_HP_MILLI = 20000;
+export const CAPITAL_HP_MILLI = 15000; // 패치 5차 재조정: 20000 → 15000 (수도 점령·탈락이 너무 줄어서, 사용자 확정)
 /** 점령 직후 체력 = 그 기지 최대 체력 × 이 값 ‰ (사용자 확정 — 각 최대치의 50%) */
 export const BASE_HP_CAPTURE_PERMILLE = 500;
 /** 마지막 피해 뒤 이 tick 이 지나면 BASE_HP_REGEN_MILLI 씩 회복. 패치 5차: 50 → 25(5초), 35 → 50 (수도도 같은 값) */
 export const BASE_HP_REGEN_MILLI = 50;
 export const BASE_REGEN_DELAY_TICK = 25;
 export const BASE_CAPTURE_LOCK_TICK = 25;
-/** 패치 5차: 300 → 200. 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 일반 기지 최소 50 tick(10초), 수도 100 tick(20초).
+/** 패치 5차: 300 → 200. 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 일반 기지 최소 50 tick(10초), 수도 75 tick(15초).
  *  방어 깃발이 선 기지는 이 상한도 BASE_DEFENDED_DMG_PERMILLE 만큼 줄고, 요새화·공성 테크 배율은 상한에도 곱해진다 */
 export const BASE_HP_DMG_CAP_MILLI_PER_TICK = 200;
 

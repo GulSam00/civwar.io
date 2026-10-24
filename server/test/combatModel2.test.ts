@@ -218,12 +218,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/20000·상한 200·회복 5초 +50)로 또 다시 뽑았다.
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다.
  */
 const GOLDEN = {
-  G1: { stream: '7d4ecd9337918ac9c7fcadd9d4c41da987957fd796bcd19b5c1ee029079bec6c', state: '8ceb9c8092d332fe98d98b9c26ee0977e62d2686f6e54417c18497b8e9703ea2' },
-  G2: { stream: 'ee3c05313bde731f59d11556c1c9756ab34166f1400e88e577681b98d8c5170a', state: '43ec24948357af12e174e45fa67b0f78de3c9f18c8c700d947206d336282a610' },
-  G3: { stream: '0a9166c68cf015b9d85696c8d9dd0cfd7b0c7a2873b4a05cb7d0c9d1e424a203', state: '76c3fdb9222432ec167977cebfe804b4c0bb7a733616fdd225df12a5121ed9bd' },
+  G1: { stream: '0863d6b49b9665690fbbab210fe6314d119ea8b285704f9c41c695b91bc2c1c4', state: 'bc80a279e45da2592487293035ff640fab36e660439ac5b24f2f45ada7c73f98' },
+  G2: { stream: 'c41c15f2b1c360b330c93251b7d4ce10d5eb9fd6526d3ba0724ed77501cf300a', state: 'de429ef83e1cbf814ad10f6c77f389f815cf455b9643da3ce1a49c73300f6b73' },
+  G3: { stream: 'c4e5d8d8a6468c430ec75413e94ef6a876e04f1c375e49b10e957a49836d19ed', state: '3c4bdebbb0e047778af0c7bfe0ba1edc153de47d1059b17f73c6a001b897b412' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
@@ -468,22 +468,22 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(big.morale).toBe(990);
   });
 
-  it('기지 체력 [A 패치 5차]: 일반·중립 10000 / 처음 수도 20000, 퍼센트는 기지별 최대 기준, 점령 직후 각 최대의 50%, 점령당해도 수도는 수도 체력', () => {
+  it('기지 체력 [A 패치 5차]: 일반·중립 10000 / 처음 수도 15000, 퍼센트는 기지별 최대 기준, 점령 직후 각 최대의 50%, 점령당해도 수도는 수도 체력', () => {
     const { s } = duelState(2);
     const home = s.players[2].homeTileId;
     const cap = s.bases[s.baseIndexOf.get(home)!];
     const plain = s.bases.find((x) => !s.capitalTiles.has(x.tileId))!;
     expect([cap.maxHpMilli, plain.maxHpMilli]).toEqual([CAPITAL_HP_MILLI, BASE_HP_MILLI]);
     expect([cap.hpMilli, plain.hpMilli]).toEqual([CAPITAL_HP_MILLI, BASE_HP_MILLI]);
-    expect([CAPITAL_HP_MILLI, BASE_HP_MILLI, BASE_HP_DMG_CAP_MILLI_PER_TICK]).toEqual([20000, 10000, 200]);
+    expect([CAPITAL_HP_MILLI, BASE_HP_MILLI, BASE_HP_DMG_CAP_MILLI_PER_TICK]).toEqual([15000, 10000, 200]);
     cap.hpMilli = 5000;
     plain.hpMilli = 5000;
-    expect([hpPct(cap), hpPct(plain)]).toEqual([25, 50]);
-    // 수도 칸 함락: 새 주인이 차지해도 최대 체력은 20000, 점령 직후 50% = 10000
+    expect([hpPct(cap), hpPct(plain)]).toEqual([33, 50]);
+    // 수도 칸 함락: 새 주인이 차지해도 최대 체력은 15000, 점령 직후 50% = 7500
     cap.hpMilli = 0;
     const out = newOutbox();
     captureBase(s, home, 1, 1, out);
-    expect(cap.hpMilli).toBe(10000);
+    expect(cap.hpMilli).toBe(7500);
     expect(cap.maxHpMilli).toBe(CAPITAL_HP_MILLI);
     captureBase(s, plain.tileId, 1, 1, out);
     expect(plain.hpMilli).toBe(5000);
@@ -493,19 +493,19 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
 
   it('기지 회복 [A 패치 5차]: 마지막 피해 25 tick(5초) 뒤부터 tick 당 +50, 최대 체력에서 멈춘다. 교전 소모는 없다', () => {
     const { s } = duelState(2);
-    const b = s.bases[s.baseIndexOf.get(s.players[2].homeTileId)!]; // 수도 20000
-    b.hpMilli = 19800;
+    const b = s.bases[s.baseIndexOf.get(s.players[2].homeTileId)!]; // 수도 15000
+    b.hpMilli = 14800;
     b.lastDamageTick = 0;
     const heal = (t: number) => {
       s.tick = t;
       stage8_baseRegen(s, t);
     };
     for (let t = 1; t <= 24; t++) heal(t);
-    expect(b.hpMilli).toBe(19800); // 25 tick 이 지나기 전엔 회복 없음
+    expect(b.hpMilli).toBe(14800); // 25 tick 이 지나기 전엔 회복 없음
     heal(25);
-    expect(b.hpMilli).toBe(19850);
+    expect(b.hpMilli).toBe(14850);
     for (let t = 26; t <= 40; t++) heal(t);
-    expect(b.hpMilli).toBe(20000); // 상한에서 멈춤
+    expect(b.hpMilli).toBe(15000); // 상한에서 멈춤
     // 방어 깃발이 교전 중이어도 기지 체력은 깎이지 않는다 (교전 소모 폐지)
     const home = s.players[2].homeTileId;
     const nb = s.graph.contactNeighbors(home).find((x) => isClaimable(s.map.terrain[x]) && !s.map.isBase[x])!;
@@ -516,7 +516,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       s.tick = t;
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
     }
-    expect(b.hpMilli).toBe(20000);
+    expect(b.hpMilli).toBe(15000);
     expect(b.lastDamageTick).toBe(0);
   });
 
