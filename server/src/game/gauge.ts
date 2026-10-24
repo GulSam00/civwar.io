@@ -11,8 +11,6 @@ import {
   techBaseDmgPm,
   techCaptureMultPm,
   techSiegePm,
-  BASE_HP_MAX_MILLI,
-  BASE_HP_CAPTURE_MILLI,
   BASE_PROD_CAPTURE_PERMILLE,
   TICKS_PER_MIN,
   FLAG_IDLE_TIMEOUT,
@@ -53,6 +51,8 @@ export interface Push {
 }
 export interface BaseHit {
   flagId: number;
+  /** 패치 5차: 방어 깃발이 선 기지를 교전 중에 미는 피해 (원래 피해 ×BASE_DEFENDED_DMG_PERMILLE 적용 후) — 틱당 상한도 같은 배율로 줄인다 */
+  defended: boolean;
   tileId: number;
   cost: number;
   dmg: number; // > 0
@@ -82,7 +82,7 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
       // v4.4 (§21) [A-88]: 기지 칸 위에 적대 깃발(전투 가능)이 서 있으면 체력을 깎지 못한다 — 먼저 그 깃발을 이겨야 한다.
       // (기지에 붙은 공격 깃발은 기지 칸과 항상 접촉 → 4a 에서 이미 전투 중이라 pushing 이 아니다. 이 검사는 그 불변식의 명시판)
       if (defX === null && baseOccupiedByHostile(state, X, f.ownerId)) continue;
-      baseHits.push({ flagId: f.id, tileId: X, cost: c, dmg: adv });
+      baseHits.push({ flagId: f.id, defended: defX !== null, tileId: X, cost: c, dmg: adv });
     } else {
       pushes.push({ flagId: f.id, tileId: X, cost: c, adv });
     }
@@ -233,7 +233,7 @@ export function splitBaseDamage(want: readonly number[], hp: number, cap: number
 }
 
 /**
- * 4.12 기지 체력 전투. v4.5 (사용자 2026-10-15): 한 tick 에 기지가 잃는 체력 합 ≤ BASE_HP_DMG_CAP_MILLI_PER_TICK(300)
+ * 4.12 기지 체력 전투. v4.5 (사용자 2026-10-15): 한 tick 에 기지가 잃는 체력 합 ≤ BASE_HP_DMG_CAP_MILLI_PER_TICK(200)
  * — 깃발 수와 무관(빈 기지도 최소 15초). 깃발별 적용 피해 = splitBaseDamage, **지출 = 적용된 피해의 AP 만** [A-104]
  * (상한·체력에 잘려 버려진 피해에는 병력을 쓰지 않는다). 함락자 = 적용 피해 최대(동률 flagId 작은 쪽) — 기존 규칙.
  */
@@ -256,13 +256,18 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
   const dmgPm = defPm;
   // 피해 상한(tick 당 합)에도 같은 배율(방어측 × 공격측 최대)을 곱한다 — 상한에 걸리는 큰 공격에도 효과가 있게
   const capPm = Math.floor((defPm * maxSiege) / 1000);
+  // 패치 5차: 상한 = 200 × 요새화(방어측) × 공성(공격측 최대) × (방어 깃발이 서 있으면 ×0.5)
+  const defended = list.some((h) => h.defended);
+  let baseCap = BASE_HP_DMG_CAP_MILLI_PER_TICK;
+  if (capPm !== 1000) baseCap = Math.max(1, Math.floor((baseCap * capPm) / 1000));
+  if (defended) baseCap = Math.max(1, Math.floor((baseCap * BASE_DEFENDED_DMG_PERMILLE) / 1000));
   const applied = splitBaseDamage(
     hits.map((x) => {
       const pm = Math.floor((defPm * siegeOf(x.f)) / 1000);
       return pm === 1000 ? x.h.dmg : Math.max(1, Math.floor((x.h.dmg * pm) / 1000));
     }),
     base.hpMilli,
-    capPm === 1000 ? BASE_HP_DMG_CAP_MILLI_PER_TICK : Math.max(1, Math.floor((BASE_HP_DMG_CAP_MILLI_PER_TICK * capPm) / 1000)),
+    baseCap,
   );
   for (let i = 0; i < hits.length; i++) {
     const { f, h } = hits[i];

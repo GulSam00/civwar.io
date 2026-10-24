@@ -9,10 +9,10 @@ import { describe, expect, it } from 'vitest';
 import {
   BASE_BUFF,
   BASE_CAPTURE_LOCK_TICK,
-  BASE_COMBAT_DMG_MILLI_PER_TICK,
+  BASE_HP_DMG_CAP_MILLI_PER_TICK,
+  CAPITAL_HP_MILLI,
   BASE_DEFENDED_DMG_PERMILLE,
-  BASE_HP_MAX_MILLI,
-  BASE_HP_CAPTURE_MILLI,
+  BASE_HP_MILLI,
   MAP_SIZE_PRESETS,
   MORALE_MAX,
   POSTURE,
@@ -36,9 +36,10 @@ import { CivBot } from '../src/game/bot.js';
 import { combatInput, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { stage6_combatPhaseA, stage7_combatPhaseB } from '../src/game/gauge.js';
 import { newOutbox } from '../src/game/outbox.js';
-import { buildMatchConfig } from '../src/game/snapshot.js';
+import { buildMatchConfig, hpPct } from '../src/game/snapshot.js';
+import { captureBase } from '../src/game/basecapture.js';
 import { createGameState, defaultCombatModel, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
-import { Simulation } from '../src/game/tick.js';
+import { Simulation, stage8_baseRegen } from '../src/game/tick.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
 import { isClaimable } from '@civwar/shared';
 
@@ -217,12 +218,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다.
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/20000·상한 200·회복 5초 +50)로 또 다시 뽑았다.
  */
 const GOLDEN = {
-  G1: { stream: '0ec95c9f9c5f673e145aa766ca07806f9b2758074d599b45b513f12ef65649d8', state: '5cc61b85f91191355e9a4059ecf4bfe136c84c4993ace3177796ec4d87d100bb' },
-  G2: { stream: '1a14630fa3a6b6f24f26afa0ecaddab28aa59264f7a62d2ef3255dd83d2a0863', state: '958e89c552740fcca2de71a4c2f1ed49869851e912a2dd7458b3b41152ce1b40' },
-  G3: { stream: 'f034d0d65c80d64901928aa9b42ec115a04114f6bbde957b0f6f90505b6ffe07', state: 'f3e5065a78e66617c33ac65a79e7af01bca9a89e4b3f5f93f609748391511d8d' },
+  G1: { stream: '7d4ecd9337918ac9c7fcadd9d4c41da987957fd796bcd19b5c1ee029079bec6c', state: '8ceb9c8092d332fe98d98b9c26ee0977e62d2686f6e54417c18497b8e9703ea2' },
+  G2: { stream: 'ee3c05313bde731f59d11556c1c9756ab34166f1400e88e577681b98d8c5170a', state: '43ec24948357af12e174e45fa67b0f78de3c9f18c8c700d947206d336282a610' },
+  G3: { stream: '0a9166c68cf015b9d85696c8d9dd0cfd7b0c7a2873b4a05cb7d0c9d1e424a203', state: '76c3fdb9222432ec167977cebfe804b4c0bb7a733616fdd225df12a5121ed9bd' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
@@ -467,41 +468,56 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(big.morale).toBe(990);
   });
 
-  it('기지 위 교전 [A]: 방어 깃발이 교전 중이면 tick 마다 기지 체력 -20 (기지당 1회, 패치 2차: 40 → 20), 0 이 되면 함락(접촉한 적대 깃발 중 병력 최대의 주인), 모델 1 은 불변', () => {
-    for (const model of [1, 2] as const) {
-      const { s } = duelState(model);
-      const home = s.players[2].homeTileId;
-      const b = s.bases[s.baseIndexOf.get(home)!];
-      const nb = s.graph.contactNeighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
-      addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-      addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, posture: POSTURE.ATTACK, state: 'ENGAGED' });
-      addFlag(s, { ownerId: 3, unit: U.SWORD, troops: 3000, pos: nb, posture: POSTURE.ATTACK, state: 'ENGAGED' }); // 적 깃발이 둘이어도 기지당 1회
-      const hp0 = b.hpMilli;
-      const out = newOutbox();
-      for (let t = 1; t <= 10; t++) {
-        s.tick = t;
-        stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
-      }
-      expect(b.hpMilli).toBe(model === 2 ? hp0 - 10 * BASE_COMBAT_DMG_MILLI_PER_TICK : hp0);
-      if (model === 2) expect(BASE_COMBAT_DMG_MILLI_PER_TICK).toBe(20);
-      if (model === 2) {
-        expect(b.lastDamageTick).toBe(10);
-        expect(b.damagedThisTick).toBe(true);
-        // 패치 3차: 깃발이 서 있어도 체력이 0 이 되면 함락 — 접촉한 교전 중 적대 깃발 가운데 병력 최대(동률 flagId 작은 쪽)의 주인이 차지한다
-        b.hpMilli = 50;
-        const outCap = newOutbox();
-        for (let t = 11; t <= 13; t++) {
-          s.tick = t;
-          stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, outCap);
-        }
-        const rivals = s.flags.filter((x) => x.ownerId !== 2).sort((x, y) => y.troopsMilli - x.troopsMilli || x.id - y.id);
-        expect(rivals.length).toBe(2);
-        expect(s.owners[home]).toBe(rivals[0].ownerId);
-        expect(b.hpMilli).toBe(BASE_HP_CAPTURE_MILLI);
-        expect(b.lockUntilTick).toBe(13 + BASE_CAPTURE_LOCK_TICK);
-        expect(outCap.broadcast.filter((m) => m.type === 'base_captured')).toHaveLength(1);
-      }
+  it('기지 체력 [A 패치 5차]: 일반·중립 10000 / 처음 수도 20000, 퍼센트는 기지별 최대 기준, 점령 직후 각 최대의 50%, 점령당해도 수도는 수도 체력', () => {
+    const { s } = duelState(2);
+    const home = s.players[2].homeTileId;
+    const cap = s.bases[s.baseIndexOf.get(home)!];
+    const plain = s.bases.find((x) => !s.capitalTiles.has(x.tileId))!;
+    expect([cap.maxHpMilli, plain.maxHpMilli]).toEqual([CAPITAL_HP_MILLI, BASE_HP_MILLI]);
+    expect([cap.hpMilli, plain.hpMilli]).toEqual([CAPITAL_HP_MILLI, BASE_HP_MILLI]);
+    expect([CAPITAL_HP_MILLI, BASE_HP_MILLI, BASE_HP_DMG_CAP_MILLI_PER_TICK]).toEqual([20000, 10000, 200]);
+    cap.hpMilli = 5000;
+    plain.hpMilli = 5000;
+    expect([hpPct(cap), hpPct(plain)]).toEqual([25, 50]);
+    // 수도 칸 함락: 새 주인이 차지해도 최대 체력은 20000, 점령 직후 50% = 10000
+    cap.hpMilli = 0;
+    const out = newOutbox();
+    captureBase(s, home, 1, 1, out);
+    expect(cap.hpMilli).toBe(10000);
+    expect(cap.maxHpMilli).toBe(CAPITAL_HP_MILLI);
+    captureBase(s, plain.tileId, 1, 1, out);
+    expect(plain.hpMilli).toBe(5000);
+    const caps = out.broadcast.filter((m) => m.type === 'base_captured');
+    expect(caps.map((m) => (m as { newHpPct: number }).newHpPct)).toEqual([50, 50]);
+  });
+
+  it('기지 회복 [A 패치 5차]: 마지막 피해 25 tick(5초) 뒤부터 tick 당 +50, 최대 체력에서 멈춘다. 교전 소모는 없다', () => {
+    const { s } = duelState(2);
+    const b = s.bases[s.baseIndexOf.get(s.players[2].homeTileId)!]; // 수도 20000
+    b.hpMilli = 19800;
+    b.lastDamageTick = 0;
+    const heal = (t: number) => {
+      s.tick = t;
+      stage8_baseRegen(s, t);
+    };
+    for (let t = 1; t <= 24; t++) heal(t);
+    expect(b.hpMilli).toBe(19800); // 25 tick 이 지나기 전엔 회복 없음
+    heal(25);
+    expect(b.hpMilli).toBe(19850);
+    for (let t = 26; t <= 40; t++) heal(t);
+    expect(b.hpMilli).toBe(20000); // 상한에서 멈춤
+    // 방어 깃발이 교전 중이어도 기지 체력은 깎이지 않는다 (교전 소모 폐지)
+    const home = s.players[2].homeTileId;
+    const nb = s.graph.contactNeighbors(home).find((x) => isClaimable(s.map.terrain[x]) && !s.map.isBase[x])!;
+    addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    const out = newOutbox();
+    for (let t = 41; t <= 50; t++) {
+      s.tick = t;
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
     }
+    expect(b.hpMilli).toBe(20000);
+    expect(b.lastDamageTick).toBe(0);
   });
 
   it('방어 태세는 교전 중 사기가 절반만 줄어든다 [A 패치 2차] (올림, 최소 1): 창 3→2 / 검 6→3 / 기 10→5, 공격 태세는 그대로', () => {
@@ -552,7 +568,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       const out = newOutbox();
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out); // 교전 개시
       expect(atk.inCombat).toBe(defended);
-      b.hpMilli = BASE_HP_MAX_MILLI;
+      b.hpMilli = b.maxHpMilli;
       b.damagedThisTick = false;
       s.tick = 2;
       const plan = stage6_combatPhaseA(s, 2); // 틱당 상한(300) 적용 전의 원래 피해로 비교한다
@@ -563,6 +579,31 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     const half = hit(2, true);
     expect(half).toBe(Math.floor((free * BASE_DEFENDED_DMG_PERMILLE) / 1000));
     expect(hit(1, true)).toBe(0);
+  });
+
+  it('틱당 기지 피해 상한 [A 패치 5차]: 200, 방어 깃발이 선 기지는 100 (요새화·공성 테크 배율은 상한에도 곱해진다)', () => {
+    const lost = (defended: boolean, fortPm = 1000, siegePm = 1000) => {
+      const { s } = duelState(2);
+      const home = s.players[2].homeTileId;
+      const b = s.bases[s.baseIndexOf.get(home)!];
+      const nb = s.graph.neighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
+      if (defended) addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 9000, pos: nb, anchorTileId: home, targetOwnerId: 2, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 9_000_000 });
+      s.players[2].statPm[TECH_STAT.BASE_DMG] = fortPm;
+      s.players[1].statPm[TECH_STAT.SIEGE] = siegePm;
+      const out = newOutbox();
+      s.tick = 1;
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out);
+      const hp0 = b.hpMilli;
+      s.tick = 2;
+      stage7_combatPhaseB(s, stage6_combatPhaseA(s, 2), 2, out);
+      return hp0 - b.hpMilli;
+    };
+    expect(lost(false)).toBe(BASE_HP_DMG_CAP_MILLI_PER_TICK);
+    expect(lost(true)).toBe(BASE_HP_DMG_CAP_MILLI_PER_TICK / 2);
+    expect(lost(false, 500)).toBe(BASE_HP_DMG_CAP_MILLI_PER_TICK / 2); // 요새화 ×0.5
+    expect(lost(false, 1000, 1500)).toBe(BASE_HP_DMG_CAP_MILLI_PER_TICK * 1.5); // 공성 ×1.5
+    expect(lost(true, 1000, 1500)).toBe((BASE_HP_DMG_CAP_MILLI_PER_TICK * 1.5) / 2);
   });
 
   it('점령 사기 소모 [A]: 게이지를 미는 tick 마다 창 -6 / 검 -5 / 기 -8 (CAPTURE_MORALE_DROP x 점령 배율), 모델 1 은 사기 없음', () => {

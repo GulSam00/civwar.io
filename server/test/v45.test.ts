@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import {
   UNIT_ATK_MULT_PERMILLE,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
-  BASE_HP_MAX_MILLI,
+  BASE_HP_MILLI,
+  CAPITAL_HP_MILLI,
   BASE_PROD_TILES,
   CAPITAL_PROD_TILES,
   COMBAT_LOSS_BP,
@@ -169,12 +170,12 @@ describe('v4.5 깃발 전투 손실률 0.9% (바닥 0.45%)', () => {
 
 // ───────────────────────── 4. 기지 피해 상한 ─────────────────────────
 
-describe('v4.5 기지 피해 상한 300/tick', () => {
-  it('splitBaseDamage: 합 ≤ 300·체력, 비례 분배, 잔여는 큰 피해 → 앞 순서', () => {
-    expect(splitBaseDamage([100, 150], 22500)).toEqual([100, 150]); // 상한 아래는 그대로
-    expect(splitBaseDamage([2800, 2800, 2800], 22500)).toEqual([100, 100, 100]);
-    expect(splitBaseDamage([1000, 1000, 1000, 1000, 1000, 1000, 1000], 22500)).toEqual([43, 43, 43, 43, 43, 43, 42]);
-    expect(splitBaseDamage([2000, 1000], 22500)).toEqual([200, 100]);
+describe('v4.5 기지 피해 상한 200/tick (패치 5차: 300 → 200)', () => {
+  it('splitBaseDamage: 합 ≤ 200·체력, 비례 분배, 잔여는 큰 피해 → 앞 순서', () => {
+    expect(splitBaseDamage([80, 120], 22500)).toEqual([80, 120]); // 상한 아래는 그대로
+    expect(splitBaseDamage([2800, 2800, 2800], 22500)).toEqual([67, 67, 66]);
+    expect(splitBaseDamage([1000, 1000, 1000, 1000, 1000, 1000, 1000], 22500)).toEqual([29, 29, 29, 29, 28, 28, 28]);
+    expect(splitBaseDamage([2000, 1000], 22500)).toEqual([134, 66]);
     expect(splitBaseDamage([2000, 1000], 90)).toEqual([60, 30]); // 남은 체력보다 많이 깎지 않는다
     for (const w of [[1], [299, 2], [5000, 7, 7], [1, 1, 1, 1, 1, 1, 1, 1000]]) {
       const r = splitBaseDamage(w, 22500);
@@ -182,7 +183,7 @@ describe('v4.5 기지 피해 상한 300/tick', () => {
     }
   });
 
-  it('깃발 6개가 빈 적 기지를 동시에 밀어도 tick 당 체력 손실 ≤ 300, 지출 = 적용 피해분, 최소 75 tick 걸린다', () => {
+  it('깃발 6개가 빈 적 기지를 동시에 밀어도 tick 당 체력 손실 ≤ 200, 지출 = 적용 피해분, 일반 기지 최소 50 tick(수도 100) 걸린다', () => {
     const sim = makeSim();
     const s = sim.state;
     const B = s.players[2].homeTileId;
@@ -211,7 +212,7 @@ describe('v4.5 기지 피해 상한 300/tick', () => {
       prev = base.hpMilli;
     }
     expect(captured).toBe(true);
-    expect(ticks).toBeGreaterThanOrEqual(Math.ceil(BASE_HP_MAX_MILLI / BASE_HP_DMG_CAP_MILLI_PER_TICK));
+    expect(ticks).toBeGreaterThanOrEqual(Math.ceil((s.capitalTiles.has(B) ? CAPITAL_HP_MILLI : BASE_HP_MILLI) / BASE_HP_DMG_CAP_MILLI_PER_TICK));
   });
 });
 

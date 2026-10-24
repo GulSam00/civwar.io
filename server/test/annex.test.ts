@@ -61,7 +61,7 @@ function eliminateP2(sim: Simulation, victim: { troops: number; gold: number; fl
     setTileOwner(s, far, 2, false);
     addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: victim.flagTroops, pos: far, posture: POSTURE.ATTACK, state: 'IDLE', idleSinceTick: s.tick });
   }
-  s.bases[s.baseIndexOf.get(cap)!].hpMilli = 300;
+  s.bases[s.baseIndexOf.get(cap)!].hpMilli = 150; // 틱당 상한(200) 이내 -> 한 tick 에 함락
   addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: nb, anchor: cap, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'ENGAGED', spendBudgetMilli: 100_000 });
   let elim: ServerMessage | undefined;
   for (let i = 0; i < 8 && !elim; i++) {
@@ -177,7 +177,7 @@ describe('§31 약소국 정리 보상', () => {
     setTileOwner(s, extra, 2, false); // P2 는 기지 2개
     const nb = landNeighbor(s, extra);
     setTileOwner(s, nb, 1, false);
-    s.bases[s.baseIndexOf.get(extra)!].hpMilli = 300;
+    s.bases[s.baseIndexOf.get(extra)!].hpMilli = 150; // 틱당 상한(200) 이내 -> 한 tick 에 함락
     addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: nb, anchor: extra, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'ENGAGED', spendBudgetMilli: 100_000 });
     const g0 = s.players[1].goldMilli;
     for (let i = 0; i < 8 && s.owners[extra] !== 1; i++) sim.step();

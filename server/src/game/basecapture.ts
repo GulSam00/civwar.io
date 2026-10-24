@@ -1,8 +1,8 @@
 /**
- * 기지 함락 처리 (4.12, §21, §31) — 게이지 경로(gauge.applyBaseHits)와 교전 소모 경로(combat.stage4d_baseCombatWear)가 함께 쓴다.
+ * 기지 함락 처리 (4.12, §21, §31) — 게이지 경로(gauge.applyBaseHits)가 쓴다 (패치 5차: 교전 소모 경로 폐지).
  * 소유권 이전, 체력·무적·생산력, 이전 주인(·동맹) 깃발 퇴각(모델 2), base_captured 이벤트.
  */
-import { BASE_CAPTURE_LOCK_TICK, BASE_HP_CAPTURE_MILLI, BASE_HP_MAX_MILLI, BASE_PROD_CAPTURE_PERMILLE, TICKS_PER_MIN } from '@civwar/shared';
+import { BASE_CAPTURE_LOCK_TICK, BASE_HP_CAPTURE_PERMILLE, BASE_PROD_CAPTURE_PERMILLE, TICKS_PER_MIN } from '@civwar/shared';
 import { ANNEX } from './annex.js';
 import { beginReturn } from './flagops.js';
 import type { Outbox } from './outbox.js';
@@ -14,7 +14,7 @@ export function captureBase(state: GameState, B: number, newOwner: number, t: nu
   const from = state.owners[B];
   const lastBase = from !== NEUTRAL && state.players[from].baseTiles.length === 1; // §31: 이 함락 = 멸망
   setTileOwner(state, B, newOwner);
-  base.hpMilli = BASE_HP_CAPTURE_MILLI;
+  base.hpMilli = Math.floor((base.maxHpMilli * BASE_HP_CAPTURE_PERMILLE) / 1000);
   base.lockUntilTick = t + BASE_CAPTURE_LOCK_TICK;
   // v4.4 (§21): 생산력 = 현재 값 × 0.5 (중립 기지 포함). 이후 8단계가 선형 회복
   const prodPm = lastBase && ANNEX.fullProd ? baseProdPm(base) : Math.floor((baseProdPm(base) * BASE_PROD_CAPTURE_PERMILLE) / 1000);
@@ -36,7 +36,7 @@ export function captureBase(state: GameState, B: number, newOwner: number, t: nu
     tileId: B,
     fromPlayerId: from,
     toPlayerId: newOwner,
-    newHpPct: Math.floor((BASE_HP_CAPTURE_MILLI * 100) / BASE_HP_MAX_MILLI),
+    newHpPct: Math.floor((base.hpMilli * 100) / base.maxHpMilli),
     newProdPm: prodPm,
   });
 }

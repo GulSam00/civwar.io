@@ -4,7 +4,8 @@ import {
   ALLIANCE_MIN_DURATION,
   BACKSTAB_COOLDOWN_TICK,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
-  BASE_HP_MAX_MILLI,
+  BASE_HP_MILLI,
+  CAPITAL_HP_MILLI,
   BASE_PROD_TILES,
   CAPITAL_PROD_TILES,
   COMBAT_LOSS_BP,
@@ -51,7 +52,8 @@ export function Help({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   const drag = useDraggableWindow<HTMLElement>('help', !isNarrowScreen());
   const decaySec = Math.round((1000 / PROGRESS_DECAY_MILLI_PER_TICK) * TICK_MS / 1000);
-  const baseDmgPct = ((BASE_HP_DMG_CAP_MILLI_PER_TICK * 100000) / TICK_MS / BASE_HP_MAX_MILLI).toFixed(1);
+  const baseMinSec = Math.round(((BASE_HP_MILLI / BASE_HP_DMG_CAP_MILLI_PER_TICK) * TICK_MS) / 1000);
+  const capitalMinSec = Math.round(((CAPITAL_HP_MILLI / BASE_HP_DMG_CAP_MILLI_PER_TICK) * TICK_MS) / 1000);
   return (
     <div className="overlay help-overlay" onClick={onClose}>
       <article ref={drag.ref} style={drag.style} className="help" onClick={(e) => e.stopPropagation()}>
@@ -103,7 +105,7 @@ export function Help({ onClose }: { onClose: () => void }) {
                 전투 중 회수·재지정·태세 전환 = 대기 {sec(DISENGAGE_TICKS)} (방어력 ×0.5)
               </Row>
               <Row k="기지">
-                생산 {BASE_PROD_TILES}칸분 (수도 {CAPITAL_PROD_TILES}) · 체력 피해 상한 초당 {baseDmgPct}% · 모두 잃으면 멸망
+                생산 {BASE_PROD_TILES}칸분 (수도 {CAPITAL_PROD_TILES}) · 함락 최단 {baseMinSec}초 (수도 {capitalMinSec}초) · 모두 잃으면 멸망
               </Row>
               <Row k="동맹">
                 최대 {MAX_ALLIES_PER_PLAYER}명 · 파기 가능 {sec(ALLIANCE_MIN_DURATION)} 뒤 · 파기 후 {sec(BACKSTAB_COOLDOWN_TICK)} 공격 불가 · {min(ALLIANCE_CUTOFF_TICK)} 이후 신규 불가

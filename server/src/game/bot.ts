@@ -11,7 +11,6 @@
  */
 import {
   ALLIANCE_MIN_DURATION,
-  BASE_HP_MAX_MILLI,
   ANY_HOSTILE,
   BOT_AGGRESSION_NEUTRAL_PERMILLE,
   BOT_AGGRESSION_SPAN,
@@ -22,6 +21,7 @@ import {
   BOT_BASE_ATTACK_WEIGHT_PERMILLE,
   BOT_BASE_CAPITAL_PERMILLE,
   BOT_BASE_THREAT_W,
+  BOT_BASE_HP_REF,
   BOT_BASE_UNGUARDED_PERMILLE,
   BOT_COMMIT_BASE_PERMILLE,
   BOT_BLOCK_ATTACK_RATIO_PERMILLE,
@@ -467,7 +467,7 @@ function threatItems(ctx: Ctx): { items: ThreatItem[]; baseTh: [number, number][
   for (const b of ctx.p.baseTiles) {
     const bs = state.bases[state.baseIndexOf.get(b)!];
     // GDD 식의 "/1000" 은 hpMilli 단위와 맞지 않아(최대 45) 뺐다 — §10 기록
-    if (t - bs.lastDamageTick < 25 && bs.hpMilli < BASE_HP_MAX_MILLI) baseTh.push([b, (BASE_HP_MAX_MILLI - bs.hpMilli) * BOT_BASE_THREAT_W]);
+    if (t - bs.lastDamageTick < 25 && bs.hpMilli < bs.maxHpMilli) baseTh.push([b, Math.floor(((bs.maxHpMilli - bs.hpMilli) * BOT_BASE_HP_REF) / bs.maxHpMilli) * BOT_BASE_THREAT_W]); // 패치 5차: 기지별 최대 체력 → 구 22500 기준으로 환산해 가중치 척도를 유지
   }
   return { items, baseTh };
 }
@@ -565,7 +565,7 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
     if (enemyDefend === 0) score = Math.floor((score * 170) / 100);
     if (state.map.isBase[anchor]) {
       const b = state.bases[state.baseIndexOf.get(anchor)!];
-      if (b.hpMilli < BASE_HP_MAX_MILLI / 2) score = Math.floor((score * 140) / 100);
+      if (b.hpMilli < b.maxHpMilli / 2) score = Math.floor((score * 140) / 100);
     }
     score = Math.floor((score * ctx.k.enemyAnchorWeightPermille) / 1000); // 성향: 적 앵커 선호
     const ratio = Math.floor((foeAssets * 1000) / Math.max(1, myAssets));
@@ -885,7 +885,7 @@ function guardBases(ctx: Ctx): void {
     // 마지막 기지가 아니면 실제로 체력이 깎이는 중일 때만 (자가대전 비교 — 모든 위협 기지를 지키면 기지 함락이 절반 이하로 준다, §9 v4.4)
     if (!last) {
       const bs = state.bases[state.baseIndexOf.get(b)!];
-      if (ctx.t - bs.lastDamageTick >= BOT_BASE_GUARD_DAMAGE_WINDOW || bs.hpMilli >= BASE_HP_MAX_MILLI) continue;
+      if (ctx.t - bs.lastDamageTick >= BOT_BASE_GUARD_DAMAGE_WINDOW || bs.hpMilli >= bs.maxHpMilli) continue;
     }
     let guard = 0;
     for (const f of ctx.mine) if (f.anchorTileId === b && isBaseGuard(ctx, f)) guard += Math.floor(f.troopsMilli / 1000) * valueAs(state, me, f.unit, POSTURE.DEFEND, b);

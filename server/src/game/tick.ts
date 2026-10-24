@@ -13,7 +13,6 @@
  * 11(봇)만 자리 — 3차.
  */
 import {
-  BASE_HP_MAX_MILLI,
   BASE_HP_REGEN_MILLI,
   BASE_REGEN_DELAY_TICK,
   BASE_PROD_MAX_PERMILLE,
@@ -134,9 +133,9 @@ export function stage8_baseRegen(state: GameState, t: number): void {
       b.damagedThisTick = false;
       continue;
     }
-    if (b.hpMilli >= BASE_HP_MAX_MILLI) continue;
+    if (b.hpMilli >= b.maxHpMilli) continue;
     if (t - b.lastDamageTick < BASE_REGEN_DELAY_TICK) continue;
-    b.hpMilli = Math.min(BASE_HP_MAX_MILLI, b.hpMilli + BASE_HP_REGEN_MILLI);
+    b.hpMilli = Math.min(b.maxHpMilli, b.hpMilli + BASE_HP_REGEN_MILLI);
   }
 }
 

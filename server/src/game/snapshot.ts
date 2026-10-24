@@ -4,7 +4,6 @@
 import {
   BASE_HP_DELTA_INTERVAL,
   FLAG_BIT,
-  BASE_HP_MAX_MILLI,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENDGAME_RUSH_TICK,
   HARD_TIMEOUT_TICK,
@@ -35,8 +34,9 @@ import { flagCap } from './economy.js';
 import { baseProdPm, type Flag, type GameState, type PlayerState } from './state.js';
 import { thresholdPct } from './victory.js';
 
-export function hpPct(hpMilli: number): number {
-  return Math.floor((hpMilli * 100) / BASE_HP_MAX_MILLI);
+/** 기지 체력 % — 그 기지의 최대 체력 기준 (수도 20000 / 일반 10000) */
+export function hpPct(b: Readonly<{ hpMilli: number; maxHpMilli: number }>): number {
+  return Math.floor((b.hpMilli * 100) / b.maxHpMilli);
 }
 
 export function progressPct(progressMilli: number): number {
@@ -176,7 +176,7 @@ export function buildSnapshotFull(state: Readonly<GameState>): S2C_SnapshotFull 
     owners: rleEncode(state.owners),
     players: state.players.filter(Boolean).map(playerSnap),
     flags: state.flags.map((f) => flagSnap(f, state.combatModel, state.moraleShown)),
-    bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b.hpMilli), prodPm: baseProdPm(b) })),
+    bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b), prodPm: baseProdPm(b) })),
     alliances: state.alliances.map((a) => ({ a: a.a, b: a.b, state: a.state, sinceTick: a.sinceTick, breakAtTick: a.breakAtTick })),
     thresholdPct: thresholdPct(t),
     ticksRemaining: Math.max(0, HARD_TIMEOUT_TICK - t),
@@ -247,7 +247,7 @@ export class DeltaTracker {
       this.flagTarget.set(f.id, f.targetTileId);
     }
     this.baseHp.clear();
-    for (const b of state.bases) this.baseHp.set(b.tileId, hpPct(b.hpMilli));
+    for (const b of state.bases) this.baseHp.set(b.tileId, hpPct(b));
     this.baseProd.clear();
     for (const b of state.bases) this.baseProd.set(b.tileId, baseProdPm(b));
     this.production.clear();
@@ -343,7 +343,7 @@ export class DeltaTracker {
     }
     if (t % BASE_HP_DELTA_INTERVAL === 0) {
       for (const b of state.bases) {
-        const pct = hpPct(b.hpMilli);
+        const pct = hpPct(b);
         if (this.baseHp.get(b.tileId) !== pct) {
           this.baseHp.set(b.tileId, pct);
           d.baseHp.push([b.tileId, pct]);

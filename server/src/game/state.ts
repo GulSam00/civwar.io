@@ -3,7 +3,8 @@
  * 타일의 가변 상태는 owner 하나뿐. 진척도는 깃발에, 기지 체력은 bases[] 에 산다.
  */
 import {
-  BASE_HP_INIT_MILLI,
+  BASE_HP_MILLI,
+  CAPITAL_HP_MILLI,
   COMBAT_MODEL,
   MORALE_MAX,
   BASE_PROD_MAX_PERMILLE,
@@ -117,6 +118,8 @@ export interface Flag {
 export interface BaseState {
   tileId: number;
   hpMilli: number;
+  /** 패치 5차: 기지별 최대 체력 — 처음 수도였던 칸은 CAPITAL_HP_MILLI, 나머지 BASE_HP_MILLI (점령당해도 불변) */
+  readonly maxHpMilli: number;
   lastDamageTick: number;
   lockUntilTick: number;
   damagedThisTick: boolean; // 7단계가 쓰고 8단계가 읽는 tick 로컬 플래그
@@ -362,9 +365,11 @@ export function createGameState(
       statPm: techStatValues(0),
     };
   }
+  const capitalSet = new Set(map.spawns.map((sp) => sp.homeTileId));
   const bases: BaseState[] = map.baseTiles.map((tileId) => ({
     tileId,
-    hpMilli: BASE_HP_INIT_MILLI,
+    hpMilli: capitalSet.has(tileId) ? CAPITAL_HP_MILLI : BASE_HP_MILLI,
+    maxHpMilli: capitalSet.has(tileId) ? CAPITAL_HP_MILLI : BASE_HP_MILLI,
     lastDamageTick: 0,
     lockUntilTick: 0,
     damagedThisTick: false,

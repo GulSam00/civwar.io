@@ -132,14 +132,18 @@ export const BASE_RELAX_MIN_CAPITAL_DIST = 9;
 export const BASE_RELAX_MIN_WATER_DIST = 1;
 
 // ══ 기지 체력 ══
-export const BASE_HP_MAX_MILLI = 22500; // 사용자 2026-10-11: 기지 체력 ×1.5 (15000 → 22500)
-export const BASE_HP_INIT_MILLI = 22500;
-export const BASE_HP_CAPTURE_MILLI = 11250;
-export const BASE_HP_REGEN_MILLI = 35; // [A-39] ×1.5 (23 → 35, 완전 회복 시간 유지 — 에이전트 선택)
-export const BASE_REGEN_DELAY_TICK = 50;
+/** 패치 5차 (사용자 2026-10-25) [A]: 기지 체력은 기지별 — 일반·중립 기지 10000, 처음 수도였던 칸 20000(점령당해도 수도 체력 유지). 구 22500 공통 */
+export const BASE_HP_MILLI = 10000;
+export const CAPITAL_HP_MILLI = 20000;
+/** 점령 직후 체력 = 그 기지 최대 체력 × 이 값 ‰ (사용자 확정 — 각 최대치의 50%) */
+export const BASE_HP_CAPTURE_PERMILLE = 500;
+/** 마지막 피해 뒤 이 tick 이 지나면 BASE_HP_REGEN_MILLI 씩 회복. 패치 5차: 50 → 25(5초), 35 → 50 (수도도 같은 값) */
+export const BASE_HP_REGEN_MILLI = 50;
+export const BASE_REGEN_DELAY_TICK = 25;
 export const BASE_CAPTURE_LOCK_TICK = 25;
-/** v4.5 (사용자 2026-10-15): 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 22500 → 최소 75 tick = 15초 */
-export const BASE_HP_DMG_CAP_MILLI_PER_TICK = 300;
+/** 패치 5차: 300 → 200. 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 일반 기지 최소 50 tick(10초), 수도 100 tick(20초).
+ *  방어 깃발이 선 기지는 이 상한도 BASE_DEFENDED_DMG_PERMILLE 만큼 줄고, 요새화·공성 테크 배율은 상한에도 곱해진다 */
+export const BASE_HP_DMG_CAP_MILLI_PER_TICK = 200;
 
 // ══ v4.4 기지 생산력·기지 방어 (사용자 2026-10-14, 프로토콜 §21) ══
 /** 방어 태세 깃발이 내 기지 칸 위에 서 있으면 지형 보정 대신 이 값 (곱하지 않고 대체) — 사용자 확정 */
@@ -511,6 +515,8 @@ export const BOT_NEUTRAL_BIAS_TICK = 2442;
 export const BOT_THREAT_TRIGGER = 3000;
 export const BOT_THREAT_LOOKAHEAD = 25;
 export const BOT_BASE_THREAT_W = 3;
+/** 패치 5차: 기지 위협 점수를 구 기지 체력(22500) 척도로 환산하는 기준 — 기지별 최대 체력이 달라져도 가중치 튜닝을 유지 */
+export const BOT_BASE_HP_REF = 22500;
 export const BOT_PREEMPT_FACTOR_PERMILLE = 1600;
 export const BOT_STALL_SWITCH_PERMILLE = 1300;
 export const BOT_GARRISON_PATIENCE = 900;
@@ -619,9 +625,7 @@ export const MORALE_DELTA_INTERVAL = 5; // 델타 moraleChanged 주기 (tick)
 export const CAPTURE_MORALE_DROP = 6;
 /** 2026-10-24 밸런스 패치 2차 [A]: 방어 태세 깃발의 교전 중 사기 감소 배율 ‰ (사용자 확정 — 절반). 공격 태세는 1000 */
 export const MORALE_DROP_DEFEND_PERMILLE = 500;
-/** 2026-10-24 [A] 자기 기지 칸 위 방어 깃발이 교전 중인 tick 마다 그 기지가 잃는 체력 milli (모델 2 전용). 체력 1 밑으로는 깎지 않는다 */
-// 2026-10-24 밸런스 패치 2차 [A]: 40 → 20 (사용자 확정 — 기지 위에 깃발이 있으면 기지 소모를 절반으로)
-export const BASE_COMBAT_DMG_MILLI_PER_TICK = 20;
+// 패치 5차: 교전 기지 소모(BASE_COMBAT_DMG_MILLI_PER_TICK) 폐지 — 방어 깃발이 선 기지도 밀 수 있으므로(BASE_DEFENDED_DMG_PERMILLE) 불필요
 /** 2026-10-24 밸런스 패치 4차 [A]: 방어 깃발(전투 가능)이 서 있는 기지를 공격자가 미는 피해 배율 ‰ (사용자 확정 — 절반). 모델 2 전용.
  *  깃발이 없는 기지는 1000. 교전 중인 공격 깃발도 이 경우에 한해 기지를 밀 수 있다 */
 export const BASE_DEFENDED_DMG_PERMILLE = 500;
