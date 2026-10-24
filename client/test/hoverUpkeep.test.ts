@@ -71,12 +71,12 @@ describe('반투명 영토', () => {
 
 describe('하단 바 유지비', () => {
   it('서버 upkeepPm 과 맞는 규칙을 고르고, 모든 깃발 과금 규칙일 때만 다음 깃발 미리보기', () => {
-    // 검 1000 + 기 1600 = 2600 → (2600−1000)×90/1000 = 144‰
+    // 검 1000 + 기 2000 = 3000 → (3000−1000)×90/1000 = 180‰
     const flags = [flag({ id: 1, unit: 1 }), flag({ id: 2, unit: 2 })];
-    expect(drainPm(2600)).toBe(144);
-    const all = model(flags, 144);
-    expect(detectRule(all, 1, 144)).toBe('all');
-    expect(nextFlagExtraPm(all, 1, 'all', 0)).toBe(drainPm(3200) - 144);
+    expect(drainPm(3000)).toBe(180);
+    const all = model(flags, 180);
+    expect(detectRule(all, 1, 180)).toBe('all');
+    expect(nextFlagExtraPm(all, 1, 'all', 0)).toBe(drainPm(3600) - 180);
     // 주둔만 과금(종전 규칙): 공격 행군 깃발은 0 → upkeepPm 0
     const gar = model(flags, 0);
     expect(detectRule(gar, 1, 0)).toBe('garrison');

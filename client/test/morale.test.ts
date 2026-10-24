@@ -20,6 +20,7 @@ function modelWithFlags(combatModel: 1 | 2, morales: number[]) {
     const f = makeFlag({ id: s.nextFlagId++, ownerId: 1, slotIndex: i, unit: UNIT.SWORD, troopsMilli: 100_000, initialTroops: 100, posTileId: home, anchorTileId: home, originTileId: home });
     f.posture = POSTURE.DEFEND;
     f.morale = m;
+    s.moraleShown.set(f.id, m); // 델타로 이미 보낸 값처럼 (전체 스냅숏은 보낸 값을 싣는다)
     s.flags.push(f);
   });
   const g = new GameModel(wire(buildMatchConfig(s)));

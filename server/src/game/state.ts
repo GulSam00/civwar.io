@@ -238,6 +238,12 @@ export interface GameState {
   endgameRushActive: boolean;
   result: GameResult | null;
   changes: TickChanges;
+  /**
+   * §33 (모델 2, 표시 전용): 마지막으로 델타(moraleChanged)로 보낸 깃발별 사기. DeltaTracker 가 갱신하고,
+   * 전체 스냅숏(중간 입장·재접속)도 이 값을 싣는다 — 정확한 현재값을 싣으면 델타 사이에 흔들렸다 돌아온 사기가 입장자에게 어긋난 채 남는다.
+   * 규칙에 쓰이지 않는다. 없는 깃발은 MORALE_MAX 로 본다.
+   */
+  moraleShown: Map<number, number>;
 }
 
 export const ALLY_STRIDE = 16; // > MAX_PLAYERS
@@ -408,6 +414,7 @@ export function createGameState(
     endgameRushActive: false,
     result: null,
     changes: { tileChanges: [], flagsGone: [], combatLoss: [] },
+    moraleShown: new Map(),
   };
   // 초기 소유 — onTileOwnerChange 경유로 파생 상태를 일관되게 만든다
   for (let t = 0; t < map.initialOwners.length; t++) {

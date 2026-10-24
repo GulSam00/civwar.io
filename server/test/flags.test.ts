@@ -442,7 +442,7 @@ describe('게이지 (계속)', () => {
     }
     expect(anchor).toBeGreaterThanOrEqual(0);
     const tiles0 = s.players[1].tiles;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: anchor, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 60, anchorTileId: anchor, originBaseTileId: null }); // 편성비 ×1.6 — 풀이 모자라지 않게 60
     let haltedSeen = false;
     const r = run(sim, 300, () => {
       if (s.flags.some((f) => f.id === 1 && f.halted && f.state === 'MARCHING')) haltedSeen = true;
@@ -778,15 +778,15 @@ describe('v4.2 공격 = 깃발 옆 칸 (4.4a) · 귀환 (4.4 v4.2)', () => {
   it('유지비 = 출전 깃발 전부 [A-60 변경]: 태세·상태 무관, 패주만 제외, 상한 700 (순증 ≥ 0)', () => {
     const { sim, s, c } = scenario();
     for (const t of s.graph.disk(c, 2)) setTileOwner(s, t, 1, false);
-    // 검 방어 ENGAGED + 기병 공격 MARCHING(내 땅 안) + 창 IDLE = 1000 + 1600 + 600 = 3200 → 과금 2200 × 90 / 1000 = 198
+    // 검 방어 ENGAGED + 기병 공격 MARCHING(내 땅 안) + 창 IDLE = 1000 + 2000 + 600 = 3600 → 과금 2600 × 90 / 1000 = 234
     addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
     addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: c - 1, anchor: c + 1, posture: POSTURE.ATTACK, state: 'MARCHING' });
     addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: c + s.map.width, posture: POSTURE.ATTACK, state: 'IDLE', idleSinceTick: 0 });
     const routed = addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 0, pos: c - s.map.width, posture: POSTURE.ATTACK, state: 'RETURNING', routed: true, returnTileId: c });
     void routed;
     run(sim, 1);
-    expect(s.players[1].upkeepPm).toBe(198);
-    // 상한: 기병 7개 = 11200 → 과금 10200 × 0.09 = 918 → 700
+    expect(s.players[1].upkeepPm).toBe(234);
+    // 상한: 기병 7개 = 14000 → 과금 13000 × 0.09 = 1170 → 700
     const { sim: sim2, s: s2, c: c2 } = scenario();
     for (const t of s2.graph.disk(c2, 2)) setTileOwner(s2, t, 1, false);
     for (let k = 0; k < 7; k++) addFlag(s2, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: c2, posture: POSTURE.DEFEND, state: 'ENGAGED' });

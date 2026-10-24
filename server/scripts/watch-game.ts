@@ -65,7 +65,7 @@ let S: GameState | null = null;
 const nick = new Map<number, string>();
 
 function temper(a: number): string {
-  return a >= 667 ? '공격형' : a <= 333 ? '수비형' : '균형형';
+  return a >= 667 ? '공격형' : a <= 333 ? '신중형' : '균형형';
 }
 function P(id: number | null | undefined): string {
   if (id === null || id === undefined) return '없음';

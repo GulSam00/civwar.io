@@ -249,10 +249,12 @@ export type Unit = (typeof UNIT)[keyof typeof UNIT];
 export const UNIT_SPEED_PERMILLE = [900, 1000, 1200] as const;
 // 2026-10-24 병종 정체성: 점령(영토·기지 공격) 시 병력 소모 배율 — 기병 ≫ 창병 > 검병 [A] (구 1150 / 1000 / 850: 기병이 가장 쌌다)
 export const UNIT_ATK_MULT_PERMILLE = [1000, 850, 1400] as const;
-export const UNIT_GARRISON_PERMILLE = [600, 1000, 1600] as const;
+// 2026-10-24 밸런스 패치 [A]: 기병 유지비 가중치 1600 → 2000 (사용자 확정 — 기병 쏠림 완화)
+export const UNIT_GARRISON_PERMILLE = [600, 1000, 2000] as const;
 export const UNIT_ASSAULT_PERMILLE = [700, 1000, 1400] as const;
 // 2026-10-24 병종 정체성: 최초 동원비(편성비) — 창병 낮음 / 기병 높음 [A] (구 1000 / 1000 / 1150)
-export const UNIT_CONVERT_PERMILLE = [900, 1000, 1300] as const;
+// 2026-10-24 밸런스 패치 [A]: 기병 편성비 1300 → 1600 (사용자 확정 — 병력 풀에서만 빠지고 골드는 들지 않는다)
+export const UNIT_CONVERT_PERMILLE = [900, 1000, 1600] as const;
 
 // ══ v4.1 진척도 자동 감소 (4.7 e) ══
 // v4.1 삭제: DEFENSE_LEVERAGE_PERMILLE, UNIT_DEF_PUSH_PERMILLE (게이지 되돌리기 폐지).
@@ -448,7 +450,7 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 35, code: 'SWO-4', branch: 5, tier: 4, parent: 34, parentAlt: 33, stat: TECH_STAT.MORALE_FULL_BONUS_SWORD, op: 'add', value: 100, name: '백전노장', desc: '검병 사기 만땅 기세 +10%p' },
   // 기병 CAV — 기병 깃발에만 (36..41)
   { id: 36, code: 'CAV-1', branch: 6, tier: 1, parent: null, stat: TECH_STAT.SPEED_CAVALRY, op: 'add', value: 10, name: '군마', desc: '기병 이동 +10' },
-  { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1300, name: '마구간', desc: '기병 유지비 가중치 1.60 → 1.30' },
+  { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1600, name: '마구간', desc: '기병 유지비 가중치 2.00 → 1.60' },
   { id: 38, code: 'CAV-2B', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 20, name: '기병창', desc: '기병 공격 +20' },
   { id: 39, code: 'CAV-3A', branch: 6, tier: 3, parent: 37, stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200, name: '역참', desc: '기병 점령 소모 −0.20' },
   { id: 40, code: 'CAV-3B', branch: 6, tier: 3, parent: 38, stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, op: 'add', value: 100, name: '돌격 기세', desc: '기병 사기 만땅 기세 +10%p' },
@@ -528,6 +530,10 @@ export const BOT_ENGAGE_BREAK_RATIO_PERMILLE = 200; // 1:5 (시험 100~1000 중 
 // 알고리즘 분기 없음 — 아래 값만 보간: 값(a) = 기준 + (a − 500) × SPAN / 500 (floor 아님: 정수 나눗셈 trunc, 결과 clamp).
 // 기준 = 난이도 값(BOT_DIFFICULTY) 또는 아래 전역 기준. a = 500 이면 성향 없음(기준 그대로).
 export const BOT_AGGRESSION_NEUTRAL_PERMILLE = 500;
+// 2026-10-24 밸런스 패치 [A]: '신중형' (구 수비형) — 성향이 이 값 이하인 봇은 평소 영토를 지키고, 상대 총병력 < 내 BOT_WEAK_RATIO 인 약한 적만 공격하되
+// 병력을 모아 한 번에(적 공격 발령 병력 비율 BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE) 낸다. 중립지·방어는 평소대로.
+export const BOT_CAUTIOUS_MAX_AGGRESSION_PERMILLE = 333;
+export const BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE = 700;
 export const BOT_MAX_DEFENSE_RATIO_PERMILLE = 500; // 방어 깃발 상한 비율 기준 (굳히기·새 요격 발령 상한, 이전 임의값 "슬롯 절반")
 export const BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE = 1000; // 적(비중립) 앵커 점수 가중 기준
 export interface BotAggressionSpan {

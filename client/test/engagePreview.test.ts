@@ -21,6 +21,7 @@ function duel(model: 1 | 2, a: { unit: Unit; posture: Posture; troops: number; m
     const f = makeFlag({ id: s.nextFlagId++, ownerId: owner, slotIndex: 0, unit: x.unit, troopsMilli: x.troops * 1000, initialTroops: x.troops, posTileId: tile, anchorTileId: tile, originTileId: tile });
     f.posture = x.posture;
     f.morale = x.morale;
+    s.moraleShown.set(f.id, x.morale);
     f.state = 'ENGAGED';
     f.inCombat = true;
     s.flags.push(f);

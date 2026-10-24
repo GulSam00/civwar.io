@@ -88,8 +88,8 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(d.beforeLabel).toBe('없을 때');
     expect(d.rows[0]).toMatchObject({ label: '적 기지 공격 피해 배율', before: '×1.10', after: '×1.25' });
   });
-  it('set 노드: 마구간 기병 유지비 가중치 1.60 → 1.30, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
-    expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '1.60', after: '1.30' });
+  it('set 노드: 마구간 기병 유지비 가중치 2.00 → 1.60, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
+    expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '2.00', after: '1.60' });
     expect(techDetailRows(nd('MOB-2B'), { techMask: mask(id('MOB-1')) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
   });
   it('병종 이동은 공통 MOB 를 합친 값', () => {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
+import { BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE, BOT_COMMIT_ENEMY_PERMILLE, BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
 import { BOT_DEEP_MAX, BOT_DEEP_MIN, CivBot, botKnobs, chooseUnitFor, decideBot } from '../src/game/bot.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
 import { NEUTRAL, botAggressionPermille, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
@@ -122,7 +122,7 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     expect(issued('EASY')).toBeLessThan(issued('HARD'));
   });
 
-  it('난이도: EASY 공격 깃발은 항상 검병(fixedUnit), NORMAL 은 중립 선점에 기병을 쓴다', () => {
+  it('난이도: EASY 공격 깃발은 항상 검병(fixedUnit), NORMAL 도 중립 선점은 검병 (2026-10-24 밸런스 패치)', () => {
     const units = (d: BotDifficultyName) => {
       const sim = botGame(11, 6, d);
       const atk: number[] = [];
@@ -132,7 +132,8 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     const easy = units('EASY');
     expect(easy.length).toBeGreaterThan(0);
     expect(easy.every((u) => u === UNIT.SWORD)).toBe(true);
-    expect(units('NORMAL')).toContain(UNIT.CAVALRY);
+    const normal = units('NORMAL');
+    expect(normal.filter((u) => u === UNIT.SWORD).length / normal.length).toBeGreaterThan(0.8); // 초반 4분은 대부분 중립 확장 → 검병
   });
 
   it('요격 (v4.1 8.6.0): 내 땅을 미는 적 공격 깃발 옆 내 땅 칸에 방어 태세 깃발 — 실제 명령 경로에서 수락', () => {
@@ -218,8 +219,17 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     };
     const lo = run(0);
     const hi = run(1000);
-    expect(lo.defShare).toBeGreaterThan(hi.defShare + 0.05);
+    expect(lo.defShare).toBeGreaterThan(hi.defShare + 0.03); // 신중형(성향 0)은 평소 영토 방어 비중이 더 크다 (시드 1000~1002 에서 차이 0.045~0.095)
     expect(hi.attacks).toBeGreaterThan(lo.attacks);
+  });
+
+  it('신중형 (2026-10-24): 성향 333 이하만 cautious, 적 공격 발령 비율 70% / 그 외 35%', () => {
+    const p = BOT_DIFFICULTY.NORMAL;
+    for (const [a, cautious] of [[0, true], [333, true], [334, false], [500, false], [1000, false]] as [number, boolean][]) {
+      const k = botKnobs({ ...p, aggressionPermille: a });
+      expect(k.cautious).toBe(cautious);
+      expect(k.commitEnemyPermille).toBe(cautious ? BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE : BOT_COMMIT_ENEMY_PERMILLE);
+    }
   });
 });
 

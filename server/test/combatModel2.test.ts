@@ -212,12 +212,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다.
  */
 const GOLDEN = {
-  G1: { stream: '08ce513b552499418323a0717cc6bf70193d33d4e284442b6d9d2ef682efbeb0', state: '521f75271a6c4804f9b8947f69f7eb08c6d394fa3a1223b76b357d80850cf7cb' },
-  G2: { stream: 'eeed41064e1e9269850f02efc5f40e29a58c236bb29dad7fe93298c8dbfa15df', state: '25bf9b47496eb784a5d306bb63cf2957247141007fdf5e5d736c9c95c69a17fe' },
-  G3: { stream: '0ce4dc7fa4367a92a78fb9af2d4287bbd2268edb3923d40b7bbcb86f4d1b4147', state: '18b4c1f5cd59793ed1c15575b29fc871e635e371f657c02abebe76dda1209c9e' },
+  G1: { stream: '0ec95c9f9c5f673e145aa766ca07806f9b2758074d599b45b513f12ef65649d8', state: '5cc61b85f91191355e9a4059ecf4bfe136c84c4993ace3177796ec4d87d100bb' },
+  G2: { stream: '1a14630fa3a6b6f24f26afa0ecaddab28aa59264f7a62d2ef3255dd83d2a0863', state: '958e89c552740fcca2de71a4c2f1ed49869851e912a2dd7458b3b41152ce1b40' },
+  G3: { stream: 'f034d0d65c80d64901928aa9b42ec115a04114f6bbde957b0f6f90505b6ffe07', state: 'f3e5065a78e66617c33ac65a79e7af01bca9a89e4b3f5f93f609748391511d8d' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
