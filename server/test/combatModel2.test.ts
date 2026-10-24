@@ -29,6 +29,7 @@ import {
 import { validateMessage } from '../scripts/qa-schema.js';
 import { CivBot } from '../src/game/bot.js';
 import { combatInput, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
+import { stage6_combatPhaseA, stage7_combatPhaseB } from '../src/game/gauge.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { buildMatchConfig } from '../src/game/snapshot.js';
 import { createGameState, defaultCombatModel, ledgerImbalance, makeFlag, type Flag, type GameState } from '../src/game/state.js';
@@ -329,7 +330,9 @@ describe('모델 2 — 결정론 · 회계 · 프로토콜', () => {
             expect(f.morale).toBeLessThanOrEqual(p.morale);
             if (f.morale < p.morale) dropSeen++;
           } else if (!f.routed) {
-            expect(f.morale).toBeGreaterThanOrEqual(p.morale);
+            // 2026-10-24: 점령·기지 공격(게이지를 미는 깃발)은 비전투여도 사기가 깎인다 — 그 외에는 줄지 않는다
+            if (f.posture !== POSTURE.ATTACK) expect(f.morale).toBeGreaterThanOrEqual(p.morale);
+            else expect(f.morale).toBeGreaterThanOrEqual(p.morale - 8);
             if (f.morale > p.morale) recSeen++;
           }
         }
@@ -457,6 +460,51 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(weak.routed).toBe(true);
     expect(weak.morale).toBe(0);
     expect(big.morale).toBe(990);
+  });
+
+  it('기지 위 교전 [A]: 방어 깃발이 교전 중이면 tick 마다 기지 체력 -40 (기지당 1회), 체력 1 밑으로는 안 내려간다, 모델 1 은 불변', () => {
+    for (const model of [1, 2] as const) {
+      const { s } = duelState(model);
+      const home = s.players[2].homeTileId;
+      const b = s.bases[s.baseIndexOf.get(home)!];
+      const nb = s.graph.contactNeighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
+      addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+      addFlag(s, { ownerId: 3, unit: U.SWORD, troops: 3000, pos: nb, posture: POSTURE.ATTACK, state: 'ENGAGED' }); // 적 깃발이 둘이어도 기지당 1회
+      const hp0 = b.hpMilli;
+      const out = newOutbox();
+      for (let t = 1; t <= 10; t++) {
+        s.tick = t;
+        stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
+      }
+      expect(b.hpMilli).toBe(model === 2 ? hp0 - 400 : hp0);
+      if (model === 2) {
+        expect(b.lastDamageTick).toBe(10);
+        expect(b.damagedThisTick).toBe(true);
+        b.hpMilli = 50;
+        for (let t = 11; t <= 14; t++) {
+          s.tick = t;
+          stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
+        }
+        expect(b.hpMilli).toBe(1);
+      }
+    }
+  });
+
+  it('점령 사기 소모 [A]: 게이지를 미는 tick 마다 창 -6 / 검 -5 / 기 -8 (CAPTURE_MORALE_DROP x 점령 배율), 모델 1 은 사기 없음', () => {
+    const drop = (unit: 0 | 1 | 2, model: 1 | 2) => {
+      const { s, c } = duelState(model);
+      const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 750_000 });
+      s.tick = 1;
+      const plan = stage6_combatPhaseA(s, 1);
+      expect(plan.pushes.length + plan.baseHits.length).toBe(1);
+      stage7_combatPhaseB(s, plan, 1, newOutbox());
+      return 1000 - f.morale;
+    };
+    expect(drop(U.SPEAR, 2)).toBe(6);
+    expect(drop(U.SWORD, 2)).toBe(5);
+    expect(drop(U.CAVALRY, 2)).toBe(8);
+    expect(drop(U.CAVALRY, 1)).toBe(0);
   });
 
   it('총손실 회계: 모델 2 에서도 ledger.combat 이 깃발 병력 감소와 일치', () => {

@@ -609,6 +609,10 @@ export const MORALE_DROP_PER_TICK = [3, 6, 10] as const;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
 export const MORALE_DELTA_INTERVAL = 5; // 델타 moraleChanged 주기 (tick)
+/** 2026-10-24 [A] 점령·기지 공격(게이지를 미는 tick) 사기 소모 ‰/tick — 병종별 실효 점령 배율(techCaptureMultPm)을 곱한다. 모델 2 전용 */
+export const CAPTURE_MORALE_DROP = 6;
+/** 2026-10-24 [A] 자기 기지 칸 위 방어 깃발이 교전 중인 tick 마다 그 기지가 잃는 체력 milli (모델 2 전용). 체력 1 밑으로는 깎지 않는다 */
+export const BASE_COMBAT_DMG_MILLI_PER_TICK = 40;
 
 // 폐기·구현 금지: COMBAT_HOME_DEF_PERMILLE, COMBAT_TERRAIN_DEF_PERMILLE(A-16), UNIT_POWER, LOSER_ATTRITION_RATIO 등
 

@@ -5,8 +5,10 @@
  */
 import {
   BASE_CAPTURE_LOCK_TICK,
+  CAPTURE_MORALE_DROP,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
   techBaseDmgPm,
+  techCaptureMultPm,
   techSiegePm,
   BASE_HP_MAX_MILLI,
   BASE_HP_CAPTURE_MILLI,
@@ -150,6 +152,14 @@ export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number,
   for (const f of state.flags) {
     if (!pushing(f) || pushedSet.has(f.id)) continue; // v4.2: updateStall 대상 = pushing(f)
     updateStall(f, 0, t, out);
+  }
+  // 2026-10-24 [A] 모델 2: 점령·기지 공격으로 게이지를 민 tick 마다 사기 소모 (병종별 실효 점령 배율 비례, flagId ASC)
+  if (state.combatModel === 2) {
+    for (const f of state.flags) {
+      if (!pushedSet.has(f.id)) continue;
+      const mult = techCaptureMultPm(state.players[f.ownerId].statPm, f.unit);
+      f.morale = Math.max(0, f.morale - Math.max(1, Math.floor((CAPTURE_MORALE_DROP * mult) / 1000)));
+    }
   }
   return pushedSet;
 }

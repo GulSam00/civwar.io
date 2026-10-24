@@ -2,6 +2,7 @@
  * 깃발 대 깃발 전투 (GDD 4.15) — 4a(Phase A, 읽기 전용) / 4b(Phase B, flagId ASC 적용).
  */
 import {
+  BASE_COMBAT_DMG_MILLI_PER_TICK,
   COMBAT_BASE_ATK_PERMILLE,
   COMBAT_BASE_DEF_PERMILLE,
   COMBAT_LOSS_BP,
@@ -364,7 +365,10 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     if (nb) out.broadcast.push({ type: 'flag_blocked', tick: t, flagId: f.id, byFlagIds: by! });
     else out.broadcast.push({ type: 'flag_unblocked', tick: t, flagId: f.id });
   }
-  if (state.combatModel === 2) stage4c_updateMorale(state, new Set(routedNow)); // §33: 4b 끝, flagId ASC
+  if (state.combatModel === 2) {
+    stage4c_updateMorale(state, new Set(routedNow)); // §33: 4b 끝, flagId ASC
+    stage4d_baseCombatWear(state, t);
+  }
   trackCombatEvents(state, plan, routedNow, brokeAway, t, out);
 }
 
@@ -383,6 +387,24 @@ export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>
       const rec = Math.floor(((onOwnBase(state, f) ? MORALE_RECOVER_BASE : MORALE_RECOVER) * techMoraleRecoverPm(stat, f.unit)) / 1000);
       f.morale = Math.min(MORALE_MAX, f.morale + rec);
     }
+  }
+}
+
+/**
+ * 2026-10-24 [A] 모델 2: 자기 기지 칸 위에서 교전 중인 방어 깃발이 있으면 그 기지의 체력이 tick 마다 고정량 깎인다.
+ * (기지당 1회 — 깃발 수·승패 무관). 체력 1 밑으로는 내려가지 않는다 — 함락은 여전히 기지 공격(게이지)으로만 일어난다.
+ * 피해 기록(lastDamageTick·damagedThisTick)을 남겨 체력 회복 지연·봇 기지 위협 판단이 그대로 작동한다.
+ */
+export function stage4d_baseCombatWear(state: GameState, t: number): void {
+  const worn = new Set<number>();
+  for (const f of state.flags) {
+    if (!f.inCombat || f.routed || !onOwnBase(state, f) || worn.has(f.posTileId)) continue;
+    worn.add(f.posTileId);
+    const b = state.bases[state.baseIndexOf.get(f.posTileId)!];
+    if (b.hpMilli <= 1) continue;
+    b.hpMilli = Math.max(1, b.hpMilli - BASE_COMBAT_DMG_MILLI_PER_TICK);
+    b.lastDamageTick = t;
+    b.damagedThisTick = true;
   }
 }
 
