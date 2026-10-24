@@ -214,9 +214,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
  */
 const GOLDEN = {
-  G1: { stream: '1a4fb4305c520eb6817c4739f406836be24ba5e4005e3c0a5a85e9239625cc09', state: '86ce6618d9a6a0811eee237e9e3b482f04e0263bd78a12bf8059e26702c01744' },
-  G2: { stream: 'e091a15b7d630a8c384107efdae2bf7a5be710c4d2cce1be2005683b1068a321', state: '269396d802546d4f223c292eb97bb38618f8e30ca9ead71d3996058b17afce44' },
-  G3: { stream: '20d810457761501c019d35547cdef129f7610ca4b9417bc61ad64c0c00ae13ba', state: '0c34b421c957d3f7b9728d930ae98ffea9142a4c39a5aaaf84108eece1639208' },
+  G1: { stream: '08ce513b552499418323a0717cc6bf70193d33d4e284442b6d9d2ef682efbeb0', state: '521f75271a6c4804f9b8947f69f7eb08c6d394fa3a1223b76b357d80850cf7cb' },
+  G2: { stream: 'eeed41064e1e9269850f02efc5f40e29a58c236bb29dad7fe93298c8dbfa15df', state: '25bf9b47496eb784a5d306bb63cf2957247141007fdf5e5d736c9c95c69a17fe' },
+  G3: { stream: '2d76826af6520c3e501aef472e6d485d483365dbf66b28efd291c1802cf60f7d', state: 'c8900320213d9352268192923c0fbfd2fb731994adae813e2ab8376e9c673ff5' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

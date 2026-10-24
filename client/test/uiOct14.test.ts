@@ -60,7 +60,7 @@ describe('창 드래그 — 화면 가장자리 자르기', () => {
 });
 
 describe('부대 공격력·방어력 (지형 보정 제외)', () => {
-  // 노드 찾기: 군사 공통 공격(COMBAT_ATK) 노드 하나, 창병 방어 증분(COMBAT_DEF_SPEAR) 노드 하나
+  // 노드 찾기: 검병 공격 증분(COMBAT_ATK_SWORD) 노드 하나, 창병 방어 증분(COMBAT_DEF_SPEAR) 노드 하나 (공통 공격·방어 노드는 없다)
   const nodeFor = (stat: number) => TECH_NODES.find((n) => n.stat === stat);
   const maskOf = (...ids: number[]) => ids.reduce((m, i) => techMaskWith(m, i), 0);
   /** 노드 i 와 그 조상 전부 (선행 조건 충족 mask) */
@@ -83,7 +83,7 @@ describe('부대 공격력·방어력 (지형 보정 제외)', () => {
   });
 
   it('서버 flagValue 와 같은 식: 병종 기본 + 10 × techCombatPts(태세) — 군사 공통 + 병종 갈래 (절대 점수)', () => {
-    const atkNode = nodeFor(TECH_STAT.COMBAT_ATK);
+    const atkNode = nodeFor(TECH_STAT.COMBAT_ATK_SWORD);
     const defSpear = nodeFor(TECH_STAT.COMBAT_DEF_SPEAR);
     expect(atkNode).toBeDefined();
     expect(defSpear).toBeDefined();

@@ -83,26 +83,23 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(d.rows[0]).toMatchObject({ label: '창병 방어', before: '120', after: '130', changed: true }); // 기본 110 + 방진 10 → +10
   });
   it('보유 노드는 "없을 때 → 보유" (다른 보유 노드 합산 유지)', () => {
-    const d = techDetailRows(nd('MIL-1'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }); // +10 와 +20 보유
+    const d = techDetailRows(nd('MIL-3A'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }); // 공성 전술 −4% + 공성 장비 −6% 보유
     expect(d.owned).toBe(true);
     expect(d.beforeLabel).toBe('없을 때');
-    expect(d.rows[0]).toMatchObject({ before: '+20', after: '+30' });
+    expect(d.rows[0]).toMatchObject({ before: '×0.96', after: '×0.90' });
   });
   it('set 노드: 마구간 기병 유지비 가중치 1.60 → 1.30, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
     expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '1.60', after: '1.30' });
     expect(techDetailRows(nd('MOB-2B'), { techMask: mask(id('MOB-1')) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
-  });
-  it('공통 전투 노드는 병종별 실제 전투 점수 행을 붙인다', () => {
-    const d = techDetailRows(nd('MIL-3A'), { techMask: mask(id('MIL-1'), id('MIL-2A')) }); // 공격 교리 +20, 훈련장 +10 보유
-    expect(d.rows[0]).toMatchObject({ before: '+10', after: '+30' });
-    expect(d.rows[1]).toMatchObject({ label: '공격 창 / 검 / 기', before: '100 / 110 / 130', after: '120 / 130 / 150' });
   });
   it('병종 이동은 공통 MOB 를 합친 값', () => {
     const d = techDetailRows(nd('CAV-1'), { techMask: mask(id('MOB-1')) }); // 행군로 +10 보유, 군마 +10
     expect(d.rows[0]).toMatchObject({ label: '기병 이동', before: '120', after: '130' }); // 기본 120 (기동 갈래는 이동 보너스 없음)
   });
   it('사기·기지 스탯 행 (재정·행정·병종 T3·T4)', () => {
-    expect(techDetailRows(nd('MIL-4'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }).rows[0]).toMatchObject({ label: '사기 감소율 (전 병종)', before: '×1.00', after: '×0.85' });
+    expect(techDetailRows(nd('MIL-4'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }).rows[0]).toMatchObject({ label: '깃발 슬롯 보너스', before: '+0', after: '+1' });
+    expect(techDetailRows(nd('MIL-2B'), { techMask: mask(id('MIL-1')) }).rows[0]).toMatchObject({ label: '병력 상한 배율', before: '×1.00', after: '×1.06' });
+    expect(techDetailRows(nd('MIL-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '병력 재생 배율', before: '×1.00', after: '×1.05' });
     expect(techDetailRows(nd('SWO-4'), { techMask: mask(id('SWO-1'), id('SWO-2B'), id('SWO-3B')) }).rows[0]).toMatchObject({ label: '검병 기세 보너스', before: '+0%p', after: '+10%p' });
     expect(techDetailRows(nd('SWO-2B'), { techMask: mask(id('SWO-1')) }).rows[0]).toMatchObject({ label: '검병 점령 소모 배율', before: '×0.85', after: '×0.65' });
     expect(techDetailRows(nd('CAV-3B'), { techMask: mask(id('CAV-1'), id('CAV-2B')) }).rows[0]).toMatchObject({ before: '+0%p', after: '+10%p' });

@@ -2556,3 +2556,6 @@ M 맵 10인 NORMAL 봇, 시드 1000~1039 (40판), 12분 이후만 계측.
 - `TECH_STAT_COUNT` 47 → 50: `GOLD_PLAIN`(47)·`GOLD_POOR`(48)·`CONVERT`(49) 추가, `CAPITAL_PROD`(46) → `BASE_PROD`(모든 기지). 노드 표는 설계 초안 §10·§13.
 - 영토 골드 가중치 = 소유자 스탯의 지형 보너스 반영(`tileGoldWeight`), 테크 구매 시 재합산. 편성비 = 병종 기본 × `CONVERT`/1000(내림).
 - 시험 555건 통과, 골든 해시 재고정.
+
+### 34.8 군사 개편 (2026-10-24)
+- MIL-1 REGEN +50, MIL-2B TROOP_CAP +60, MIL-3A ATK_COST −60, MIL-3B TROOP_CAP +60, MIL-4 SLOT_BONUS +1. 슬롯 보너스는 MOB-4 와 합산(최대 +2). 시험 554건 통과, 골든 해시 재고정.

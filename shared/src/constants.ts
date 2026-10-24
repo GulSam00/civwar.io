@@ -403,12 +403,12 @@ export interface TechNodeDef {
  */
 export const TECH_NODES: readonly TechNodeDef[] = [
   // 군사 MIL — 공통 (0..5)
-  { id: 0, code: 'MIL-1', branch: 0, tier: 1, parent: null, stat: TECH_STAT.COMBAT_ATK, op: 'add', value: 10, name: '훈련장', desc: '공격 +10 (전 병종)' },
+  { id: 0, code: 'MIL-1', branch: 0, tier: 1, parent: null, stat: TECH_STAT.REGEN, op: 'add', value: 50, name: '징병령', desc: '병력 재생 +5%' },
   { id: 1, code: 'MIL-2A', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.ATK_COST, op: 'add', value: -40, name: '공성 전술', desc: '적 땅 점령비용 −4%' },
-  { id: 2, code: 'MIL-2B', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.DEF_COST, op: 'add', value: 60, name: '성벽 보강', desc: '내 땅 피점령비용 +6%' },
-  { id: 3, code: 'MIL-3A', branch: 0, tier: 3, parent: 1, stat: TECH_STAT.COMBAT_ATK, op: 'add', value: 20, name: '공격 교리', desc: '공격 +20 (전 병종)' },
-  { id: 4, code: 'MIL-3B', branch: 0, tier: 3, parent: 2, stat: TECH_STAT.COMBAT_DEF, op: 'add', value: 20, name: '방어 교리', desc: '방어 +20 (전 병종)' },
-  { id: 5, code: 'MIL-4', branch: 0, tier: 4, parent: 3, parentAlt: 4, stat: TECH_STAT.MORALE_DROP, op: 'add', value: -150, name: '군기', desc: '사기 감소 −15% (전 병종)' },
+  { id: 2, code: 'MIL-2B', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 60, name: '병참 창고', desc: '병력 상한 +6%' },
+  { id: 3, code: 'MIL-3A', branch: 0, tier: 3, parent: 1, stat: TECH_STAT.ATK_COST, op: 'add', value: -60, name: '공성 장비', desc: '적 땅 점령비용 −6%' },
+  { id: 4, code: 'MIL-3B', branch: 0, tier: 3, parent: 2, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 60, name: '예비대 편성', desc: '병력 상한 +6%' },
+  { id: 5, code: 'MIL-4', branch: 0, tier: 4, parent: 3, parentAlt: 4, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '총동원령', desc: '깃발 슬롯 +1' },
   // 재정 ECO (6..11) — 2A/2B 양자택일
   { id: 6, code: 'ECO-1', branch: 1, tier: 1, parent: null, stat: TECH_STAT.CONVERT, op: 'add', value: -50, name: '징발 규정', desc: '편성비 −5% (전 병종)' },
   { id: 7, code: 'ECO-2A', branch: 1, tier: 2, parent: 6, exclusive: 8, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 100, name: '농경', desc: '평지·비옥 영토 골드 +10%' },

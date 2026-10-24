@@ -116,10 +116,12 @@ describe('v4.6 노드 표', () => {
   });
   it('노드 스탯 매핑 (설계 §10 표 그대로) — 병종 수치는 점수, 노드당 스탯 하나', () => {
     const s = (c: string) => TECH_NODES[id(c)];
-    expect(s('MIL-1')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK, op: 'add', value: 10 });
-    expect(s('MIL-3A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK, value: 20 });
-    expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF, value: 20 });
-    expect(s('MIL-4')).toMatchObject({ stat: TECH_STAT.MORALE_DROP, value: -150 });
+    expect(s('MIL-1')).toMatchObject({ stat: TECH_STAT.REGEN, op: 'add', value: 50, name: '징병령' });
+    expect(s('MIL-2A')).toMatchObject({ stat: TECH_STAT.ATK_COST, value: -40 });
+    expect(s('MIL-2B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
+    expect(s('MIL-3A')).toMatchObject({ stat: TECH_STAT.ATK_COST, value: -60, name: '공성 장비' });
+    expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
+    expect(s('MIL-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, tier: 4, name: '총동원령' });
     expect(s('SPE-1')).toMatchObject({ stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10 });
     expect(s('SPE-2A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100 });
     expect(s('SPE-4')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SPEAR, value: 20, tier: 4 });
@@ -151,20 +153,21 @@ describe('v4.6 노드 표', () => {
   });
   it('전부 보유 시 스탯 값 (양자택일 상대는 서버에서 못 사지만 표 합산은 순수 함수)', () => {
     const v = techStatValues(ALL);
-    expect(v[TECH_STAT.ATK_COST]).toBe(960);
-    expect(v[TECH_STAT.DEF_COST]).toBe(1060);
-    expect(v[TECH_STAT.COMBAT_ATK]).toBe(30); // 점수
-    expect(v[TECH_STAT.COMBAT_DEF]).toBe(20);
+    expect(v[TECH_STAT.ATK_COST]).toBe(900); // 공성 전술 −4% + 공성 장비 −6%
+    expect(v[TECH_STAT.DEF_COST]).toBe(1000);
+    expect(v[TECH_STAT.REGEN]).toBe(1050);
+    expect(v[TECH_STAT.TROOP_CAP]).toBe(1120);
+    expect(v[TECH_STAT.COMBAT_ATK]).toBe(0); // 공통 공격·방어 점수 노드는 없다 (병종 갈래만)
+    expect(v[TECH_STAT.COMBAT_DEF]).toBe(0);
     expect(v[TECH_STAT.SPEED]).toBe(0); // 기동 갈래에 이동 보너스 없음 (2026-10-24)
     expect(v[TECH_STAT.NEUTRAL_COST]).toBe(1000 - 60 - 80);
-    expect(v[TECH_STAT.SLOT_BONUS]).toBe(1); // [A-74] 최대 +1
+    expect(v[TECH_STAT.SLOT_BONUS]).toBe(2); // 총동원령(MIL-4) + 참모부(MOB-4)
     expect(v[TECH_STAT.DISENGAGE_TICKS]).toBe(10);
     expect(v[TECH_STAT.RETURN_SPEED]).toBe(2200);
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
     expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([250, 1000, 950, 1150]);
     expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_PROD], v[TECH_STAT.BASE_RECOVER]]).toEqual([700, 1100, 1500]);
-    expect(v[TECH_STAT.TROOP_CAP]).toBe(1000); // 병력 상한 노드는 이번 개편에서 뺐다
   });
   it('무테크 기본: 전투·이동 점수 0, 기지 3칸 1000, 길이 = TECH_STAT_COUNT', () => {
     const v = techStatValues(0);
@@ -350,7 +353,7 @@ describe('v4.6 계산식 연결', () => {
     expect(ret1 * 1000).toBeGreaterThan(ret0 * 1000 * 1.4);
     expect(march1).toBe(march); // 귀환 속도만 오르고 행군 속도는 그대로
   });
-  it('슬롯: MOB-4 참모부로만 +1, 전부 사도 +1 (최대 +1)', () => {
+  it('슬롯: MOB-4 참모부 +1, MIL-4 총동원령 +1, 전부 사면 +2 (FLAG_CAP_HARD_MAX 안에서)', () => {
     const p = makeSim().state.players[1];
     p.tiles = 390;
     expect(flagCap(p)).toBe(4);
@@ -358,7 +361,7 @@ describe('v4.6 계산식 연결', () => {
     expect(flagCap(p)).toBe(5);
     p.techMask = ALL;
     p.statPm = techStatValues(p.techMask);
-    expect(flagCap(p)).toBe(5);
+    expect(flagCap(p)).toBe(6);
   });
   it('재정 개편: 징발 규정 편성비 −5% · 농경/관개(평지·비옥) · 개간/채굴(험지) 골드 가중치 · 국고 골드 +15%', () => {
     const s = makeSim().state;
@@ -443,10 +446,10 @@ describe('v4.6 계산식 연결', () => {
     const def = addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: c, posture: POSTURE.DEFEND });
     const p = s.players[1];
     expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1000, 1100]);
-    giveTech(p, 'MIL-1', 'SWO-1'); // 공격 +10 +10 = +20점
-    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1200, 1100]); // 방어 불변
-    giveTech(p, 'MIL-1', 'MIL-2B', 'MIL-3B', 'SPE-1', 'SPE-2B'); // 방어 +20(공통) +10(창병 SPE-2B) = +30점, 공격 +10
-    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1100, 1400]);
+    giveTech(p, 'SWO-1'); // 검병 공격 +10점
+    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1100, 1100]); // 방어 불변
+    giveTech(p, 'SWO-1', 'SPE-1', 'SPE-2B'); // 검병 공격 +10, 창병 방어 +10점 (SPE-1 은 이동)
+    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1100, 1200]);
   });
   it('편성비: 병종 기본 창 0.9 / 검 1.0 / 기 1.3 (풀 차감, 테크로 바뀌지 않음)', () => {
     const sim = makeSim();
