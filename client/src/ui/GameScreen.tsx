@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ENDGAME_RUSH_TICK, POSTURE, type Posture, type Unit } from '@civwar/shared';
+import { BASE_BUFF, ENDGAME_RUSH_TICK, POSTURE, type Posture, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -18,6 +18,7 @@ import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
 import { fmtPm, fmtPts, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
+import { flagChannels, moraleTone, moraleView } from './morale.js';
 import { disengageTicksOf } from '../state/disengage.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, openCard } from './panels.js';
@@ -863,12 +864,17 @@ function UnitChips({ store, ctl }: { store: ClientStore; ctl: GameInputControlle
           key={c.id}
           className={`unit-chip ${c.selected ? 'on' : ''} ${c.routed ? 'routed' : ''} ${c.returning ? 'returning' : ''} ${c.inCombat ? 'fighting' : ''}`}
           onClick={() => ctl.focusFlag(c.id)}
-          title={`깃발 #${c.slotIndex + 1} · ${UNIT_NAME[c.unit]} ${c.troops}명 · ${POSTURE_NAME[c.posture]}${c.routed ? ' · 패주' : c.returning ? ' · 귀환 중' : c.inCombat ? ' · 전투 중' : ''} — 눌러서 선택`}
+          title={`깃발 #${c.slotIndex + 1} · ${UNIT_NAME[c.unit]} ${c.troops}명 · ${POSTURE_NAME[c.posture]}${c.routed ? ' · 패주' : c.returning ? ' · 귀환 중' : c.inCombat ? ' · 전투 중' : ''}${c.morale !== null ? ` · 사기 ${Math.round(c.morale / 10)}%` : ''} — 눌러서 선택`}
           aria-pressed={c.selected}
         >
           <UnitIcon unit={c.unit} size={15} />
           <b>{c.troops}</b>
           <PostureIcon posture={c.posture} size={13} />
+          {c.morale !== null && (
+            <span className={`mbar ${moraleTone(c.morale)}`} role="img" aria-label={`사기 ${Math.round(c.morale / 10)}%`}>
+              <i style={{ width: `${Math.round(c.morale / 10)}%` }} />
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -934,6 +940,8 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   // v4.5 (§22.6): 자기 기지 칸 위면 태세와 무관하게 ×1.5 (방어 = 지형 대신, 공격 = 공격값에 곱) — 위 수치는 지형·기지 보정 제외
   const onOwnBase = g.bases.get(f.posTileId)?.ownerId === f.ownerId;
   const st = flagActionState(f, g.tick, g.config.tickMs, disengageTicksOf(g, f.ownerId));
+  const mv = moraleView(g, f); // §33 모델 2 에서만
+  const ch = flagChannels(g, f);
   return (
     <div className="flag-panel">
       <div className="flag-panel-head">
@@ -967,9 +975,25 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           <div className="cs-row">
             점령 소모 <b>{fmtPm(cs.capturePm)}</b>
           </div>
+          {mv !== null && (
+            <div className="cs-row morale-row" data-testid="flag-morale">
+              사기
+              <span className={`mbar wide ${mv.tone}`} role="img" aria-label={mv.text}>
+                <i style={{ width: `${mv.pct}%` }} />
+                <u style={{ left: '80%' }} />
+              </span>
+              <b>{mv.pct}%</b>
+              <span className="muted small"> 전투력 {mv.deltaPct > 0 ? '+' : mv.deltaPct < 0 ? '−' : '±'}{Math.abs(mv.deltaPct)}%</span>
+            </div>
+          )}
+          {ch !== null && (
+            <div className="cs-row" title="지형·기지·사기·이탈 대기를 모두 반영한 지금 전투값">
+              지금 공격 <b>{fmtPts(ch[0])}</b> / 방어 <b>{fmtPts(ch[1])}</b>
+            </div>
+          )}
           {onOwnBase && (
             <div className="cs-base">
-              기지 위 <b>×1.5</b>
+              기지 위 <b>{g.config.combatModel === 2 ? `×${(BASE_BUFF[f.posture][0] / 1000).toFixed(1)} (공격·방어)` : '×1.5'}</b>
             </div>
           )}
         </div>

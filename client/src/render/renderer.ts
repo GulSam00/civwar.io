@@ -1161,6 +1161,19 @@ export class GameRenderer {
     const eta = model.flagEta.get(f.id);
     const etaSec = eta !== undefined && f.state === 'MARCHING' && f.ownerId === view.me ? Math.max(0, Math.ceil(((eta - model.tick) * model.config.tickMs) / 1000)) : null;
     this.label(ctx, etaSec !== null ? `${f.troops} · ${etaSec}초` : String(f.troops), x, y + r + 12, 12, '#fff');
+    // §33 사기 막대 (전투 모델 2): 병력 글자 밑 가는 막대, 80% 눈금 = 전투력 ×1.00 경계
+    if (model.config.combatModel === 2 && f.morale !== undefined && !f.routed) {
+      const bw = r * 2.4;
+      const bx = x - bw / 2;
+      const by = y + r + 17;
+      const pct = Math.max(0, Math.min(1, f.morale / 1000));
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+      ctx.fillStyle = f.morale >= 800 ? '#7bd88f' : f.morale >= 400 ? '#ffd54f' : '#ef5350';
+      ctx.fillRect(bx, by, bw * pct, 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillRect(bx + bw * 0.8, by - 1, 1, 5);
+    }
 
     if (attack && f.state === 'ENGAGED') {
       const tr = this.progress.get(f.id);

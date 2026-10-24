@@ -2075,9 +2075,44 @@ kbd {
 .flag-panel-actions .fa-warn {
   white-space: normal;
 }
-/* v4.5 §22.6 기지 위 ×1.5 */
+/* v4.5 §22.6 기지 위 ×1.5 (모델 2: BASE_BUFF 양 채널) */
 .cs-base {
   color: #ffe9a8;
+}
+
+/* §33 사기 막대 — 색 + 수치를 함께 보인다 (색각 보조). 80% 눈금 = 전투력 ×1.00 경계 */
+.mbar {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.mbar.wide {
+  width: 70px;
+  height: 7px;
+  margin: 0 6px;
+}
+.mbar i {
+  display: block;
+  height: 100%;
+  background: #7bd88f;
+}
+.mbar.mid i {
+  background: #ffd54f;
+}
+.mbar.low i {
+  background: #ef5350;
+}
+.mbar u {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.7);
 }
 
 /* ══════════ 2026-10-18 UI 개선 (OpenFront.io 참고 — 1·2·3·4·6·7·9) ══════════ */

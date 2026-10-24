@@ -16,6 +16,8 @@ export interface UnitChip {
   /** 귀환 중(취소 불가) */
   returning: boolean;
   inCombat: boolean;
+  /** §33 사기 0..1000 (전투 모델 2 일 때만, 아니면 null) */
+  morale: number | null;
 }
 
 /** 병력 바 위 칩 — 내 깃발 전부, 슬롯 순. 없으면 빈 배열 */
@@ -34,6 +36,7 @@ export function myUnitChips(g: GameModel, me: number | null, selectedFlagId: num
       routed: f.routed,
       returning: f.state === 'RETURNING',
       inCombat: f.inCombat,
+      morale: g.config.combatModel === 2 ? (f.morale ?? null) : null,
     }));
 }
 

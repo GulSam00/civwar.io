@@ -16,6 +16,7 @@ import {
   FLAG_CAP_BASE,
   FLAG_CAP_HARD_MAX,
   FLAG_TILES_PER_SLOT,
+  MORALE_MAX,
   TECH_NODES,
   TECH_STAT,
   TECH_STAT_BASE,
@@ -224,6 +225,8 @@ export class GameModel {
           // v4.2 (shared FlagSnapshot 추가 필드) — 이후 snapshot_delta flagFlags(HALTED)·flagReturnBase 가 갱신
           halted: false,
           returnBaseTileId: null,
+          // §33: 모델 2 에서만 사기를 싣는다 (새 깃발은 만땅) — 이후 moraleChanged 가 갱신
+          ...(this.config.combatModel === 2 ? { morale: MORALE_MAX } : {}),
         });
         this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
         break;
@@ -449,6 +452,11 @@ export class GameModel {
     for (const [id, base] of d.flagReturnBase ?? []) {
       const f = this.flags.get(id);
       if (f) f.returnBaseTileId = base;
+    }
+    // §33: 사기 (모델 2, 5 tick 마다 바뀐 깃발만)
+    for (const [id, m] of d.moraleChanged ?? []) {
+      const f = this.flags.get(id);
+      if (f) f.morale = m;
     }
     if (this.allianceFreezeUntilTick !== null && d.tick >= this.allianceFreezeUntilTick) this.allianceFreezeUntilTick = null;
     this.version++;
