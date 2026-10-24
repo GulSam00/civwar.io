@@ -18,6 +18,7 @@ import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
 import { fmtPm, fmtPts, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
+import { engagePreview } from './engagePreview.js';
 import { flagChannels, moraleTone, moraleView } from './morale.js';
 import { disengageTicksOf } from '../state/disengage.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
@@ -942,6 +943,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   const st = flagActionState(f, g.tick, g.config.tickMs, disengageTicksOf(g, f.ownerId));
   const mv = moraleView(g, f); // §33 모델 2 에서만
   const ch = flagChannels(g, f);
+  const ep = engagePreview(g, f); // §33 교전 중일 때만
   return (
     <div className="flag-panel">
       <div className="flag-panel-head">
@@ -989,6 +991,11 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           {ch !== null && (
             <div className="cs-row" title="지형·기지·사기·이탈 대기를 모두 반영한 지금 전투값">
               지금 공격 <b>{fmtPts(ch[0])}</b> / 방어 <b>{fmtPts(ch[1])}</b>
+            </div>
+          )}
+          {ep !== null && (
+            <div className={`cs-row engage-preview ${ep.verdict}`} data-testid="engage-preview" title={`깃발 ${ep.flagCount}개가 얽힌 교전의 손실 분배 예상 (지금 상태가 유지될 때)${ep.ratio !== null ? ` · 교환비 1 : ${ep.ratio.toFixed(1)}` : ''}`}>
+              교전 예상 <b>{ep.text}</b>
             </div>
           )}
           {onOwnBase && (

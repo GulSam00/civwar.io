@@ -3,7 +3,7 @@
  * 사기는 깃발 단위 0~1000‰, 곱은 shared `moraleMultiplier` (만땅 +10% ~ 0 −40%, 800 이 ×1.00 경계).
  * 서버가 5 tick(1초)마다 보내는 값을 그대로 보인다 — 서버 값이 기준이므로 추정 보간은 하지 않는다.
  */
-import { MORALE_MAX, channelValues, moraleMultiplier, type FlagSnapshot } from '@civwar/shared';
+import { MORALE_MAX, channelValues, moraleMultiplier, type CombatFlagInput, type FlagSnapshot } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import { techStatsOf } from './techInfo.js';
 
@@ -52,11 +52,10 @@ export function moraleView(g: GameModel, f: FlagSnapshot): MoraleView | null {
   };
 }
 
-/** 지금 이 깃발의 채널값 [공격, 방어] ‰ (지형·기지·사기·이탈 반영). 모델 1 이거나 지형을 모르면 null */
-export function flagChannels(g: GameModel, f: FlagSnapshot): [number, number] | null {
-  if (!moraleOn(g) || !g.terrain) return null;
-  const stat = techStatsOf(g.players.get(f.ownerId)?.techMask ?? 0, g.config.constants);
-  const [atk, def] = channelValues({
+/** 서버 combatInput 과 같은 전투 입력 (지형을 모르면 null) — 채널값·교전 예상이 함께 쓴다 */
+export function flagCombatInput(g: GameModel, f: FlagSnapshot): CombatFlagInput | null {
+  if (!g.terrain) return null;
+  return {
     unit: f.unit,
     posture: f.posture,
     terrain: g.terrain[f.posTileId],
@@ -64,7 +63,14 @@ export function flagChannels(g: GameModel, f: FlagSnapshot): [number, number] | 
     troopsMilli: f.troops * 1000,
     morale: f.morale ?? MORALE_MAX,
     disengage: f.disengaging,
-    statPm: stat,
-  });
+    statPm: techStatsOf(g.players.get(f.ownerId)?.techMask ?? 0, g.config.constants),
+  };
+}
+
+/** 지금 이 깃발의 채널값 [공격, 방어] ‰ (지형·기지·사기·이탈 반영). 모델 1 이거나 지형을 모르면 null */
+export function flagChannels(g: GameModel, f: FlagSnapshot): [number, number] | null {
+  const input = moraleOn(g) ? flagCombatInput(g, f) : null;
+  if (!input) return null;
+  const [atk, def] = channelValues(input);
   return [atk, def];
 }

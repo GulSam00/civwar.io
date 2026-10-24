@@ -2081,6 +2081,16 @@ kbd {
 }
 
 /* §33 사기 막대 — 색 + 수치를 함께 보인다 (색각 보조). 80% 눈금 = 전투력 ×1.00 경계 */
+.engage-preview.favorable b {
+  color: #7bd88f;
+}
+.engage-preview.even b {
+  color: #ffd54f;
+}
+.engage-preview.unfavorable b {
+  color: #ef5350;
+}
+
 .mbar {
   position: relative;
   display: inline-block;
