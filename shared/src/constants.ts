@@ -622,6 +622,9 @@ export const MORALE_DROP_DEFEND_PERMILLE = 500;
 /** 2026-10-24 [A] 자기 기지 칸 위 방어 깃발이 교전 중인 tick 마다 그 기지가 잃는 체력 milli (모델 2 전용). 체력 1 밑으로는 깎지 않는다 */
 // 2026-10-24 밸런스 패치 2차 [A]: 40 → 20 (사용자 확정 — 기지 위에 깃발이 있으면 기지 소모를 절반으로)
 export const BASE_COMBAT_DMG_MILLI_PER_TICK = 20;
+/** 2026-10-24 밸런스 패치 4차 [A]: 방어 깃발(전투 가능)이 서 있는 기지를 공격자가 미는 피해 배율 ‰ (사용자 확정 — 절반). 모델 2 전용.
+ *  깃발이 없는 기지는 1000. 교전 중인 공격 깃발도 이 경우에 한해 기지를 밀 수 있다 */
+export const BASE_DEFENDED_DMG_PERMILLE = 500;
 
 // 폐기·구현 금지: COMBAT_HOME_DEF_PERMILLE, COMBAT_TERRAIN_DEF_PERMILLE(A-16), UNIT_POWER, LOSER_ATTRITION_RATIO 등
 

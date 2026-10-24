@@ -5,6 +5,7 @@
  */
 import {
   BASE_CAPTURE_LOCK_TICK,
+  BASE_DEFENDED_DMG_PERMILLE,
   CAPTURE_MORALE_DROP,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
   techBaseDmgPm,
@@ -36,7 +37,7 @@ import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } 
 
 export function stage5_accumulateBudget(state: GameState, _t: number): void {
   for (const f of state.flags) {
-    if (!pushing(f)) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음
+    if (!pushing(f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음
     const per = f.initialTroops * FLAG_SPEND_RATE_PERMILLE;
     f.spendBudgetMilli = Math.min(f.spendBudgetMilli + per, per * FLAG_SPEND_BUDGET_CAP_TICKS);
   }
@@ -66,24 +67,39 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
   const pushes: Push[] = [];
   const baseHits: BaseHit[] = [];
   for (const f of state.flags) {
-    if (!pushing(f)) continue; // v4.2 (4.4a c)
-    const X = selectAttackTargetRO(state, f);
+    // 패치 4차: 교전 중이어도 방어 깃발이 선 기지는 밀 수 있다 (피해 ×BASE_DEFENDED_DMG_PERMILLE)
+    const defX = pushing(f) ? null : defendedBaseTargetRO(state, f);
+    if (!pushing(f) && defX === null) continue; // v4.2 (4.4a c)
+    const X = defX ?? selectAttackTargetRO(state, f);
     if (X === null) continue;
     const c = tileCost(state, f, X);
-    const adv = Math.min(Math.floor((availAP(f) * 1000) / c), maxProgress(f));
+    const rawAdv = Math.min(Math.floor((availAP(f) * 1000) / c), maxProgress(f));
+    const adv = defX === null ? rawAdv : Math.floor((rawAdv * BASE_DEFENDED_DMG_PERMILLE) / 1000);
     if (adv === 0) continue; // v4.1: 0 전진은 push 가 아니다
     if (state.map.isBase[X]) {
       const b = state.bases[state.baseIndexOf.get(X)!];
       if (t < b.lockUntilTick) continue;
       // v4.4 (§21) [A-88]: 기지 칸 위에 적대 깃발(전투 가능)이 서 있으면 체력을 깎지 못한다 — 먼저 그 깃발을 이겨야 한다.
       // (기지에 붙은 공격 깃발은 기지 칸과 항상 접촉 → 4a 에서 이미 전투 중이라 pushing 이 아니다. 이 검사는 그 불변식의 명시판)
-      if (baseOccupiedByHostile(state, X, f.ownerId)) continue;
+      if (defX === null && baseOccupiedByHostile(state, X, f.ownerId)) continue;
       baseHits.push({ flagId: f.id, tileId: X, cost: c, dmg: adv });
     } else {
       pushes.push({ flagId: f.id, tileId: X, cost: c, adv });
     }
   }
   return { pushes, baseHits };
+}
+
+/**
+ * 패치 4차 (모델 2) — 방어 깃발이 서 있는 기지를 미는 교전 중 공격 깃발의 목표 기지 칸. 해당 없으면 null.
+ * 교전 중이라 pushing(f) 는 아니지만, 타깃이 "전투 가능한 적대 깃발이 선 기지"면 피해 ×BASE_DEFENDED_DMG_PERMILLE 로 밀 수 있다.
+ */
+export function defendedBaseTargetRO(state: Readonly<GameState>, f: Readonly<Flag>): number | null {
+  if (state.combatModel !== 2 || !f.inCombat || f.posture !== POSTURE.ATTACK || f.routed || f.breakaway) return null;
+  if (!(f.state === 'ENGAGED' || f.halted)) return null;
+  const X = selectAttackTargetRO(state, f);
+  if (X === null || !state.map.isBase[X] || !baseOccupiedByHostile(state, X, f.ownerId)) return null;
+  return X;
 }
 
 /** v4.4: 기지 칸 X 위에 ownerId 와 적대인 전투 가능 깃발(패주·소진·이탈 직후 아님)이 있는가 */

@@ -10,6 +10,8 @@ import {
   BASE_BUFF,
   BASE_CAPTURE_LOCK_TICK,
   BASE_COMBAT_DMG_MILLI_PER_TICK,
+  BASE_DEFENDED_DMG_PERMILLE,
+  BASE_HP_MAX_MILLI,
   BASE_HP_CAPTURE_MILLI,
   MAP_SIZE_PRESETS,
   MORALE_MAX,
@@ -536,6 +538,31 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       expect(old.state).toBe(model === 2 ? 'RETURNING' : 'ENGAGED');
       expect(out.broadcast.some((m) => m.type === 'flag_recalled' && m.flagId === old.id)).toBe(model === 2);
     }
+  });
+
+  it('방어 깃발이 선 기지는 교전 중인 공격자도 ×0.5 피해로 밀 수 있다 [A 패치 4차] (모델 2), 깃발이 없으면 ×1, 모델 1 은 막힘', () => {
+    const hit = (model: 1 | 2, defended: boolean) => {
+      const { s } = duelState(model);
+      const home = s.players[2].homeTileId;
+      const b = s.bases[s.baseIndexOf.get(home)!];
+      const nb = s.graph.neighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
+      if (defended) addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      const atk = addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, anchorTileId: home, targetOwnerId: 2, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 750_000 });
+      s.tick = 1;
+      const out = newOutbox();
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out); // 교전 개시
+      expect(atk.inCombat).toBe(defended);
+      b.hpMilli = BASE_HP_MAX_MILLI;
+      b.damagedThisTick = false;
+      s.tick = 2;
+      const plan = stage6_combatPhaseA(s, 2); // 틱당 상한(300) 적용 전의 원래 피해로 비교한다
+      return plan.baseHits.find((h) => h.flagId === atk.id)?.dmg ?? 0;
+    };
+    const free = hit(2, false);
+    expect(free).toBeGreaterThan(0);
+    const half = hit(2, true);
+    expect(half).toBe(Math.floor((free * BASE_DEFENDED_DMG_PERMILLE) / 1000));
+    expect(hit(1, true)).toBe(0);
   });
 
   it('점령 사기 소모 [A]: 게이지를 미는 tick 마다 창 -6 / 검 -5 / 기 -8 (CAPTURE_MORALE_DROP x 점령 배율), 모델 1 은 사기 없음', () => {
