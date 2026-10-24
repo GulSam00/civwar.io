@@ -10,6 +10,7 @@ import {
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
   DISENGAGE_VALUE_PERMILLE,
+  MORALE_DROP_DEFEND_PERMILLE,
   MORALE_DROP_PER_TICK,
   MORALE_MAX,
   MORALE_RECOVER,
@@ -374,7 +375,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
 
 /**
  * §33 사기 갱신 (모델 2 전용, 4b 마지막 — inCombat 이 확정된 뒤, flagId ASC, 정수 ‰).
- * 교전 중: -drop(unit) · 비전투: +3, 자기 기지 칸 위 +10. 이번 tick 패주한 깃발은 건너뛴다(0 유지).
+ * 교전 중: -drop(unit) (방어 태세는 ×0.5) · 비전투: +3, 자기 기지 칸 위 +10. 이번 tick 패주한 깃발은 건너뛴다(0 유지).
  */
 export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>): void {
   for (const f of state.flags) {
@@ -382,7 +383,8 @@ export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>
     const stat = state.players[f.ownerId].statPm;
     if (f.inCombat) {
       const drop = Math.max(1, Math.floor((MORALE_DROP_PER_TICK[f.unit] * techMoraleDropPm(stat, f.unit)) / 1000));
-      f.morale = Math.max(0, f.morale - drop);
+      const dropPosture = f.posture === POSTURE.DEFEND ? Math.max(1, Math.ceil((drop * MORALE_DROP_DEFEND_PERMILLE) / 1000)) : drop; // 패치 2차 [A]: 방어 태세는 절반(올림)
+      f.morale = Math.max(0, f.morale - dropPosture);
     } else {
       const rec = Math.floor(((onOwnBase(state, f) ? MORALE_RECOVER_BASE : MORALE_RECOVER) * techMoraleRecoverPm(stat, f.unit)) / 1000);
       f.morale = Math.min(MORALE_MAX, f.morale + rec);

@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   BASE_BUFF,
+  BASE_COMBAT_DMG_MILLI_PER_TICK,
   MAP_SIZE_PRESETS,
   MORALE_MAX,
   POSTURE,
@@ -32,7 +33,7 @@ import { combatInput, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from 
 import { stage6_combatPhaseA, stage7_combatPhaseB } from '../src/game/gauge.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { buildMatchConfig } from '../src/game/snapshot.js';
-import { createGameState, defaultCombatModel, ledgerImbalance, makeFlag, type Flag, type GameState } from '../src/game/state.js';
+import { createGameState, defaultCombatModel, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
 import { isClaimable } from '@civwar/shared';
@@ -462,7 +463,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(big.morale).toBe(990);
   });
 
-  it('기지 위 교전 [A]: 방어 깃발이 교전 중이면 tick 마다 기지 체력 -40 (기지당 1회), 체력 1 밑으로는 안 내려간다, 모델 1 은 불변', () => {
+  it('기지 위 교전 [A]: 방어 깃발이 교전 중이면 tick 마다 기지 체력 -20 (기지당 1회, 패치 2차: 40 → 20), 체력 1 밑으로는 안 내려간다, 모델 1 은 불변', () => {
     for (const model of [1, 2] as const) {
       const { s } = duelState(model);
       const home = s.players[2].homeTileId;
@@ -477,7 +478,8 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
         s.tick = t;
         stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
       }
-      expect(b.hpMilli).toBe(model === 2 ? hp0 - 400 : hp0);
+      expect(b.hpMilli).toBe(model === 2 ? hp0 - 10 * BASE_COMBAT_DMG_MILLI_PER_TICK : hp0);
+      if (model === 2) expect(BASE_COMBAT_DMG_MILLI_PER_TICK).toBe(20);
       if (model === 2) {
         expect(b.lastDamageTick).toBe(10);
         expect(b.damagedThisTick).toBe(true);
@@ -488,6 +490,42 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
         }
         expect(b.hpMilli).toBe(1);
       }
+    }
+  });
+
+  it('방어 태세는 교전 중 사기가 절반만 줄어든다 [A 패치 2차] (올림, 최소 1): 창 3→2 / 검 6→3 / 기 10→5, 공격 태세는 그대로', () => {
+    const drop = (unit: 0 | 1 | 2, posture: 0 | 1) => {
+      const { s, c } = duelState(2);
+      const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture, state: 'ENGAGED' });
+      addFlag(s, { ownerId: 2, unit: U.SWORD, troops: 3000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+      const out = newOutbox();
+      s.tick = 1;
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out);
+      expect(f.inCombat).toBe(true);
+      return 1000 - f.morale;
+    };
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 5]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 6, 10]);
+  });
+
+  it('기지 함락 시 그 칸 위 이전 주인 깃발은 귀환으로 퇴각한다 [A 패치 2차] (모델 2, 마지막 기지 제외, 모델 1 불변)', () => {
+    for (const model of [1, 2] as const) {
+      const { s } = duelState(model);
+      const home = s.players[2].homeTileId;
+      const extra = s.map.baseTiles.find((x) => s.owners[x] === 0 && x !== home)!;
+      setTileOwner(s, extra, 2, false);
+      const b = s.bases[s.baseIndexOf.get(extra)!];
+      const nb = s.graph.neighbors(extra).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!; // 4방향 이웃 — 점령은 4방향
+      // 이탈을 마친(breakaway) 이전 주인 깃발은 교전 자격이 없어 공격자가 기지를 밀 수 있다
+      const old = addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 500, pos: extra, posture: POSTURE.DEFEND, state: 'ENGAGED', breakaway: true });
+      addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, anchorTileId: extra, targetOwnerId: 2, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 750_000 });
+      b.hpMilli = 100;
+      s.tick = 1;
+      const out = newOutbox();
+      stage7_combatPhaseB(s, stage6_combatPhaseA(s, 1), 1, out);
+      expect(s.owners[extra]).toBe(1);
+      expect(old.state).toBe(model === 2 ? 'RETURNING' : 'ENGAGED');
+      expect(out.broadcast.some((m) => m.type === 'flag_recalled' && m.flagId === old.id)).toBe(model === 2);
     }
   });
 

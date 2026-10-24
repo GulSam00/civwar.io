@@ -617,8 +617,11 @@ export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick �
 export const MORALE_DELTA_INTERVAL = 5; // 델타 moraleChanged 주기 (tick)
 /** 2026-10-24 [A] 점령·기지 공격(게이지를 미는 tick) 사기 소모 ‰/tick — 병종별 실효 점령 배율(techCaptureMultPm)을 곱한다. 모델 2 전용 */
 export const CAPTURE_MORALE_DROP = 6;
+/** 2026-10-24 밸런스 패치 2차 [A]: 방어 태세 깃발의 교전 중 사기 감소 배율 ‰ (사용자 확정 — 절반). 공격 태세는 1000 */
+export const MORALE_DROP_DEFEND_PERMILLE = 500;
 /** 2026-10-24 [A] 자기 기지 칸 위 방어 깃발이 교전 중인 tick 마다 그 기지가 잃는 체력 milli (모델 2 전용). 체력 1 밑으로는 깎지 않는다 */
-export const BASE_COMBAT_DMG_MILLI_PER_TICK = 40;
+// 2026-10-24 밸런스 패치 2차 [A]: 40 → 20 (사용자 확정 — 기지 위에 깃발이 있으면 기지 소모를 절반으로)
+export const BASE_COMBAT_DMG_MILLI_PER_TICK = 20;
 
 // 폐기·구현 금지: COMBAT_HOME_DEF_PERMILLE, COMBAT_TERRAIN_DEF_PERMILLE(A-16), UNIT_POWER, LOSER_ATTRITION_RATIO 등
 

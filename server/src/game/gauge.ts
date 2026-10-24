@@ -273,6 +273,17 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
     const prodPm = lastBase && ANNEX.fullProd ? baseProdPm(base) : Math.floor((baseProdPm(base) * BASE_PROD_CAPTURE_PERMILLE) / 1000);
     base.prodScaled = prodPm * TICKS_PER_MIN;
     for (const f of hitters) f.targetTileId = null;
+    // 패치 2차 [A] (모델 2): 함락된 기지 칸 위의 이전 주인(·동맹) 깃발은 퇴각 — 귀환 상태로 남은 기지로 간다. 교전 중이면 이탈 대기 동안 접촉 유지.
+    // 마지막 기지(멸망)는 12단계에서 깃발이 전부 사라지므로 건너뛴다.
+    if (state.combatModel === 2 && !lastBase && from !== NEUTRAL) {
+      for (const f of state.flags) {
+        if (f.posTileId !== B || f.routed || f.state === 'RETURNING' || (f.ownerId !== from && !isAlly(state, f.ownerId, from))) continue;
+        const wasInCombat = f.inCombat;
+        beginReturn(state, f, null);
+        if (wasInCombat) f.disengageHold = true;
+        out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
+      }
+    }
     out.broadcast.push({
       type: 'base_captured',
       tick: t,
