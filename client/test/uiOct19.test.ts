@@ -50,7 +50,7 @@ describe('m-5 깃발 state 는 이벤트에서 즉시 갱신 (flagStats 는 1초
 });
 
 describe('m-6 테크 상세 "골드 순수입" = production 합 기준 (기지 골드 포함)', () => {
-  const node = TECH_NODES.find((n) => n.code === 'ECO-1')!; // GOLD 노드
+  const node = TECH_NODES.find((n) => n.code === 'ECO-4')!; // GOLD 노드
   const bit = 2 ** node.id;
   it('incomeNow 가 있으면 그 값이 "지금", 구매 후는 GOLD 스탯 비로 환산', () => {
     const d = techDetailRows(node, { techMask: 0, goldWeight: 100000, upkeepPm: 0, incomeNow: { net: 12.5, gross: 12.5 } });

@@ -280,9 +280,9 @@ describe('§22.7 테크 철수 훈련(MOB-2B) · 급속 귀환(MOB-3B) — 2026-
     const d = techDetailRows(n20, ctx as Parameters<typeof techDetailRows>[1]);
     expect(d.rows[0]).toMatchObject({ label: '이탈 대기 시간', before: '3.0초', after: '2.0초', changed: true });
   });
-  it('급속 귀환: 상세 "귀환 속도 배율 ×1.50 → ×2.20"', () => {
+  it('급속 귀환: 상세 "귀환 속도 배율 ×1.50 → ×2.00" (보유 노드 없음 기준, 행군로 +0.2 는 별도 노드)', () => {
     const d = techDetailRows(n22, ctx as Parameters<typeof techDetailRows>[1]);
-    expect(d.rows[0]).toMatchObject({ before: '×1.50', after: '×2.20', changed: true });
+    expect(d.rows[0]).toMatchObject({ before: '×1.50', after: '×2.00', changed: true });
     expect(d.rows[0].label).toContain('귀환 속도');
   });
 });

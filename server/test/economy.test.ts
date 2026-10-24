@@ -46,9 +46,9 @@ describe('골드 (3.3)', () => {
   it('평균 지형 390타일 → floor(376350 × 2080 × 1000 / 1e9) = 782', () => {
     expect(grossGoldMilliPerTick(player({ goldWeight: 376_350 }))).toBe(782);
   });
-  it('v4.3 ECO-1 ×1.08, ECO-1+2A+3A ×1.30', () => {
-    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1') }))).toBe(845);
-    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A') }))).toBe(1017);
+  it('2026-10-24 재정 개편: 전체 골드 배율은 국고 ECO-4 에만 (×1.15)', () => {
+    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A') }))).toBe(782);
+    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4') }))).toBe(900);
   });
 });
 
@@ -59,10 +59,10 @@ describe('테크·슬롯 (3.4)', () => {
     expect(techCost(2, 2)).toBe(403);
     expect(techCost(3, 4)).toBe(868);
   });
-  it('flagCap 표 (GDD 3.2) + MOB-3A 참모부 +1', () => {
+  it('flagCap 표 (GDD 3.2) + MOB-4 참모부 +1', () => {
     expect([100, 390, 600, 900, 1200].map((tiles) => flagCap(player({ tiles })))).toEqual([3, 4, 5, 6, 7]);
-    expect(flagCap(player({ tiles: 1200, ...techOf('MOB-1', 'MOB-2A', 'MOB-3A') }))).toBe(7); // HARD_MAX
-    expect(flagCap(player({ tiles: 390, ...techOf('MOB-1', 'MOB-2A', 'MOB-3A') }))).toBe(5);
+    expect(flagCap(player({ tiles: 1200, ...techOf('MOB-1', 'MOB-2A', 'MOB-3A', 'MOB-4') }))).toBe(7); // HARD_MAX
+    expect(flagCap(player({ tiles: 390, ...techOf('MOB-1', 'MOB-2A', 'MOB-3A', 'MOB-4') }))).toBe(5);
   });
 });
 

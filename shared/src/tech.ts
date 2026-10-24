@@ -4,6 +4,8 @@
  */
 import {
   SHALLOW_MOVE_PERMILLE,
+  TERRAIN,
+  TERRAIN_GOLD_MILLI,
   TECH_NODE_BASE_COST,
   TECH_NODE_COUNT,
   TECH_NODES,
@@ -156,9 +158,17 @@ export function techBaseRecoverPm(stat: readonly number[]): number {
   return stat[TECH_STAT.BASE_RECOVER] ?? 1000;
 }
 
-/** 2026-10-24: 수도 기지 생산 배율 ‰ (수도 승격). 구 서버 설정이면 1000 */
-export function techCapitalProdPm(stat: readonly number[]): number {
-  return stat[TECH_STAT.CAPITAL_PROD] ?? 1000;
+/** 2026-10-24: 모든 기지 생산 배율 ‰ (기지 증산). 구 서버 설정이면 1000 */
+export function techBaseProdPm(stat: readonly number[]): number {
+  return stat[TECH_STAT.BASE_PROD] ?? 1000;
+}
+
+/** 2026-10-24 재정 개편: 영토 한 칸의 골드 가중치 = floor(지형 기본 × (1000 + 지형 보너스) / 1000). 평지·비옥은 GOLD_PLAIN, 언덕·사막·산은 GOLD_POOR */
+export function tileGoldWeight(terrain: number, stat: readonly number[]): number {
+  const w = TERRAIN_GOLD_MILLI[terrain] ?? 0;
+  if (w === 0) return 0;
+  const bonus = terrain === TERRAIN.PLAIN || terrain === TERRAIN.FERTILE ? (stat[TECH_STAT.GOLD_PLAIN] ?? 0) : (stat[TECH_STAT.GOLD_POOR] ?? 0);
+  return Math.floor((w * (1000 + bonus)) / 1000);
 }
 
 /**
@@ -186,7 +196,7 @@ export function techUpkeepWeight(stat: readonly number[], unit: number): number 
 
 /** 그 플레이어의 병종 편성비 ‰ (UNIT_CONVERT_PERMILLE 대체). 풀 차감 = ceil(병력 × 이 값 / 1000) */
 export function techConvertPm(stat: readonly number[], unit: number): number {
-  return stat[TECH_STAT.CONVERT_SPEAR + unit];
+  return Math.floor((stat[TECH_STAT.CONVERT_SPEAR + unit] * (stat[TECH_STAT.CONVERT] ?? 1000)) / 1000);
 }
 
 /** 그 플레이어의 병종 점령비용 배율 ‰ (UNIT_ATK_MULT_PERMILLE 대체) */

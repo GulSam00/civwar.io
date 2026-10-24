@@ -15,7 +15,7 @@ import {
   POSTURE,
   START_GOLD,
   START_TROOPS,
-  TERRAIN_GOLD_MILLI,
+  tileGoldWeight,
   techStatValues,
   type FlagState,
   type Posture,
@@ -421,21 +421,28 @@ export function createGameState(
  * 소유권 변경의 유일한 경로 (GDD 2.5 onTileOwnerChange).
  * 물 타일은 호출 금지 — 호출자가 isClaimable 을 보장한다.
  */
+/** 2026-10-24: 소유 칸 전체의 골드 가중치를 현재 스탯으로 다시 합산한다 (테크 구매 직후) */
+export function recomputeGoldWeight(state: GameState, p: PlayerState): void {
+  let sum = 0;
+  for (let t = 0; t < state.owners.length; t++) if (state.owners[t] === p.id) sum += tileGoldWeight(state.map.terrain[t], p.statPm);
+  p.goldWeight = sum;
+}
+
 export function setTileOwner(state: GameState, tileId: number, to: number, record = true): void {
   const from = state.owners[tileId];
   if (from === to) return;
-  const w = TERRAIN_GOLD_MILLI[state.map.terrain[tileId]];
+  const terrain = state.map.terrain[tileId];
   state.pathVersion++; // v4.5 (§22.12): 방어 경로 캐시 무효화
   if (from !== NEUTRAL) {
     const p = state.players[from];
     p.tiles -= 1;
-    p.goldWeight -= w;
+    p.goldWeight -= tileGoldWeight(terrain, p.statPm);
     if (to !== NEUTRAL) p.lastLostTo = to;
   }
   if (to !== NEUTRAL) {
     const p = state.players[to];
     p.tiles += 1;
-    p.goldWeight += w;
+    p.goldWeight += tileGoldWeight(terrain, p.statPm);
   }
   if (state.map.isBase[tileId]) {
     if (from !== NEUTRAL) {

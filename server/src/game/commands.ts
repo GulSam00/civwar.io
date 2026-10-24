@@ -20,7 +20,7 @@ import { allyBreak, allyPropose, allyRespond } from './alliance.js';
 import { flagCap, techCost } from './economy.js';
 import { issueFlag, recallFlag, retargetFlag, setPosture, type CmdResult } from './flagops.js';
 import type { Outbox } from './outbox.js';
-import type { GameState } from './state.js';
+import { recomputeGoldWeight, type GameState } from './state.js';
 
 export interface QueuedCommand {
   recvSeq: number;
@@ -97,6 +97,7 @@ function buyTech(state: GameState, playerId: number, msg: C2S_CmdBuyTech, t: num
   p.techMask = techMaskWith(p.techMask, nodeId);
   p.techPurchased += 1;
   p.statPm = techStatValues(p.techMask);
+  recomputeGoldWeight(state, p); // 지형별 골드 보너스(농경·개간·관개·채굴)는 소유 칸 가중치를 바꾼다
   ack(out, playerId, msg.clientSeq);
   out.broadcast.push({ type: 'tech_purchased', tick: t, playerId, nodeId, cost, newFlagCap: flagCap(p), techMask: p.techMask });
 }

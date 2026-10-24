@@ -18,6 +18,7 @@ import {
   techPrereqMet,
   techExclusiveBlocker,
   techStatValues,
+  tileGoldWeight,
   type C2S_GameCommand,
   type S2C_SnapshotDelta,
   type S2C_SnapshotFull,
@@ -28,7 +29,7 @@ import { flagCap, garrisonUpkeepPermille, regenMilliPerTick, troopCap } from '..
 import { baseEqTiles } from '../src/game/production.js';
 import { moveCostPermille, speedMilliAt, supplyPermille, tileCost } from '../src/game/rules.js';
 import { buildMatchConfig } from '../src/game/snapshot.js';
-import { NEUTRAL, createGameState, makeFlag, setTileOwner, type Flag, type GameState, type PlayerState } from '../src/game/state.js';
+import { NEUTRAL, createGameState, makeFlag, recomputeGoldWeight, setTileOwner, type Flag, type GameState, type PlayerState } from '../src/game/state.js';
 import { Simulation } from '../src/game/tick.js';
 import { TECH_PRIORITY, TECH_PRIORITY_SWORD } from '../src/game/bot.js';
 
@@ -132,11 +133,21 @@ describe('v4.6 노드 표', () => {
     expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200 });
     expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, value: 100 });
     expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
-    expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'set', value: 2200, name: '급속 귀환' });
-    expect(s('MOB-4')).toMatchObject({ stat: TECH_STAT.MORALE_RECOVER, value: 300 });
-    expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -200 });
+    expect(s('MOB-1')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 200 });
+    expect(s('MOB-2A')).toMatchObject({ stat: TECH_STAT.MORALE_RECOVER, value: 100 });
+    expect(s('MOB-3A')).toMatchObject({ stat: TECH_STAT.MORALE_RECOVER, value: 200 });
+    expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 500, name: '급속 귀환' });
+    expect(s('MOB-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, name: '참모부' });
+    expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -100 });
+    expect(s('ECO-1')).toMatchObject({ stat: TECH_STAT.CONVERT, op: 'add', value: -50 });
+    expect(s('ECO-2A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 100 });
+    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 400 });
+    expect(s('ECO-3A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 150 });
+    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 600 });
+    expect(s('ECO-4')).toMatchObject({ stat: TECH_STAT.GOLD, value: 150, tier: 4 });
+    expect(s('TER-3A')).toMatchObject({ stat: TECH_STAT.BASE_PROD, value: 100 });
     expect(s('TER-3B')).toMatchObject({ stat: TECH_STAT.BASE_RECOVER, value: 500 });
-    expect(s('TER-4')).toMatchObject({ stat: TECH_STAT.CAPITAL_PROD, value: 300 });
+    expect(s('TER-4')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -200 });
   });
   it('전부 보유 시 스탯 값 (양자택일 상대는 서버에서 못 사지만 표 합산은 순수 함수)', () => {
     const v = techStatValues(ALL);
@@ -144,20 +155,23 @@ describe('v4.6 노드 표', () => {
     expect(v[TECH_STAT.DEF_COST]).toBe(1060);
     expect(v[TECH_STAT.COMBAT_ATK]).toBe(30); // 점수
     expect(v[TECH_STAT.COMBAT_DEF]).toBe(20);
-    expect(v[TECH_STAT.SPEED]).toBe(20);
+    expect(v[TECH_STAT.SPEED]).toBe(0); // 기동 갈래에 이동 보너스 없음 (2026-10-24)
     expect(v[TECH_STAT.NEUTRAL_COST]).toBe(1000 - 60 - 80);
     expect(v[TECH_STAT.SLOT_BONUS]).toBe(1); // [A-74] 최대 +1
     expect(v[TECH_STAT.DISENGAGE_TICKS]).toBe(10);
     expect(v[TECH_STAT.RETURN_SPEED]).toBe(2200);
-    expect(v[TECH_STAT.UPKEEP_COEF]).toBe(72);
-    expect(v[TECH_STAT.SUPPLY_COEF]).toBe(15);
+    expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
+    expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
+    expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([250, 1000, 950, 1150]);
+    expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_PROD], v[TECH_STAT.BASE_RECOVER]]).toEqual([700, 1100, 1500]);
     expect(v[TECH_STAT.TROOP_CAP]).toBe(1000); // 병력 상한 노드는 이번 개편에서 뺐다
   });
   it('무테크 기본: 전투·이동 점수 0, 기지 3칸 1000, 길이 = TECH_STAT_COUNT', () => {
     const v = techStatValues(0);
-    expect(v.length).toBe(47);
+    expect(v.length).toBe(50);
     expect([v[TECH_STAT.COMBAT_ATK], v[TECH_STAT.COMBAT_DEF], v[TECH_STAT.SPEED]]).toEqual([0, 0, 0]);
-    expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_RECOVER], v[TECH_STAT.CAPITAL_PROD]]).toEqual([1000, 1000, 1000]);
+    expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_RECOVER], v[TECH_STAT.BASE_PROD]]).toEqual([1000, 1000, 1000]);
+    expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT]]).toEqual([0, 0, 1000]);
   });
 });
 
@@ -244,7 +258,7 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
     });
     expect(new Set(res).size).toBe(1);
     const v = JSON.parse(res[0])[1] as number[];
-    expect(v[TECH_STAT.SPEED] + v[TECH_STAT.SPEED_CAVALRY]).toBe(30); // MOB-1 + MOB-2A + CAV-1 (점수)
+    expect(v[TECH_STAT.SPEED] + v[TECH_STAT.SPEED_CAVALRY]).toBe(10); // CAV-1 (점수)
     expect(v[TECH_STAT.COMBAT_DEF] + v[TECH_STAT.COMBAT_DEF_SPEAR]).toBe(0);
     expect(v[TECH_STAT.SPEED_SPEAR]).toBe(10); // SPE-1 행군 대열
     expect(v[TECH_STAT.CAPTURE_MULT_SPEAR]).toBe(800); // 기본 1000 - 200: SPE-2A + SPE-3B
@@ -261,31 +275,27 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
 });
 
 describe('v4.6 계산식 연결', () => {
-  it('유지비: ECO-2B 계수 90 → 72, CAV-2A 기병 가중치 1600 → 1300', () => {
+  it('유지비: CAV-2A 기병 가중치 1600 → 1300', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const h = p.homeTileId;
     for (let i = 0; i < 3; i++) addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: h });
     expect(garrisonUpkeepPermille(s, p)).toBe(342);
-    giveTech(p, 'ECO-1', 'ECO-2B');
-    expect(garrisonUpkeepPermille(s, p)).toBe(273);
     giveTech(p, 'CAV-1', 'CAV-2A');
     expect(garrisonUpkeepPermille(s, p)).toBe(261);
-    giveTech(p, 'CAV-1', 'CAV-2A', 'ECO-1', 'ECO-2B');
-    expect(garrisonUpkeepPermille(s, p)).toBe(208);
   });
   it('유지비 감소가 실제 골드 정산에 들어간다 (같은 깃발, upkeepPm 낮음)', () => {
     const a = makeSim();
     const b = makeSim();
     for (const sim of [a, b]) for (let i = 0; i < 3; i++) addFlag(sim.state, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: sim.state.players[1].homeTileId });
-    giveTech(b.state.players[1], 'ECO-1', 'ECO-2B');
-    giveTech(a.state.players[1], 'ECO-1');
+    giveTech(b.state.players[1], 'CAV-1', 'CAV-2A');
+    giveTech(a.state.players[1]);
     a.step();
     b.step();
     expect(a.state.players[1].upkeepPm).toBe(342);
-    expect(b.state.players[1].upkeepPm).toBe(273);
+    expect(b.state.players[1].upkeepPm).toBe(261);
   });
-  it('이동속도: 점수 가산 — 공통 MOB-1/2A + 병종 CAV-1 (평원, speedMilli = floor(140 × (UNIT + 10 × 점수) / 1000))', () => {
+  it('이동속도: 점수 가산 — 병종 CAV-1·SPE-1 (평원, speedMilli = floor(140 × (UNIT + 10 × 점수) / 1000))', () => {
     const s = makeSim().state;
     const c = findOpenArea(s, 2);
     for (const t of s.graph.disk(c, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
@@ -295,10 +305,12 @@ describe('v4.6 계산식 연결', () => {
     const p = s.players[1];
     const sp3 = () => [speedMilliAt(s, sw, c), speedMilliAt(s, cav, c), speedMilliAt(s, sp, c)];
     expect(sp3()).toEqual([140, 168, 126]);
-    giveTech(p, 'MOB-1'); // +10점 = +100‰
-    expect(sp3()).toEqual([154, 182, 140]);
-    giveTech(p, 'MOB-1', 'MOB-2A', 'CAV-1'); // 공통 +20점, 기병 +30점
-    expect(sp3()).toEqual([168, 210, 154]);
+    giveTech(p, 'CAV-1'); // 기병 +10점 = +100‰
+    expect(sp3()).toEqual([140, 182, 126]);
+    giveTech(p, 'CAV-1', 'SPE-1'); // 창병 +10점
+    expect(sp3()).toEqual([140, 182, 140]);
+    giveTech(p, 'MOB-1', 'MOB-2A'); // 기동 갈래는 이동에 영향 없음
+    expect(sp3()).toEqual([140, 168, 126]);
   });
   it('v4.5 MOB-2B 철수 훈련: 전투 중 회수 → 이탈 대기 10 tick (무테크 15)', () => {
     for (const [codes, expectTicks] of [[[], 15], [['MOB-1', 'MOB-2B'], 10]] as [string[], number][]) {
@@ -336,29 +348,66 @@ describe('v4.6 계산식 연결', () => {
     expect(Math.abs(ret0 - (march * 1500) / 1000)).toBeLessThanOrEqual(1.5);
     expect(Math.abs(ret1 - (march1 * 2200) / 1000)).toBeLessThanOrEqual(2.2);
     expect(ret1 * 1000).toBeGreaterThan(ret0 * 1000 * 1.4);
-    expect(march1).toBeGreaterThan(march);
+    expect(march1).toBe(march); // 귀환 속도만 오르고 행군 속도는 그대로
   });
-  it('슬롯: MOB-3A 로만 +1, 전부 사도 +1 (최대 +1)', () => {
+  it('슬롯: MOB-4 참모부로만 +1, 전부 사도 +1 (최대 +1)', () => {
     const p = makeSim().state.players[1];
     p.tiles = 390;
     expect(flagCap(p)).toBe(4);
-    giveTech(p, 'MOB-1', 'MOB-2A', 'MOB-3A');
+    giveTech(p, 'MOB-1', 'MOB-2A', 'MOB-3A', 'MOB-4');
     expect(flagCap(p)).toBe(5);
     p.techMask = ALL;
     p.statPm = techStatValues(p.techMask);
     expect(flagCap(p)).toBe(5);
   });
-  it('병력 재생: ECO-3B 곡창 (병력 상한 노드는 이번 개편에서 없음)', () => {
-    const p = makeSim().state.players[1];
-    p.tiles = 390;
-    p.troopsMilli = 1000_000;
-    const cap0 = troopCap(p);
-    const r0 = regenMilliPerTick(p);
+  it('재정 개편: 징발 규정 편성비 −5% · 농경/관개(평지·비옥) · 개간/채굴(험지) 골드 가중치 · 국고 골드 +15%', () => {
+    const s = makeSim().state;
+    const p = s.players[1];
+    const sum = () => {
+      let w = 0;
+      for (let t = 0; t < s.owners.length; t++) if (s.owners[t] === p.id) w += tileGoldWeight(s.map.terrain[t], p.statPm);
+      return w;
+    };
+    giveTech(p);
+    recomputeGoldWeight(s, p);
+    const w0 = p.goldWeight;
+    expect(w0).toBe(sum());
+    // 지형 한 칸 가중치: 평지 1000 / 비옥 2300 / 언덕 900 / 사막 300 / 산 250 (기본)
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2300, 900, 300, 250]);
+    giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A');
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1250, 2875, 900]); // +25%, 험지 불변
     giveTech(p, 'ECO-1', 'ECO-2B', 'ECO-3B');
-    expect(troopCap(p)).toBe(cap0);
-    expect(regenMilliPerTick(p)).toBeGreaterThan(r0);
+    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 1800, 600, 500]); // +100%, 평지 불변
+    recomputeGoldWeight(s, p);
+    expect(p.goldWeight).toBe(sum());
+    expect(p.goldWeight).toBeGreaterThanOrEqual(w0); // 시작 영토가 평지뿐이면 같다
+    giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A');
+    recomputeGoldWeight(s, p);
+    expect(p.goldWeight).toBe(sum());
+    expect(p.goldWeight).toBeGreaterThan(w0);
+    expect(p.statPm[TECH_STAT.GOLD]).toBe(1000); // 전체 골드는 국고(T4)에만
+    giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4');
+    expect(p.statPm[TECH_STAT.GOLD]).toBe(1150);
+    // 소유 칸이 바뀌어도 현재 스탯 기준 가중치로 유지된다
+    giveTech(p, 'ECO-1', 'ECO-2B');
+    recomputeGoldWeight(s, p);
+    const t0 = s.owners.findIndex((o, t) => o === p.id && s.map.terrain[t] !== TERRAIN.DEEP);
+    const before = p.goldWeight;
+    setTileOwner(s, t0, NEUTRAL, false);
+    expect(p.goldWeight).toBe(before - tileGoldWeight(s.map.terrain[t0], p.statPm));
   });
-  it('점령비용: MIL-1·MIL-2A(공격자), MIL-2B(방어자), TER-1/2A(중립), SWO-2B(검병), TER-3A 보급선', () => {
+  it('징발 규정 ECO-1: 병종 편성비 ×0.95 (기병 1.30 → 1.235 → 풀 차감 올림)', () => {
+    const sim = makeSim();
+    const p = sim.state.players[1];
+    const L = sim.state.ledger;
+    giveTech(p, 'ECO-1');
+    p.troopsMilli = 200_000;
+    const c0 = L.conversion;
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, originBaseTileId: null });
+    sim.step();
+    expect(L.conversion - c0).toBe(24_000); // ceil(100 × 1235 / 1000) − 100 = 24
+  });
+  it('점령비용: MIL-1·MIL-2A(공격자), MIL-2B(방어자), TER-1/2A(중립), SWO-2B(검병)', () => {
     const s = makeSim().state;
     const c = findOpenArea(s, 2);
     for (const t of s.graph.disk(c, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
@@ -384,9 +433,7 @@ describe('v4.6 계산식 연결', () => {
     const far = s.owners.findIndex((_, t) => dOf(t) >= 21 && dOf(t) <= 40);
     const d = dOf(far);
     giveTech(p);
-    expect(supplyPermille(s, p, far)).toBe(1000 + 20 * (d - 10));
-    giveTech(p, 'TER-1', 'TER-2A', 'TER-3A');
-    expect(supplyPermille(s, p, far)).toBe(1000 + 15 * (d - 10));
+    expect(supplyPermille(s, p, far)).toBe(1000 + 20 * (d - 10)); // 보급선 비용 노드는 없다 (2026-10-24)
   });
   it('깃발 전투값(모델 1): 병종 기본 ‰ + 10‰ × 점수 — 공격 태세 COMBAT_ATK+병종, 방어 태세 COMBAT_DEF+병종', () => {
     const s = makeSim().state;
@@ -420,7 +467,7 @@ describe('v4.6 계산식 연결', () => {
 });
 
 describe('v4.6 기지 효과 (행정 갈래)', () => {
-  it('요새화 TER-2B: 기지 체력 피해(와 tick 당 피해 상한)가 20% 줄어든다', () => {
+  it('요새화 TER-2B: 기지 체력 피해(와 tick 당 피해 상한)가 10% 줄어든다', () => {
     const lossWith = (codes: string[]) => {
       const sim = makeSim();
       const s = sim.state;
@@ -438,7 +485,7 @@ describe('v4.6 기지 효과 (행정 갈래)', () => {
     const fort = lossWith(['TER-1', 'TER-2B']);
     expect(plain).toBeGreaterThan(0);
     expect(fort).toBeLessThan(plain);
-    expect(fort).toBeLessThanOrEqual(Math.floor(plain * 0.85));
+    expect(fort).toBeLessThanOrEqual(Math.floor(plain * 0.95));
     expect(fort).toBeGreaterThan(0);
   });
   it('기지 재건 TER-3B: 함락 뒤 생산력 회복이 1.5배 빠르다', () => {
@@ -457,12 +504,12 @@ describe('v4.6 기지 효과 (행정 갈래)', () => {
     expect(base).toBe(20 * 167);
     expect(fast).toBe(20 * Math.floor((167 * 1500) / 1000));
   });
-  it('수도 승격 TER-4: 수도 기지의 환산 칸이 100 → 130 (일반 기지 60 그대로)', () => {
+  it('기지 증산 TER-3A: 모든 기지의 환산 칸 ×1.1 (수도 100 → 110)', () => {
     const s = makeSim().state;
     const p = s.players[1];
     expect(baseEqTiles(s, p.homeTileId)).toBe(100);
-    giveTech(p, 'TER-1', 'TER-2A', 'TER-3A', 'TER-4');
-    expect(baseEqTiles(s, p.homeTileId)).toBe(130);
+    giveTech(p, 'TER-1', 'TER-2A', 'TER-3A');
+    expect(baseEqTiles(s, p.homeTileId)).toBe(110);
     const other = s.players[2];
     expect(baseEqTiles(s, other.homeTileId)).toBe(100); // 다른 사람의 수도는 그 사람 테크 기준
   });

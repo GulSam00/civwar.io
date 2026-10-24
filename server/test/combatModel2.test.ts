@@ -187,9 +187,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(det.reduce((a, d) => a + d.lossMilli, 0)).toBe(9_000_000);
   });
 
-  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 47, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
-    expect(TECH_STAT_COUNT).toBe(47);
-    expect(NO_TECH.length).toBe(47);
+  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 50, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
+    expect(TECH_STAT_COUNT).toBe(50);
+    expect(NO_TECH.length).toBe(50);
     expect(TECH_STAT_BASE.slice(0, 32).length).toBe(32);
     const f = inp(U.CAVALRY, POSTURE.ATTACK);
     expect(channelValues(f)).toEqual(channelValues({ ...f, statPm: NO_TECH.slice(0, 32) }));
@@ -214,9 +214,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
  */
 const GOLDEN = {
-  G1: { stream: 'aca5950f660296f9c9b80b0ac01a65279314bdf35600205bcf50557be63f5cc1', state: 'f02029be2483cc55dab57d2ad8c7cb50d55b30fa1068d223c550abeba40dc789' },
-  G2: { stream: '7cc2f8fb37e34dbb2b668ebe6aed4f145bf3b99732a83c6500bda9e521d1d296', state: 'f2b482c88d81f317ddaaa4cba881b83796f369db7ac62d9e1d5d73296536cf05' },
-  G3: { stream: '5c10107785973d53923bc8f7f9515b1f886f55c993b1369b9e6c3316f5ef954e', state: 'fcc5287a9bc47a269b3de582efd2076ddbbfc88b2c53ac5bceb3ae185f6483af' },
+  G1: { stream: '1a4fb4305c520eb6817c4739f406836be24ba5e4005e3c0a5a85e9239625cc09', state: '86ce6618d9a6a0811eee237e9e3b482f04e0263bd78a12bf8059e26702c01744' },
+  G2: { stream: 'e091a15b7d630a8c384107efdae2bf7a5be710c4d2cce1be2005683b1068a321', state: '269396d802546d4f223c292eb97bb38618f8e30ca9ead71d3996058b17afce44' },
+  G3: { stream: '20d810457761501c019d35547cdef129f7610ca4b9417bc61ad64c0c00ae13ba', state: '0c34b421c957d3f7b9728d930ae98ffea9142a4c39a5aaaf84108eece1639208' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
