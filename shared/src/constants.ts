@@ -566,7 +566,7 @@ export const ANY_HOSTILE = 254; // targetOwnerId 예약값 [A-27]
 // ══ §33 전투 모델 2 (v4.9, 2026-10-23 설계 05_combat_redesign_draft.md rev.4) ══
 // COMBAT_MODEL = 기본 모델 (1 = 현행, 2 = 채널 비교 + 사기). 서버는 환경변수 COMBAT_MODEL=2 또는 createGameState 인자로 덮어쓴다.
 // 모델 1 에서는 아래 상수를 아무도 읽지 않는다 (현행 상수는 삭제하지 않는다).
-export const COMBAT_MODEL: 1 | 2 = 1;
+export const COMBAT_MODEL: 1 | 2 = 2;
 export const CHANNEL_COUNT = 2;
 /** 채널 번호 (채널을 늘리면 뒤에 붙인다) */
 export const CHANNEL = { ATK: 0, DEF: 1 } as const;

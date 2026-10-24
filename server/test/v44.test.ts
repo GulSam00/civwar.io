@@ -27,7 +27,7 @@ import { PLACE_NAME_POOL, assignPlaceNames } from '../src/map/placeNames.js';
 function makeSim(seed = 4242, N = 8) {
   const map = generateMapForPlayers(seed, N);
   const setup = Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true }));
-  return new Simulation(createGameState(map, setup));
+  return new Simulation(createGameState(map, setup, undefined, undefined, 1));
 }
 
 function addFlag(s: GameState, o: { ownerId: number; unit: 0 | 1 | 2; troops: number; pos: number; anchor?: number } & Partial<Flag>): Flag {
@@ -288,7 +288,7 @@ describe('v4.4 봇 기지 수비', () => {
   it('마지막 기지(수도) 근처 적 공격 깃발 → 그 기지를 앵커로 창병 방어 발령 (출발도 그 기지)', async () => {
     const { decideBot } = await import('../src/game/bot.js');
     const map = generateMapForPlayers(4242, 8);
-    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
+    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), undefined, undefined, 1);
     const cap = s.players[2].homeTileId;
     s.players[2].troopsMilli = 400_000;
     const near = s.graph.disk(cap, 5).find((x) => s.graph.distance(x, cap) === 5 && isClaimable(s.map.terrain[x]))!;
@@ -301,7 +301,7 @@ describe('v4.4 봇 기지 수비', () => {
   it('마지막이 아닌 기지는 체력이 깎이는 중일 때만 수비대 발령', async () => {
     const { decideBot } = await import('../src/game/bot.js');
     const map = generateMapForPlayers(4242, 8);
-    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
+    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), undefined, undefined, 1);
     const p = s.players[2];
     const extra = s.map.baseTiles.find((b) => s.owners[b] === NEUTRAL)!;
     setTileOwner(s, extra, 2, false);

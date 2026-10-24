@@ -12,7 +12,7 @@ import { Simulation } from '../src/game/tick.js';
 function makeSim(seed = 4242, N = 8) {
   const map = generateMapForPlayers(seed, N);
   const setup = Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true }));
-  return new Simulation(createGameState(map, setup));
+  return new Simulation(createGameState(map, setup, undefined, undefined, 1));
 }
 
 /** 반경 r 디스크가 전부 중립 육지·비기지이고 맵 안쪽인 중심 타일 (tileId ASC 첫 번째) */

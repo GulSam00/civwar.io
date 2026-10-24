@@ -35,10 +35,10 @@ import { TECH_PRIORITY, TECH_PRIORITY_SWORD } from '../src/game/bot.js';
 
 const id = (code: string): number => TECH_NODES.find((n) => n.code === code)!.id;
 
-function makeSim(seed = 4242, N = 8) {
+function makeSim(seed = 4242, N = 8, model?: 1 | 2) {
   const map = generateMapForPlayers(seed, N);
   const setup = Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true }));
-  return new Simulation(createGameState(map, setup));
+  return new Simulation(createGameState(map, setup, undefined, undefined, model));
 }
 
 /** 서버 경로(cmd_buy_tech)로 codes 를 순서대로 산다. 골드는 넉넉히 채운다. 반환 = 각 구매의 ack·이벤트 */
@@ -441,7 +441,7 @@ describe('v4.6 계산식 연결', () => {
     expect(supplyPermille(s, p, far)).toBe(1000 + 20 * (d - 10)); // 보급선 비용 노드는 없다 (2026-10-24)
   });
   it('깃발 전투값(모델 1): 병종 기본 ‰ + 10‰ × 점수 — 공격 태세 COMBAT_ATK+병종, 방어 태세 COMBAT_DEF+병종', () => {
-    const s = makeSim().state;
+    const s = makeSim(4242, 8, 1).state;
     const c = findOpenArea(s, 2);
     for (const t of s.graph.disk(c, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
     const att = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.ATTACK });

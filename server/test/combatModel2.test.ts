@@ -248,9 +248,9 @@ function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 
 const NORMAL10: BotDifficultyName[] = Array.from({ length: 10 }, () => 'NORMAL');
 const MIX8: BotDifficultyName[] = ['HARD', 'NORMAL', 'EASY', 'NORMAL', 'HARD', 'EASY', 'NORMAL', 'NORMAL'];
 
-describe('모델 1 비트 동일 (COMBAT_MODEL=1 이 기본값)', () => {
-  it('기본값은 모델 1이고 환경변수가 없으면 모델 1', () => {
-    if (process.env.COMBAT_MODEL === undefined) expect(defaultCombatModel()).toBe(1);
+describe('모델 1 비트 동일 (명시적으로 모델 1 을 고른 경우 — 기본값은 2026-10-24 부터 모델 2)', () => {
+  it('기본값은 모델 2이고 환경변수가 없으면 모델 2, 인자로 1 을 주면 모델 1', () => {
+    if (process.env.COMBAT_MODEL === undefined) expect(defaultCombatModel()).toBe(2);
     const map = generateMapForPlayers(4242, 8);
     expect(createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), undefined, undefined, 1).combatModel).toBe(1);
   });

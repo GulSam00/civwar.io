@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url';
 function makeSim(seed = 4242, N = 8) {
   const map = generateMapForPlayers(seed, N);
   const setup = Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: i > 0, connected: true }));
-  return new Simulation(createGameState(map, setup));
+  return new Simulation(createGameState(map, setup, undefined, undefined, 1));
 }
 
 function addFlag(s: GameState, o: { ownerId: number; unit: 0 | 1 | 2; troops: number; pos: number; anchor?: number } & Partial<Flag>): Flag {
@@ -272,7 +272,7 @@ describe('v4.5 기지 생산 = 영토 60칸분(수도 100칸분) × 생산력, �
 
   it('봇 판 1500 tick: 매 50 tick 행 합 = 총 생산(병력·그로스·순골드), 기지 행 = 내 기지 ASC, 스냅숏 rows = 2단계 내역', () => {
     const map = generateMapForPlayers(77, 8);
-    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
+    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), undefined, undefined, 1);
     const sim = new Simulation(s, CivBot);
     let checked = 0;
     let sawPenalty = false;
