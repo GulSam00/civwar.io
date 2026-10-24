@@ -2559,3 +2559,6 @@ M 맵 10인 NORMAL 봇, 시드 1000~1039 (40판), 12분 이후만 계측.
 
 ### 34.8 군사 개편 (2026-10-24)
 - MIL-1 REGEN +50, MIL-2B TROOP_CAP +60, MIL-3A ATK_COST −60, MIL-3B TROOP_CAP +60, MIL-4 SLOT_BONUS +1. 슬롯 보너스는 MOB-4 와 합산(최대 +2). 시험 554건 통과, 골든 해시 재고정.
+
+### 34.9 공성 스탯 (2026-10-24)
+- `TECH_STAT_COUNT` 50 → 51: `SIEGE`(50) 추가. MIL-2A +100, MIL-3A +150. `gauge.ts` applyBaseHits: 깃발별 피해 = dmg × (방어측 BASE_DMG × 공격측 SIEGE) / 10⁶, tick 당 상한도 방어측 × 공격측 최대 SIEGE 배율. 시험 555건 통과.

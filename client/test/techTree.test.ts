@@ -83,10 +83,10 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(d.rows[0]).toMatchObject({ label: '창병 방어', before: '120', after: '130', changed: true }); // 기본 110 + 방진 10 → +10
   });
   it('보유 노드는 "없을 때 → 보유" (다른 보유 노드 합산 유지)', () => {
-    const d = techDetailRows(nd('MIL-3A'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }); // 공성 전술 −4% + 공성 장비 −6% 보유
+    const d = techDetailRows(nd('MIL-3A'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }); // 공성 전술 +10% + 공성 장비 +15% 보유
     expect(d.owned).toBe(true);
     expect(d.beforeLabel).toBe('없을 때');
-    expect(d.rows[0]).toMatchObject({ before: '×0.96', after: '×0.90' });
+    expect(d.rows[0]).toMatchObject({ label: '적 기지 공격 피해 배율', before: '×1.10', after: '×1.25' });
   });
   it('set 노드: 마구간 기병 유지비 가중치 1.60 → 1.30, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
     expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '1.60', after: '1.30' });

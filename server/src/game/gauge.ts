@@ -7,6 +7,7 @@ import {
   BASE_CAPTURE_LOCK_TICK,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
   techBaseDmgPm,
+  techSiegePm,
   BASE_HP_MAX_MILLI,
   BASE_HP_CAPTURE_MILLI,
   BASE_PROD_CAPTURE_PERMILLE,
@@ -221,12 +222,20 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
   }
   // 2026-10-24 요새화(TER-2B): 기지 소유자의 피해 배율 (중립 기지는 1000)
   const owner = state.players[state.owners[B]];
-  const dmgPm = owner ? techBaseDmgPm(owner.statPm) : 1000;
-  // 피해 상한(tick 당 합)에도 같은 배율을 곱한다 — 상한에 걸리는 큰 공격에도 효과가 있게
+  const defPm = owner ? techBaseDmgPm(owner.statPm) : 1000;
+  // 2026-10-24 공성(MIL-2A·3A): 공격자 쪽 피해 배율. 깃발별로 그 깃발 소유자의 값을 쓴다
+  const siegeOf = (f: Flag) => techSiegePm(state.players[f.ownerId].statPm);
+  const maxSiege = hits.reduce((m, x) => Math.max(m, siegeOf(x.f)), 1000);
+  const dmgPm = defPm;
+  // 피해 상한(tick 당 합)에도 같은 배율(방어측 × 공격측 최대)을 곱한다 — 상한에 걸리는 큰 공격에도 효과가 있게
+  const capPm = Math.floor((defPm * maxSiege) / 1000);
   const applied = splitBaseDamage(
-    hits.map((x) => (dmgPm === 1000 ? x.h.dmg : Math.max(1, Math.floor((x.h.dmg * dmgPm) / 1000)))),
+    hits.map((x) => {
+      const pm = Math.floor((defPm * siegeOf(x.f)) / 1000);
+      return pm === 1000 ? x.h.dmg : Math.max(1, Math.floor((x.h.dmg * pm) / 1000));
+    }),
     base.hpMilli,
-    dmgPm === 1000 ? BASE_HP_DMG_CAP_MILLI_PER_TICK : Math.max(1, Math.floor((BASE_HP_DMG_CAP_MILLI_PER_TICK * dmgPm) / 1000)),
+    capPm === 1000 ? BASE_HP_DMG_CAP_MILLI_PER_TICK : Math.max(1, Math.floor((BASE_HP_DMG_CAP_MILLI_PER_TICK * capPm) / 1000)),
   );
   for (let i = 0; i < hits.length; i++) {
     const { f, h } = hits[i];

@@ -117,9 +117,9 @@ describe('v4.6 노드 표', () => {
   it('노드 스탯 매핑 (설계 §10 표 그대로) — 병종 수치는 점수, 노드당 스탯 하나', () => {
     const s = (c: string) => TECH_NODES[id(c)];
     expect(s('MIL-1')).toMatchObject({ stat: TECH_STAT.REGEN, op: 'add', value: 50, name: '징병령' });
-    expect(s('MIL-2A')).toMatchObject({ stat: TECH_STAT.ATK_COST, value: -40 });
+    expect(s('MIL-2A')).toMatchObject({ stat: TECH_STAT.SIEGE, value: 100, name: '공성 전술' });
     expect(s('MIL-2B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
-    expect(s('MIL-3A')).toMatchObject({ stat: TECH_STAT.ATK_COST, value: -60, name: '공성 장비' });
+    expect(s('MIL-3A')).toMatchObject({ stat: TECH_STAT.SIEGE, value: 150, name: '공성 장비' });
     expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
     expect(s('MIL-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, tier: 4, name: '총동원령' });
     expect(s('SPE-1')).toMatchObject({ stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10 });
@@ -153,7 +153,8 @@ describe('v4.6 노드 표', () => {
   });
   it('전부 보유 시 스탯 값 (양자택일 상대는 서버에서 못 사지만 표 합산은 순수 함수)', () => {
     const v = techStatValues(ALL);
-    expect(v[TECH_STAT.ATK_COST]).toBe(900); // 공성 전술 −4% + 공성 장비 −6%
+    expect(v[TECH_STAT.ATK_COST]).toBe(1000);
+    expect(v[TECH_STAT.SIEGE]).toBe(1250); // 공성 전술 +10% + 공성 장비 +15%
     expect(v[TECH_STAT.DEF_COST]).toBe(1000);
     expect(v[TECH_STAT.REGEN]).toBe(1050);
     expect(v[TECH_STAT.TROOP_CAP]).toBe(1120);
@@ -171,10 +172,11 @@ describe('v4.6 노드 표', () => {
   });
   it('무테크 기본: 전투·이동 점수 0, 기지 3칸 1000, 길이 = TECH_STAT_COUNT', () => {
     const v = techStatValues(0);
-    expect(v.length).toBe(50);
+    expect(v.length).toBe(51);
     expect([v[TECH_STAT.COMBAT_ATK], v[TECH_STAT.COMBAT_DEF], v[TECH_STAT.SPEED]]).toEqual([0, 0, 0]);
     expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_RECOVER], v[TECH_STAT.BASE_PROD]]).toEqual([1000, 1000, 1000]);
     expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT]]).toEqual([0, 0, 1000]);
+    expect(v[TECH_STAT.SIEGE]).toBe(1000);
   });
 });
 
@@ -410,7 +412,7 @@ describe('v4.6 계산식 연결', () => {
     sim.step();
     expect(L.conversion - c0).toBe(24_000); // ceil(100 × 1235 / 1000) − 100 = 24
   });
-  it('점령비용: MIL-1·MIL-2A(공격자), MIL-2B(방어자), TER-1/2A(중립), SWO-2B(검병)', () => {
+  it('점령비용: TER-1/2A(중립), SWO-2B(검병) — 군사 갈래는 점령비용을 줄이지 않는다', () => {
     const s = makeSim().state;
     const c = findOpenArea(s, 2);
     for (const t of s.graph.disk(c, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
@@ -428,7 +430,7 @@ describe('v4.6 계산식 연결', () => {
     const enemySwo = tileCost(s, sw, X);
     giveTech(s.players[2], 'MIL-1', 'MIL-2B');
     const enemyDef = tileCost(s, sw, X);
-    expect(enemyAtk).toBeLessThan(enemy0);
+    expect(enemyAtk).toBe(enemy0); // 군사 갈래는 더 이상 점령비용을 줄이지 않는다 (공성 = 기지 피해)
     expect(enemySwo).toBeLessThanOrEqual(enemyAtk);
     expect(enemyDef).toBeGreaterThanOrEqual(enemySwo);
     const p = s.players[1];
@@ -490,6 +492,26 @@ describe('v4.6 기지 효과 (행정 갈래)', () => {
     expect(fort).toBeLessThan(plain);
     expect(fort).toBeLessThanOrEqual(Math.floor(plain * 0.95));
     expect(fort).toBeGreaterThan(0);
+  });
+  it('공성 MIL-2A·3A: 적 기지에 입히는 체력 피해(와 tick 당 상한)가 +25% 늘어난다', () => {
+    const lossWith = (codes: string[]) => {
+      const sim = makeSim();
+      const s = sim.state;
+      const B = s.players[2].homeTileId;
+      giveTech(s.players[1], ...codes);
+      const around = s.graph.neighbors(B).filter((t) => isClaimable(s.map.terrain[t]));
+      for (const t of around) setTileOwner(s, t, 1, false);
+      addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 2000, pos: around[0], anchorTileId: B, posture: POSTURE.ATTACK, targetOwnerId: 2, state: 'ENGAGED', spendBudgetMilli: 750_000 });
+      const base = s.bases[s.baseIndexOf.get(B)!];
+      const hp0 = base.hpMilli;
+      for (let i = 0; i < 10; i++) sim.step();
+      return hp0 - base.hpMilli;
+    };
+    const plain = lossWith([]);
+    const siege = lossWith(['MIL-1', 'MIL-2A', 'MIL-3A']);
+    expect(plain).toBeGreaterThan(0);
+    expect(siege).toBeGreaterThan(plain);
+    expect(siege).toBeGreaterThanOrEqual(Math.floor(plain * 1.2));
   });
   it('기지 재건 TER-3B: 함락 뒤 생산력 회복이 1.5배 빠르다', () => {
     const recovered = (codes: string[]) => {

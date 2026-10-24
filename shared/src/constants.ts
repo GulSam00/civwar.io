@@ -347,9 +347,10 @@ export const TECH_STAT = {
   GOLD_PLAIN: 47, // 평지·비옥 영토 골드 가산 ‰ (농경 +100 · 관개 +150)
   GOLD_POOR: 48, // 언덕·사막·산 영토 골드 가산 ‰ (개간 +400 · 채굴 +600)
   CONVERT: 49, // 편성비 공통 배율 ‰ (기본 1000, 징발 규정 −50) — 병종별 CONVERT_* 에 곱한다
+  SIEGE: 50, // 공성: 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (기본 1000, 공성 전술 +100 · 공성 장비 +150). tick 당 피해 상한에도 같은 배율
 } as const;
 export type TechStat = (typeof TECH_STAT)[keyof typeof TECH_STAT];
-export const TECH_STAT_COUNT = 50; // §33: 32 -> 44 (사기 예약 12칸 추가, 앞 32칸 불변), 2026-10-24: 44 -> 47 (기지 3칸)
+export const TECH_STAT_COUNT = 51; // §33: 32 -> 44 (사기 예약 12칸 추가, 앞 32칸 불변), 2026-10-24: 44 -> 47 (기지 3칸)
 /** 무테크 스탯 값 (인덱스 = TECH_STAT). 값 자체가 상수인 스탯은 그 상수를 그대로 쓴다 */
 export const TECH_STAT_BASE: readonly number[] = [
   1000, 1000, 0, 0, 1000, GARRISON_UPKEEP_PERMILLE, 1000, 1000, 1000, SUPPLY_COEF_PERMILLE, // COMBAT_ATK·COMBAT_DEF 는 점수(기본 0)
@@ -365,6 +366,7 @@ export const TECH_STAT_BASE: readonly number[] = [
   1000, 0, 0, 0, // MORALE_RECOVER
   1000, 1000, 1000, // BASE_DMG · BASE_RECOVER · BASE_PROD
   0, 0, 1000, // GOLD_PLAIN · GOLD_POOR · CONVERT
+  1000, // SIEGE
 ];
 
 /** [A-69] 티어별 기본 가격 (인덱스 = tier-1) */
@@ -404,9 +406,9 @@ export interface TechNodeDef {
 export const TECH_NODES: readonly TechNodeDef[] = [
   // 군사 MIL — 공통 (0..5)
   { id: 0, code: 'MIL-1', branch: 0, tier: 1, parent: null, stat: TECH_STAT.REGEN, op: 'add', value: 50, name: '징병령', desc: '병력 재생 +5%' },
-  { id: 1, code: 'MIL-2A', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.ATK_COST, op: 'add', value: -40, name: '공성 전술', desc: '적 땅 점령비용 −4%' },
+  { id: 1, code: 'MIL-2A', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.SIEGE, op: 'add', value: 100, name: '공성 전술', desc: '적 기지 공격 피해 +10%' },
   { id: 2, code: 'MIL-2B', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 60, name: '병참 창고', desc: '병력 상한 +6%' },
-  { id: 3, code: 'MIL-3A', branch: 0, tier: 3, parent: 1, stat: TECH_STAT.ATK_COST, op: 'add', value: -60, name: '공성 장비', desc: '적 땅 점령비용 −6%' },
+  { id: 3, code: 'MIL-3A', branch: 0, tier: 3, parent: 1, stat: TECH_STAT.SIEGE, op: 'add', value: 150, name: '공성 장비', desc: '적 기지 공격 피해 +15%' },
   { id: 4, code: 'MIL-3B', branch: 0, tier: 3, parent: 2, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 60, name: '예비대 편성', desc: '병력 상한 +6%' },
   { id: 5, code: 'MIL-4', branch: 0, tier: 4, parent: 3, parentAlt: 4, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '총동원령', desc: '깃발 슬롯 +1' },
   // 재정 ECO (6..11) — 2A/2B 양자택일

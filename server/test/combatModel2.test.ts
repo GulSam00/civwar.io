@@ -187,9 +187,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(det.reduce((a, d) => a + d.lossMilli, 0)).toBe(9_000_000);
   });
 
-  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 50, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
-    expect(TECH_STAT_COUNT).toBe(50);
-    expect(NO_TECH.length).toBe(50);
+  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 51, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
+    expect(TECH_STAT_COUNT).toBe(51);
+    expect(NO_TECH.length).toBe(51);
     expect(TECH_STAT_BASE.slice(0, 32).length).toBe(32);
     const f = inp(U.CAVALRY, POSTURE.ATTACK);
     expect(channelValues(f)).toEqual(channelValues({ ...f, statPm: NO_TECH.slice(0, 32) }));
@@ -216,7 +216,7 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 const GOLDEN = {
   G1: { stream: '08ce513b552499418323a0717cc6bf70193d33d4e284442b6d9d2ef682efbeb0', state: '521f75271a6c4804f9b8947f69f7eb08c6d394fa3a1223b76b357d80850cf7cb' },
   G2: { stream: 'eeed41064e1e9269850f02efc5f40e29a58c236bb29dad7fe93298c8dbfa15df', state: '25bf9b47496eb784a5d306bb63cf2957247141007fdf5e5d736c9c95c69a17fe' },
-  G3: { stream: '2d76826af6520c3e501aef472e6d485d483365dbf66b28efd291c1802cf60f7d', state: 'c8900320213d9352268192923c0fbfd2fb731994adae813e2ab8376e9c673ff5' },
+  G3: { stream: '0ce4dc7fa4367a92a78fb9af2d4287bbd2268edb3923d40b7bbcb86f4d1b4147', state: '18b4c1f5cd59793ed1c15575b29fc871e635e371f657c02abebe76dda1209c9e' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

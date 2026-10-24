@@ -158,6 +158,11 @@ export function techBaseRecoverPm(stat: readonly number[]): number {
   return stat[TECH_STAT.BASE_RECOVER] ?? 1000;
 }
 
+/** 2026-10-24: 공성 — 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (공성 전술·공성 장비). 구 서버 설정이면 1000 */
+export function techSiegePm(stat: readonly number[]): number {
+  return stat[TECH_STAT.SIEGE] ?? 1000;
+}
+
 /** 2026-10-24: 모든 기지 생산 배율 ‰ (기지 증산). 구 서버 설정이면 1000 */
 export function techBaseProdPm(stat: readonly number[]): number {
   return stat[TECH_STAT.BASE_PROD] ?? 1000;
