@@ -119,17 +119,18 @@ describe('v4.6 노드 표', () => {
     expect(s('MIL-3A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK, value: 20 });
     expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF, value: 20 });
     expect(s('MIL-4')).toMatchObject({ stat: TECH_STAT.MORALE_DROP, value: -150 });
-    expect(s('SPE-1')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 10 });
-    expect(s('SPE-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_SPEAR, op: 'set', value: 450 });
-    expect(s('SPE-4')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SPEAR, value: 30, tier: 4 });
-    expect(s('SPE-3B')).toMatchObject({ stat: TECH_STAT.SPEED_SPEAR, value: 10 }); // 창병 약점 보완(느린 속도)
-    expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -100 });
-    expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -100 });
-    expect(s('SWO-4')).toMatchObject({ stat: TECH_STAT.MORALE_DROP_SWORD, value: -200 }); // 검병은 공격·방어 보너스를 크게 주지 않는다
-    expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.CONVERT_CAVALRY, op: 'set', value: 1200 });
+    expect(s('SPE-1')).toMatchObject({ stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10 });
+    expect(s('SPE-2A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100 });
+    expect(s('SPE-4')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SPEAR, value: 20, tier: 4 });
+    expect(s('SPE-3B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100 });
+    expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200 });
+    expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10 });
+    expect(s('SWO-4')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_SWORD, value: 100 }); // 검병 태세 보너스(기세) +10%p
+    expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1300 });
+    expect(s('CAV-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 20 });
     expect(s('CAV-4')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 30 });
-    expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1300 });
-    expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, value: 50 });
+    expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200 });
+    expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, value: 100 });
     expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
     expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'set', value: 2200, name: '급속 귀환' });
     expect(s('MOB-4')).toMatchObject({ stat: TECH_STAT.MORALE_RECOVER, value: 300 });
@@ -244,8 +245,9 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
     expect(new Set(res).size).toBe(1);
     const v = JSON.parse(res[0])[1] as number[];
     expect(v[TECH_STAT.SPEED] + v[TECH_STAT.SPEED_CAVALRY]).toBe(30); // MOB-1 + MOB-2A + CAV-1 (점수)
-    expect(v[TECH_STAT.COMBAT_DEF] + v[TECH_STAT.COMBAT_DEF_SPEAR]).toBe(10); // SPE-1
-    expect(v[TECH_STAT.SPEED_SPEAR]).toBe(10); // SPE-3B 행군 장화
+    expect(v[TECH_STAT.COMBAT_DEF] + v[TECH_STAT.COMBAT_DEF_SPEAR]).toBe(0);
+    expect(v[TECH_STAT.SPEED_SPEAR]).toBe(10); // SPE-1 행군 대열
+    expect(v[TECH_STAT.CAPTURE_MULT_SPEAR]).toBe(800); // 기본 1000 - 200: SPE-2A + SPE-3B
     expect(v[TECH_STAT.NEUTRAL_COST]).toBe(860);
   });
   it('techStatValues 는 마스크만의 함수 (노드 하나만 있을 때 정확히 그 스탯 하나만 바뀐다)', () => {
@@ -259,7 +261,7 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
 });
 
 describe('v4.6 계산식 연결', () => {
-  it('유지비: ECO-2B 계수 90 → 72, CAV-3A 기병 가중치 1600 → 1300, SPE-2A 창병 600 → 450', () => {
+  it('유지비: ECO-2B 계수 90 → 72, CAV-2A 기병 가중치 1600 → 1300', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const h = p.homeTileId;
@@ -267,16 +269,10 @@ describe('v4.6 계산식 연결', () => {
     expect(garrisonUpkeepPermille(s, p)).toBe(342);
     giveTech(p, 'ECO-1', 'ECO-2B');
     expect(garrisonUpkeepPermille(s, p)).toBe(273);
-    giveTech(p, 'CAV-1', 'CAV-2A', 'CAV-3A');
+    giveTech(p, 'CAV-1', 'CAV-2A');
     expect(garrisonUpkeepPermille(s, p)).toBe(261);
-    giveTech(p, 'CAV-1', 'CAV-2A', 'CAV-3A', 'ECO-1', 'ECO-2B');
+    giveTech(p, 'CAV-1', 'CAV-2A', 'ECO-1', 'ECO-2B');
     expect(garrisonUpkeepPermille(s, p)).toBe(208);
-    s.flags.length = 0;
-    for (let i = 0; i < 4; i++) addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: h });
-    giveTech(p);
-    expect(garrisonUpkeepPermille(s, p)).toBe(126);
-    giveTech(p, 'SPE-1', 'SPE-2A');
-    expect(garrisonUpkeepPermille(s, p)).toBe(72);
   });
   it('유지비 감소가 실제 골드 정산에 들어간다 (같은 깃발, upkeepPm 낮음)', () => {
     const a = makeSim();
@@ -298,11 +294,11 @@ describe('v4.6 계산식 연결', () => {
     const sp = addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: c });
     const p = s.players[1];
     const sp3 = () => [speedMilliAt(s, sw, c), speedMilliAt(s, cav, c), speedMilliAt(s, sp, c)];
-    expect(sp3()).toEqual([140, 203, 105]);
+    expect(sp3()).toEqual([140, 168, 126]);
     giveTech(p, 'MOB-1'); // +10점 = +100‰
-    expect(sp3()).toEqual([154, 217, 119]);
+    expect(sp3()).toEqual([154, 182, 140]);
     giveTech(p, 'MOB-1', 'MOB-2A', 'CAV-1'); // 공통 +20점, 기병 +30점
-    expect(sp3()).toEqual([168, 245, 133]);
+    expect(sp3()).toEqual([168, 210, 154]);
   });
   it('v4.5 MOB-2B 철수 훈련: 전투 중 회수 → 이탈 대기 10 tick (무테크 15)', () => {
     for (const [codes, expectTicks] of [[[], 15], [['MOB-1', 'MOB-2B'], 10]] as [string[], number][]) {
@@ -399,13 +395,13 @@ describe('v4.6 계산식 연결', () => {
     const att = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.ATTACK });
     const def = addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: c, posture: POSTURE.DEFEND });
     const p = s.players[1];
-    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1000, 1300]);
+    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1000, 1100]);
     giveTech(p, 'MIL-1', 'SWO-1'); // 공격 +10 +10 = +20점
-    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1200, 1300]); // 방어 불변
-    giveTech(p, 'MIL-1', 'MIL-2B', 'MIL-3B', 'SPE-1', 'SPE-2B'); // 방어 +20(공통) +20(창병) = +40점, 공격 +10
-    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1100, 1700]);
+    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1200, 1100]); // 방어 불변
+    giveTech(p, 'MIL-1', 'MIL-2B', 'MIL-3B', 'SPE-1', 'SPE-2B'); // 방어 +20(공통) +10(창병 SPE-2B) = +30점, 공격 +10
+    expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1100, 1400]);
   });
-  it('편성비: 기병 1.30 → CAV-2A 1.20 (풀 차감, 병종 기본은 창 0.9 / 검 1.0 / 기 1.3)', () => {
+  it('편성비: 병종 기본 창 0.9 / 검 1.0 / 기 1.3 (풀 차감, 테크로 바뀌지 않음)', () => {
     const sim = makeSim();
     const p = sim.state.players[1];
     const L = sim.state.ledger;
@@ -419,7 +415,7 @@ describe('v4.6 계산식 연결', () => {
     const c1 = L.conversion;
     sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 2, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, originBaseTileId: null });
     sim.step();
-    expect(L.conversion - c1).toBe(20_000);
+    expect(L.conversion - c1).toBe(30_000);
   });
 });
 

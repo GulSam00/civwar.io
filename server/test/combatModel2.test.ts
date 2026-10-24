@@ -53,18 +53,18 @@ const U = UNIT;
 describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽 동일)', () => {
   it('2.7 공격 대 방어 평지 손실% 3x3 표 (신규)', () => {
     const rows: [number, number[]][] = [
-      [U.SPEAR, [50.0, 47.2, 44.1]],
-      [U.SWORD, [53.1, 50.0, 45.8]],
-      [U.CAVALRY, [57.0, 54.7, 50.0]],
+      [U.SPEAR, [50.0, 50.2, 52.0]],
+      [U.SWORD, [49.7, 50.0, 51.8]],
+      [U.CAVALRY, [47.8, 48.1, 50.0]],
     ];
     for (const [au, exp] of rows) for (const du of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(au, POSTURE.ATTACK), inp(du, POSTURE.DEFEND)), exp[du]);
   });
 
   it('2.7 공격 대 공격(조우전) 표', () => {
     const rows: [number, number[]][] = [
-      [U.SPEAR, [50.0, 49.0, 47.9]],
-      [U.SWORD, [51.0, 50.0, 48.1]],
-      [U.CAVALRY, [52.1, 51.9, 50.0]],
+      [U.SPEAR, [50.0, 51.2, 54.4]],
+      [U.SWORD, [48.8, 50.0, 53.3]],
+      [U.CAVALRY, [45.6, 46.7, 50.0]],
     ];
     for (const [au, exp] of rows) for (const du of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(au, POSTURE.ATTACK), inp(du, POSTURE.ATTACK)), exp[du]);
   });
@@ -103,7 +103,7 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     const a = channelValues(inp(U.SPEAR, POSTURE.DEFEND, { onOwnBase: true, terrain: TERRAIN.MOUNTAIN, morale: 800 })); // m=800 -> 사기 곱 1000
     const b = channelValues(inp(U.SPEAR, POSTURE.DEFEND, { onOwnBase: true, terrain: TERRAIN.PLAIN, morale: 800 }));
     expect(a).toEqual(b);
-    expect(b).toEqual([Math.floor((870 * BASE_BUFF[1][0]) / 1000), Math.floor((1300 * BASE_BUFF[1][1]) / 1000)]);
+    expect(b).toEqual([Math.floor((900 * BASE_BUFF[1][0]) / 1000), Math.floor((1100 * BASE_BUFF[1][1]) / 1000)]);
   });
 
   it('채널값은 단계마다 floor, 최소 1, 지형표 7행 (공격 태세 / 방어 태세)', () => {
@@ -121,9 +121,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
       expect(channelValues(inp(U.SWORD, POSTURE.ATTACK, { terrain: Number(ter), morale: 800 }))).toEqual(atkRow);
       expect(channelValues(inp(U.SWORD, POSTURE.DEFEND, { terrain: Number(ter), morale: 800 }))).toEqual(defRow);
     }
-    // 단계 floor: 창병(ATK 870) 공격 사막 1.1 -> 957, 사기 m=800(곱 1000) 그대로
-    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { terrain: TERRAIN.DESERT, morale: 800 }))[0]).toBe(Math.floor((870 * 1100) / 1000));
-    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { morale: 0 }))[0]).toBe(Math.floor((870 * 600) / 1000));
+    // 단계 floor: 창병(ATK 900) 공격 사막 1.1 -> 990, 사기 m=800(곱 1000) 그대로
+    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { terrain: TERRAIN.DESERT, morale: 800 }))[0]).toBe(Math.floor((900 * 1100) / 1000));
+    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { morale: 0 }))[0]).toBe(Math.floor((900 * 600) / 1000));
   });
 
   it('5.1 사기 곱 경계: m=1000 -> 1100, 800 -> 1000, 0 -> 600, 상한 1500', () => {
@@ -147,11 +147,11 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(at(U.SPEAR, 3, 335)).toBe(600 + Math.floor((500 * 0) / 1000)); // 약 67초에 바닥 (1000 - 1005 -> 0)
   });
 
-  it('5.5(a) 사기 소모 후 상성: 기 vs 창 조우전 10초 59.8% (기병 850 / 창 1025), 20초 70.4%', () => {
+  it('5.5(a) 사기 소모 후 상성: 기 vs 창 조우전 0초 45.6% → 10초 54.4% (기병 850 / 창 1025) → 20초 66.7%', () => {
     const f = (ticks: number) => lossPct(inp(U.CAVALRY, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 10 * ticks) }), inp(U.SPEAR, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 3 * ticks) }));
-    near(f(0), 52.1);
-    near(f(50), 59.8);
-    near(f(100), 70.4);
+    near(f(0), 45.6);
+    near(f(50), 54.4);
+    near(f(100), 66.7);
   });
 
   it('손실 총량 불변: Σloss == T (병력 상한 전), 편 순서를 바꿔도 같은 편 손실(잔여 milli 1~2 제외)', () => {
@@ -214,9 +214,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용).
  */
 const GOLDEN = {
-  G1: { stream: 'd71337b3534474c6374cd0c32ed1dd2f22cd2335f14b5a3a17e7c7edc5815c32', state: 'c9813d5deed86756b71d0c800c66ca4931e372e62a3f80d7526308aa39cc8baa' },
-  G2: { stream: '7e488cda3c5c449864ca3aa120ef366ec154f9fc55c8803f568bd93927b9f85e', state: '3d11e890bca9282885e8c4d98d5a64bd5953992f7b47f47bbf4ce612bb45e650' },
-  G3: { stream: '2648fa2f5c7e129aeaf66e511a0ec36bb366efd903bc5ecdbc05817922341c78', state: 'c459ea7baa6b72a68c14f362092ed34b341b5d44adeca35038de07b2847c24c0' },
+  G1: { stream: 'aca5950f660296f9c9b80b0ac01a65279314bdf35600205bcf50557be63f5cc1', state: 'f02029be2483cc55dab57d2ad8c7cb50d55b30fa1068d223c550abeba40dc789' },
+  G2: { stream: '7cc2f8fb37e34dbb2b668ebe6aed4f145bf3b99732a83c6500bda9e521d1d296', state: 'f2b482c88d81f317ddaaa4cba881b83796f369db7ac62d9e1d5d73296536cf05' },
+  G3: { stream: '5c10107785973d53923bc8f7f9515b1f886f55c993b1369b9e6c3316f5ef954e', state: 'fcc5287a9bc47a269b3de582efd2076ddbbfc88b2c53ac5bceb3ae185f6483af' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

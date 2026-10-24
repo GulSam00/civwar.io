@@ -70,7 +70,7 @@ describe('부대 공격력·방어력 (지형 보정 제외)', () => {
     return out;
   };
 
-  it('무테크 = 병종 기본값 (창 0.87/1.30, 검 1.00/1.00, 기 1.18/0.70)', () => {
+  it('무테크 = 병종 기본값 (창 0.90/1.10, 검 1.00/1.00, 기 1.20/0.90)', () => {
     for (const u of [0, 1, 2]) {
       const s = unitCombatStats(u, 0);
       expect(s.atk).toBe(UNIT_ATK_PERMILLE[u]);
@@ -78,8 +78,8 @@ describe('부대 공격력·방어력 (지형 보정 제외)', () => {
       expect(s.atkTechPts).toBe(0);
       expect(s.defTechPts).toBe(0);
     }
-    expect(fmtPm(unitCombatStats(0, 0).def)).toBe('×1.30');
-    expect(fmtPm(unitCombatStats(2, 0).def)).toBe('×0.70');
+    expect(fmtPm(unitCombatStats(0, 0).def)).toBe('×1.10');
+    expect(fmtPm(unitCombatStats(2, 0).def)).toBe('×0.90');
   });
 
   it('서버 flagValue 와 같은 식: 병종 기본 + 10 × techCombatPts(태세) — 군사 공통 + 병종 갈래 (절대 점수)', () => {

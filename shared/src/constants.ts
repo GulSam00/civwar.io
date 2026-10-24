@@ -245,9 +245,10 @@ export const GARRISON_ESCALATE_MAX = 1; // 사용자 기각 — escalate(f) ≡ 
 export const UNIT = { SPEAR: 0, SWORD: 1, CAVALRY: 2 } as const;
 export type Unit = (typeof UNIT)[keyof typeof UNIT];
 //                                     SPEAR SWORD CAVALRY
-export const UNIT_SPEED_PERMILLE = [750, 1000, 1450] as const;
+// 2026-10-24 기본 능력치 재조정 [A]: 창 90 / 검 100 / 기 120 (구 75 / 100 / 145)
+export const UNIT_SPEED_PERMILLE = [900, 1000, 1200] as const;
 // 2026-10-24 병종 정체성: 점령(영토·기지 공격) 시 병력 소모 배율 — 기병 ≫ 창병 > 검병 [A] (구 1150 / 1000 / 850: 기병이 가장 쌌다)
-export const UNIT_ATK_MULT_PERMILLE = [1000, 850, 1500] as const;
+export const UNIT_ATK_MULT_PERMILLE = [1000, 850, 1400] as const;
 export const UNIT_GARRISON_PERMILLE = [600, 1000, 1600] as const;
 export const UNIT_ASSAULT_PERMILLE = [700, 1000, 1400] as const;
 // 2026-10-24 병종 정체성: 최초 동원비(편성비) — 창병 낮음 / 기병 높음 [A] (구 1000 / 1000 / 1150)
@@ -425,25 +426,25 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 22, code: 'MOB-3B', branch: 3, tier: 3, parent: 20, stat: TECH_STAT.RETURN_SPEED, op: 'set', value: 2200, name: '급속 귀환', desc: '귀환 속도 ×1.5 → ×2.2', icon: '기지 지붕 + 안으로 들어가는 화살표' },
   { id: 23, code: 'MOB-4', branch: 3, tier: 4, parent: 21, parentAlt: 22, stat: TECH_STAT.MORALE_RECOVER, op: 'add', value: 300, name: '야영 정비', desc: '사기 회복 +30% (전 병종)' },
   // 창병 SPE — 창병 깃발에만 (24..29)
-  { id: 24, code: 'SPE-1', branch: 4, tier: 1, parent: null, stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 10, name: '장창 대열', desc: '창병 방어 +10' },
-  { id: 25, code: 'SPE-2A', branch: 4, tier: 2, parent: 24, stat: TECH_STAT.UPKEEP_WEIGHT_SPEAR, op: 'set', value: 450, name: '주둔 진지', desc: '창병 유지비 가중치 0.60 → 0.45' },
+  { id: 24, code: 'SPE-1', branch: 4, tier: 1, parent: null, stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10, name: '행군 대열', desc: '창병 이동 +10' },
+  { id: 25, code: 'SPE-2A', branch: 4, tier: 2, parent: 24, stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100, name: '주둔 진지', desc: '창병 점령 소모 −0.10' },
   { id: 26, code: 'SPE-2B', branch: 4, tier: 2, parent: 24, stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 10, name: '방진', desc: '창병 방어 +10' },
-  { id: 27, code: 'SPE-3A', branch: 4, tier: 3, parent: 26, stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 20, name: '고슴도치 진', desc: '창병 방어 +20' },
-  { id: 28, code: 'SPE-3B', branch: 4, tier: 3, parent: 25, stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10, name: '행군 장화', desc: '창병 이동 +10' },
-  { id: 29, code: 'SPE-4', branch: 4, tier: 4, parent: 27, parentAlt: 28, stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 30, name: '철벽', desc: '창병 방어 +30' },
+  { id: 27, code: 'SPE-3A', branch: 4, tier: 3, parent: 26, stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 10, name: '고슴도치 진', desc: '창병 방어 +10' },
+  { id: 28, code: 'SPE-3B', branch: 4, tier: 3, parent: 25, stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100, name: '경장 보급', desc: '창병 점령 소모 −0.10' },
+  { id: 29, code: 'SPE-4', branch: 4, tier: 4, parent: 27, parentAlt: 28, stat: TECH_STAT.COMBAT_DEF_SPEAR, op: 'add', value: 20, name: '철벽', desc: '창병 방어 +20' },
   // 검병 SWO — 검병 깃발에만 (30..35)
   { id: 30, code: 'SWO-1', branch: 5, tier: 1, parent: null, stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10, name: '검술', desc: '검병 공격 +10' },
   { id: 31, code: 'SWO-2A', branch: 5, tier: 2, parent: 30, stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10, name: '사슬 갑옷', desc: '검병 방어 +10' },
-  { id: 32, code: 'SWO-2B', branch: 5, tier: 2, parent: 30, stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -100, name: '돌격 보병', desc: '검병 점령 소모 −0.10' },
+  { id: 32, code: 'SWO-2B', branch: 5, tier: 2, parent: 30, stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200, name: '돌격 보병', desc: '검병 점령 소모 −0.20' },
   { id: 33, code: 'SWO-3A', branch: 5, tier: 3, parent: 31, stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10, name: '철갑 보병', desc: '검병 방어 +10' },
-  { id: 34, code: 'SWO-3B', branch: 5, tier: 3, parent: 32, stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -100, name: '병참 보병', desc: '검병 점령 소모 −0.10' },
-  { id: 35, code: 'SWO-4', branch: 5, tier: 4, parent: 34, parentAlt: 33, stat: TECH_STAT.MORALE_DROP_SWORD, op: 'add', value: -200, name: '백전노장', desc: '검병 사기 감소 −20%' },
+  { id: 34, code: 'SWO-3B', branch: 5, tier: 3, parent: 32, stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10, name: '병참 보병', desc: '검병 공격 +10' },
+  { id: 35, code: 'SWO-4', branch: 5, tier: 4, parent: 34, parentAlt: 33, stat: TECH_STAT.MORALE_FULL_BONUS_SWORD, op: 'add', value: 100, name: '백전노장', desc: '검병 사기 만땅 기세 +10%p' },
   // 기병 CAV — 기병 깃발에만 (36..41)
   { id: 36, code: 'CAV-1', branch: 6, tier: 1, parent: null, stat: TECH_STAT.SPEED_CAVALRY, op: 'add', value: 10, name: '군마', desc: '기병 이동 +10' },
-  { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.CONVERT_CAVALRY, op: 'set', value: 1200, name: '마구간', desc: '기병 편성비 1.30 → 1.20' },
-  { id: 38, code: 'CAV-2B', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 10, name: '기병창', desc: '기병 공격 +10' },
-  { id: 39, code: 'CAV-3A', branch: 6, tier: 3, parent: 37, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1300, name: '역참', desc: '기병 유지비 가중치 1.60 → 1.30' },
-  { id: 40, code: 'CAV-3B', branch: 6, tier: 3, parent: 38, stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, op: 'add', value: 50, name: '돌격 기세', desc: '기병 사기 만땅 기세 +5%p' },
+  { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1300, name: '마구간', desc: '기병 유지비 가중치 1.60 → 1.30' },
+  { id: 38, code: 'CAV-2B', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 20, name: '기병창', desc: '기병 공격 +20' },
+  { id: 39, code: 'CAV-3A', branch: 6, tier: 3, parent: 37, stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200, name: '역참', desc: '기병 점령 소모 −0.20' },
+  { id: 40, code: 'CAV-3B', branch: 6, tier: 3, parent: 38, stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, op: 'add', value: 100, name: '돌격 기세', desc: '기병 사기 만땅 기세 +10%p' },
   { id: 41, code: 'CAV-4', branch: 6, tier: 4, parent: 40, parentAlt: 39, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 30, name: '철기', desc: '기병 공격 +30' },
 ];
 
@@ -547,8 +548,8 @@ export const COMBAT_LOSS_BP = 90; // [A-11] v4.5 사용자 2026-10-15: 150 → 9
 export const COMBAT_LOSS_FLOOR_BP = 45; // [A-11] v4.5 [A-105]: 75 → 45 (손실률과 같은 비율 ×0.6)
 export const COMBAT_MIN_LOSS_MILLI = 1000;
 //                                   SPEAR SWORD CAVALRY
-export const UNIT_ATK_PERMILLE = [870, 1000, 1180] as const; // [A-23]
-export const UNIT_DEF_PERMILLE = [1300, 1000, 700] as const; // [A-23]
+export const UNIT_ATK_PERMILLE = [900, 1000, 1200] as const; // [A-23] 2026-10-24 재조정 (구 870 / 1000 / 1180)
+export const UNIT_DEF_PERMILLE = [1100, 1000, 900] as const; // [A-23] 2026-10-24 재조정 (구 1300 / 1000 / 700)
 /** 방어 태세만, 소유자 무관. 인덱스 = TERRAIN (v4.5: 물 칸에는 깃발이 서지 않는다) */
 export const COMBAT_TERRAIN_DEF_POSTURE_PERMILLE = [1000, 1000, 1050, 1300, 1000, 1600, 1000] as const;
 export const POSTURE_COOLDOWN_TICKS = 25; // 사용자 확정 튜닝 레버

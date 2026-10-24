@@ -91,7 +91,7 @@ describe('v4.4 기지 방어 — 깃발이 내 기지 칸 위에 선다', () => 
     expect(flagValue(s, d, [d])).toBe(Math.floor((UNIT_DEF_PERMILLE[UNIT.SPEAR] * COMBAT_TERRAIN_DEF_POSTURE_PERMILLE[TERRAIN.HILLS]) / 1000));
     setTileOwner(s, cap, 1, false);
     d.posture = POSTURE.ATTACK;
-    expect(flagValue(s, d, [d])).toBe(1305); // v4.5 (§22): 공격 태세도 내 기지 위면 ×1.5 (870 → 1305)
+    expect(flagValue(s, d, [d])).toBe(1350); // v4.5 (§22): 공격 태세도 내 기지 위면 ×1.5 (900 → 1350)
   });
 
   it('기지 위 방어 깃발이 있으면 공격 깃발은 먼저 깃발 전투를 이겨야 한다 — 체력 피해 0', () => {

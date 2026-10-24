@@ -82,23 +82,23 @@ describe('4.15 대표 전투 재현 (1000 대 1000)', () => {
     expect(r.aRouted && r.dRouted).toBe(true);
     expect(Math.abs(r.ticks - 188)).toBeLessThanOrEqual(3);
   });
-  it('#2 검→창 평원: 방어 ≈225', () => {
+  it('#2 검→창 평원: 방어 ≈89', () => {
     const r = duel(UNIT.SWORD, UNIT.SPEAR, TERRAIN.PLAIN);
     expect(r.aRouted).toBe(true);
-    expect(Math.abs(r.d - 225)).toBeLessThanOrEqual(5);
+    expect(Math.abs(r.d - 89)).toBeLessThanOrEqual(5);
   });
-  it('#3 검→창 언덕 ≈405 / 산 ≈519', () => {
-    expect(Math.abs(duel(UNIT.SWORD, UNIT.SPEAR, TERRAIN.HILLS).d - 405)).toBeLessThanOrEqual(5);
-    expect(Math.abs(duel(UNIT.SWORD, UNIT.SPEAR, TERRAIN.MOUNTAIN).d - 519)).toBeLessThanOrEqual(5);
+  it('#3 검→창 언덕 ≈298 / 산 ≈431', () => {
+    expect(Math.abs(duel(UNIT.SWORD, UNIT.SPEAR, TERRAIN.HILLS).d - 298)).toBeLessThanOrEqual(5);
+    expect(Math.abs(duel(UNIT.SWORD, UNIT.SPEAR, TERRAIN.MOUNTAIN).d - 431)).toBeLessThanOrEqual(5);
   });
-  it('#4 기병→검 평원: 공격 ≈148', () => {
+  it('#4 기병→검 평원: 공격 ≈163', () => {
     const r = duel(UNIT.CAVALRY, UNIT.SWORD, TERRAIN.PLAIN);
     expect(r.dRouted).toBe(true);
-    expect(Math.abs(r.a - 148)).toBeLessThanOrEqual(5);
+    expect(Math.abs(r.a - 163)).toBeLessThanOrEqual(5);
   });
-  it('#5 조우전 기병↔검 (둘 다 공격): 기병 ≈148', () => {
+  it('#5 조우전 기병↔검 (둘 다 공격): 기병 ≈163', () => {
     const r = duel(UNIT.CAVALRY, UNIT.SWORD, TERRAIN.HILLS, { dPosture: POSTURE.ATTACK });
-    expect(Math.abs(r.a - 148)).toBeLessThanOrEqual(5); // 지형은 방어 태세에만 → 언덕이어도 무관
+    expect(Math.abs(r.a - 163)).toBeLessThanOrEqual(5); // 지형은 방어 태세에만 → 언덕이어도 무관
   });
   // v4.5: #6 상륙 전투 폐지 (물 위에 깃발이 서지 않는다)
   it('방어 ↔ 방어는 싸우지 않는다', () => {
