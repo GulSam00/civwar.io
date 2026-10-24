@@ -23,6 +23,7 @@ import {
   PROGRESS_DECAY_MILLI_PER_TICK,
   PROGRESS_HOLD_RANGE,
 } from '@civwar/shared';
+import { captureBase } from './basecapture.js';
 import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { combatEligible, type FlagPresence } from './combat.js';
@@ -263,36 +264,8 @@ function applyBaseHits(state: GameState, B: number, list: BaseHit[], t: number, 
     }
   }
   if (base.hpMilli <= 0 && winner) {
-    const w = winner;
-    const from = state.owners[B];
-    const lastBase = from !== NEUTRAL && state.players[from].baseTiles.length === 1; // §31: 이 함락 = 멸망
-    setTileOwner(state, B, w.ownerId);
-    base.hpMilli = BASE_HP_CAPTURE_MILLI;
-    base.lockUntilTick = t + BASE_CAPTURE_LOCK_TICK;
-    // v4.4 (§21): 생산력 = 현재 값 × 0.5 (중립 기지 포함). 이후 8단계가 선형 회복
-    const prodPm = lastBase && ANNEX.fullProd ? baseProdPm(base) : Math.floor((baseProdPm(base) * BASE_PROD_CAPTURE_PERMILLE) / 1000);
-    base.prodScaled = prodPm * TICKS_PER_MIN;
     for (const f of hitters) f.targetTileId = null;
-    // 패치 2차 [A] (모델 2): 함락된 기지 칸 위의 이전 주인(·동맹) 깃발은 퇴각 — 귀환 상태로 남은 기지로 간다. 교전 중이면 이탈 대기 동안 접촉 유지.
-    // 마지막 기지(멸망)는 12단계에서 깃발이 전부 사라지므로 건너뛴다.
-    if (state.combatModel === 2 && !lastBase && from !== NEUTRAL) {
-      for (const f of state.flags) {
-        if (f.posTileId !== B || f.routed || f.state === 'RETURNING' || (f.ownerId !== from && !isAlly(state, f.ownerId, from))) continue;
-        const wasInCombat = f.inCombat;
-        beginReturn(state, f, null);
-        if (wasInCombat) f.disengageHold = true;
-        out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
-      }
-    }
-    out.broadcast.push({
-      type: 'base_captured',
-      tick: t,
-      tileId: B,
-      fromPlayerId: from,
-      toPlayerId: w.ownerId,
-      newHpPct: Math.floor((BASE_HP_CAPTURE_MILLI * 100) / BASE_HP_MAX_MILLI),
-      newProdPm: prodPm,
-    });
+    captureBase(state, B, winner.ownerId, t, out);
   }
 }
 

@@ -8,7 +8,9 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   BASE_BUFF,
+  BASE_CAPTURE_LOCK_TICK,
   BASE_COMBAT_DMG_MILLI_PER_TICK,
+  BASE_HP_CAPTURE_MILLI,
   MAP_SIZE_PRESETS,
   MORALE_MAX,
   POSTURE,
@@ -463,7 +465,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(big.morale).toBe(990);
   });
 
-  it('기지 위 교전 [A]: 방어 깃발이 교전 중이면 tick 마다 기지 체력 -20 (기지당 1회, 패치 2차: 40 → 20), 체력 1 밑으로는 안 내려간다, 모델 1 은 불변', () => {
+  it('기지 위 교전 [A]: 방어 깃발이 교전 중이면 tick 마다 기지 체력 -20 (기지당 1회, 패치 2차: 40 → 20), 0 이 되면 함락(접촉한 적대 깃발 중 병력 최대의 주인), 모델 1 은 불변', () => {
     for (const model of [1, 2] as const) {
       const { s } = duelState(model);
       const home = s.players[2].homeTileId;
@@ -483,12 +485,19 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       if (model === 2) {
         expect(b.lastDamageTick).toBe(10);
         expect(b.damagedThisTick).toBe(true);
+        // 패치 3차: 깃발이 서 있어도 체력이 0 이 되면 함락 — 접촉한 교전 중 적대 깃발 가운데 병력 최대(동률 flagId 작은 쪽)의 주인이 차지한다
         b.hpMilli = 50;
-        for (let t = 11; t <= 14; t++) {
+        const outCap = newOutbox();
+        for (let t = 11; t <= 13; t++) {
           s.tick = t;
-          stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
+          stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, outCap);
         }
-        expect(b.hpMilli).toBe(1);
+        const rivals = s.flags.filter((x) => x.ownerId !== 2).sort((x, y) => y.troopsMilli - x.troopsMilli || x.id - y.id);
+        expect(rivals.length).toBe(2);
+        expect(s.owners[home]).toBe(rivals[0].ownerId);
+        expect(b.hpMilli).toBe(BASE_HP_CAPTURE_MILLI);
+        expect(b.lockUntilTick).toBe(13 + BASE_CAPTURE_LOCK_TICK);
+        expect(outCap.broadcast.filter((m) => m.type === 'base_captured')).toHaveLength(1);
       }
     }
   });

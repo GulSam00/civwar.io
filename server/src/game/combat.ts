@@ -27,6 +27,7 @@ import {
   techMoraleRecoverPm,
   type CombatFlagInput,
 } from '@civwar/shared';
+import { captureBase } from './basecapture.js';
 import { beginReturn } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { isAlly, type Flag, type GameState } from './state.js';
@@ -368,7 +369,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
   }
   if (state.combatModel === 2) {
     stage4c_updateMorale(state, new Set(routedNow)); // §33: 4b 끝, flagId ASC
-    stage4d_baseCombatWear(state, t);
+    stage4d_baseCombatWear(state, t, out);
   }
   trackCombatEvents(state, plan, routedNow, brokeAway, t, out);
 }
@@ -393,21 +394,36 @@ export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>
 }
 
 /**
- * 2026-10-24 [A] 모델 2: 자기 기지 칸 위에서 교전 중인 방어 깃발이 있으면 그 기지의 체력이 tick 마다 고정량 깎인다.
- * (기지당 1회 — 깃발 수·승패 무관). 체력 1 밑으로는 내려가지 않는다 — 함락은 여전히 기지 공격(게이지)으로만 일어난다.
+ * 2026-10-24 [A] 모델 2: 자기 기지 칸 위에서 교전 중인 방어 깃발이 있으면 그 기지의 체력이 tick 마다 고정량 깎인다(기지당 1회 — 깃발 수·승패 무관).
+ * 패치 3차 (사용자 확정): 깃발이 서 있어도 체력이 0 이 되면 기지는 함락된다 — 차지하는 쪽 = 그 칸과 접촉한 교전 중 적대 깃발 가운데 병력이 가장 큰 깃발의 주인
+ * (동률 flagId 작은 쪽). 그런 깃발이 없으면 체력은 1 에서 멈춘다.
  * 피해 기록(lastDamageTick·damagedThisTick)을 남겨 체력 회복 지연·봇 기지 위협 판단이 그대로 작동한다.
  */
-export function stage4d_baseCombatWear(state: GameState, t: number): void {
+export function stage4d_baseCombatWear(state: GameState, t: number, out: Outbox): void {
   const worn = new Set<number>();
   for (const f of state.flags) {
     if (!f.inCombat || f.routed || !onOwnBase(state, f) || worn.has(f.posTileId)) continue;
-    worn.add(f.posTileId);
-    const b = state.bases[state.baseIndexOf.get(f.posTileId)!];
-    if (b.hpMilli <= 1) continue;
-    b.hpMilli = Math.max(1, b.hpMilli - BASE_COMBAT_DMG_MILLI_PER_TICK);
+    const B = f.posTileId;
+    worn.add(B);
+    const b = state.bases[state.baseIndexOf.get(B)!];
+    if (b.hpMilli <= 0) continue;
+    const taker = baseTaker(state, B, f.ownerId);
+    b.hpMilli = Math.max(taker ? 0 : 1, b.hpMilli - BASE_COMBAT_DMG_MILLI_PER_TICK);
     b.lastDamageTick = t;
     b.damagedThisTick = true;
+    if (b.hpMilli <= 0 && taker) captureBase(state, B, taker.ownerId, t, out);
   }
+}
+
+/** 교전 소모로 함락될 때 기지를 차지할 깃발: B 칸과 접촉(같은 칸 포함)한 교전 중 적대 깃발 중 병력 최대 (동률 flagId ASC) */
+function baseTaker(state: Readonly<GameState>, B: number, ownerId: number): Flag | null {
+  const near = new Set<number>([B, ...state.graph.contactNeighbors(B)]);
+  let best: Flag | null = null;
+  for (const g of state.flags) {
+    if (!g.inCombat || !combatEligible(g) || !near.has(g.posTileId) || !hostile(state, g.ownerId, ownerId)) continue;
+    if (!best || g.troopsMilli > best.troopsMilli || (g.troopsMilli === best.troopsMilli && g.id < best.id)) best = g;
+  }
+  return best;
 }
 
 /** combat_started / combat_ended (표시 전용 — 규칙에 영향 없음) */
