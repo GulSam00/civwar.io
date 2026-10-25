@@ -6,13 +6,20 @@
  * 환경변수: STATS="600:1200,1000:1000,1600:800"  MFLOORS="a,b,c"  MFULLS="a,b,c" (병종별 사기 곱 0 / 1000, combatMath.moraleMultiplier 임시 패치 필요)
  *           DROP_ATK="3,4,6" DROP_DEF="2,3,5" K=10 (사기 고정 하락 + 손실 1%당 K)
  */
-import { POSTURE, TERRAIN, UNIT, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN_BUFF, BASE_BUFF } from '@civwar/shared';
+import { POSTURE_W, POSTURE, TERRAIN, UNIT, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN_BUFF, BASE_BUFF } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, type Flag, type GameState } from '../src/game/state.js';
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창', '검', '기'];
+// 시험 전용: OMEGA=500 이면 태세별 채널 가중(POSTURE_W)을 두 태세 모두 500/500 으로 (상수 배열을 이 프로세스에서만 덮어쓴다)
+if (process.env.OMEGA) {
+  const w = Number(process.env.OMEGA);
+  (POSTURE_W as unknown as number[][]).forEach((row) => { row[0] = w; row[1] = 1000 - w; });
+  console.log(`## 시험: 태세 가중 ATK ${w} / DEF ${1000 - w} (두 태세 동일)`);
+}
+
 // 시험 전용: MU_FLOOR="창,검,기" MU_FULL="창,검,기" 이면 병종별 사기 곱(사기 0 / 1000)을 쓴다 (combatMath.moraleMultiplier TEMP 패치가 있을 때만 의미)
 if (process.env.MU_FLOOR && process.env.MU_FULL) {
   (globalThis as unknown as { __MU?: unknown }).__MU = { floor: process.env.MU_FLOOR.split(',').map(Number), full: process.env.MU_FULL.split(',').map(Number) };
