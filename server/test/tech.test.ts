@@ -285,10 +285,10 @@ describe('v4.6 계산식 연결', () => {
     const p = s.players[1];
     const h = p.homeTileId;
     for (let i = 0; i < 3; i++) addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: h });
-    // 기병 300명 × 1.5골드/초(1000명당) = 0.45골드/초 = 90 milli/tick
-    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(90);
+    // 기병 300명 × 1.0골드/초(1000명당) = 0.3골드/초 = 60 milli/tick
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(60);
     giveTech(p, 'CAV-1', 'CAV-2A');
-    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(72); // 1.2골드/초
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(48); // 0.8골드/초
   });
   it('유지비 감소가 실제 골드 정산에 들어간다 (같은 깃발, upkeepPm 낮음)', () => {
     const a = makeSim();

@@ -250,7 +250,7 @@ export const FLAG_STALL_TICKS = 25;
  * 풀(pool) 병력은 무료, 무료 구간 없음. 테크(마구간)가 바꾸는 병종 가중치(UPKEEP_WEIGHT_*)는 기준(UNIT_GARRISON_PERMILLE) 대비 비율로 곱한다.
  * 순수입 = 총수입 − 유지비 (음수 가능 → 골드가 0 미만이면 빚 패널티, DEBT_*). 아래 GARRISON_UPKEEP_*(계수 방식)는 더 이상 쓰지 않는다(스탯 칸 호환용으로만 남김).
  */
-export const UNIT_UPKEEP_RATE_MILLI = [500, 800, 1500] as const;
+export const UNIT_UPKEEP_RATE_MILLI = [300, 500, 1000] as const;
 export const GARRISON_UPKEEP_PERMILLE = 90;
 export const GARRISON_UPKEEP_FREE_PERMILLE = 1000;
 export const GARRISON_UPKEEP_MAX_PERMILLE = 700;

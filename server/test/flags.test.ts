@@ -489,13 +489,13 @@ describe('게이지 (계속)', () => {
     expect(f.returnBaseTileId).toBeNull();
   });
 
-  it('유지비(패치 7차 병력 비례): 출전 검 2개(각 100명) → 200명 × 0.8골드/초(1000명당) = 32 milli/tick', () => {
+  it('유지비(패치 7차 병력 비례): 출전 검 2개(각 100명) → 200명 × 0.5골드/초(1000명당) = 20 milli/tick', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 1, false);
     setTileOwner(s, c + 1, 1, false);
     addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
     addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c + 1, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-    expect(garrisonUpkeepMilliPerTick(s, s.players[1])).toBe(32);
+    expect(garrisonUpkeepMilliPerTick(s, s.players[1])).toBe(20);
     run(sim, 1);
     expect(s.players[1].upkeepPm).toBeGreaterThan(0);
   });
@@ -780,14 +780,14 @@ describe('v4.2 공격 = 깃발 옆 칸 (4.4a) · 귀환 (4.4 v4.2)', () => {
   it('유지비 = 출전 깃발 전부 [A-60 변경, 패치 7차 병력 비례]: 태세·상태 무관, 패주만 제외, 상한 없음(순수입 음수 가능)', () => {
     const { sim, s, c } = scenario();
     for (const t of s.graph.disk(c, 2)) setTileOwner(s, t, 1, false);
-    // 검 방어 ENGAGED + 기병 공격 MARCHING(내 땅 안) + 창 IDLE, 각 100명 = 0.08 + 0.15 + 0.05 = 0.28골드/초 = 56 milli/tick (패주 깃발 제외)
+    // 검 방어 ENGAGED + 기병 공격 MARCHING(내 땅 안) + 창 IDLE, 각 100명 = 0.05 + 0.1 + 0.03 = 0.18골드/초 = 36 milli/tick (패주 깃발 제외)
     addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
     addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: c - 1, anchor: c + 1, posture: POSTURE.ATTACK, state: 'MARCHING' });
     addFlag(s, { ownerId: 1, unit: UNIT.SPEAR, troops: 100, pos: c + s.map.width, posture: POSTURE.ATTACK, state: 'IDLE', idleSinceTick: 0 });
     const routed = addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 0, pos: c - s.map.width, posture: POSTURE.ATTACK, state: 'RETURNING', routed: true, returnTileId: c });
     void routed;
-    expect(garrisonUpkeepMilliPerTick(s, s.players[1])).toBe(56);
-    // 상한 없음: 기병 7개 × 3000명 = 31.5골드/초 → 총수입을 넘어 순수입이 음수, 골드가 0 미만(빚)으로 내려간다
+    expect(garrisonUpkeepMilliPerTick(s, s.players[1])).toBe(36);
+    // 상한 없음: 기병 7개 × 3000명 = 21골드/초 → 총수입을 넘어 순수입이 음수, 골드가 0 미만(빚)으로 내려간다
     const { sim: sim2, s: s2, c: c2 } = scenario();
     for (const t of s2.graph.disk(c2, 2)) setTileOwner(s2, t, 1, false);
     for (let k = 0; k < 7; k++) addFlag(s2, { ownerId: 1, unit: UNIT.CAVALRY, troops: 3000, pos: c2, posture: POSTURE.DEFEND, state: 'ENGAGED' });

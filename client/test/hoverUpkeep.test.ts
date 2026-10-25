@@ -70,13 +70,13 @@ describe('반투명 영토', () => {
 });
 
 describe('하단 바 유지비 (패치 7차 — 병력 비례)', () => {
-  it('병종 단가: 병력 1000명당 창 0.5 / 검 0.8 / 기병 1.5 골드/초, 마구간(CAV-2A)은 기병 ×0.8', () => {
+  it('병종 단가: 병력 1000명당 창 0.3 / 검 0.5 / 기병 1.0 골드/초, 마구간(CAV-2A)은 기병 ×0.8', () => {
     const m = model([], 0);
-    expect([0, 1, 2].map((u) => unitUpkeepPerKilo(m, 1, u as 0 | 1 | 2))).toEqual([0.5, 0.8, 1.5]);
-    // 마구간 CAV-2A(id 37) 보유: 기병 가중 2000 → 1600 = 1.2
+    expect([0, 1, 2].map((u) => unitUpkeepPerKilo(m, 1, u as 0 | 1 | 2))).toEqual([0.3, 0.5, 1.0]);
+    // 마구간 CAV-2A(id 37) 보유: 기병 가중 2000 → 1600 = 0.8
     const withTech = model([], 0);
     withTech.players.get(1)!.techMask = 2 ** 37;
-    expect(unitUpkeepPerKilo(withTech, 1, 2)).toBe(1.2);
-    expect(unitUpkeepPerKilo(withTech, 1, 1)).toBe(0.8);
+    expect(unitUpkeepPerKilo(withTech, 1, 2)).toBe(0.8);
+    expect(unitUpkeepPerKilo(withTech, 1, 1)).toBe(0.5);
   });
 });
