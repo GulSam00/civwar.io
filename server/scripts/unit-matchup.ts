@@ -70,7 +70,7 @@ function addFlag(s: GameState, ownerId: number, unit: number, troops: number, po
   s.ledger.initial += troops * 1000;
   return f;
 }
-function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, troops: number, aCodes: string[] | null, dCodes: string[] | null) {
+function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, troops: number, aCodes: string[] | null, dCodes: string[] | null, dTroops = troops) {
   const s = setup();
   // 중립 평지 두 칸 (인접)
   const W = s.map.width;
@@ -85,7 +85,7 @@ function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, 
   apply(1, aCodes);
   apply(2, dCodes);
   const fa = addFlag(s, 1, aUnit, troops, a, aPosture);
-  const fd = addFlag(s, 2, dUnit, troops, d, dPosture);
+  const fd = addFlag(s, 2, dUnit, dTroops, d, dPosture);
   const out = newOutbox();
   let t = 0;
   while (!fa.routed && !fd.routed && t < 4000) {
@@ -106,11 +106,25 @@ function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, 
   const aLeft = Math.floor(fa.troopsMilli / 1000);
   const dLeft = Math.floor(fd.troopsMilli / 1000);
   const aLost = troops - aLeft;
-  const dLost = troops - dLeft;
+  const dLost = dTroops - dLeft;
   return { sec: Math.round(t * 0.2), aLeft, dLeft, ratio: aLost > 0 ? dLost / aLost : Infinity, winner: fa.routed && fd.routed ? '무승부' : fa.routed ? '방어' : '공격' };
 }
 
 const troops = Number(process.argv[2] ?? 1000);
+if (process.argv[8] === 'curve') {
+  // 병력 우위 곡선: 공격 태세(행) vs 방어 태세(열), 한쪽만 1.5배/2배. 칸 = 승자 잔존 병력 ÷ 승자 초기 병력 % (소요 초)
+  const cell = (au: number, du: number, am: number, dm: number) => {
+    const r = duel(au, POSTURE.ATTACK, du, POSTURE.DEFEND, Math.round(troops * am), null, null, Math.round(troops * dm));
+    const win = r.winner === '공격' ? '공' : r.winner === '방어' ? '방' : '무';
+    const left = r.winner === '공격' ? r.aLeft / (troops * am) : r.winner === '방어' ? r.dLeft / (troops * dm) : 0;
+    return `${win} ${Math.round(left * 100)}% (${r.sec}초)`;
+  };
+  console.log('공격\방어 | 공격 1.5배 | 공격 2배 | 방어 1.5배 | 방어 2배   (공=공격 승, 방=방어 승)');
+  for (const au of [UNIT.SPEAR, UNIT.SWORD, UNIT.CAVALRY]) for (const du of [UNIT.SPEAR, UNIT.SWORD, UNIT.CAVALRY]) {
+    console.log(`${NAME[au]}→${NAME[du]} | ${cell(au, du, 1.5, 1)} | ${cell(au, du, 2, 1)} | ${cell(au, du, 1, 1.5)} | ${cell(au, du, 1, 2)}`);
+  }
+  process.exit(0);
+}
 for (const [title, codesFor] of [['초기 능력치(테크 없음)', () => null], ['최종 능력치(양쪽 최종 경로)', (u: number) => FINAL_BY_UNIT[u]]] as const) {
   console.log(`\n== 동일 병력 ${troops} vs ${troops}, 평지, ${title} — 공격 태세(행) vs 방어 태세(열) ==`);
   console.log('교환비 = 방어측 손실 ÷ 공격측 손실 (>1 이면 공격이 유리), 괄호 = 승자 잔존 병력 · 소요 초');
