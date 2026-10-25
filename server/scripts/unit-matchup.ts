@@ -4,7 +4,7 @@
  * 인자 2 (선택) = 테스트용 기본 능력치 덮어쓰기 "창ATK:창DEF,검ATK:검DEF,기ATK:기DEF" 예) 600:1200,1000:1000,1400:800 — 게임 상수는 건드리지 않고 이 프로세스에서만 바꾼다. 테크는 점수 가산이라 바뀐 기본값에서 증감한다.
  * 업그레이드 = 전투 관련 노드 4개(1티어~4티어) 경로, 테크 효과는 channelValues 의 점수(×10‰) 가산.
  */
-import { MORALE_DROP_PER_TICK, CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
+import { TECH_STAT, MORALE_DROP_PER_TICK, CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, type Flag, type GameState } from '../src/game/state.js';
@@ -16,6 +16,10 @@ const NAME = ['창병', '검병', '기병'];
 const PROTO = process.argv[4] === 'proto';
 // argv[9]='base' 이면 방어 깃발이 자기 기지(수도) 칸 위에 선다 (BASE_BUFF), 공격 깃발은 옆 평지
 const ON_BASE = process.argv[9] === 'base';
+// 시험 전용: 환경변수 MFULL=1200 이면 사기 1000 의 곱을 1200 으로 (MORALE_FULL 상수는 그대로, 테크 '사기 만땅 기세' 슬롯에 차액을 더해 흉내낸다)
+const MFULL_EXTRA = process.env.MFULL ? Number(process.env.MFULL) - 1100 : 0;
+if (MFULL_EXTRA) console.log(`## 시험: 사기 1000 곱 ${1100 + MFULL_EXTRA} (사기 0 은 600 그대로)`);
+const withExtra = (codes: string[] | null): number[] => { const st = [...techStatValues(codes ? maskOf(codes) : 0)]; st[TECH_STAT.MORALE_FULL_BONUS] = (st[TECH_STAT.MORALE_FULL_BONUS] ?? 0) + MFULL_EXTRA; return st; };
 const P_ATK = (process.argv[5] ?? '3,4,6').split(',').map(Number);
 const P_DEF = (process.argv[6] ?? '2,3,5').split(',').map(Number);
 const P_K = Number(process.argv[7] ?? 5);
@@ -48,7 +52,7 @@ const FINAL_BY_UNIT: Record<number, string[]> = {
 };
 
 function chan(unit: number, posture: number, codes: string[] | null): [number, number] {
-  const statPm = techStatValues(codes ? maskOf(codes) : 0);
+  const statPm = withExtra(codes);
   const v = channelValues({ unit, posture, terrain: TERRAIN.PLAIN, onOwnBase: false, troopsMilli: 1_000_000, morale: 1000, disengage: false, statPm });
   return [v[CHANNEL.ATK], v[CHANNEL.DEF]];
 }
@@ -90,7 +94,7 @@ function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, 
     for (const t of s.graph.disk(a, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
     d = a + 1;
   }
-  const apply = (id: number, codes: string[] | null) => { if (codes) { const m = maskOf(codes); s.players[id].techMask = m; s.players[id].statPm = techStatValues(m); } };
+  const apply = (id: number, codes: string[] | null) => { if (codes) s.players[id].techMask = maskOf(codes); if (codes || MFULL_EXTRA) s.players[id].statPm = withExtra(codes); };
   apply(1, aCodes);
   apply(2, dCodes);
   const fa = addFlag(s, 1, aUnit, troops, a, aPosture);
