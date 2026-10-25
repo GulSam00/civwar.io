@@ -5,6 +5,7 @@
 import {
   SHALLOW_MOVE_PERMILLE,
   TERRAIN,
+  TERRAIN_GOLD_ECO4_ADD,
   TERRAIN_GOLD_MILLI,
   TECH_NODE_BASE_COST,
   TECH_NODE_COUNT,
@@ -173,7 +174,8 @@ export function tileGoldWeight(terrain: number, stat: readonly number[]): number
   const w = TERRAIN_GOLD_MILLI[terrain] ?? 0;
   if (w === 0) return 0;
   const bonus = terrain === TERRAIN.PLAIN || terrain === TERRAIN.FERTILE ? (stat[TECH_STAT.GOLD_PLAIN] ?? 0) : (stat[TECH_STAT.GOLD_POOR] ?? 0);
-  return Math.floor((w * (1000 + bonus)) / 1000);
+  const add = (stat[TECH_STAT.GOLD_TERRAIN] ?? 0) > 0 ? (TERRAIN_GOLD_ECO4_ADD[terrain] ?? 0) : 0; // 패치 6차: 국고
+  return Math.floor((w * (1000 + bonus)) / 1000) + add;
 }
 
 /**

@@ -49,26 +49,20 @@ describe('m-5 깃발 state 는 이벤트에서 즉시 갱신 (flagStats 는 1초
   });
 });
 
-describe('m-6 테크 상세 "골드 순수입" = production 합 기준 (기지 골드 포함)', () => {
-  const node = TECH_NODES.find((n) => n.code === 'ECO-4')!; // GOLD 노드
-  const bit = 2 ** node.id;
-  it('incomeNow 가 있으면 그 값이 "지금", 구매 후는 GOLD 스탯 비로 환산', () => {
-    const d = techDetailRows(node, { techMask: 0, goldWeight: 100000, upkeepPm: 0, incomeNow: { net: 12.5, gross: 12.5 } });
-    const row = d.rows[1];
-    expect(row.label).toContain('골드');
-    expect(row.before).toBe('+12.5/초'); // 영토분만 계산하던 때는 기지 골드가 빠져 HUD 와 달랐다
-    const ratio = techStatsOf(bit)[node.stat] / techStatsOf(0)[node.stat];
-    expect(row.after).toBe(`+${(12.5 * ratio).toFixed(1)}/초`);
-    expect(row.changed).toBe(true);
+describe('m-6 테크 상세 — 국고(ECO-4)는 지형별 절대값 (패치 6차)', () => {
+  const node = TECH_NODES.find((n) => n.code === 'ECO-4')!;
+  const id = (c: string) => TECH_NODES.find((n) => n.code === c)!.id;
+  const mask = (...ids: number[]) => ids.reduce((m, i) => m + 2 ** i, 0);
+  it('앞 노드(농경·관개) 퍼센트 보너스를 곱한 값 위에 지형별 가산이 더해진 절대값이 "구매 후"로 보인다', () => {
+    const d = techDetailRows(node, { techMask: mask(id('ECO-1'), id('ECO-2A'), id('ECO-3A')) });
+    expect(d.rows[0].before).toBe('평원 1250 · 비옥 2500 · 언덕 900 · 사막 300 · 산 300');
+    expect(d.rows[0].after).toBe('평원 1450 · 비옥 2900 · 언덕 1000 · 사막 500 · 산 1000');
+    expect(d.rows).toHaveLength(1); // 전체 골드 배율 노드가 아니므로 수입 행은 없다
   });
-  it('이미 보유한 노드: "보유" 쪽이 HUD 값, "없을 때" 는 더 낮다', () => {
-    const d = techDetailRows(node, { techMask: bit, incomeNow: { net: 20, gross: 20 }, goldWeight: 1 });
-    expect(d.rows[1].after).toBe('+20.0/초');
-    expect(parseFloat(d.rows[1].before.slice(1))).toBeLessThan(20);
-  });
-  it('incomeNow 없으면 예전 goldWeight 식 (영토분)', () => {
-    const d = techDetailRows(node, { techMask: 0, goldWeight: 100000, upkeepPm: 0 });
-    expect(d.rows[1].label).toContain('골드 수입');
+  it('이미 보유한 노드: "보유" 쪽이 최종값, "없을 때" 는 더 낮다 (험지 보너스 개간·채굴과도 합산)', () => {
+    const d = techDetailRows(node, { techMask: mask(id('ECO-1'), id('ECO-2B'), id('ECO-3B'), node.id) });
+    expect(d.rows[0].before).toBe('평원 1000 · 비옥 2000 · 언덕 1800 · 사막 600 · 산 600');
+    expect(d.rows[0].after).toBe('평원 1200 · 비옥 2400 · 언덕 1900 · 사막 800 · 산 1300');
   });
 });
 

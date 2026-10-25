@@ -8,7 +8,7 @@
  *   raw(s)   = ω_ATK λ_ATK + ω_DEF λ_DEF
  *   loss(s)  = floor(T * raw(s) / Σraw)       — T = 편 수 * L (총량 불변)
  */
-import { BASE_BUFF, CHANNEL_COUNT, COMBAT_VMIN, DISENGAGE_VALUE_PERMILLE_V2, MORALE_FLOOR, MORALE_FULL, MORALE_MAX, MORALE_MULT_CAP, POSTURE_W, TERRAIN_BUFF, UNIT_STAT } from './constants.js';
+import { BASE_BUFF, CHANNEL_COUNT, COMBAT_VMIN, DEBT_STAT_PERMILLE, DISENGAGE_VALUE_PERMILLE_V2, MORALE_FLOOR, MORALE_FULL, MORALE_MAX, MORALE_MULT_CAP, POSTURE_W, TERRAIN_BUFF, UNIT_STAT } from './constants.js';
 import { TECH_POINT_PERMILLE, techChannelPts, techMoraleFullBonus } from './tech.js';
 
 /** 깃발 한 개의 전투 입력 (서버 Flag / 클라이언트 FlagSnapshot 에서 만든다) */
@@ -21,6 +21,8 @@ export interface CombatFlagInput {
   morale: number; // 0..1000
   disengage: boolean; // 이탈 대기 중
   statPm: readonly number[]; // 소유자 테크 스탯 (TECH_STAT 인덱스)
+  /** 패치 6차: 소유자 골드가 0 미만(빚)이면 채널값 ×DEBT_STAT_PERMILLE */
+  debt?: boolean;
 }
 
 const DEFAULT_STAT: readonly number[] = [];
@@ -45,6 +47,7 @@ export function channelValues(f: CombatFlagInput): number[] {
     let x = Math.floor((unitBase * b) / 1000);
     x = Math.floor((x * mm) / 1000);
     if (f.disengage) x = Math.floor((x * DISENGAGE_VALUE_PERMILLE_V2) / 1000);
+    if (f.debt) x = Math.floor((x * DEBT_STAT_PERMILLE) / 1000);
     out[c] = Math.max(1, x);
   }
   return out;

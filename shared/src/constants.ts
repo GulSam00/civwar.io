@@ -100,7 +100,9 @@ export const MAP_GEN_DEFAULT: Readonly<MapGenConfig> = {
 /** 점령비용 배율. 물은 점령 불가 → 0(미사용) */
 export const TERRAIN_COST_PERMILLE = [0, 1000, 1150, 1300, 800, 1700, 0] as const;
 /** 골드 가중치 */
-export const TERRAIN_GOLD_MILLI = [0, 1000, 2300, 900, 300, 250, 0] as const;
+export const TERRAIN_GOLD_MILLI = [0, 1000, 2000, 900, 300, 300, 0] as const; // 패치 6차 (사용자 2026-10-25): 비옥 2300 → 2000, 산 250 → 300
+/** 패치 6차: 재정 최종 테크(ECO-4 국고)가 지형별로 더하는 골드 가중(퍼센트 보너스를 곱한 뒤 더한다). 기본 + 가산 = 평원 1200 / 비옥 2400 / 언덕 1000 / 사막 500 / 산 1000 */
+export const TERRAIN_GOLD_ECO4_ADD = [0, 200, 400, 100, 200, 700, 0] as const;
 /** "느려짐 배율". v4.5: 물(DEEP·SHALLOW)은 통행 불가 → 조회되지 않음. SHALLOW 5000 은 기록용(커스텀 표시 호환) */
 export const TERRAIN_MOVE_PERMILLE = [0, 1000, 1000, 1250, 1100, 1800, 5000] as const;
 export const SHALLOW_MOVE_PERMILLE = 5000; // v4.5: 미사용 (해상 이동 폐지)
@@ -162,15 +164,19 @@ export const PRODUCTION_DELTA_INTERVAL = 5;
 
 // ══ 약소국 정리 보상 (사용자 2026-10-23, 프로토콜 §31, [A-141]~) ══
 /** 마지막 기지를 점령해 멸망시킨(합병 받는) 플레이어가 받는 보상. 0 = 없음 */
-export const ANNEX_ASSET_PERMILLE = 500; // 멸망자 풀·깃발 병력 인계 비율 ‰
-export const ANNEX_GOLD_PERMILLE = 1000; // 멸망자 골드 인계 비율 ‰
-export const ANNEX_BOUNTY_TROOPS = 100; // 정액 병력 현상금
-export const ANNEX_BOUNTY_GOLD = 100; // 정액 골드 현상금
-export const ANNEX_FULL_PROD = 1; // 1 이면 마지막 기지 점령 시 생산력 ×0.5 면제
+export const ANNEX_ASSET_PERMILLE = 0; // 멸망자 풀·깃발 병력 인계 비율 ‰ (패치 6차: 인계 폐지 — 멸망자 자산은 소멸)
+export const ANNEX_GOLD_PERMILLE = 0; // 멸망자 골드 인계 비율 ‰ (패치 6차: 폐지)
+export const ANNEX_BOUNTY_TROOPS = 0; // 정액 병력 현상금 (패치 6차: 폐지)
+export const ANNEX_BOUNTY_GOLD = 0; // 정액 골드 현상금 (패치 6차: 폐지)
+export const ANNEX_FULL_PROD = 0; // 1 이면 마지막 기지 점령 시 생산력 ×0.5 면제 (패치 6차: 면제 폐지)
+/** 패치 6차 (사용자 2026-10-25) [A]: 정리 보상 = 합병자 자신의 현재 총병력(풀+깃발)의 이 비율 ‰ 만큼 병력 풀 회복(상한까지) */
+export const ANNEX_OWN_TROOPS_PERMILLE = 200;
+/** + 합병자 자신의 현재 골드 순수입 N 초치 (순수입이 0 이하면 0) */
+export const ANNEX_OWN_GOLD_SECONDS = 60;
 
 // ══ v4.5 기지 생산 (사용자 2026-10-15, 프로토콜 §22 — 2026-10-14 "생산 지역" 해석 폐기) ══
 /** 기지 한 칸의 생산 = 영토(평원) 이 칸 수만큼 — 사용자 확정 */
-export const BASE_PROD_TILES = 60;
+export const BASE_PROD_TILES = 50; // 패치 6차: 60 → 50 (일반 기지, 수도는 CAPITAL_PROD_TILES)
 /** 수도 한 칸의 생산 = 영토(평원) 이 칸 수만큼 — 사용자 확정 */
 export const CAPITAL_PROD_TILES = 100;
 /**
@@ -242,6 +248,10 @@ export const FLAG_STALL_TICKS = 25;
 export const GARRISON_UPKEEP_PERMILLE = 90;
 export const GARRISON_UPKEEP_FREE_PERMILLE = 1000;
 export const GARRISON_UPKEEP_MAX_PERMILLE = 700;
+/** 패치 6차 (사용자 2026-10-25) [A]: 골드가 0 미만이면(빚) 전 병종 공격·방어 채널 ×0.7 (모델 2), 점령 속도 ×0.5, 점령(기지 공격 포함) 소모 ×1.5 */
+export const DEBT_STAT_PERMILLE = 700;
+export const DEBT_CAPTURE_SPEED_PERMILLE = 500;
+export const DEBT_CAPTURE_COST_PERMILLE = 1500;
 export const GARRISON_ESCALATE_TICK = 900;
 export const GARRISON_ESCALATE_MAX = 1; // 사용자 기각 — escalate(f) ≡ 1
 
@@ -353,10 +363,11 @@ export const TECH_STAT = {
   GOLD_PLAIN: 47, // 평지·비옥 영토 골드 가산 ‰ (농경 +100 · 관개 +150)
   GOLD_POOR: 48, // 언덕·사막·산 영토 골드 가산 ‰ (개간 +400 · 채굴 +600)
   CONVERT: 49, // 편성비 공통 배율 ‰ (기본 1000, 징발 규정 −50) — 병종별 CONVERT_* 에 곱한다
+  GOLD_TERRAIN: 51, // 패치 6차: 1000 이면 지형별 골드 가산 표(TERRAIN_GOLD_ECO4_ADD) 적용 (국고)
   SIEGE: 50, // 공성: 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (기본 1000, 공성 전술 +100 · 공성 장비 +150). tick 당 피해 상한에도 같은 배율
 } as const;
 export type TechStat = (typeof TECH_STAT)[keyof typeof TECH_STAT];
-export const TECH_STAT_COUNT = 51; // §33: 32 -> 44 (사기 예약 12칸 추가, 앞 32칸 불변), 2026-10-24: 44 -> 47 (기지 3칸)
+export const TECH_STAT_COUNT = 52; // §33: 32 -> 44 (사기 예약 12칸 추가, 앞 32칸 불변), 2026-10-24: 44 -> 47 (기지 3칸)
 /** 무테크 스탯 값 (인덱스 = TECH_STAT). 값 자체가 상수인 스탯은 그 상수를 그대로 쓴다 */
 export const TECH_STAT_BASE: readonly number[] = [
   1000, 1000, 0, 0, 1000, GARRISON_UPKEEP_PERMILLE, 1000, 1000, 1000, SUPPLY_COEF_PERMILLE, // COMBAT_ATK·COMBAT_DEF 는 점수(기본 0)
@@ -373,6 +384,7 @@ export const TECH_STAT_BASE: readonly number[] = [
   1000, 1000, 1000, // BASE_DMG · BASE_RECOVER · BASE_PROD
   0, 0, 1000, // GOLD_PLAIN · GOLD_POOR · CONVERT
   1000, // SIEGE
+  0, // GOLD_TERRAIN
 ];
 
 /** [A-69] 티어별 기본 가격 (인덱스 = tier-1) */
@@ -423,7 +435,7 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 400, name: '개간', desc: '언덕·사막·산 영토 골드 +40%' },
   { id: 9, code: 'ECO-3A', branch: 1, tier: 3, parent: 7, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 150, name: '관개', desc: '평지·비옥 영토 골드 +15%' },
   { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 600, name: '채굴', desc: '언덕·사막·산 영토 골드 +60%' },
-  { id: 11, code: 'ECO-4', branch: 1, tier: 4, parent: 9, parentAlt: 10, stat: TECH_STAT.GOLD, op: 'add', value: 150, name: '국고', desc: '골드 +15%' },
+  { id: 11, code: 'ECO-4', branch: 1, tier: 4, parent: 9, parentAlt: 10, stat: TECH_STAT.GOLD_TERRAIN, op: 'add', value: 1000, name: '국고', desc: '지형별 골드 가중 가산 (평원 +200 · 비옥 +400 · 언덕 +100 · 사막 +200 · 산 +700)' },
   // 행정 TER (12..17) — 2A/2B 양자택일
   { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -60, name: '개척민', desc: '중립 땅 점령비용 −6%' },
   { id: 13, code: 'TER-2A', branch: 2, tier: 2, parent: 12, exclusive: 14, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -80, name: '확장', desc: '중립 땅 점령비용 −8%' },
@@ -590,11 +602,11 @@ export const UNIT_STAT: readonly (readonly number[])[] = [UNIT_ATK_PERMILLE, UNI
  */
 export const TERRAIN_BUFF: readonly (readonly (readonly number[])[])[] = [
   [[1000, 1000], [1000, 1000]], // DEEP (깃발이 서지 않음)
-  [[1000, 1000], [1000, 1000]], // PLAIN
-  [[1000, 1000], [1000, 1050]], // FERTILE
-  [[1100, 1000], [1000, 1300]], // HILLS
-  [[1100, 1000], [1000, 950]], // DESERT
-  [[1000, 1150], [1000, 1600]], // MOUNTAIN
+  [[1050, 1050], [1000, 1000]], // PLAIN    패치 6차 (사용자 2026-10-25): 지형 효과는 전능력(공격·방어 두 채널 같은 배율)
+  [[1050, 1050], [1000, 1000]], // FERTILE  공격 태세 +5%
+  [[1000, 1000], [1100, 1100]], // HILLS    방어 태세 +10%
+  [[900, 900], [900, 900]], // DESERT      태세 무관 −10%
+  [[1000, 1000], [1300, 1300]], // MOUNTAIN 방어 태세 +30%
   [[1000, 1000], [1000, 1000]], // SHALLOW (깃발이 서지 않음)
 ];
 /** BASE_BUFF[태세][채널] ‰ — 자기 기지 칸(수도 포함). 지형 항을 대체하며 두 채널 모두 적용 */

@@ -30,6 +30,7 @@ import {
   type C2S_GameCommand,
   type S2C_CmdAck,
   type S2C_GameOver,
+  TICK_MS,
 } from '@civwar/shared';
 import { allianceTimers, dropPlayerDiplomacy } from './alliance.js';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from './combat.js';
@@ -192,12 +193,18 @@ export function stage12_elimination(state: GameState, t: number, out: Outbox): v
     if (heir && heir.alive) {
       const room = Math.max(0, troopCap(heir) * 1000 - heir.troopsMilli);
       const fromAssets = Math.min(room, Math.floor((assetMilli * ANNEX.assetPermille) / 1000));
-      const bounty = Math.min(room - fromAssets, ANNEX.bountyTroops * 1000);
+      // 패치 6차: 합병자 자신의 현재 총병력(풀+깃발)의 ownTroopsPermille‰ 회복 (상한까지, 새로 생긴 병력 = 회계상 regen)
+      let ownTotal = heir.troopsMilli;
+      for (const f of state.flags) if (f.ownerId === heir.id) ownTotal += f.troopsMilli;
+      const ownRecover = Math.min(room - fromAssets, Math.floor((ownTotal * ANNEX.ownTroopsPermille) / 1000));
+      const bounty = Math.min(room - fromAssets - ownRecover, ANNEX.bountyTroops * 1000) + ownRecover;
       heir.troopsMilli += fromAssets + bounty;
       assetMilli -= fromAssets; // 인계된 만큼은 소멸이 아니다
       state.ledger.regen += bounty; // 새로 생긴 병력 (회계상 생산)
       gotTroops = Math.floor((fromAssets + bounty) / 1000);
-      const g = Math.floor((goldMilli * ANNEX.goldPermille) / 1000) + ANNEX.bountyGold * 1000;
+      // 합병자 자신의 골드 순수입 ownGoldSeconds 초치 (순수입 ≤ 0 이면 0)
+      const ownNet = Math.max(0, computeProduction(state, heir).netMilli) * Math.floor((ANNEX.ownGoldSeconds * 1000) / TICK_MS);
+      const g = Math.floor((goldMilli * ANNEX.goldPermille) / 1000) + ANNEX.bountyGold * 1000 + ownNet;
       heir.goldMilli += g;
       heir.goldEarnedMilli += 0; // 누적 획득 골드(타이브레이커)에는 넣지 않는다
       gotGold = Math.floor(g / 1000);

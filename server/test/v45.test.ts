@@ -218,15 +218,15 @@ describe('v4.5 기지 피해 상한 200/tick (패치 5차: 300 → 200)', () => 
 
 // ───────────────────────── 5. 기지 생산 ─────────────────────────
 
-describe('v4.5 기지 생산 = 영토 60칸분(수도 100칸분) × 생산력, 행 합 = 총합', () => {
+describe('v4.5 기지 생산 = 영토 50칸분(수도 100칸분, 패치 6차: 60 → 50) × 생산력, 행 합 = 총합', () => {
   it('기지 기본 병력 = 기준 390칸 평균 재생 × 환산 칸 × 생산력, 골드 = 평원 칸 × 생산력', () => {
     expect(PROD_REF_REGEN_MILLI).toBe(terrRegenBaseMilli(390));
-    expect(baseRegenBaseMilli(BASE_PROD_TILES, 1000)).toBe(Math.floor((60 * PROD_REF_REGEN_MILLI) / 390));
+    expect(baseRegenBaseMilli(BASE_PROD_TILES, 1000)).toBe(Math.floor((50 * PROD_REF_REGEN_MILLI) / 390));
     expect(baseRegenBaseMilli(CAPITAL_PROD_TILES, 1000)).toBe(Math.floor((100 * PROD_REF_REGEN_MILLI) / 390));
-    expect(baseRegenBaseMilli(BASE_PROD_TILES, 500)).toBe(Math.floor((60 * 500 * PROD_REF_REGEN_MILLI) / (390 * 1000)));
+    expect(baseRegenBaseMilli(BASE_PROD_TILES, 500)).toBe(Math.floor((50 * 500 * PROD_REF_REGEN_MILLI) / (390 * 1000)));
   });
 
-  it('수도 행 tiles = 100, 일반 기지 60, 영토 행 = 전체 칸·생산력 1000. 영토 행만 보면 기존 공식과 같다', () => {
+  it('수도 행 tiles = 100, 일반 기지 50, 영토 행 = 전체 칸·생산력 1000. 영토 행만 보면 기존 공식과 같다', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const B = s.map.baseTiles.filter((b) => s.owners[b] === NEUTRAL).sort((a, b) => s.graph.distance(a, p.homeTileId) - s.graph.distance(b, p.homeTileId))[0];
@@ -238,7 +238,7 @@ describe('v4.5 기지 생산 = 영토 60칸분(수도 100칸분) × 생산력, �
     const other = r.yields.find((y) => y.baseTileId === B)!;
     const terr = r.yields[r.yields.length - 1];
     expect(cap.tiles).toBe(100);
-    expect(other.tiles).toBe(60);
+    expect(other.tiles).toBe(50);
     expect(baseEqTiles(s, p.homeTileId)).toBe(100);
     expect(terr).toMatchObject({ kind: 'territory', baseTileId: -1, tiles: p.tiles, prodPm: 1000 });
     // 기지가 없다면(가상) 영토만 → 기존 economy 식
@@ -246,7 +246,7 @@ describe('v4.5 기지 생산 = 영토 60칸분(수도 100칸분) × 생산력, �
     expect(terrOnly).toBe(regenMilliPerTick(p));
     expect(r.regenMilli).toBeGreaterThan(regenMilliPerTick(p));
     expect(r.grossMilli).toBeGreaterThan(grossGoldMilliPerTick(p));
-    // 수도 기지 생산 > 일반 기지 (100 vs 60칸분)
+    // 수도 기지 생산 > 일반 기지 (100 vs 50칸분)
     expect(cap.troopsMilli).toBeGreaterThan(other.troopsMilli);
     expect(cap.goldGrossMilli).toBeGreaterThan(other.goldGrossMilli);
   });

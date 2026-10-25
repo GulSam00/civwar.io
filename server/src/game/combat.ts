@@ -145,6 +145,7 @@ export function combatInput(state: Readonly<GameState>, f: Readonly<Flag>, disen
     morale: f.morale ?? MORALE_MAX,
     disengage: disengage ?? (f.disengageUntilTick !== null && f.disengageUntilTick !== undefined),
     statPm: state.players[f.ownerId].statPm,
+    debt: state.players[f.ownerId].goldMilli < 0, // 패치 6차: 빚이면 채널값 ×0.7
   };
 }
 

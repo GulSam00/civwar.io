@@ -110,9 +110,14 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '편성비 배율 (전 병종)', before: '×1.00', after: '×0.95' });
   });
   it('실제 값 행: 골드 수입, 슬롯 (콜백)', () => {
-    const g = techDetailRows(nd('ECO-4'), { techMask: 0, goldWeight: 100000, upkeepPm: 0 });
-    expect(g.rows[1].label).toContain('골드 수입');
-    expect(g.rows[1].changed).toBe(true);
+    // 패치 6차: 국고는 퍼센트가 아니라 지형별 절대값을 보인다
+    const g = techDetailRows(nd('ECO-4'), { techMask: 0 });
+    expect(g.rows[0]).toMatchObject({
+      label: '지형별 영토 골드 가중',
+      before: '평원 1000 · 비옥 2000 · 언덕 900 · 사막 300 · 산 300',
+      after: '평원 1200 · 비옥 2400 · 언덕 1000 · 사막 500 · 산 1000',
+      changed: true,
+    });
     const slot = techDetailRows(nd('MOB-4'), { techMask: mask(id('MOB-1'), id('MOB-2A'), id('MOB-3A')), flagCap: (m) => 3 + (techOwned(m, id('MOB-4')) ? 1 : 0) });
     expect(slot.rows[0]).toMatchObject({ before: '+0', after: '+1' });
     expect(slot.rows[1]).toMatchObject({ before: '3', after: '4' });

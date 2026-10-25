@@ -7,6 +7,7 @@
  */
 import {
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
+  TERRAIN_BUFF,
   TERRAIN_COST_PERMILLE,
   TERRAIN_GOLD_MILLI,
   TERRAIN_MOVE_PERMILLE,
@@ -50,8 +51,15 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
   } else {
     add('terrain', '지형', terrain);
     const move = arr(m, 'TERRAIN_MOVE_PERMILLE', TERRAIN_MOVE_PERMILLE)[ter];
-    const def = arr(m, 'COMBAT_TERRAIN_DEF_POSTURE_PERMILLE', COMBAT_TERRAIN_DEF_POSTURE_PERMILLE)[ter];
-    add('defense', '방어', x(def));
+    if (m.config.combatModel === 2) {
+      // 패치 6차: 모델 2 지형 효과 = 태세별 전능력(공격·방어 두 채널) 배율
+      const tb = ((m.config.constants?.TERRAIN_BUFF as readonly (readonly (readonly number[])[])[] | undefined) ?? TERRAIN_BUFF)[ter];
+      const pct = (pm: number) => (pm === 1000 ? '—' : `${pm > 1000 ? '+' : '−'}${Math.abs(pm - 1000) / 10}%`);
+      add('defense', '전투 보정', `공격 태세 ${pct(tb[0][0])} · 방어 태세 ${pct(tb[1][0])}`);
+    } else {
+      const def = arr(m, 'COMBAT_TERRAIN_DEF_POSTURE_PERMILLE', COMBAT_TERRAIN_DEF_POSTURE_PERMILLE)[ter];
+      add('defense', '방어', x(def));
+    }
     add('speed', '이동 속도', x(Math.round(1000000 / move)));
     add('cost', '점령 비용', x(arr(m, 'TERRAIN_COST_PERMILLE', TERRAIN_COST_PERMILLE)[ter]));
     add('gold', '골드', x(arr(m, 'TERRAIN_GOLD_MILLI', TERRAIN_GOLD_MILLI)[ter]));

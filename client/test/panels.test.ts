@@ -20,11 +20,11 @@ describe('테크', () => {
     const custom = [{ ...TECH_NODES[0], name: 'X' }];
     expect(techNodes({ TECH_NODES: custom })[0].name).toBe('X');
   });
-  it('골드 수입 §8 (유지비 차감, 국고 ECO-4 반영)', () => {
+  it('골드 수입 §8 (유지비 차감) — 패치 6차: 국고는 전체 배율이 아니라 지형 가산이라 goldWeight 에 반영', () => {
     const r = goldPerSecond(2700, 0, 0);
     expect(r.gross).toBeCloseTo((Math.floor((2700 * 2080 * 1000) / 1e9) * 5) / 1000, 9);
-    const e = goldPerSecond(100000, 2 ** 11, 0); // ECO-4(id 11) +15%
-    expect(e.gross).toBeCloseTo((Math.floor((100000 * 2080 * 1150) / 1e9) * 5) / 1000, 9);
+    const e = goldPerSecond(100000, 2 ** 11, 0); // ECO-4(id 11) — 배율 불변
+    expect(e.gross).toBeCloseTo((Math.floor((100000 * 2080 * 1000) / 1e9) * 5) / 1000, 9);
     const u = goldPerSecond(100000, 2 ** 11, 300);
     expect(u.net).toBeLessThan(u.gross);
   });

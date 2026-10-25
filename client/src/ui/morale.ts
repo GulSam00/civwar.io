@@ -64,6 +64,7 @@ export function flagCombatInput(g: GameModel, f: FlagSnapshot): CombatFlagInput 
     morale: f.morale ?? MORALE_MAX,
     disengage: f.disengaging,
     statPm: techStatsOf(g.players.get(f.ownerId)?.techMask ?? 0, g.config.constants),
+    debt: (g.players.get(f.ownerId)?.gold ?? 0) < 0, // 패치 6차: 서버 combatInput 과 같다
   };
 }
 

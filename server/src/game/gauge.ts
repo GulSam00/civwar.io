@@ -73,7 +73,7 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
     const X = defX ?? selectAttackTargetRO(state, f);
     if (X === null) continue;
     const c = tileCost(state, f, X);
-    const rawAdv = Math.min(Math.floor((availAP(f) * 1000) / c), maxProgress(f));
+    const rawAdv = Math.min(Math.floor((availAP(f) * 1000) / c), maxProgress(f, state));
     const adv = defX === null ? rawAdv : Math.floor((rawAdv * BASE_DEFENDED_DMG_PERMILLE) / 1000);
     if (adv === 0) continue; // v4.1: 0 전진은 push 가 아니다
     if (state.map.isBase[X]) {

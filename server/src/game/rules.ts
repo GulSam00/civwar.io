@@ -5,6 +5,8 @@
  * (GDD 의 실수 곱 후 ceil 과 같은 값을 내며, 차이는 중간 floor 의 1e-6 미만 절사뿐 — 프로토콜 §10)
  */
 import {
+  DEBT_CAPTURE_COST_PERMILLE,
+  DEBT_CAPTURE_SPEED_PERMILLE,
   ADJACENCY_COEF_PERMILLE,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENEMY_BASE,
@@ -191,6 +193,7 @@ export function tileCost(state: Readonly<GameState>, f: Readonly<Flag>, X: numbe
   v = Math.floor((v * techCaptureMultPm(p.statPm, f.unit)) / 1000);
   v = Math.floor((v * supplyPermille(state, p, X)) / 1000);
   if (state.endgameRushActive) v = Math.floor((v * ENDGAME_RUSH_COST_MULT_PERMILLE) / 1000);
+  if (p.goldMilli < 0) v = Math.floor((v * DEBT_CAPTURE_COST_PERMILLE) / 1000); // 패치 6차: 빚이면 점령 소모 ×1.5 (기지 공격 포함)
   return Math.max(MIN_TILE_COST, ceilMicro(v));
 }
 
@@ -198,8 +201,10 @@ export function availAP(f: Readonly<Flag>): number {
   return Math.floor(Math.min(f.spendBudgetMilli, f.troopsMilli) / 1000);
 }
 
-export function maxProgress(f: Readonly<Flag>): number {
-  return FLAG_TILE_RATE_BASE * UNIT_ASSAULT_PERMILLE[f.unit];
+export function maxProgress(f: Readonly<Flag>, state?: Readonly<GameState>): number {
+  const base = FLAG_TILE_RATE_BASE * UNIT_ASSAULT_PERMILLE[f.unit];
+  // 패치 6차: 빚이면 점령 속도 ×0.5
+  return state && state.players[f.ownerId].goldMilli < 0 ? Math.floor((base * DEBT_CAPTURE_SPEED_PERMILLE) / 1000) : base;
 }
 
 // ───────────────────────── 이동 (4.4) ─────────────────────────

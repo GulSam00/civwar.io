@@ -427,9 +427,6 @@ function TechDetailPanel({
   const detail = techDetailRows(node, {
     consts,
     techMask: viewer.techMask,
-    goldWeight: viewer.goldWeight,
-    upkeepPm: viewer.upkeepPm,
-    incomeNow: incomeOf(g, viewer.id) ?? undefined,
     troopCap: (mask) => g.troopCapOf({ tiles: viewer.tiles, techMask: mask }),
     flagCap: (mask) => g.flagCapOf({ tiles: viewer.tiles, techMask: mask }),
   });

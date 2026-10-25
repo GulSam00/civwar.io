@@ -72,7 +72,8 @@ function eliminateP2(sim: Simulation, victim: { troops: number; gold: number; fl
   return elim;
 }
 
-const LEVERS = { assetPermille: 0, goldPermille: 0, bountyTroops: 0, bountyGold: 0, fullProd: 0 };
+/** 패치 6차: 합병자 자신 기준 보상(own*)도 끈 상태 — 구 레버만 검증하는 테스트의 기준 */
+const LEVERS = { assetPermille: 0, goldPermille: 0, bountyTroops: 0, bountyGold: 0, fullProd: 0, ownTroopsPermille: 0, ownGoldSeconds: 0 };
 
 describe('§31 약소국 정리 보상', () => {
   it('레버가 전부 0 이면 기존 규칙 그대로 — 병력·골드는 소멸, 이벤트 보상 0', () => {
@@ -141,7 +142,7 @@ describe('§31 약소국 정리 보상', () => {
   });
 
   it('합병자가 없으면(남은 땅이 중립으로) 아무도 보상을 받지 않는다 — 이벤트 보상 0', () => {
-    Object.assign(ANNEX, { assetPermille: 1000, goldPermille: 1000, bountyTroops: 150, bountyGold: 100, fullProd: 0 });
+    Object.assign(ANNEX, { ...LEVERS, assetPermille: 1000, goldPermille: 1000, bountyTroops: 150, bountyGold: 100 });
     const sim = makeSim();
     const s = sim.state;
     const p2 = s.players[2];
@@ -155,9 +156,33 @@ describe('§31 약소국 정리 보상', () => {
     expect(ev).toMatchObject({ playerId: 2, byPlayerId: null, bountyTroops: 0, bountyGold: 0 });
   });
 
+  it('패치 6차 기본 보상: 멸망자 자산은 소멸, 합병자는 자신의 현재 총병력 20% 회복 + 골드 순수입 60초치 (면제 없음)', () => {
+    const def = { assetPermille: 0, goldPermille: 0, bountyTroops: 0, bountyGold: 0, fullProd: 0, ownTroopsPermille: 200, ownGoldSeconds: 60 };
+    const scene = (levers: typeof LEVERS | typeof def) => {
+      Object.assign(ANNEX, levers);
+      const sim = makeSim();
+      setPool(sim.state, 1, 100);
+      const elim = eliminateP2(sim, { troops: 60, gold: 90, flagTroops: 40 });
+      return { s: sim.state, elim };
+    };
+    const none = scene(LEVERS);
+    const reward = scene(def);
+    if (reward.elim?.type !== 'player_eliminated') throw new Error('no elimination');
+    const dT = reward.s.players[1].troopsMilli - none.s.players[1].troopsMilli;
+    const dG = reward.s.players[1].goldMilli - none.s.players[1].goldMilli;
+    expect(dT).toBeGreaterThanOrEqual(118_000); // (풀 100 + 점령 깃발 500 + 합병 직전 재생분)의 20%, 상한 여유 안
+    expect(dT).toBeLessThanOrEqual(128_000);
+    expect(dG).toBeGreaterThan(0); // 순수입 60초치 — 멸망자 골드(90)는 받지 않는다
+    expect(reward.elim.bountyTroops).toBe(Math.floor(dT / 1000));
+    expect(reward.elim.bountyGold).toBe(Math.floor(dG / 1000));
+    expect(reward.s.players[2].troopsMilli).toBe(0);
+    expect(reward.s.players[2].goldMilli).toBe(0);
+    expect(ledgerImbalance(reward.s)).toBe(0);
+  });
+
   it('fullProd: 마지막 기지를 점령하면 생산력 ×0.5 면제(100% 유지), 아니면 500', () => {
     for (const full of [0, 1]) {
-      Object.assign(ANNEX, { ...LEVERS, fullProd: full });
+      Object.assign(ANNEX, { ...LEVERS, fullProd: full }); // 패치 6차 기본값은 0 (면제 없음)
       const sim = makeSim();
       const s = sim.state;
       const cap = s.players[2].homeTileId;

@@ -47,8 +47,9 @@ import { isClaimable } from '@civwar/shared';
 
 const NO_TECH = techStatValues(0);
 const T = 2_000_000; // 총량이 충분히 커서 반올림·병력 상한 영향이 없다
+/** 기본 지형 = DEEP(깃발이 서지 않는 칸) — 지형 효과 없음. 패치 6차부터 평원도 공격 태세 +5% 라서 기준 지형으로 쓰지 않는다 */
 function inp(unit: number, posture: number, o: Partial<CombatFlagInput> = {}): CombatFlagInput {
-  return { unit, posture, terrain: TERRAIN.PLAIN, onOwnBase: false, troopsMilli: 3_000_000, morale: MORALE_MAX, disengage: false, statPm: NO_TECH, ...o };
+  return { unit, posture, terrain: TERRAIN.DEEP, onOwnBase: false, troopsMilli: 3_000_000, morale: MORALE_MAX, disengage: false, statPm: NO_TECH, ...o };
 }
 /** 첫 tick 에 a 편(1깃발)이 잃는 비율 % */
 function lossPct(a: CombatFlagInput, d: CombatFlagInput): number {
@@ -80,13 +81,14 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     for (const u of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(u, POSTURE.ATTACK), inp(u, POSTURE.DEFEND)), 50.0, 0.01);
   });
 
-  it('4절 지형 확인: 검병 거울 방어 지형별 공격측 손실 구릉 56.6 / 산 61.5 / 비옥 51.2 / 사막 48.7, 구릉 위 공격 47.6', () => {
+  it('4절 지형 확인 (패치 6차): 검병 거울 방어 지형별 공격측 손실 구릉 54.7 / 산 62.8 / 비옥 50.0 / 사막 44.7, 평지 위 공격 47.6 · 구릉 위 공격 50.0', () => {
     const sw = (ter: number) => lossPct(inp(U.SWORD, POSTURE.ATTACK), inp(U.SWORD, POSTURE.DEFEND, { terrain: ter }));
-    near(sw(TERRAIN.HILLS), 56.6);
-    near(sw(TERRAIN.MOUNTAIN), 61.5);
-    near(sw(TERRAIN.FERTILE), 51.2);
-    near(sw(TERRAIN.DESERT), 48.7);
-    near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.HILLS }), inp(U.SWORD, POSTURE.DEFEND)), 47.6);
+    near(sw(TERRAIN.HILLS), 54.7);
+    near(sw(TERRAIN.MOUNTAIN), 62.8);
+    near(sw(TERRAIN.FERTILE), 50.0);
+    near(sw(TERRAIN.DESERT), 44.7);
+    near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN }), inp(U.SWORD, POSTURE.DEFEND)), 47.6);
+    near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.HILLS }), inp(U.SWORD, POSTURE.DEFEND)), 50.0);
   });
 
   it('2.8 이탈 x0.7: 검병 거울, 이탈 대기 방어 깃발 손실 67.1%', () => {
@@ -116,11 +118,11 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
   it('채널값은 단계마다 floor, 최소 1, 지형표 7행 (공격 태세 / 방어 태세)', () => {
     const exp: Record<number, [number[], number[]]> = {
       [TERRAIN.DEEP]: [[1000, 1000], [1000, 1000]],
-      [TERRAIN.PLAIN]: [[1000, 1000], [1000, 1000]],
-      [TERRAIN.FERTILE]: [[1000, 1000], [1000, 1050]],
-      [TERRAIN.HILLS]: [[1100, 1000], [1000, 1300]],
-      [TERRAIN.DESERT]: [[1100, 1000], [1000, 950]],
-      [TERRAIN.MOUNTAIN]: [[1000, 1150], [1000, 1600]],
+      [TERRAIN.PLAIN]: [[1050, 1050], [1000, 1000]],
+      [TERRAIN.FERTILE]: [[1050, 1050], [1000, 1000]],
+      [TERRAIN.HILLS]: [[1000, 1000], [1100, 1100]],
+      [TERRAIN.DESERT]: [[900, 900], [900, 900]],
+      [TERRAIN.MOUNTAIN]: [[1000, 1000], [1300, 1300]],
       [TERRAIN.SHALLOW]: [[1000, 1000], [1000, 1000]],
     };
     for (const [ter, [atkRow, defRow]] of Object.entries(exp)) {
@@ -128,8 +130,8 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
       expect(channelValues(inp(U.SWORD, POSTURE.ATTACK, { terrain: Number(ter), morale: 800 }))).toEqual(atkRow);
       expect(channelValues(inp(U.SWORD, POSTURE.DEFEND, { terrain: Number(ter), morale: 800 }))).toEqual(defRow);
     }
-    // 단계 floor: 창병(ATK 900) 공격 사막 1.1 -> 990, 사기 m=800(곱 1000) 그대로
-    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { terrain: TERRAIN.DESERT, morale: 800 }))[0]).toBe(Math.floor((900 * 1100) / 1000));
+    // 단계 floor: 창병(ATK 900) 공격 평원 1.05 -> 945, 사기 m=800(곱 1000) 그대로
+    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN, morale: 800 }))[0]).toBe(Math.floor((900 * 1050) / 1000));
     expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { morale: 0 }))[0]).toBe(Math.floor((900 * 600) / 1000));
   });
 
@@ -194,9 +196,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(det.reduce((a, d) => a + d.lossMilli, 0)).toBe(9_000_000);
   });
 
-  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 51, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
-    expect(TECH_STAT_COUNT).toBe(51);
-    expect(NO_TECH.length).toBe(51);
+  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 52, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
+    expect(TECH_STAT_COUNT).toBe(52);
+    expect(NO_TECH.length).toBe(52);
     expect(TECH_STAT_BASE.slice(0, 32).length).toBe(32);
     const f = inp(U.CAVALRY, POSTURE.ATTACK);
     expect(channelValues(f)).toEqual(channelValues({ ...f, statPm: NO_TECH.slice(0, 32) }));
@@ -218,12 +220,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다.
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다.
  */
 const GOLDEN = {
-  G1: { stream: '0863d6b49b9665690fbbab210fe6314d119ea8b285704f9c41c695b91bc2c1c4', state: 'bc80a279e45da2592487293035ff640fab36e660439ac5b24f2f45ada7c73f98' },
-  G2: { stream: 'c41c15f2b1c360b330c93251b7d4ce10d5eb9fd6526d3ba0724ed77501cf300a', state: 'de429ef83e1cbf814ad10f6c77f389f815cf455b9643da3ce1a49c73300f6b73' },
-  G3: { stream: 'c4e5d8d8a6468c430ec75413e94ef6a876e04f1c375e49b10e957a49836d19ed', state: '3c4bdebbb0e047778af0c7bfe0ba1edc153de47d1059b17f73c6a001b897b412' },
+  G1: { stream: 'c5b4f78ec5aa88b735ab4d8f192462825539ad2668d5c7073496f1c8e1f06a12', state: 'baf2e2c54c5370591b588c91a252dfb7cc620b82f6db916cd1c3c7f5b61ce956' },
+  G2: { stream: 'cfcd6b9e423f9bdbe6eabb79aaee983748142d969f4177e5e6d9f337917d27ac', state: '32e126f30eb2ddc29e2c1b586734a31d6d098bf79a95daec095d3d6e5ee61661' },
+  G3: { stream: '7b8c47f4c5554f5069415580440977c06077b8cb0f92a85c95cbcd387294a2c2', state: 'e33d0a371c2459778a958ca4526cbd6c168b086d98456564d168a8446da56e5e' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

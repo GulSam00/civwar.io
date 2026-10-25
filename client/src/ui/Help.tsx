@@ -4,7 +4,10 @@ import {
   ALLIANCE_MIN_DURATION,
   BACKSTAB_COOLDOWN_TICK,
   BASE_HP_DMG_CAP_MILLI_PER_TICK,
+  BASE_BUFF,
   BASE_HP_MILLI,
+  TERRAIN,
+  TERRAIN_BUFF,
   CAPITAL_HP_MILLI,
   BASE_PROD_TILES,
   CAPITAL_PROD_TILES,
@@ -52,6 +55,7 @@ export function Help({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   const drag = useDraggableWindow<HTMLElement>('help', !isNarrowScreen());
   const decaySec = Math.round((1000 / PROGRESS_DECAY_MILLI_PER_TICK) * TICK_MS / 1000);
+  const pctOf = (pm: number) => `${pm >= 1000 ? '+' : '−'}${Math.abs(pm - 1000) / 10}%`;
   const baseMinSec = Math.round(((BASE_HP_MILLI / BASE_HP_DMG_CAP_MILLI_PER_TICK) * TICK_MS) / 1000);
   const capitalMinSec = Math.round(((CAPITAL_HP_MILLI / BASE_HP_DMG_CAP_MILLI_PER_TICK) * TICK_MS) / 1000);
   return (
@@ -99,7 +103,7 @@ export function Help({ onClose }: { onClose: () => void }) {
                 진척도 100% = 1칸 · 중립 칸 비용 {NEUTRAL_BASE} · 미는 중이 아니면 {decaySec}초에 0으로 감소
               </Row>
               <Row k="전투">
-                1칸 이내 접촉 · 0.2초마다 양쪽 −{COMBAT_LOSS_BP / 100}% · 방어 태세 언덕 ×1.3 · 산 ×1.6 · 내 기지 칸 ×1.5
+                1칸 이내 접촉 · 0.2초마다 양쪽 −{COMBAT_LOSS_BP / 100}% · 지형: 평원·비옥 공격 태세 {pctOf(TERRAIN_BUFF[TERRAIN.PLAIN][0][0])} · 언덕 방어 태세 {pctOf(TERRAIN_BUFF[TERRAIN.HILLS][1][0])} · 산 방어 태세 {pctOf(TERRAIN_BUFF[TERRAIN.MOUNTAIN][1][0])} · 사막 {pctOf(TERRAIN_BUFF[TERRAIN.DESERT][0][0])} · 내 기지 칸 ×{(BASE_BUFF[1][1] / 1000).toFixed(1)}
               </Row>
               <Row k="이탈">
                 전투 중 회수·재지정·태세 전환 = 대기 {sec(DISENGAGE_TICKS)} (방어력 ×0.5)

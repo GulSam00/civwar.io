@@ -977,6 +977,11 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           <div className="cs-row">
             점령 소모 <b>{fmtPm(cs.capturePm)}</b>
           </div>
+          {(owner?.gold ?? 0) < 0 && (
+            <div className="cs-row debt-row" data-testid="debt-note">
+              골드 마이너스 — 전투력 −30% · 점령 속도 −50% · 점령 소모 +50%
+            </div>
+          )}
           {mv !== null && (
             <div className="cs-row morale-row" data-testid="flag-morale">
               사기

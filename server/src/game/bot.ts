@@ -65,7 +65,9 @@ import {
   type C2S_GameCommand,
   type Posture,
   type Unit,
+  TICK_MS,
 } from '@civwar/shared';
+import { computeProduction } from './production.js';
 import { tileTieHash } from '../map/rng.js';
 import { ANNEX } from './annex.js';
 import { engageLossPerTick, flagValue } from './combat.js';
@@ -460,7 +462,7 @@ function threatItems(ctx: Ctx): { items: ThreatItem[]; baseTh: [number, number][
     if (g.ownerId === me || g.routed || !pushing(g) || g.targetTileId === null) continue;
     if (!hostilePlayer(state, me, g.ownerId) || state.owners[g.targetTileId] !== me) continue;
     const cost = tileCost(state, g, g.targetTileId);
-    const rate = Math.min(Math.floor((g.initialTroops * FLAG_SPEND_RATE_PERMILLE) / cost), maxProgress(g));
+    const rate = Math.min(Math.floor((g.initialTroops * FLAG_SPEND_RATE_PERMILLE) / cost), maxProgress(g, state));
     items.push({ e: g, tile: g.targetTileId, threat: g.progressMilli + rate * BOT_THREAT_LOOKAHEAD });
   }
   const baseTh: [number, number][] = [];
@@ -510,7 +512,13 @@ function lastBaseBountyScore(ctx: Ctx, o: number, b: number, tq: number, score: 
   if (!victim || victim.baseTiles.length !== 1) return score;
   let assets = victim.troopsMilli;
   for (const f of state.flags) if (f.ownerId === o) assets += f.troopsMilli;
-  const reward = Math.floor((assets * ANNEX.assetPermille) / 1_000_000) + ANNEX.bountyTroops + Math.floor((victim.goldMilli * ANNEX.goldPermille) / 1_000_000) + ANNEX.bountyGold;
+  const mine = state.players[me];
+  let own = mine.troopsMilli;
+  for (const f of state.flags) if (f.ownerId === me) own += f.troopsMilli;
+  const ownGold = Math.max(0, computeProduction(state, mine).netMilli) * Math.floor((ANNEX.ownGoldSeconds * 1000) / TICK_MS);
+  const reward =
+    Math.floor((assets * ANNEX.assetPermille) / 1_000_000) + ANNEX.bountyTroops + Math.floor((victim.goldMilli * ANNEX.goldPermille) / 1_000_000) + ANNEX.bountyGold +
+    Math.floor((own * ANNEX.ownTroopsPermille) / 1_000_000) + Math.floor(ownGold / 1000); // 패치 6차: 합병자 자신의 병력 20% + 순수입 1분치
   if (reward <= 0) return score;
   const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, b, o), b);
   const mass = Math.max(1, Math.min(Math.floor(tq / cost), 3 * plowDepth(tq, cost)));

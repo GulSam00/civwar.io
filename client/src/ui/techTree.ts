@@ -10,6 +10,8 @@
 import {
   TECH_BRANCH_COUNT,
   TECH_STAT,
+  TERRAIN,
+  tileGoldWeight,
   UNIT_ATK_PERMILLE,
   UNIT_DEF_PERMILLE,
   TECH_POINT_PERMILLE,
@@ -23,7 +25,7 @@ import {
   techSpeedPts,
   type TechNodeDef,
 } from '@civwar/shared';
-import { goldPerSecond, techCost, techNodes, techStatsOf } from './techInfo.js';
+import { techCost, techNodes, techStatsOf } from './techInfo.js';
 import { UNIT_NAME } from './text.js';
 
 type Consts = Record<string, unknown> | undefined;
@@ -136,14 +138,6 @@ export interface StatRow {
 export interface TechDetailCtx {
   consts?: Consts;
   techMask: number;
-  /** 골드 수입 행 (ECO) — 없으면 생략 */
-  goldWeight?: number;
-  upkeepPm?: number;
-  /**
-   * 지금 실제 순수입/초 = production.rows 합(incomeOf — 기지 골드·생산력 포함, HUD 와 같은 값). 주면 골드 행이 이 값을 기준으로
-   * 노드 전·후의 GOLD 스탯 비로 환산한다 (영토분 + 기지분 모두 goldPm 에 비례). 없으면 goldWeight 식(영토분만).
-   */
-  incomeNow?: { net: number; gross: number };
   /** 병력 상한 / 깃발 슬롯 실제 값 (GameModel.troopCapOf / flagCapOf) — 없으면 생략 */
   troopCap?: (mask: number) => number;
   flagCap?: (mask: number) => number;
@@ -201,6 +195,20 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   else if (stat === S.BASE_DMG) (label = '기지 체력 피해 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.BASE_RECOVER) (label = '기지 생산력 회복 속도'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.BASE_PROD) (label = '기지 생산 배율 (모든 기지)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.GOLD_TERRAIN)
+    (label = '지형별 영토 골드 가중'),
+      (fmt = (v) =>
+        (
+          [
+            [TERRAIN.PLAIN, '평원'],
+            [TERRAIN.FERTILE, '비옥'],
+            [TERRAIN.HILLS, '언덕'],
+            [TERRAIN.DESERT, '사막'],
+            [TERRAIN.MOUNTAIN, '산'],
+          ] as const
+        )
+          .map(([t, n]) => `${n} ${tileGoldWeight(t, v)}`)
+          .join(' · '));
   else if (stat === S.GOLD_PLAIN) (label = '평지·비옥 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
   else if (stat === S.GOLD_POOR) (label = '언덕·사막·산 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
   else if (stat === S.CONVERT) (label = '편성비 배율 (전 병종)'), (fmt = (v) => x2(v[stat]));
@@ -239,17 +247,6 @@ export function techDetailRows(node: TechNodeDef, ctx: TechDetailCtx): TechDetai
   const rows: StatRow[] = [primaryRow(node.stat, before, after, ctx.consts)];
   if (node.stat === S.COMBAT_ATK) rows.push(combatUnitsRow(false, before, after, ctx.consts));
   if (node.stat === S.COMBAT_DEF) rows.push(combatUnitsRow(true, before, after, ctx.consts));
-  if (node.stat === S.GOLD && ctx.incomeNow) {
-    const cur = techStatsOf(ctx.techMask, ctx.consts)[S.GOLD];
-    const at = (stats: number[]) => (cur > 0 ? (ctx.incomeNow!.net * stats[S.GOLD]) / cur : ctx.incomeNow!.net);
-    const nb = at(before);
-    const na = at(after);
-    rows.push({ label: '골드 순수입 (기지 포함, 지금 영토 기준)', before: `+${nb.toFixed(1)}/초`, after: `+${na.toFixed(1)}/초`, changed: nb.toFixed(1) !== na.toFixed(1) });
-  } else if (node.stat === S.GOLD && ctx.goldWeight !== undefined) {
-    const gb = goldPerSecond(ctx.goldWeight, maskBefore, ctx.upkeepPm ?? 0, ctx.consts).gross;
-    const ga = goldPerSecond(ctx.goldWeight, maskAfter, ctx.upkeepPm ?? 0, ctx.consts).gross;
-    rows.push({ label: '골드 수입 (지금 영토 기준)', before: `+${gb.toFixed(1)}/초`, after: `+${ga.toFixed(1)}/초`, changed: gb !== ga });
-  }
   if (node.stat === S.TROOP_CAP && ctx.troopCap) {
     const b = ctx.troopCap(maskBefore);
     const a = ctx.troopCap(maskAfter);
@@ -276,6 +273,7 @@ export function techScopeText(node: TechNodeDef): string {
   }
   if (s === S.BASE_DMG || s === S.BASE_RECOVER || s === S.BASE_PROD) return '내 기지에 적용';
   if (s === S.GOLD_PLAIN || s === S.GOLD_POOR) return '해당 지형의 내 영토에 적용';
+  if (s === S.GOLD_TERRAIN) return '내 영토 칸당 골드 가중 (절대값, 앞 노드 보너스 포함)';
   if (s === S.SIEGE) return '적 기지를 공격할 때';
   if (s === S.COMBAT_ATK) return '공격 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
   if (s === S.COMBAT_DEF) return '방어 태세 깃발이 적 깃발과 싸울 때 (모든 병종)';
