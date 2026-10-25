@@ -11,6 +11,12 @@ import { createGameState, makeFlag, type Flag, type GameState } from '../src/gam
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창병', '검병', '기병'];
+// 시험 전용: MU_FLOOR="창,검,기" MU_FULL="창,검,기" 이면 병종별 사기 곱(사기 0 / 1000)을 쓴다 (combatMath.moraleMultiplier TEMP 패치가 있을 때만 의미)
+if (process.env.MU_FLOOR && process.env.MU_FULL) {
+  (globalThis as unknown as { __MU?: unknown }).__MU = { floor: process.env.MU_FLOOR.split(',').map(Number), full: process.env.MU_FULL.split(',').map(Number) };
+  console.log(`## 병종별 사기 곱 (사기 0 / 1000): 창 ${process.env.MU_FLOOR.split(',')[0]}/${process.env.MU_FULL.split(',')[0]}, 검 ${process.env.MU_FLOOR.split(',')[1]}/${process.env.MU_FULL.split(',')[1]}, 기 ${process.env.MU_FLOOR.split(',')[2]}/${process.env.MU_FULL.split(',')[2]}`);
+}
+
 // 시제품(게임 코드 미변경): argv[4]='proto' 이면 결투 루프에서 교전 중 사기를 직접 계산한다.
 // 사기 하락/틱 = 병종·태세 고정값 + K × (그 틱 자기 병력 손실 %) — 인자 5~7 로 덮어쓰기 "3,4,6" "2,3,5" "5"
 const PROTO = process.argv[4] === 'proto';

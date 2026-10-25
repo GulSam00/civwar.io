@@ -1,0 +1,27 @@
+diff --git a/shared/src/combatMath.ts b/shared/src/combatMath.ts
+index 0320dd0..510d62c 100644
+--- a/shared/src/combatMath.ts
++++ b/shared/src/combatMath.ts
+@@ -29,9 +29,11 @@ const DEFAULT_STAT: readonly number[] = [];
+ 
+ /** 사기 곱 ‰ = min(CAP, FLOOR + floor((FULL(unit) - FLOOR) * m / 1000)), FULL(unit) = 1100 + 테크 기세 가산. m=1000 -> 1100, 800 -> 1000, 0 -> 600 */
+ export function moraleMultiplier(unit: number, morale: number, statPm: readonly number[] = DEFAULT_STAT): number {
+-  const full = MORALE_FULL + techMoraleFullBonus(statPm, unit);
++  const G = (globalThis as { __MU?: { floor: number[]; full: number[] } }).__MU; // TEMP-PROTOTYPE
++  const FL = G ? G.floor[unit] : MORALE_FLOOR; // TEMP-PROTOTYPE
++  const full = (G ? G.full[unit] : MORALE_FULL) + techMoraleFullBonus(statPm, unit);
+   const m = Math.max(0, Math.min(MORALE_MAX, morale));
+-  const mult = MORALE_FLOOR + Math.floor(((full - MORALE_FLOOR) * m) / 1000);
++  const mult = FL + Math.floor(((full - FL) * m) / 1000);
+   return Math.max(1, Math.min(MORALE_MULT_CAP, mult));
+ }
+ 
+@@ -99,7 +101,7 @@ export function sideLossDetail(sides: readonly (readonly CombatFlagInput[])[], T
+     for (const f of flags) {
+       const a = channelValues(f);
+       sum += f.troopsMilli;
+-      wA += f.troopsMilli * POSTURE_W[f.posture][0];
++      wA += f.troopsMilli * ((globalThis as { __OM?: number[][] }).__OM?.[f.posture]?.[f.unit] ?? POSTURE_W[f.posture][0]); // TEMP-PROTOTYPE
+       mor += f.troopsMilli * f.morale;
+       const w = POSTURE_W[f.posture];
+       pw += f.troopsMilli * Math.max(1, Math.floor((w[0] * a[0] + w[1] * a[1]) / 1000));
