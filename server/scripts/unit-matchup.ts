@@ -1,15 +1,24 @@
 /**
  * 병종 능력치와 동일 병력 평지 교환비 (모델 2): npx tsx server/scripts/unit-matchup.ts [troops=1000]
  * 채널값(ATK/DEF)은 사기 만땅·평지 기준. 결투는 공격 태세(평지) vs 방어 태세(평지)와 조우전(둘 다 공격 태세).
+ * 인자 2 (선택) = 테스트용 기본 능력치 덮어쓰기 "창ATK:창DEF,검ATK:검DEF,기ATK:기DEF" 예) 600:1200,1000:1000,1400:800 — 게임 상수는 건드리지 않고 이 프로세스에서만 바꾼다. 테크는 점수 가산이라 바뀐 기본값에서 증감한다.
  * 업그레이드 = 전투 관련 노드 4개(1티어~4티어) 경로, 테크 효과는 channelValues 의 점수(×10‰) 가산.
  */
-import { CHANNEL, POSTURE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
+import { CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, type Flag, type GameState } from '../src/game/state.js';
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창병', '검병', '기병'];
+if (process.argv[3]) {
+  process.argv[3].split(',').forEach((pair, u) => {
+    const [a, d] = pair.split(':').map(Number);
+    (UNIT_ATK_PERMILLE as unknown as number[])[u] = a;
+    (UNIT_DEF_PERMILLE as unknown as number[])[u] = d;
+  });
+  console.log(`## 테스트용 기본 능력치 덮어쓰기: ${NAME.map((n, u) => `${n} ${UNIT_ATK_PERMILLE[u]}/${UNIT_DEF_PERMILLE[u]}`).join(', ')} (게임 상수는 변경 안 함)`);
+}
 const idOf = (code: string) => TECH_NODES.find((n) => n.code === code)!.id;
 const maskOf = (codes: string[]) => codes.reduce((m, c) => techMaskWith(m, idOf(c)), 0);
 // 병종별 최종 경로(전투 능력치 최대): 창 SPE 방어, 검 A(방어형) / B(공격형), 기병 B(기병창·돌격 기세·철기)
