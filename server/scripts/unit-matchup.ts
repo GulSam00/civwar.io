@@ -4,13 +4,17 @@
  * 인자 2 (선택) = 테스트용 기본 능력치 덮어쓰기 "창ATK:창DEF,검ATK:검DEF,기ATK:기DEF" 예) 600:1200,1000:1000,1400:800 — 게임 상수는 건드리지 않고 이 프로세스에서만 바꾼다. 테크는 점수 가산이라 바뀐 기본값에서 증감한다.
  * 업그레이드 = 전투 관련 노드 4개(1티어~4티어) 경로, 테크 효과는 channelValues 의 점수(×10‰) 가산.
  */
-import { CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
+import { MORALE_DROP_PER_TICK, CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, type Flag, type GameState } from '../src/game/state.js';
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창병', '검병', '기병'];
+if (process.argv[4] === 'nomorale') {
+  (MORALE_DROP_PER_TICK as unknown as number[]).fill(0); // 진단 전용: 교전 중 사기 하락을 끈다
+  console.log('## 진단: 교전 중 사기 하락 없음');
+}
 if (process.argv[3]) {
   process.argv[3].split(',').forEach((pair, u) => {
     const [a, d] = pair.split(':').map(Number);
