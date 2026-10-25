@@ -245,6 +245,12 @@ export const FLAG_EXPOSED_NEUTRAL_MIN_MILLI = 500;
 export const FLAG_STALL_TICKS = 25;
 
 // ══ 주둔 유지비 (골드) ══
+/**
+ * 패치 7차 (사용자 2026-10-25) [A]: 병력 비례 유지비. 출전한 깃발(패주 제외)의 병력 1000명당 골드/초 × 1000(milli) — 창 0.5 / 검 0.8 / 기병 1.5.
+ * 풀(pool) 병력은 무료, 무료 구간 없음. 테크(마구간)가 바꾸는 병종 가중치(UPKEEP_WEIGHT_*)는 기준(UNIT_GARRISON_PERMILLE) 대비 비율로 곱한다.
+ * 순수입 = 총수입 − 유지비 (음수 가능 → 골드가 0 미만이면 빚 패널티, DEBT_*). 아래 GARRISON_UPKEEP_*(계수 방식)는 더 이상 쓰지 않는다(스탯 칸 호환용으로만 남김).
+ */
+export const UNIT_UPKEEP_RATE_MILLI = [500, 800, 1500] as const;
 export const GARRISON_UPKEEP_PERMILLE = 90;
 export const GARRISON_UPKEEP_FREE_PERMILLE = 1000;
 export const GARRISON_UPKEEP_MAX_PERMILLE = 700;
@@ -466,7 +472,7 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 35, code: 'SWO-4', branch: 5, tier: 4, parent: 34, parentAlt: 33, stat: TECH_STAT.MORALE_FULL_BONUS_SWORD, op: 'add', value: 100, name: '백전노장', desc: '검병 사기 만땅 기세 +10%p' },
   // 기병 CAV — 기병 깃발에만 (36..41)
   { id: 36, code: 'CAV-1', branch: 6, tier: 1, parent: null, stat: TECH_STAT.SPEED_CAVALRY, op: 'add', value: 10, name: '군마', desc: '기병 이동 +10' },
-  { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1600, name: '마구간', desc: '기병 유지비 가중치 2.00 → 1.60' },
+  { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1600, name: '마구간', desc: '기병 병력당 유지비 −20% (1000명당 1.5 → 1.2골드/초)' },
   { id: 38, code: 'CAV-2B', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 20, name: '기병창', desc: '기병 공격 +20' },
   { id: 39, code: 'CAV-3A', branch: 6, tier: 3, parent: 37, stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200, name: '역참', desc: '기병 점령 소모 −0.20' },
   { id: 40, code: 'CAV-3B', branch: 6, tier: 3, parent: 38, stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, op: 'add', value: 100, name: '돌격 기세', desc: '기병 사기 만땅 기세 +10%p' },

@@ -16,7 +16,7 @@
  *   분배 = 각 몫 floor, 잔여는 가중치 최대(동률 = 앞) 행에 → 행 합 = 총합 (정확히). 병력 상한은 그대로(전체 칸 수 기준).
  */
 import { CAPITAL_PROD_TILES, BASE_PROD_TILES, GOLD_RATE_PERMILLE, TECH_STAT, techBaseProdPm } from '@civwar/shared';
-import { applyRegenMult, baseGoldWeight, baseRegenBaseMilli, garrisonUpkeepPermille, terrRegenBaseMilli } from './economy.js';
+import { applyRegenMult, baseGoldWeight, baseRegenBaseMilli, garrisonUpkeepMilliPerTick, terrRegenBaseMilli } from './economy.js';
 import { baseProdPm, type GameState, type PlayerState, type ProductionYield } from './state.js';
 
 /** total 을 weights 비례로 floor 분배, 잔여는 가중치 최대(동률 = 앞) 항목에. 합 = total. 가중치 합 0 이면 전부 0 (total 은 첫 항목에) */
@@ -69,8 +69,10 @@ export function computeProduction(state: Readonly<GameState>, p: Readonly<Player
   gw.push(p.goldWeight);
   const sumGW = gw.reduce((a, b) => a + b, 0);
   const grossMilli = Math.floor((sumGW * GOLD_RATE_PERMILLE * p.statPm[TECH_STAT.GOLD]) / 1_000_000_000);
-  const upkeepPm = garrisonUpkeepPermille(state, p);
-  const netMilli = grossMilli - Math.floor((grossMilli * upkeepPm) / 1000);
+  // 패치 7차: 병력 비례 절대 유지비 — 순수입은 음수가 될 수 있다. upkeepPm = 총수입 대비 유지비 ‰ (1000 초과 = 적자, 총수입 0 이면 10000)
+  const upkeepMilli = garrisonUpkeepMilliPerTick(state, p);
+  const netMilli = grossMilli - upkeepMilli;
+  const upkeepPm = grossMilli > 0 ? Math.floor((upkeepMilli * 1000) / grossMilli) : upkeepMilli > 0 ? 10000 : 0;
   const gross = distribute(grossMilli, gw);
   const net = distribute(netMilli, gross);
   const yields: ProductionYield[] = bases.map((b, i) => ({

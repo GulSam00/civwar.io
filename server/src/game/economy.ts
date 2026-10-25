@@ -5,9 +5,9 @@ import {
   FLAG_CAP_BASE,
   FLAG_CAP_HARD_MAX,
   FLAG_TILES_PER_SLOT,
-  GARRISON_ESCALATE_MAX,
-  GARRISON_UPKEEP_FREE_PERMILLE,
-  GARRISON_UPKEEP_MAX_PERMILLE,
+  TICK_MS,
+  UNIT_GARRISON_PERMILLE,
+  UNIT_UPKEEP_RATE_MILLI,
   GOLD_RATE_PERMILLE,
   POSTURE,
   REGEN_BASE_MILLI,
@@ -114,14 +114,22 @@ export function paysUpkeep(f: Readonly<Flag>): boolean {
  * drainPm = min(700, floor(billable × 90 / 1000)).
  * v4.3: 가중치·계수는 플레이어 스탯 — UPKEEP_WEIGHT_<unit>(SPE-2A 450, CAV-3 1300), UPKEEP_COEF(ECO-2B 72). 상한 700 < 1000 → 순증 ≥ 그로스의 30% (순증 ≥ 0 보장 유지).
  */
-export function garrisonUpkeepPermille(state: Readonly<GameState>, p: Readonly<PlayerState>): number {
-  let w = 0;
+/** 패치 7차: 그 플레이어의 병종 단가 (병력 1000명당 milli-골드/초) = 기본 단가 × 테크 가중치 / 기본 가중치 (마구간 1600/2000 = ×0.8) */
+export function unitUpkeepRateMilli(stat: readonly number[], unit: number): number {
+  return Math.floor((UNIT_UPKEEP_RATE_MILLI[unit] * techUpkeepWeight(stat, unit)) / UNIT_GARRISON_PERMILLE[unit]);
+}
+
+/**
+ * 패치 7차: 유지비 milli-골드/tick = Σ (패주 제외 출전 깃발의 병력 × 병종 단가). 풀 병력은 무료, 무료 구간 없음.
+ * 병력 1000명 × 단가 r(milli-골드/초) / 초당 tick → troopsMilli × r / (1000 × 1000 × TICKS_PER_SEC).
+ */
+export function garrisonUpkeepMilliPerTick(state: Readonly<GameState>, p: Readonly<PlayerState>): number {
+  let num = 0;
   for (const f of state.flags) {
     if (f.ownerId !== p.id || !paysUpkeep(f)) continue;
-    w += techUpkeepWeight(p.statPm, f.unit) * GARRISON_ESCALATE_MAX;
+    num += f.troopsMilli * unitUpkeepRateMilli(p.statPm, f.unit);
   }
-  const billable = Math.max(0, w - GARRISON_UPKEEP_FREE_PERMILLE);
-  return Math.min(GARRISON_UPKEEP_MAX_PERMILLE, Math.floor((billable * p.statPm[TECH_STAT.UPKEEP_COEF]) / 1000));
+  return Math.floor(num / (1000 * 1000 * (1000 / TICK_MS)));
 }
 
 export function flagCap(p: Readonly<PlayerState>): number {

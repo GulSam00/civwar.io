@@ -57,7 +57,7 @@ export interface PlayerState {
   troopsMilli: number;
   goldMilli: number;
   goldEarnedMilli: number;
-  upkeepPm: number; // 직전 골드 정산의 주둔 유지비 permille (0..700)
+  upkeepPm: number; // 직전 골드 정산의 유지비 / 총수입 permille (패치 7차: 1000 초과 = 적자)
 
   // 테크
   /** v4.3: 보유 노드 비트마스크 (uint32, 비트 i = TECH_NODES[i]) */

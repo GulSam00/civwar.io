@@ -138,7 +138,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   map_init: { terrain: arr('int'), spawns: arr(obj({ playerId: 'int', tileId: 'int', homeTileId: 'int' })), bases: arr('int'), baseNames: arr('str') },
   snapshot_full: {
     tick: 'int', owners: arr('int'),
-    players: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: range(0, 700), techMask: range(0, Number.MAX_SAFE_INTEGER), techCount: range(0, 32), flagCap: range(3, 7), alive: 'bool', connected: 'bool', allyBreaks: 'int' })),
+    players: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: range(0, Number.MAX_SAFE_INTEGER), techMask: range(0, Number.MAX_SAFE_INTEGER), techCount: range(0, 32), flagCap: range(3, 7), alive: 'bool', connected: 'bool', allyBreaks: 'int' })),
     flags: arr(flagSnap),
     bases: arr(obj({ tileId: 'int', ownerId: 'int', hpPct: range(0, 100), prodPm: range(0, 1000) })),
     alliances: arr(obj({ a: 'int', b: 'int', state: ['enum', 'ACTIVE', 'BREAKING'], sinceTick: 'int', breakAtTick: 'int|null' })),

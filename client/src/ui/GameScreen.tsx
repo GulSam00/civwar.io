@@ -12,7 +12,7 @@ import { terrainInfo, visibleTipRows } from './terrainInfo.js';
 import { TOOLTIP_FIELDS, loadOptions } from './options.js';
 import { OptionsLayer, GearIcon } from './OptionsPanel.js';
 import { PostureIcon, UnitIcon } from './unitIcons.js';
-import { detectRule, nextFlagExtraPm, type UpkeepRule } from './upkeep.js';
+import { unitUpkeepPerKilo } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
@@ -775,7 +775,6 @@ function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: S
  */
 function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputController }) {
   usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
-  const lastRule = useRef<UpkeepRule | null>(null);
   if (!ctl.canCommand()) return null;
   const ix = ctl.ix;
   const g = store.game;
@@ -786,30 +785,26 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
     // §21.4: production 합 (생산력이 깎인 기지 반영). 없으면 예전 식
     const inc = incomeOf(g, me) ?? goldPerSecond(p.goldWeight, p.techMask, p.upkeepPm, g.config.constants);
     const upkeep = Math.max(0, inc.gross - inc.net);
-    const rule = detectRule(g, me, p.upkeepPm);
-    if (rule) lastRule.current = rule;
-    const extra = ([0, 1, 2] as Unit[]).map((u) => nextFlagExtraPm(g, me, rule ?? lastRule.current, u));
-    const showExtra = extra.every((e) => e !== null);
+    const perKilo = ([0, 1, 2] as Unit[]).map((u) => unitUpkeepPerKilo(g, me, u));
     gold = (
       <div className="gold-flow">
         <span>
-          골드 순수입 <b className={inc.net <= 0 ? 'warn-text' : ''}>+{inc.net.toFixed(1)}/초</b>
+          골드 순수입 <b className={inc.net <= 0 || p.gold < 0 ? 'warn-text' : ''}>{inc.net < 0 ? '−' : '+'}{Math.abs(inc.net).toFixed(1)}/초</b>
+          {p.gold < 0 && <b className="warn-text"> · 골드 마이너스</b>}
         </span>
         <span className="muted small">
           총 +{inc.gross.toFixed(1)} · 깃발 유지비 <b className={upkeep > 0 ? 'upkeep' : ''}>−{upkeep.toFixed(1)}/초</b>
-          {p.upkeepPm > 0 && ` (${(p.upkeepPm / 10).toFixed(0)}%)`}
+          {p.upkeepPm > 0 && ` (총수입의 ${(p.upkeepPm / 10).toFixed(0)}%)`}
         </span>
-        {showExtra && (
-          <span className="muted small">
-            다음 깃발 유지비{' '}
-            {extra.map((e, u) => (
-              <span key={u} className="upkeep-unit">
-                <UnitIcon unit={u as Unit} size={13} /> −{((inc.gross * e!) / 1000).toFixed(1)}
-              </span>
-            ))}
-            /초
-          </span>
-        )}
+        <span className="muted small">
+          병력 1000명당 유지비{' '}
+          {perKilo.map((r, u) => (
+            <span key={u} className="upkeep-unit">
+              <UnitIcon unit={u as Unit} size={13} /> −{r.toFixed(1)}
+            </span>
+          ))}
+          /초
+        </span>
       </div>
     );
   }

@@ -71,7 +71,7 @@ import { computeProduction } from './production.js';
 import { tileTieHash } from '../map/rng.js';
 import { ANNEX } from './annex.js';
 import { engageLossPerTick, flagValue } from './combat.js';
-import { flagCap, techCost, troopCap } from './economy.js';
+import { flagCap, techCost, troopCap, unitUpkeepRateMilli } from './economy.js';
 import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 import type { BotBrain } from './tick.js';
@@ -1285,6 +1285,34 @@ function recycle(ctx: Ctx): void {
   if (weak) recall(ctx, weak);
 }
 
+/** 패치 7차: 빚 회피 — 새 깃발이 순수입을 음수로 만들고 2분치 골드가 모자라면 발령하지 않는다 */
+export const BOT_DEBT_HORIZON_TICKS = 600;
+function wouldGoBroke(ctx: Ctx, unit: Unit, troops: number): boolean {
+  const net = computeProduction(ctx.state, ctx.p).netMilli;
+  const extra = Math.floor((troops * 1000 * unitUpkeepRateMilli(ctx.p.statPm, unit)) / (1000 * 1000 * (1000 / TICK_MS)));
+  const after = net - extra;
+  return after < 0 && ctx.p.goldMilli + after * BOT_DEBT_HORIZON_TICKS < 0;
+}
+
+/** 패치 7차: 이미 빚이고 순수입이 음수면 유지비가 가장 큰 비전투·비압박 깃발 하나를 회수한다 */
+function relieveDebt(ctx: Ctx): void {
+  const { state, p } = ctx;
+  if (p.goldMilli >= 0 || computeProduction(state, p).netMilli >= 0) return;
+  let pick: Flag | null = null;
+  let best = 0;
+  for (const f of ctx.mine) {
+    if (!isLive(f) || f.inCombat || f.disengageUntilTick !== null || ctx.touched.has(f.id) || f.state === 'RETURNING') continue;
+    if (f.posture === POSTURE.ATTACK && f.state !== 'IDLE') continue; // 쟁기 중인 공격 깃발은 건드리지 않는다 (recycle 과 같은 규칙)
+    if (f.posture === POSTURE.DEFEND && threatened(state, f)) continue;
+    const cost = f.troopsMilli * unitUpkeepRateMilli(p.statPm, f.unit);
+    if (cost > best) {
+      best = cost;
+      pick = f;
+    }
+  }
+  if (pick) recall(ctx, pick);
+}
+
 /** 8.2 (3) 빈 슬롯 채우기 */
 function fill(ctx: Ctx): void {
   const { state, me, p, params } = ctx;
@@ -1336,6 +1364,7 @@ function fill(ctx: Ctx): void {
       q = Math.min(Math.max(Math.floor((ctx.pool * commit) / 1000), minQ), ctx.pool - reserve, maxIssuable(p, ctx.pool, unit));
     }
     if (q < minQ) break;
+    if (wouldGoBroke(ctx, unit, q)) break; // 패치 7차: 빚 회피
     issue(ctx, unit, q, a.tileId);
     ctx.plannedAttack.push([a.owner, a.tileId]);
   }
@@ -1372,6 +1401,7 @@ export function decideBot(state: Readonly<GameState>, me: number, t: number, par
   maintain(ctx);
   block(ctx);
   recycle(ctx);
+  relieveDebt(ctx); // 패치 7차
   fill(ctx);
   return ctx.cmds;
 }

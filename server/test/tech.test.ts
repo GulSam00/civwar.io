@@ -25,7 +25,7 @@ import {
 } from '@civwar/shared';
 import { generateMapForPlayers } from '../src/map/generate.js';
 import { flagValue } from '../src/game/combat.js';
-import { flagCap, garrisonUpkeepPermille, regenMilliPerTick, troopCap } from '../src/game/economy.js';
+import { flagCap, garrisonUpkeepMilliPerTick, regenMilliPerTick, troopCap } from '../src/game/economy.js';
 import { baseEqTiles } from '../src/game/production.js';
 import { moveCostPermille, speedMilliAt, supplyPermille, tileCost } from '../src/game/rules.js';
 import { buildMatchConfig } from '../src/game/snapshot.js';
@@ -280,14 +280,15 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
 });
 
 describe('v4.6 계산식 연결', () => {
-  it('유지비: CAV-2A 기병 가중치 2000 → 1600', () => {
+  it('유지비(패치 7차 병력 비례): CAV-2A 마구간 기병 가중치 2000 → 1600 = 병력당 단가 ×0.8', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const h = p.homeTileId;
     for (let i = 0; i < 3; i++) addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: h });
-    expect(garrisonUpkeepPermille(s, p)).toBe(450);
+    // 기병 300명 × 1.5골드/초(1000명당) = 0.45골드/초 = 90 milli/tick
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(90);
     giveTech(p, 'CAV-1', 'CAV-2A');
-    expect(garrisonUpkeepPermille(s, p)).toBe(342);
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(72); // 1.2골드/초
   });
   it('유지비 감소가 실제 골드 정산에 들어간다 (같은 깃발, upkeepPm 낮음)', () => {
     const a = makeSim();
@@ -297,8 +298,8 @@ describe('v4.6 계산식 연결', () => {
     giveTech(a.state.players[1]);
     a.step();
     b.step();
-    expect(a.state.players[1].upkeepPm).toBe(450);
-    expect(b.state.players[1].upkeepPm).toBe(342);
+    expect(a.state.players[1].upkeepPm).toBeGreaterThan(b.state.players[1].upkeepPm);
+    expect(b.state.players[1].upkeepPm).toBeGreaterThan(0);
   });
   it('이동속도: 점수 가산 — 병종 CAV-1·SPE-1 (평원, speedMilli = floor(140 × (UNIT + 10 × 점수) / 1000))', () => {
     const s = makeSim().state;

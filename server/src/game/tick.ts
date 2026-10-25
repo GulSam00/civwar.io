@@ -94,7 +94,7 @@ export function stage2_produce(state: GameState): void {
     const net = prod.netMilli;
     p.upkeepPm = prod.upkeepPm;
     p.goldMilli += net;
-    p.goldEarnedMilli += net;
+    p.goldEarnedMilli += Math.max(0, net); // 패치 7차: 순수입이 음수여도 누적 획득 골드(타이브레이커)는 줄지 않는다
   }
 }
 

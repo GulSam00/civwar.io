@@ -4,7 +4,7 @@ import { POSTURE, rleEncode, type FlagSnapshot } from '@civwar/shared';
 import { GameModel } from '../src/state/gameModel.js';
 import { terrainInfo } from '../src/ui/terrainInfo.js';
 import { OWNER_FILL_ALPHA, TERRAIN_RGB, tileRgba } from '../src/render/palette.js';
-import { detectRule, drainPm, nextFlagExtraPm } from '../src/ui/upkeep.js';
+import { unitUpkeepPerKilo } from '../src/ui/upkeep.js';
 
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 1, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: 1, anchorTileId: 2,
@@ -69,21 +69,14 @@ describe('반투명 영토', () => {
   });
 });
 
-describe('하단 바 유지비', () => {
-  it('서버 upkeepPm 과 맞는 규칙을 고르고, 모든 깃발 과금 규칙일 때만 다음 깃발 미리보기', () => {
-    // 검 1000 + 기 2000 = 3000 → (3000−1000)×90/1000 = 180‰
-    const flags = [flag({ id: 1, unit: 1 }), flag({ id: 2, unit: 2 })];
-    expect(drainPm(3000)).toBe(180);
-    const all = model(flags, 180);
-    expect(detectRule(all, 1, 180)).toBe('all');
-    expect(nextFlagExtraPm(all, 1, 'all', 0)).toBe(drainPm(3600) - 180);
-    // 주둔만 과금(종전 규칙): 공격 행군 깃발은 0 → upkeepPm 0
-    const gar = model(flags, 0);
-    expect(detectRule(gar, 1, 0)).toBe('garrison');
-    expect(nextFlagExtraPm(gar, 1, 'garrison', 0)).toBeNull();
-    // 깃발이 없으면 두 규칙이 구분되지 않는다 → null (마지막 판별값 사용)
-    expect(detectRule(model([], 0), 1, 0)).toBeNull();
-    // 식이 맞지 않으면 null (미리보기 숨김)
-    expect(detectRule(all, 1, 77)).toBeNull();
+describe('하단 바 유지비 (패치 7차 — 병력 비례)', () => {
+  it('병종 단가: 병력 1000명당 창 0.5 / 검 0.8 / 기병 1.5 골드/초, 마구간(CAV-2A)은 기병 ×0.8', () => {
+    const m = model([], 0);
+    expect([0, 1, 2].map((u) => unitUpkeepPerKilo(m, 1, u as 0 | 1 | 2))).toEqual([0.5, 0.8, 1.5]);
+    // 마구간 CAV-2A(id 37) 보유: 기병 가중 2000 → 1600 = 1.2
+    const withTech = model([], 0);
+    withTech.players.get(1)!.techMask = 2 ** 37;
+    expect(unitUpkeepPerKilo(withTech, 1, 2)).toBe(1.2);
+    expect(unitUpkeepPerKilo(withTech, 1, 1)).toBe(0.8);
   });
 });
