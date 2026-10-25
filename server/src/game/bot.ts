@@ -115,8 +115,11 @@ export const BOT_PLOW_SPACING = 2;
  * 2026-10-24 [A-167]: 약한 적 우선. 상대 총병력(풀 + 깃발)이 내 총병력의 이 비율(‰) 미만이면 점수 가산(성향 무관, 성향 계수 적용 뒤에 곱함).
  * 비율 0 에서 최대 BOT_WEAK_MAX_PERMILLE, 임계에서 1000 으로 선형. 상한으로 몰려치기 방지. 수치는 추후 밸런스 패치에서 일괄 조정.
  */
-export const BOT_WEAK_RATIO_PERMILLE = 500;
-export const BOT_WEAK_MAX_PERMILLE = 1500;
+/** 패치 9차 (사용자 2026-10-25): 약한 적 기준은 성향 0 → 30%, 1000 → 50% (구 고정 50%), 최대 가중 ×3 (구 ×1.5), 약한 적 대상 발령 병력 ≥ 풀 70% [A] */
+export const BOT_WEAK_RATIO_MIN_PERMILLE = 300;
+export const BOT_WEAK_RATIO_MAX_PERMILLE = 500;
+export const BOT_WEAK_MAX_PERMILLE = 3000;
+export const BOT_COMMIT_WEAK_PERMILLE = 700;
 export const BOT_BASE_GUARD_RADIUS = 4;
 export const BOT_LAST_BASE_GUARD_RADIUS = 8;
 /** v4.4: 마지막 기지가 아닌 기지는 최근 이 tick 안에 체력 피해를 받았을 때만 수비대를 세운다 (8.1 기지 위협의 25 tick 과 같은 눈금) */
@@ -202,6 +205,8 @@ export interface BotKnobs {
   enemyAnchorWeightPermille: number;
   /** 적 공격 발령 병력 비율 ‰ (성향 보간, BOT_COMMIT_ENEMY_MIN..MAX) */
   commitEnemyPermille: number;
+  /** 약한 적 기준 ‰ (내 총병력 대비 상대 총병력이 이 값 미만이면 약한 적) — 성향 보간 BOT_WEAK_RATIO_MIN..MAX */
+  weakRatioPermille: number;
 }
 
 export function botKnobs(params: Readonly<BotDifficultyParams>): BotKnobs {
@@ -219,6 +224,7 @@ export function botKnobs(params: Readonly<BotDifficultyParams>): BotKnobs {
     retreatRatioPermille: lerp(BOT_RETREAT_RATIO_PERMILLE, S.retreatRatioPermille, 0, 2000),
     blockAttackRatioPermille: lerp(BOT_BLOCK_ATTACK_RATIO_PERMILLE, S.blockAttackRatioPermille, 0, 2000),
     enemyAnchorWeightPermille: lerp(BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE, S.enemyAnchorWeightPermille, 100, 5000),
+    weakRatioPermille: BOT_WEAK_RATIO_MIN_PERMILLE + Math.floor((a * (BOT_WEAK_RATIO_MAX_PERMILLE - BOT_WEAK_RATIO_MIN_PERMILLE)) / 1000),
     commitEnemyPermille: lerp(BOT_COMMIT_ENEMY_PERMILLE, S.commitEnemyPermille, BOT_COMMIT_ENEMY_MIN_PERMILLE, BOT_COMMIT_ENEMY_MAX_PERMILLE),
   };
 }
@@ -527,6 +533,24 @@ function lastBaseBountyScore(ctx: Ctx, o: number, b: number, tq: number, score: 
   return Math.floor((score * (mass + gainTiles)) / mass);
 }
 
+/** 내 총병력(풀+깃발) 대비 상대 총병력 ‰ — 약한 적 판정 (scoreAnchor 와 같은 눈금) */
+function foeRatioPermille(ctx: Ctx, o: number): number {
+  const { state, me, p } = ctx;
+  let foe = state.players[o].troopsMilli;
+  let mine = p.troopsMilli;
+  for (const d of state.flags) {
+    if (d.ownerId === me) mine += d.troopsMilli;
+    else if (d.ownerId === o) foe += d.troopsMilli;
+  }
+  return Math.floor((foe * 1000) / Math.max(1, mine));
+}
+
+/** 패치 9차: 적(비중립) 공격 발령 병력 비율 ‰ — 기본(성향 보간) 또는 기지 50%, 약한 적이면 BOT_COMMIT_WEAK 이상으로 한 번에 몰아친다 */
+function enemyCommit(ctx: Ctx, o: number, base: boolean): number {
+  const c = base ? BOT_COMMIT_BASE_PERMILLE : ctx.k.commitEnemyPermille;
+  return o !== NEUTRAL && foeRatioPermille(ctx, o) < ctx.k.weakRatioPermille ? Math.max(c, BOT_COMMIT_WEAK_PERMILLE) : c;
+}
+
 function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, from: number, troops: number): number {
   const { state, me, p, t } = ctx;
   const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, anchor, o), anchor);
@@ -561,8 +585,8 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
     }
     score = Math.floor((score * ctx.k.enemyAnchorWeightPermille) / 1000); // 성향: 적 앵커 선호
     const ratio = Math.floor((foeAssets * 1000) / Math.max(1, myAssets));
-    if (ratio < BOT_WEAK_RATIO_PERMILLE) {
-      const mult = 1000 + Math.floor(((BOT_WEAK_RATIO_PERMILLE - ratio) * (BOT_WEAK_MAX_PERMILLE - 1000)) / BOT_WEAK_RATIO_PERMILLE);
+    if (ratio < ctx.k.weakRatioPermille) {
+      const mult = 1000 + Math.floor(((ctx.k.weakRatioPermille - ratio) * (BOT_WEAK_MAX_PERMILLE - 1000)) / ctx.k.weakRatioPermille);
       score = Math.floor((score * mult) / 1000); // 약한 적 우선(성향 무관)
     }
   }
@@ -651,7 +675,7 @@ function deepAnchor(ctx: Ctx, a: number, troops: number): number {
 
 /** 공격 발령 예상 병력 (점수·깊이용) — fill 의 commit 식 근사 */
 function plannedTroops(ctx: Ctx, o: number): number {
-  const commit = o === NEUTRAL ? BOT_COMMIT_NEUTRAL_PERMILLE : ctx.k.commitEnemyPermille;
+  const commit = o === NEUTRAL ? BOT_COMMIT_NEUTRAL_PERMILLE : enemyCommit(ctx, o, false);
   return Math.max(FLAG_MIN_TROOPS, Math.floor((ctx.pool * commit) / 1000));
 }
 
@@ -678,7 +702,7 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor
 
   const owners = [...border.keys()].sort((a, b) => a - b); // v4.5: 상륙 후보 폐지 — 국경 칸만
   let best: Anchor | null = null;
-  const commitPm = (o: number) => (o === NEUTRAL ? BOT_COMMIT_NEUTRAL_PERMILLE : ctx.k.commitEnemyPermille);
+  const commitPm = (o: number) => (o === NEUTRAL ? BOT_COMMIT_NEUTRAL_PERMILLE : enemyCommit(ctx, o, false));
   for (const o of owners) {
     if (o === excludeOwner || (targeted.get(o) ?? 0) >= 2) continue;
     if (o !== NEUTRAL && !state.players[o].alive) continue;
@@ -727,7 +751,7 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor
       if (o === excludeOwner) continue;
       if (td[b] > BOT_BASE_ATTACK_RANGE || (!neutralBase && (targeted.get(o) ?? 0) >= 2)) continue;
       if (anchors.some(([, at]) => at === b)) continue;
-      const commit = neutralBase ? BOT_COMMIT_NEUTRAL_PERMILLE : BOT_COMMIT_BASE_PERMILLE;
+      const commit = neutralBase ? BOT_COMMIT_NEUTRAL_PERMILLE : enemyCommit(ctx, o, true);
       const tq = troops >= 0 ? troops : Math.max(FLAG_MIN_TROOPS, Math.floor((ctx.pool * commit) / 1000));
       let score = scoreAnchor(ctx, o, b, adjMinTiles, from, tq);
       score = Math.floor((score * (neutralBase ? BOT_NEUTRAL_BASE_WEIGHT_PERMILLE : BOT_BASE_ATTACK_WEIGHT_PERMILLE)) / 1000);
@@ -1329,7 +1353,7 @@ function fill(ctx: Ctx): void {
     const a = bestAnchor(ctx);
     if (!a) break;
     let unit = chooseUnit(ctx, a);
-    const commit = a.kind === 0 ? BOT_COMMIT_NEUTRAL_PERMILLE : a.base ? BOT_COMMIT_BASE_PERMILLE : ctx.k.commitEnemyPermille;
+    const commit = a.kind === 0 ? BOT_COMMIT_NEUTRAL_PERMILLE : enemyCommit(ctx, a.owner, a.base);
     let q = Math.min(Math.max(Math.floor((ctx.pool * commit) / 1000), minQ), ctx.pool - reserve);
     q = Math.min(q, maxIssuable(p, ctx.pool, unit));
     if (q < minQ && unit === UNIT.CAVALRY) {

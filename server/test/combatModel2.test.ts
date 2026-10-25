@@ -223,9 +223,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다.
  */
 const GOLDEN = {
-  G1: { stream: 'd3ab22679659c29a196629d99fbe2374dda1ac0f6979091c889e030cb8bed0fa', state: 'bf024bfa32218e0bd65e4706007c04a033793961a14dd6da5863331b985637be' },
+  G1: { stream: '6362faa53f6ce450a332231eeac8adbe37883240ca2eb5aaa5a7e41ea04d71f0', state: '67938d64397e2c65f16c4d9a752276e5de5b902162a04feb61cec33b3e4a8ebd' },
   G2: { stream: 'dd6657f35d737756e14e248faff294d20f466ed350e524d24c94ad322f82ca19', state: 'b8b7403c2c0ec98668333ccfcfd44d4f991ffbad8313dd345d39e67473aa3c38' },
-  G3: { stream: 'fc4cd1b9abac113dea411cddaa49fbca2096104439d05e194bcdee03a940aa6d', state: '4166b72817697ec364a5170f0921eb9a1217e839566866b09589437f6fda1b45' },
+  G3: { stream: '58b573005db4b12a9df9ce6ce63e30b18195d64a983a9a638c4df58637e55e70', state: '8f8c9864da5a2610d7875c81adc4d05c5b9c2f16c01df0c9cab907561ed62c5d' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

@@ -233,6 +233,13 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     }
     expect(BOT_COMMIT_ENEMY_PERMILLE).toBe(350);
   });
+
+  it('약한 적 기준 (패치 9차): 성향 0 → 30%, 1000 → 50%, 약한 적 최대 가중 ×3', () => {
+    const N = BOT_DIFFICULTY.NORMAL;
+    expect(botKnobs({ ...N, aggressionPermille: 0 }).weakRatioPermille).toBe(300);
+    expect(botKnobs({ ...N, aggressionPermille: 500 }).weakRatioPermille).toBe(400);
+    expect(botKnobs({ ...N, aggressionPermille: 1000 }).weakRatioPermille).toBe(500);
+  });
 });
 
 describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2026-10-10)', () => {
@@ -266,7 +273,7 @@ describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2
     expect([UNIT.CAVALRY, UNIT.SWORD]).toContain(atk!.unit);
     // 풀 1000, 기병 환산 1.15 → maxIssuable 한도 안에서 floor(풀 × 500‰) (먼저 낸 최소 방어선 발령이 풀을 줄일 수 있다)
     expect(atk!.troops).toBeGreaterThanOrEqual(150);
-    expect(atk!.troops).toBeLessThanOrEqual(500);
+    expect(atk!.troops).toBeLessThanOrEqual(700); // 패치 9차: 약한 적이면 풀의 70%까지
   });
 
   it('적 땅·기지 공격 병종은 교전 시도마다 시드 해시 난수 (기병 확률 ≈ BOT_CAVALRY_CHANCE) — 같은 입력이면 같은 결과, 중립은 검병', () => {
