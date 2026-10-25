@@ -112,7 +112,7 @@ function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, 
         if (f.routed || !f.inCombat) continue;
         const lossPct = ((b.troops - f.troopsMilli) / Math.max(1, b.troops)) * 100;
         const drop = (f.posture === POSTURE.DEFEND ? P_DEF : P_ATK)[f.unit] + P_K * lossPct;
-        f.morale = Math.max(0, b.morale - Math.round(drop));
+        f.morale = Math.max(0, b.morale - (process.env.FLOATMORALE ? drop : Math.round(drop))); // FLOATMORALE=1 이면 반올림 없이 소수 사기(손실률을 바꾼 비교용)
       }
     }
   }
