@@ -11,6 +11,13 @@ import { createGameState, makeFlag, type Flag, type GameState } from '../src/gam
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창병', '검병', '기병'];
+// 시제품(게임 코드 미변경): argv[4]='proto' 이면 결투 루프에서 교전 중 사기를 직접 계산한다.
+// 사기 하락/틱 = 병종·태세 고정값 + K × (그 틱 자기 병력 손실 %) — 인자 5~7 로 덮어쓰기 "3,4,6" "2,3,5" "5"
+const PROTO = process.argv[4] === 'proto';
+const P_ATK = (process.argv[5] ?? '3,4,6').split(',').map(Number);
+const P_DEF = (process.argv[6] ?? '2,3,5').split(',').map(Number);
+const P_K = Number(process.argv[7] ?? 5);
+if (PROTO) console.log(`## 시제품 사기: 교전 중 공격 태세 ${P_ATK.join('/')}, 방어 태세 ${P_DEF.join('/')} (창/검/기), 자기 손실 1%당 추가 -${P_K}`);
 if (process.argv[4] === 'nomorale') {
   (MORALE_DROP_PER_TICK as unknown as number[]).fill(0); // 진단 전용: 교전 중 사기 하락을 끈다
   console.log('## 진단: 교전 중 사기 하락 없음');
@@ -84,7 +91,17 @@ function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, 
   while (!fa.routed && !fd.routed && t < 4000) {
     t++;
     s.tick = t;
+    const before = new Map(s.flags.map((f) => [f.id, { troops: f.troopsMilli, morale: f.morale }]));
     stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
+    if (PROTO) {
+      for (const f of s.flags) {
+        const b = before.get(f.id)!;
+        if (f.routed || !f.inCombat) continue;
+        const lossPct = ((b.troops - f.troopsMilli) / Math.max(1, b.troops)) * 100;
+        const drop = (f.posture === POSTURE.DEFEND ? P_DEF : P_ATK)[f.unit] + P_K * lossPct;
+        f.morale = Math.max(0, b.morale - Math.round(drop));
+      }
+    }
   }
   const aLeft = Math.floor(fa.troopsMilli / 1000);
   const dLeft = Math.floor(fd.troopsMilli / 1000);
