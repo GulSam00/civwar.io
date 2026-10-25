@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE, BOT_COMMIT_ENEMY_PERMILLE, BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
+import { BOT_CAVALRY_CHANCE_PERMILLE, BOT_COMMIT_ENEMY_PERMILLE, BOT_DIFFICULTY, MAP_SIZE_PRESETS, POSTURE, TERRAIN, UNIT, isClaimable, type BotDifficultyName, type C2S_GameCommand } from '@civwar/shared';
 import { BOT_DEEP_MAX, BOT_DEEP_MIN, CivBot, botKnobs, chooseUnitFor, decideBot } from '../src/game/bot.js';
 import { generateMap, generateMapForPlayers } from '../src/map/generate.js';
 import { NEUTRAL, botAggressionPermille, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
@@ -194,11 +194,12 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     expect(a.players[2].bot.aggressionPermille).toBe(botAggressionPermille(a.map.seed, 2));
   });
 
-  it('성향 보간: 난이도 기준 ± 띠 (a = 500 이면 기준 그대로)', () => {
+  it('성향 보간 (패치 8차): 예비 병력·적 공격 발령 비율만 변하고 나머지는 기준 고정', () => {
     const N = BOT_DIFFICULTY.NORMAL;
-    expect(botKnobs({ ...N, aggressionPermille: 500 })).toMatchObject({ reserveRatioPermille: 300, minDefenseRatioPermille: 250, maxDefenseRatioPermille: 500, counterMarginPermille: 1200, retreatRatioPermille: 800, blockAttackRatioPermille: 500, enemyAnchorWeightPermille: 1000 });
-    expect(botKnobs({ ...N, aggressionPermille: 0 })).toMatchObject({ reserveRatioPermille: 400, minDefenseRatioPermille: 350, maxDefenseRatioPermille: 700, counterMarginPermille: 1400, retreatRatioPermille: 1000, blockAttackRatioPermille: 300, enemyAnchorWeightPermille: 600 });
-    expect(botKnobs({ ...N, aggressionPermille: 1000 })).toMatchObject({ reserveRatioPermille: 200, minDefenseRatioPermille: 150, maxDefenseRatioPermille: 300, counterMarginPermille: 1000, retreatRatioPermille: 600, blockAttackRatioPermille: 700, enemyAnchorWeightPermille: 1400 });
+    const fixed = { minDefenseRatioPermille: 250, maxDefenseRatioPermille: 500, counterMarginPermille: 1200, retreatRatioPermille: 800, blockAttackRatioPermille: 500, enemyAnchorWeightPermille: 1000 };
+    expect(botKnobs({ ...N, aggressionPermille: 500 })).toMatchObject({ reserveRatioPermille: 300, commitEnemyPermille: 350, ...fixed });
+    expect(botKnobs({ ...N, aggressionPermille: 0 })).toMatchObject({ reserveRatioPermille: 400, commitEnemyPermille: 200, ...fixed });
+    expect(botKnobs({ ...N, aggressionPermille: 1000 })).toMatchObject({ reserveRatioPermille: 200, commitEnemyPermille: 500, ...fixed });
     expect(botKnobs(BOT_DIFFICULTY.HARD)).toMatchObject({ reserveRatioPermille: 200, minDefenseRatioPermille: 300 });
   });
 
@@ -219,17 +220,18 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     };
     const lo = run(0);
     const hi = run(1000);
-    expect(lo.defShare).toBeGreaterThan(hi.defShare + 0.03); // 신중형(성향 0)은 평소 영토 방어 비중이 더 크다 (시드 1001~1003 에서 차이 0.045~0.07. 패치 5차 이후 시드 1000 은 판 흐름이 달라 차이가 -0.004 라 1001 로 옮겼다)
-    expect(hi.attacks).toBeGreaterThan(lo.attacks);
+    expect(lo.attacks).toBeGreaterThan(0); // 패치 8차: 방어 비중은 성향과 무관 (비율 두 값만 다름)
   });
 
-  it('신중형 (2026-10-24): 성향 333 이하만 cautious, 적 공격 발령 비율 70% / 그 외 35%', () => {
-    const p = BOT_DIFFICULTY.NORMAL;
-    for (const [a, cautious] of [[0, true], [333, true], [334, false], [500, false], [1000, false]] as [number, boolean][]) {
-      const k = botKnobs({ ...p, aggressionPermille: a });
-      expect(k.cautious).toBe(cautious);
-      expect(k.commitEnemyPermille).toBe(cautious ? BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE : BOT_COMMIT_ENEMY_PERMILLE);
+  it('비율 상·하한 (패치 8차): 어떤 난이도·성향에서도 예비 150~450‰, 적 발령 200~500‰', () => {
+    for (const d of Object.values(BOT_DIFFICULTY)) for (const a of [0, 250, 500, 750, 1000]) {
+      const k = botKnobs({ ...d, aggressionPermille: a });
+      expect(k.reserveRatioPermille).toBeGreaterThanOrEqual(150);
+      expect(k.reserveRatioPermille).toBeLessThanOrEqual(450);
+      expect(k.commitEnemyPermille).toBeGreaterThanOrEqual(200);
+      expect(k.commitEnemyPermille).toBeLessThanOrEqual(500);
     }
+    expect(BOT_COMMIT_ENEMY_PERMILLE).toBe(350);
   });
 });
 
@@ -261,19 +263,27 @@ describe('v4.2 봇 — 깊은 앵커 [A-65] · 기지 공격 (사용자 확정 2
     const iss = cmds.filter((c) => c.type === 'cmd_flag_issue') as Extract<C2S_GameCommand, { type: 'cmd_flag_issue' }>[];
     const atk = iss.find((c) => c.anchorTileId === b);
     expect(atk).toBeTruthy();
-    expect(atk!.unit).toBe(UNIT.CAVALRY);
+    expect([UNIT.CAVALRY, UNIT.SWORD]).toContain(atk!.unit);
     // 풀 1000, 기병 환산 1.15 → maxIssuable 한도 안에서 floor(풀 × 500‰) (먼저 낸 최소 방어선 발령이 풀을 줄일 수 있다)
     expect(atk!.troops).toBeGreaterThanOrEqual(150);
     expect(atk!.troops).toBeLessThanOrEqual(500);
   });
 
-  it('기지가 적 방어 관할 원 안이면 검병 (밖이면 기병)', () => {
-    // v4.5: 중립 비용이 고정(7)이 되어 결정 전체에서는 싼 중립 땅이 지켜지는 적 기지보다 먼저 뽑힐 수 있다 — 병종 규칙만 직접 확인
+  it('적 땅·기지 공격 병종은 교전 시도마다 시드 해시 난수 (기병 확률 ≈ BOT_CAVALRY_CHANCE) — 같은 입력이면 같은 결과, 중립은 검병', () => {
     const { s, b } = baseScene(true);
     const a = { tileId: b, border: b, owner: 2, kind: 1 as const, base: true };
-    expect(chooseUnitFor(s, 1, s.players[1].bot, a)).toBe(UNIT.CAVALRY);
-    addFlag(s, { ownerId: 2, unit: UNIT.SPEAR, troops: 50, pos: b, anchor: b, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-    expect(chooseUnitFor(s, 1, s.players[1].bot, a)).toBe(UNIT.SWORD);
+    const bot = s.players[1].bot;
+    expect(chooseUnitFor(s, 1, bot, a)).toBe(chooseUnitFor(s, 1, bot, a));
+    expect(chooseUnitFor(s, 1, bot, { ...a, kind: 0 as const, owner: 0 })).toBe(UNIT.SWORD);
+    let cav = 0;
+    const N = 400;
+    for (let t = 0; t < N; t++) {
+      const ctxState = { ...s } as typeof s;
+      if (chooseUnitFor(ctxState, 1, bot, { ...a, tileId: b + t }, t * 15) === UNIT.CAVALRY) cav++;
+    }
+    expect(cav / N).toBeGreaterThan(BOT_CAVALRY_CHANCE_PERMILLE / 1000 - 0.1);
+    expect(cav / N).toBeLessThan(BOT_CAVALRY_CHANCE_PERMILLE / 1000 + 0.1);
+    expect(chooseUnitFor(s, 1, { ...bot, fixedUnit: UNIT.SWORD }, a)).toBe(UNIT.SWORD);
   });
 
   it('공격 발령 앵커는 국경 칸이 아니라 노선 끝점(내 땅에서 4칸 이상) — 깊은 앵커', () => {

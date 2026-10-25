@@ -25,8 +25,12 @@ import {
   BOT_BASE_UNGUARDED_PERMILLE,
   BOT_COMMIT_BASE_PERMILLE,
   BOT_BLOCK_ATTACK_RATIO_PERMILLE,
-  BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE,
-  BOT_CAUTIOUS_MAX_AGGRESSION_PERMILLE,
+  BOT_CAVALRY_CHANCE_PERMILLE,
+  BOT_COMMIT_ENEMY_MAX_PERMILLE,
+  BOT_COMMIT_ENEMY_MIN_PERMILLE,
+  BOT_NEUTRAL_EARLY_MULT_PERMILLE,
+  BOT_RESERVE_RATIO_MAX_PERMILLE,
+  BOT_RESERVE_RATIO_MIN_PERMILLE,
   BOT_COMMIT_ENEMY_PERMILLE,
   BOT_COMMIT_NEUTRAL_PERMILLE,
   BOT_COUNTER_MARGIN_PERMILLE,
@@ -87,7 +91,7 @@ export const BOT_FAR_FRONT_DIST = 12;
  * v4.5 [A-109] (에이전트 선택): 중립 기지 공격 후보 점수 배율. 기지가 영토 60칸분(수도 100칸분)을 생산하게 되어
  * 중립 기지도 별도 후보로 본다(내 땅에서 BOT_BASE_ATTACK_RANGE 안). 적 기지(×2.5, 사용자 확정)보다 낮게 — 지키는 깃발이 없다.
  */
-export const BOT_NEUTRAL_BASE_WEIGHT_PERMILLE = 2000;
+export const BOT_NEUTRAL_BASE_WEIGHT_PERMILLE = 4000; // 패치 8차: 중립 기지 최우선 (구 2000) [A]
 /** 8.6.0 1. 태세 — 제자리 반격 / 굳히기 임계 */
 export const BOT_COUNTERATTACK_TROOPS_PERMILLE = 700;
 export const BOT_CONSOLIDATE_TROOPS_PERMILLE = 400;
@@ -196,9 +200,7 @@ export interface BotKnobs {
   retreatRatioPermille: number;
   blockAttackRatioPermille: number;
   enemyAnchorWeightPermille: number;
-  /** 신중형 (구 수비형): 약한 적만 공격하고 병력을 모아 한 번에 — 2026-10-24 밸런스 패치 [A] */
-  cautious: boolean;
-  /** 적 공격 발령 병력 비율 ‰ (신중형이면 BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE) */
+  /** 적 공격 발령 병력 비율 ‰ (성향 보간, BOT_COMMIT_ENEMY_MIN..MAX) */
   commitEnemyPermille: number;
 }
 
@@ -210,15 +212,14 @@ export function botKnobs(params: Readonly<BotDifficultyParams>): BotKnobs {
   const minDef = lerp(params.minDefenseRatioPermille, S.minDefenseRatioPermille, 0, 1000);
   return {
     aggressionPermille: a,
-    reserveRatioPermille: lerp(params.reserveRatioPermille, S.reserveRatioPermille, 0, 900),
+    reserveRatioPermille: lerp(params.reserveRatioPermille, S.reserveRatioPermille, BOT_RESERVE_RATIO_MIN_PERMILLE, BOT_RESERVE_RATIO_MAX_PERMILLE),
     minDefenseRatioPermille: minDef,
     maxDefenseRatioPermille: lerp(BOT_MAX_DEFENSE_RATIO_PERMILLE, S.maxDefenseRatioPermille, minDef, 1000),
     counterMarginPermille: lerp(BOT_COUNTER_MARGIN_PERMILLE, S.counterMarginPermille, 500, 3000),
     retreatRatioPermille: lerp(BOT_RETREAT_RATIO_PERMILLE, S.retreatRatioPermille, 0, 2000),
     blockAttackRatioPermille: lerp(BOT_BLOCK_ATTACK_RATIO_PERMILLE, S.blockAttackRatioPermille, 0, 2000),
     enemyAnchorWeightPermille: lerp(BOT_ENEMY_ANCHOR_WEIGHT_PERMILLE, S.enemyAnchorWeightPermille, 100, 5000),
-    cautious: a <= BOT_CAUTIOUS_MAX_AGGRESSION_PERMILLE,
-    commitEnemyPermille: a <= BOT_CAUTIOUS_MAX_AGGRESSION_PERMILLE ? BOT_CAUTIOUS_COMMIT_ENEMY_PERMILLE : BOT_COMMIT_ENEMY_PERMILLE,
+    commitEnemyPermille: lerp(BOT_COMMIT_ENEMY_PERMILLE, S.commitEnemyPermille, BOT_COMMIT_ENEMY_MIN_PERMILLE, BOT_COMMIT_ENEMY_MAX_PERMILLE),
   };
 }
 
@@ -526,23 +527,6 @@ function lastBaseBountyScore(ctx: Ctx, o: number, b: number, tq: number, score: 
   return Math.floor((score * (mass + gainTiles)) / mass);
 }
 
-/** 상대 총병력(풀 + 깃발) / 내 총병력 ‰ — scoreAnchor 의 약한 적 판정과 같은 눈금 */
-function foeRatioPermille(ctx: Ctx, o: number): number {
-  const { state, me, p } = ctx;
-  let foe = state.players[o].troopsMilli;
-  let mine = p.troopsMilli;
-  for (const d of state.flags) {
-    if (d.ownerId === me) mine += d.troopsMilli;
-    else if (d.ownerId === o) foe += d.troopsMilli;
-  }
-  return Math.floor((foe * 1000) / Math.max(1, mine));
-}
-
-/** 신중형은 약한 적(BOT_WEAK_RATIO_PERMILLE 미만)만 공격 후보로 본다. 그 외 성향은 항상 true */
-function mayAttackFoe(ctx: Ctx, o: number): boolean {
-  return !ctx.k.cautious || foeRatioPermille(ctx, o) < BOT_WEAK_RATIO_PERMILLE;
-}
-
 function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, from: number, troops: number): number {
   const { state, me, p, t } = ctx;
   const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, anchor, o), anchor);
@@ -566,7 +550,7 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
   }
   let score = Math.floor((mass * 1_000_000) / (cost * (10 + march) * (1 + BOT_GUARD_PENALTY * guardN)));
   if (o === NEUTRAL) {
-    score = Math.floor((score * (t < BOT_NEUTRAL_BIAS_TICK ? 160 : 100)) / 100);
+    score = Math.floor((score * (t < BOT_NEUTRAL_BIAS_TICK ? BOT_NEUTRAL_EARLY_MULT_PERMILLE : 1000)) / 1000);
   } else {
     if (state.players[o].tiles === adjMinTiles) score = Math.floor((score * 130) / 100);
     if (state.players[o].tiles * 2 > p.tiles * 3) score = Math.floor((score * 60) / 100);
@@ -698,7 +682,6 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor
   for (const o of owners) {
     if (o === excludeOwner || (targeted.get(o) ?? 0) >= 2) continue;
     if (o !== NEUTRAL && !state.players[o].alive) continue;
-    if (o !== NEUTRAL && !mayAttackFoe(ctx, o)) continue; // 신중형: 약한 적만
     const pick = (tiles: readonly number[] | undefined): number => {
       if (!tiles) return -1;
       let a = -1;
@@ -742,7 +725,6 @@ function bestAnchor(ctx: Ctx, excludeOwner = -1, from = -1, troops = -1): Anchor
       const neutralBase = o === NEUTRAL;
       if (!neutralBase && (!hostilePlayer(state, me, o) || !state.players[o].alive)) continue;
       if (o === excludeOwner) continue;
-      if (!neutralBase && !mayAttackFoe(ctx, o)) continue; // 신중형: 약한 적만
       if (td[b] > BOT_BASE_ATTACK_RANGE || (!neutralBase && (targeted.get(o) ?? 0) >= 2)) continue;
       if (anchors.some(([, at]) => at === b)) continue;
       const commit = neutralBase ? BOT_COMMIT_NEUTRAL_PERMILLE : BOT_COMMIT_BASE_PERMILLE;
@@ -784,22 +766,12 @@ function currentScore(ctx: Ctx, f: Readonly<Flag>): number {
 
 function chooseUnit(ctx: Ctx, a: Anchor): Unit {
   if (ctx.params.fixedUnit !== null) return ctx.params.fixedUnit as Unit;
-  const { state, p } = ctx;
   if (a.kind === 0) return UNIT.SWORD; // 2026-10-24 밸런스 패치: 중립지 확장은 소모 적은 검병 (구 기병)
-  if (a.base) {
-    // v4.2 기지 공격: 기지가 적 방어 관할 원 안이면 검병, 아니면 기병 (사용자 확정)
-    for (const d of state.flags) if (d.ownerId === a.owner && d.posture === POSTURE.DEFEND && isLive(d) && guardContains(state, d, a.tileId)) return UNIT.SWORD;
-    return UNIT.CAVALRY;
-  }
-  if (state.map.isBase[a.tileId]) return UNIT.CAVALRY;
-  if (state.graph.distance(originFor(state, p, a.border), a.border) > BOT_FAR_FRONT_DIST) return UNIT.CAVALRY;
-  // v4.2 8.7 3a: 점령 속도 = 걷는 속도 → 기병 비중 상향. 국경 칸이 적 방어 관할 원 안일 때만 검병(돌파 지구력)
-  const o = state.owners[a.border];
-  for (const d of state.flags) {
-    if (d.ownerId !== o || d.posture !== POSTURE.DEFEND || !isLive(d)) continue;
-    if (guardContains(state, d, a.border)) return UNIT.SWORD;
-  }
-  return UNIT.CAVALRY;
+  // 패치 8차 (사용자 2026-10-25): 적 땅·적 기지 공격은 교전 시도마다 난수로 기병(공격적 단기전) / 검병(지속전).
+  // 난수 = 맵 시드·내 번호·tick·앵커의 정수 해시 (Math.random 아님 — 같은 상태 → 같은 명령)
+  const salt = (BOT_TIE_SALT ^ Math.imul(ctx.state.map.seed | 0, 0x9e3779b1) ^ Math.imul(ctx.me + 1, 0x85ebca6b)) >>> 0;
+  const roll = tileTieHash(salt, ((ctx.t ?? 0) * 7919 + a.tileId) >>> 0) % 1000;
+  return roll < BOT_CAVALRY_CHANCE_PERMILLE ? UNIT.CAVALRY : UNIT.SWORD;
 }
 
 /** 테스트용: 앵커 하나에 대한 병종 선택 (chooseUnit 이 읽는 state·p·params 만 채운 Ctx) */
@@ -808,8 +780,9 @@ export function chooseUnitFor(
   me: number,
   params: Readonly<BotDifficultyParams>,
   a: Pick<Anchor, 'tileId' | 'border' | 'owner' | 'kind' | 'base'>,
+  t = 0,
 ): Unit {
-  const ctx = { state, me, p: state.players[me], params } as unknown as Ctx;
+  const ctx = { state, me, p: state.players[me], params, t } as unknown as Ctx;
   return chooseUnit(ctx, { ...a, troops: 0, score: 0 });
 }
 
