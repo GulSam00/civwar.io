@@ -14,6 +14,8 @@ const NAME = ['창병', '검병', '기병'];
 // 시제품(게임 코드 미변경): argv[4]='proto' 이면 결투 루프에서 교전 중 사기를 직접 계산한다.
 // 사기 하락/틱 = 병종·태세 고정값 + K × (그 틱 자기 병력 손실 %) — 인자 5~7 로 덮어쓰기 "3,4,6" "2,3,5" "5"
 const PROTO = process.argv[4] === 'proto';
+// argv[9]='base' 이면 방어 깃발이 자기 기지(수도) 칸 위에 선다 (BASE_BUFF), 공격 깃발은 옆 평지
+const ON_BASE = process.argv[9] === 'base';
 const P_ATK = (process.argv[5] ?? '3,4,6').split(',').map(Number);
 const P_DEF = (process.argv[6] ?? '2,3,5').split(',').map(Number);
 const P_K = Number(process.argv[7] ?? 5);
@@ -72,15 +74,22 @@ function addFlag(s: GameState, ownerId: number, unit: number, troops: number, po
 }
 function duel(aUnit: number, aPosture: number, dUnit: number, dPosture: number, troops: number, aCodes: string[] | null, dCodes: string[] | null, dTroops = troops) {
   const s = setup();
-  // 중립 평지 두 칸 (인접)
+  // 중립 평지 두 칸 (인접), ON_BASE 이면 방어는 소유자 2의 수도 칸
   const W = s.map.width;
   let a = -1;
-  for (let t = W * 5 + 5; t < s.owners.length - W * 5; t++) {
-    const disk = s.graph.disk(t, 2);
-    if (disk.every((x) => !s.map.isBase[x] && s.owners[x] === 0 && s.map.terrain[x] !== TERRAIN.DEEP && s.map.terrain[x] !== TERRAIN.SHALLOW)) { a = t; break; }
+  let d = -1;
+  if (ON_BASE) {
+    d = s.players[2].homeTileId;
+    a = s.graph.neighbors(d).find((t) => s.map.terrain[t] !== TERRAIN.DEEP && s.map.terrain[t] !== TERRAIN.SHALLOW && !s.map.isBase[t])!;
+    s.map.terrain[a] = TERRAIN.PLAIN;
+  } else {
+    for (let t = W * 5 + 5; t < s.owners.length - W * 5; t++) {
+      const disk = s.graph.disk(t, 2);
+      if (disk.every((x) => !s.map.isBase[x] && s.owners[x] === 0 && s.map.terrain[x] !== TERRAIN.DEEP && s.map.terrain[x] !== TERRAIN.SHALLOW)) { a = t; break; }
+    }
+    for (const t of s.graph.disk(a, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
+    d = a + 1;
   }
-  for (const t of s.graph.disk(a, 2)) s.map.terrain[t] = TERRAIN.PLAIN;
-  const d = a + 1;
   const apply = (id: number, codes: string[] | null) => { if (codes) { const m = maskOf(codes); s.players[id].techMask = m; s.players[id].statPm = techStatValues(m); } };
   apply(1, aCodes);
   apply(2, dCodes);
