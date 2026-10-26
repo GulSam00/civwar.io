@@ -618,9 +618,9 @@ export const TERRAIN_BUFF: readonly (readonly (readonly number[])[])[] = [
   [[1000, 1000], [1000, 1000]], // DEEP (깃발이 서지 않음)
   [[1050, 1000], [1000, 1000]], // PLAIN    패치 11차 (사용자 2026-10-26): 채널 한정 — 공격 태세일 때 공격력만 +5%
   [[1050, 1000], [1000, 1000]], // FERTILE  공격 태세일 때 공격력만 +5%
-  [[1000, 1000], [1000, 1100]], // HILLS    방어 태세일 때 방어력만 +10%
+  [[1000, 1000], [1000, 1200]], // HILLS    방어 태세일 때 방어력만 +20% (패치 12차: +10% → +20%)
   [[900, 1000], [900, 1000]], // DESERT     태세 무관 공격력만 −10%
-  [[1000, 1000], [1000, 1300]], // MOUNTAIN 방어 태세일 때 방어력만 +30%
+  [[1000, 1000], [1000, 1500]], // MOUNTAIN 방어 태세일 때 방어력만 +50% (패치 12차: +30% → +50%)
   [[1000, 1000], [1000, 1000]], // SHALLOW (깃발이 서지 않음)
 ];
 /** BASE_BUFF[태세][채널] ‰ — 자기 기지 칸(수도 포함). 지형 항을 대체한다. 패치 11차: 방어 태세일 때 방어력만 +20% */
@@ -634,18 +634,21 @@ export const COMBAT_VMIN = 100; // 편 채널값 하한
 export const DISENGAGE_VALUE_PERMILLE_V2 = 700; // 이탈 대기 배율 (현행 500)
 // 사기 (깃발 단위, ‰ 0..1000)
 export const MORALE_MAX = 1000;
-export const MORALE_FLOOR = 600; // 사기 0 의 곱 ‰ (-40%)
-export const MORALE_FULL = 1100; // 사기 1000 의 곱 ‰ (+10%)
+/** 패치 12차 (시제품 A 채택, 사용자 2026-10-26) [A]: 병종별 사기 곱 범위 ‰ — 인덱스 = UNIT (창/검/기). 사기 0 → FLOOR, 1000 → FULL, 사이는 선형 */
+export const MORALE_FLOOR: readonly number[] = [1050, 850, 750];
+export const MORALE_FULL: readonly number[] = [1100, 1200, 1300];
 export const MORALE_MULT_CAP = 1500; // 곱 상한 (테크 기세 가산 후에도)
-/** 교전 tick 당 사기 감소 ‰ — 인덱스 = UNIT (창 3 / 검 6 / 기 10) */
-export const MORALE_DROP_PER_TICK = [3, 6, 10] as const;
+/** 교전 tick 당 사기 고정 감소 ‰ — 인덱스 = UNIT. 공격 태세 창 3 / 검 4 / 기 6 (패치 12차 [A]; 종전 3/6/10 에 방어 ×0.5) */
+export const MORALE_DROP_PER_TICK = [3, 4, 6] as const;
+/** 방어 태세 교전 tick 당 사기 고정 감소 ‰ — 창 2 / 검 3 / 기 5 (패치 12차 [A]) */
+export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 5] as const;
+/** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (패치 12차 [A]) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
+export const MORALE_DROP_LOSS_K = 10;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
 export const MORALE_DELTA_INTERVAL = 5; // 델타 moraleChanged 주기 (tick)
 /** 2026-10-24 [A] 점령·기지 공격(게이지를 미는 tick) 사기 소모 ‰/tick — 병종별 실효 점령 배율(techCaptureMultPm)을 곱한다. 모델 2 전용 */
 export const CAPTURE_MORALE_DROP = 6;
-/** 2026-10-24 밸런스 패치 2차 [A]: 방어 태세 깃발의 교전 중 사기 감소 배율 ‰ (사용자 확정 — 절반). 공격 태세는 1000 */
-export const MORALE_DROP_DEFEND_PERMILLE = 500;
 // 패치 5차: 교전 기지 소모(BASE_COMBAT_DMG_MILLI_PER_TICK) 폐지 — 방어 깃발이 선 기지도 밀 수 있으므로(BASE_DEFENDED_DMG_PERMILLE) 불필요
 /** 2026-10-24 밸런스 패치 4차 [A]: 방어 깃발(전투 가능)이 서 있는 기지를 공격자가 미는 피해 배율 ‰ (사용자 확정 — 절반). 모델 2 전용.
  *  깃발이 없는 기지는 1000. 교전 중인 공격 깃발도 이 경우에 한해 기지를 밀 수 있다 */

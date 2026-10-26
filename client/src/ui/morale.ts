@@ -1,6 +1,6 @@
 /**
  * 사기 표시 (전투 모델 2, §33.4) — 순수 함수. React·Canvas 와 분리해 테스트한다.
- * 사기는 깃발 단위 0~1000‰, 곱은 shared `moraleMultiplier` (만땅 +10% ~ 0 −40%, 800 이 ×1.00 경계).
+ * 사기는 깃발 단위 0~1000‰, 곱은 shared `moraleMultiplier` (패치 12차: 병종별 범위 — 창 1.05~1.10 / 검 0.85~1.20 / 기 0.75~1.30).
  * 서버가 5 tick(1초)마다 보내는 값을 그대로 보인다 — 서버 값이 기준이므로 추정 보간은 하지 않는다.
  */
 import { MORALE_MAX, channelValues, moraleMultiplier, type CombatFlagInput, type FlagSnapshot } from '@civwar/shared';

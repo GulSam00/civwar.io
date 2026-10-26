@@ -9,7 +9,8 @@ import {
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
   DISENGAGE_VALUE_PERMILLE,
-  MORALE_DROP_DEFEND_PERMILLE,
+  MORALE_DROP_DEFEND_PER_TICK,
+  MORALE_DROP_LOSS_K,
   MORALE_DROP_PER_TICK,
   MORALE_MAX,
   MORALE_RECOVER,
@@ -303,9 +304,11 @@ export function stage4a_flagCombatPhaseA(state: Readonly<GameState>, _t: number)
 export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan, t: number, out: Outbox): void {
   const routedNow: number[] = [];
   const brokeAway = new Set<number>();
+  const lossBp = new Map<number, number>(); // 패치 12차: 이번 tick 자기 병력 손실 (만분율) — 사기 감소에 쓴다
   for (const f of state.flags) {
     const l = plan.lossMilliByFlag.get(f.id);
     if (l !== undefined) {
+      if (l > 0 && f.troopsMilli > 0) lossBp.set(f.id, Math.floor((l * 10000) / f.troopsMilli));
       f.troopsMilli -= l;
       state.ledger.combat += l;
       if (l > 0) state.changes.combatLoss.push([f.id, l]); // v4.5 (§22): 델타 combatLoss (flagId ASC — state.flags 순서)
@@ -368,7 +371,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
     else out.broadcast.push({ type: 'flag_unblocked', tick: t, flagId: f.id });
   }
   if (state.combatModel === 2) {
-    stage4c_updateMorale(state, new Set(routedNow)); // §33: 4b 끝, flagId ASC
+    stage4c_updateMorale(state, new Set(routedNow), lossBp); // §33: 4b 끝, flagId ASC
   }
   trackCombatEvents(state, plan, routedNow, brokeAway, t, out);
 }
@@ -377,14 +380,16 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
  * §33 사기 갱신 (모델 2 전용, 4b 마지막 — inCombat 이 확정된 뒤, flagId ASC, 정수 ‰).
  * 교전 중: -drop(unit) (방어 태세는 ×0.5) · 비전투: +3, 자기 기지 칸 위 +10. 이번 tick 패주한 깃발은 건너뛴다(0 유지).
  */
-export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>): void {
+export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>, lossBp: ReadonlyMap<number, number> = new Map()): void {
   for (const f of state.flags) {
     if (skip.has(f.id)) continue;
     const stat = state.players[f.ownerId].statPm;
     if (f.inCombat) {
-      const drop = Math.max(1, Math.floor((MORALE_DROP_PER_TICK[f.unit] * techMoraleDropPm(stat, f.unit)) / 1000));
-      const dropPosture = f.posture === POSTURE.DEFEND ? Math.max(1, Math.ceil((drop * MORALE_DROP_DEFEND_PERMILLE) / 1000)) : drop; // 패치 2차 [A]: 방어 태세는 절반(올림)
-      f.morale = Math.max(0, f.morale - dropPosture);
+      // 패치 12차 [A]: 고정 감소(병종·태세별) + K × 이번 tick 자기 손실 % (손실 만분율 × K ÷ 100, 반올림)
+      const fixed = (f.posture === POSTURE.DEFEND ? MORALE_DROP_DEFEND_PER_TICK : MORALE_DROP_PER_TICK)[f.unit];
+      const byLoss = Math.floor(((lossBp.get(f.id) ?? 0) * MORALE_DROP_LOSS_K + 50) / 100);
+      const drop = Math.max(1, Math.floor(((fixed + byLoss) * techMoraleDropPm(stat, f.unit)) / 1000));
+      f.morale = Math.max(0, f.morale - drop);
     } else {
       const rec = Math.floor(((onOwnBase(state, f) ? MORALE_RECOVER_BASE : MORALE_RECOVER) * techMoraleRecoverPm(stat, f.unit)) / 1000);
       f.morale = Math.min(MORALE_MAX, f.morale + rec);

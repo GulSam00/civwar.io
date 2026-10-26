@@ -30,24 +30,24 @@ function modelWithFlags(combatModel: 1 | 2, morales: number[]) {
 }
 
 describe('사기 표시 (모델 2)', () => {
-  it('사기 곱: 만땅 +10% / 800 ±0% / 0 −40%, 색 구간 800·400', () => {
+  it('사기 곱 (검병, 패치 12차): 만땅 +20% / 800 +13% / 0 −15%, 색 구간 800·400', () => {
     const { g } = modelWithFlags(2, [1000, 800, 300, 0]);
     expect(moraleOn(g)).toBe(true);
     const v = [...g.flags.values()].sort((a, b) => a.slotIndex - b.slotIndex).map((f) => moraleView(g, f)!);
-    expect(v.map((x) => x.deltaPct)).toEqual([10, 0, -25, -40]);
+    expect(v.map((x) => x.deltaPct)).toEqual([20, 13, -4, -15]);
     expect(v.map((x) => x.pct)).toEqual([100, 80, 30, 0]);
     expect(v.map((x) => x.tone)).toEqual(['high', 'high', 'low', 'low']);
-    expect(v[0].text).toBe('사기 100% · 전투력 +10%');
-    expect(v[2].text).toBe('사기 30% · 전투력 −25%');
-    expect(v[1].text).toBe('사기 80% · 전투력 ±0%');
+    expect(v[0].text).toBe('사기 100% · 전투력 +20%');
+    expect(v[2].text).toBe('사기 30% · 전투력 −4%');
+    expect(v[1].text).toBe('사기 80% · 전투력 +13%');
     expect(moraleTone(500)).toBe('mid');
   });
 
   it('지금 전투값: 기지 위 방어 검병 = 병종 방어 1000 x 기지 BASE_BUFF(방어 채널만 1.2) x 사기 곱, 사기가 줄면 값도 준다', () => {
     const { g } = modelWithFlags(2, [800, 0]);
     const [a, b] = [...g.flags.values()].sort((x, y) => x.slotIndex - y.slotIndex);
-    expect(flagChannels(g, a)).toEqual([1000, 1200]); // 사기 800 = ×1.00, 기지 ×1.2 는 방어 채널만 (패치 11차)
-    expect(flagChannels(g, b)).toEqual([600, 720]); // 사기 0 = ×0.60
+    expect(flagChannels(g, a)).toEqual([1130, 1356]); // 사기 800 = 검병 ×1.13, 기지 ×1.2 는 방어 채널만
+    expect(flagChannels(g, b)).toEqual([850, 1020]); // 사기 0 = 검병 ×0.85
   });
 
   it('moraleChanged 델타가 깃발 사기를 갱신하고, 새 깃발(flag_issued)은 만땅으로 시작한다', () => {

@@ -29,9 +29,9 @@ const DEFAULT_STAT: readonly number[] = [];
 
 /** 사기 곱 ‰ = min(CAP, FLOOR + floor((FULL(unit) - FLOOR) * m / 1000)), FULL(unit) = 1100 + 테크 기세 가산. m=1000 -> 1100, 800 -> 1000, 0 -> 600 */
 export function moraleMultiplier(unit: number, morale: number, statPm: readonly number[] = DEFAULT_STAT): number {
-  const full = MORALE_FULL + techMoraleFullBonus(statPm, unit);
+  const full = MORALE_FULL[unit] + techMoraleFullBonus(statPm, unit);
   const m = Math.max(0, Math.min(MORALE_MAX, morale));
-  const mult = MORALE_FLOOR + Math.floor(((full - MORALE_FLOOR) * m) / 1000);
+  const mult = MORALE_FLOOR[unit] + Math.floor(((full - MORALE_FLOOR[unit]) * m) / 1000);
   return Math.max(1, Math.min(MORALE_MULT_CAP, mult));
 }
 

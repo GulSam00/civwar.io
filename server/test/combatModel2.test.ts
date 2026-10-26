@@ -59,20 +59,20 @@ const near = (x: number, y: number, tol = 0.06) => expect(Math.abs(x - y), `${x}
 const U = UNIT;
 
 describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽 동일)', () => {
-  it('2.7 공격 대 방어 평지 손실% 3x3 표 (신규)', () => {
+  it('2.7 공격 대 방어 평지 손실% 3x3 표 (사기 만땅: 패치 12차 병종별 사기 곱 창 1.10 / 검 1.20 / 기 1.30)', () => {
     const rows: [number, number[]][] = [
-      [U.SPEAR, [50.0, 50.25, 52.05]],
-      [U.SWORD, [49.75, 50.0, 51.88]],
-      [U.CAVALRY, [47.95, 48.12, 50.0]],
+      [U.SPEAR, [50.0, 54.54, 59.8]],
+      [U.SWORD, [45.46, 50.0, 55.78]],
+      [U.CAVALRY, [40.2, 44.22, 50.0]],
     ];
     for (const [au, exp] of rows) for (const du of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(au, POSTURE.ATTACK), inp(du, POSTURE.DEFEND)), exp[du]);
   });
 
   it('2.7 공격 대 공격(조우전) 표 — 패치 11차부터 태세 가중이 같아 공격 대 방어 표와 같다', () => {
     const rows: [number, number[]][] = [
-      [U.SPEAR, [50.0, 50.25, 52.05]],
-      [U.SWORD, [49.75, 50.0, 51.88]],
-      [U.CAVALRY, [47.95, 48.12, 50.0]],
+      [U.SPEAR, [50.0, 54.54, 59.8]],
+      [U.SWORD, [45.46, 50.0, 55.78]],
+      [U.CAVALRY, [40.2, 44.22, 50.0]],
     ];
     for (const [au, exp] of rows) for (const du of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(au, POSTURE.ATTACK), inp(du, POSTURE.ATTACK)), exp[du]);
   });
@@ -81,10 +81,10 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     for (const u of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(u, POSTURE.ATTACK), inp(u, POSTURE.DEFEND)), 50.0, 0.01);
   });
 
-  it('4절 지형 확인 (패치 6차): 검병 거울 방어 지형별 공격측 손실 구릉 52.4 / 산 56.4 / 비옥 50.0 / 사막 47.4, 평지 위 공격 48.8 · 구릉 위 공격 50.0 (패치 11차: 지형 채널 한정)', () => {
+  it('4절 지형 확인 (패치 6차): 검병 거울 방어 지형별 공격측 손실 구릉 54.5 / 산 59.6 / 비옥 50.0 / 사막 47.4, 평지 위 공격 48.8 · 구릉 위 공격 50.0 (패치 11차 채널 한정, 12차 구릉 +20% · 산 +50%)', () => {
     const sw = (ter: number) => lossPct(inp(U.SWORD, POSTURE.ATTACK), inp(U.SWORD, POSTURE.DEFEND, { terrain: ter }));
-    near(sw(TERRAIN.HILLS), 52.38);
-    near(sw(TERRAIN.MOUNTAIN), 56.41);
+    near(sw(TERRAIN.HILLS), 54.51);
+    near(sw(TERRAIN.MOUNTAIN), 59.62);
     near(sw(TERRAIN.FERTILE), 50.0);
     near(sw(TERRAIN.DESERT), 47.38);
     near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN }), inp(U.SWORD, POSTURE.DEFEND)), 48.78);
@@ -112,55 +112,58 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     const a = channelValues(inp(U.SPEAR, POSTURE.DEFEND, { onOwnBase: true, terrain: TERRAIN.MOUNTAIN, morale: 800 })); // m=800 -> 사기 곱 1000
     const b = channelValues(inp(U.SPEAR, POSTURE.DEFEND, { onOwnBase: true, terrain: TERRAIN.PLAIN, morale: 800 }));
     expect(a).toEqual(b);
-    expect(b).toEqual([Math.floor((900 * BASE_BUFF[1][0]) / 1000), Math.floor((1100 * BASE_BUFF[1][1]) / 1000)]);
+    const mm = moraleMultiplier(U.SPEAR, 800, NO_TECH); // 패치 12차: 병종별 사기 곱 (창 800 -> 1090)
+    expect(b).toEqual([Math.floor((Math.floor((900 * BASE_BUFF[1][0]) / 1000) * mm) / 1000), Math.floor((Math.floor((1100 * BASE_BUFF[1][1]) / 1000) * mm) / 1000)]);
   });
 
-  it('채널값은 단계마다 floor, 최소 1, 지형표 7행 (공격 태세 / 방어 태세) — 패치 11차: 지형은 한 채널에만', () => {
+  it('채널값은 단계마다 floor, 최소 1, 지형표 7행 (공격 태세 / 방어 태세) — 패치 11차: 지형은 한 채널에만, 12차: 구릉 +20% · 산 +50%', () => {
     const exp: Record<number, [number[], number[]]> = {
       [TERRAIN.DEEP]: [[1000, 1000], [1000, 1000]],
       [TERRAIN.PLAIN]: [[1050, 1000], [1000, 1000]],
       [TERRAIN.FERTILE]: [[1050, 1000], [1000, 1000]],
-      [TERRAIN.HILLS]: [[1000, 1000], [1000, 1100]],
+      [TERRAIN.HILLS]: [[1000, 1000], [1000, 1200]],
       [TERRAIN.DESERT]: [[900, 1000], [900, 1000]],
-      [TERRAIN.MOUNTAIN]: [[1000, 1000], [1000, 1300]],
+      [TERRAIN.MOUNTAIN]: [[1000, 1000], [1000, 1500]],
       [TERRAIN.SHALLOW]: [[1000, 1000], [1000, 1000]],
     };
+    const swm = moraleMultiplier(U.SWORD, 800, NO_TECH); // 검병 800 -> 1130
+    const sc = (row: number[]) => row.map((v) => Math.floor((v * swm) / 1000));
     for (const [ter, [atkRow, defRow]] of Object.entries(exp)) {
-      // 검병: 능력치 1000/1000, 사기 곱은 800 에서 1000 이므로 지형 배율이 그대로 보인다
-      expect(channelValues(inp(U.SWORD, POSTURE.ATTACK, { terrain: Number(ter), morale: 800 }))).toEqual(atkRow);
-      expect(channelValues(inp(U.SWORD, POSTURE.DEFEND, { terrain: Number(ter), morale: 800 }))).toEqual(defRow);
+      // 검병: 능력치 1000/1000 이므로 지형 배율 x 사기 곱(단계마다 floor)이 그대로 보인다
+      expect(channelValues(inp(U.SWORD, POSTURE.ATTACK, { terrain: Number(ter), morale: 800 }))).toEqual(sc(atkRow));
+      expect(channelValues(inp(U.SWORD, POSTURE.DEFEND, { terrain: Number(ter), morale: 800 }))).toEqual(sc(defRow));
     }
-    // 단계 floor: 창병(ATK 900) 공격 평원 1.05 -> 945, 사기 m=800(곱 1000) 그대로
-    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN, morale: 800 }))[0]).toBe(Math.floor((900 * 1050) / 1000));
-    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { morale: 0 }))[0]).toBe(Math.floor((900 * 600) / 1000));
+    // 단계 floor: 창병(ATK 900) 공격 평원 1.05 -> 945, 사기 m=800(창 곱 1090)
+    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN, morale: 800 }))[0]).toBe(Math.floor((Math.floor((900 * 1050) / 1000) * 1090) / 1000));
+    expect(channelValues(inp(U.SPEAR, POSTURE.ATTACK, { morale: 0 }))[0]).toBe(Math.floor((900 * 1050) / 1000));
   });
 
-  it('5.1 사기 곱 경계: m=1000 -> 1100, 800 -> 1000, 0 -> 600, 상한 1500', () => {
-    expect(moraleMultiplier(U.SWORD, 1000, NO_TECH)).toBe(1100);
-    expect(moraleMultiplier(U.SWORD, 800, NO_TECH)).toBe(1000);
-    expect(moraleMultiplier(U.SWORD, 0, NO_TECH)).toBe(600);
+  it('5.1 사기 곱 경계 (패치 12차 병종별): 창 1050~1100 / 검 850~1200 / 기 750~1300, 상한 1500', () => {
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => moraleMultiplier(u, 1000, NO_TECH))).toEqual([1100, 1200, 1300]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => moraleMultiplier(u, 0, NO_TECH))).toEqual([1050, 850, 750]);
+    expect(moraleMultiplier(U.SWORD, 800, NO_TECH)).toBe(1130);
     const st = NO_TECH.slice();
     st[TECH_STAT.MORALE_FULL_BONUS_CAVALRY] = 2000; // 예약 칸에 큰 값을 넣어도
     expect(moraleMultiplier(U.CAVALRY, 1000, st)).toBe(1500);
-    expect(moraleMultiplier(U.SWORD, 1000, st)).toBe(1100); // 다른 병종은 영향 없음
-    st[TECH_STAT.MORALE_FULL_BONUS_CAVALRY] = 100; // T1 기세 +20% (1100 -> 1200)
-    expect(moraleMultiplier(U.CAVALRY, 1000, st)).toBe(1200);
+    expect(moraleMultiplier(U.SWORD, 1000, st)).toBe(1200); // 다른 병종은 영향 없음
+    st[TECH_STAT.MORALE_FULL_BONUS_CAVALRY] = 100; // 돌격 기세 +10%p (1300 -> 1400)
+    expect(moraleMultiplier(U.CAVALRY, 1000, st)).toBe(1400);
   });
 
-  it('5.2 병종별 사기 곱: 10초(50 tick) 창 1025 / 검 950 / 기 850, 20초 기병 600', () => {
+  it('5.2 병종별 사기 곱 (고정 감소만): 10초(50 tick) 창 1092 / 검 1130 / 기 1135, 20초 기병 970', () => {
     const at = (u: number, perTick: number, ticks: number) => moraleMultiplier(u, Math.max(0, 1000 - perTick * ticks), NO_TECH);
-    expect(at(U.SPEAR, 3, 50)).toBe(1025);
-    expect(at(U.SWORD, 6, 50)).toBe(950);
-    expect(at(U.CAVALRY, 10, 50)).toBe(850);
-    expect(at(U.CAVALRY, 10, 100)).toBe(600);
-    expect(at(U.SPEAR, 3, 335)).toBe(600 + Math.floor((500 * 0) / 1000)); // 약 67초에 바닥 (1000 - 1005 -> 0)
+    expect(at(U.SPEAR, 3, 50)).toBe(1092);
+    expect(at(U.SWORD, 4, 50)).toBe(1130);
+    expect(at(U.CAVALRY, 6, 50)).toBe(1135);
+    expect(at(U.CAVALRY, 6, 100)).toBe(970);
+    expect(at(U.SPEAR, 3, 335)).toBe(1050); // 약 67초에 바닥 (1000 - 1005 -> 0)
   });
 
-  it('5.5(a) 사기 소모 후 상성: 기 vs 창 조우전 0초 48.0% → 10초 56.7% (기병 850 / 창 1025) → 20초 68.7% (패치 11차: 공·방 50/50)', () => {
-    const f = (ticks: number) => lossPct(inp(U.CAVALRY, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 10 * ticks) }), inp(U.SPEAR, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 3 * ticks) }));
-    near(f(0), 47.95);
-    near(f(50), 56.71);
-    near(f(100), 68.72);
+  it('5.5(a) 사기 소모 후 상성: 기 vs 창 조우전(고정 감소만) 0초 40.2% → 10초 46.1% → 20초 53.2% (패치 12차 병종별 사기 곱)', () => {
+    const f = (ticks: number) => lossPct(inp(U.CAVALRY, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 6 * ticks) }), inp(U.SPEAR, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 3 * ticks) }));
+    near(f(0), 40.2);
+    near(f(50), 46.13);
+    near(f(100), 53.2);
   });
 
   it('손실 총량 불변: Σloss == T (병력 상한 전), 편 순서를 바꿔도 같은 편 손실(잔여 milli 1~2 제외)', () => {
@@ -182,8 +185,8 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
       [[inp(U.SWORD, POSTURE.ATTACK, { troopsMilli: 3000 }), inp(U.CAVALRY, POSTURE.DEFEND, { troopsMilli: 1000 })], [inp(U.SWORD, POSTURE.ATTACK)]],
       1000,
     );
-    expect(det[0].atk).toBe(Math.floor((3000 * 1100 + 1000 * 1320) / 4000)); // 1155
-    expect(det[0].def).toBe(Math.floor((3000 * 1100 + 1000 * 990) / 4000)); // 1072
+    expect(det[0].atk).toBe(Math.floor((3000 * 1200 + 1000 * 1560) / 4000)); // 1290 (사기 만땅: 검 x1.2 / 기 x1.3)
+    expect(det[0].def).toBe(Math.floor((3000 * 1200 + 1000 * 1170) / 4000)); // 1192
     expect(det[0].troopsMilli).toBe(4000);
   });
 
@@ -437,23 +440,30 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(g.sides[0].morale).toBe(700);
   });
 
-  it('사기 규칙: 교전 tick 마다 창 -3 / 검 -6 / 기 -10, 이탈 완료 후 비전투 +3, 기지 위 +10, 패주 0', () => {
+  it('사기 규칙 (패치 12차): 교전 tick 마다 고정(창 3 / 기 6) + 자기 손실 1%당 10, 이탈 완료 후 비전투 +3, 기지 위 +10, 패주 0', () => {
     const { s, c } = duelState(2);
     const sp = addFlag(s, { ownerId: 1, unit: U.SPEAR, troops: 2000, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const cv = addFlag(s, { ownerId: 2, unit: U.CAVALRY, troops: 2000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const out = newOutbox();
+    const expDrop = (fixed: number, before: number, after: number) => fixed + Math.floor((Math.floor(((before - after) * 10000) / before) * 10 + 50) / 100);
+    let mSp = 1000;
+    let mCv = 1000;
     for (let t = 1; t <= 10; t++) {
       s.tick = t;
+      const [bSp, bCv] = [sp.troopsMilli, cv.troopsMilli];
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
-      expect(sp.morale).toBe(1000 - 3 * t);
-      expect(cv.morale).toBe(1000 - 10 * t);
+      mSp -= expDrop(3, bSp, sp.troopsMilli);
+      mCv -= expDrop(6, bCv, cv.troopsMilli);
+      expect(sp.morale).toBe(mSp);
+      expect(cv.morale).toBe(mCv);
+      expect(1000 - mSp).toBeGreaterThan(3 * t); // 손실 항이 붙는다
     }
     // 전투 종료: 상대를 치워 비전투로 -> 회복 +3 (기지 밖)
     s.flags.splice(s.flags.indexOf(cv), 1);
     s.tick = 11;
     stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 11), 11, out);
     expect(sp.inCombat).toBe(false);
-    expect(sp.morale).toBe(1000 - 30 + 3);
+    expect(sp.morale).toBe(mSp + 3);
     // 자기 기지 위 +10
     const cap = s.players[3].homeTileId;
     const onBase = addFlag(s, { ownerId: 3, unit: U.SWORD, troops: 100, pos: cap, posture: POSTURE.DEFEND, state: 'ENGAGED', morale: 500 });
@@ -468,7 +478,8 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     stage4b_flagCombatPhaseB(s2, stage4a_flagCombatPhaseA(s2, 1), 1, newOutbox());
     expect(weak.routed).toBe(true);
     expect(weak.morale).toBe(0);
-    expect(big.morale).toBe(990);
+    expect(big.morale).toBeLessThanOrEqual(1000 - 6); // 기병 고정 감소 6 + 손실 항
+    expect(big.morale).toBeGreaterThan(950);
   });
 
   it('기지 체력 [A 패치 5차]: 일반·중립 10000 / 처음 수도 15000, 퍼센트는 기지별 최대 기준, 점령 직후 각 최대의 50%, 점령당해도 수도는 수도 체력', () => {
@@ -523,7 +534,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(b.lastDamageTick).toBe(0);
   });
 
-  it('방어 태세는 교전 중 사기가 절반만 줄어든다 [A 패치 2차] (올림, 최소 1): 창 3→2 / 검 6→3 / 기 10→5, 공격 태세는 그대로', () => {
+  it('방어 태세는 교전 중 사기 고정 감소가 더 작다 [A 패치 12차]: 공격 창 3 / 검 4 / 기 6, 방어 창 2 / 검 3 / 기 5 (손실 항 제외)', () => {
     const drop = (unit: 0 | 1 | 2, posture: 0 | 1) => {
       const { s, c } = duelState(2);
       const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture, state: 'ENGAGED' });
@@ -532,10 +543,11 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       s.tick = 1;
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out);
       expect(f.inCombat).toBe(true);
-      return 1000 - f.morale;
+      const lossBp = Math.floor(((3_000_000 - f.troopsMilli) * 10000) / 3_000_000);
+      return 1000 - f.morale - Math.floor((lossBp * 10 + 50) / 100); // 손실 항을 뺀 고정 감소
     };
     expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 5]);
-    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 6, 10]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 6]);
   });
 
   it('기지 함락 시 그 칸 위 이전 주인 깃발은 귀환으로 퇴각한다 [A 패치 2차] (모델 2, 마지막 기지 제외, 모델 1 불변)', () => {

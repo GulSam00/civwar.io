@@ -203,8 +203,8 @@ describe('QA v4.5 — 멸망·합병 경계면', () => {
           elims++;
           const e = m as { playerId: number; byPlayerId: number | null; annexedTiles: number };
           const moved = (delta.tileChanges as [number, number][]).filter(([tile, o]) => before[tile] === e.playerId && o === (e.byPlayerId ?? 0)).length;
-          // 같은 tick 앞 단계(마지막 기지 함락)에서 by 가 가져간 칸만큼 많다
-          expect(moved - e.annexedTiles).toBeGreaterThanOrEqual(0);
+          // 같은 tick 앞 단계(마지막 기지 함락)에서 by 가 가져간 칸만큼 많다. 반대로 멸망자가 같은 tick 에 막 점령한 칸은 tick 시작 소유(before)가 달라 moved 에서 빠진다(소수)
+          expect(moved - e.annexedTiles).toBeGreaterThanOrEqual(-5);
           expect(moved - e.annexedTiles).toBeLessThanOrEqual(5);
           expect(Array.from(state.owners).filter((o) => o === e.playerId).length).toBe(0);
           const late = bootstrap(state).game!;
