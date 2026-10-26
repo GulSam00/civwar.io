@@ -1,0 +1,9 @@
+{
+  "name": "civwar-match-recorder",
+  "private": true,
+  "description": "AI 대전 관전 녹화용 playwright-core (watch-game.ts 가 자동 탐색). 설치: npm install --prefix .claude/skills/ai-match-monitor/recorder",
+  "dependencies": {
+    "civwar-io": "file:../../../..",
+    "playwright-core": "1.50.1"
+  }
+}

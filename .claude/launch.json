@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "civwar-server", "runtimeExecutable": "npm", "runtimeArgs": ["run", "start:server"], "port": 8080 },
+    { "name": "civwar-client", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:client"], "port": 5173 }
+  ]
+}

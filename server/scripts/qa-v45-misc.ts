@@ -1,0 +1,31 @@
+import { MAP_GEN_DEFAULT } from '@civwar/shared';
+import { createGameState } from '../src/game/state.js';
+import { generateMapForSize } from '../src/map/generate.js';
+import { MapCatalog, mapFromPreset } from '../src/map/presets.js';
+import { buildMapInit, buildMatchConfig } from '../src/game/snapshot.js';
+let bad = 0;
+const ok = (n: string, c: boolean, d = '') => { if (!c) bad++; console.log(`${c ? '  ok  ' : ' FAIL '} ${n}${c ? '' : ' — ' + d}`); };
+const cat = MapCatalog.loadDir();
+const cases: [string, any, number][] = [];
+for (const s of [1, 2, 3, 4, 5, 6, 7, 8]) for (const sz of ['S', 'M', 'L'] as const) cases.push([`random ${sz} seed ${s}`, generateMapForSize(s * 7919, sz, sz === 'S' ? 7 : 12, MAP_GEN_DEFAULT), sz === 'S' ? 7 : 12]);
+for (const f of cat.list ? cat.list() : []) void f;
+for (const id of ['official-s-01', 'official-m-02', 'official-l-03']) cases.push([id, mapFromPreset(cat.get(id)!, 6), 6]);
+let n = 0;
+for (const [name, map, N] of cases) {
+  const st = createGameState(map, Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), 'NORMAL', 5);
+  const mi = buildMapInit(st);
+  const names = mi.baseNames!;
+  const good = names.length === mi.bases.length && new Set(names).size === names.length && names.every((x) => typeof x === 'string' && x.length >= 2 && x.length <= 16) && mi.bases.every((b, i, a) => i === 0 || a[i - 1] < b);
+  const caps = st.players.filter(Boolean).every((p) => { const k = mi.bases.indexOf(p.homeTileId); return k >= 0 && names[k]; });
+  if (!good || !caps) ok(name, false, `len ${names.length}/${mi.bases.length} uniq ${new Set(names).size}`);
+  n++;
+  const mc = buildMatchConfig(st);
+  const c = mc.constants as any;
+  if (!Array.isArray(c.TECH_NODES) || c.TECH_NODES.length !== 32 || c.TECH_NODES[17].stat !== 11 || c.TECH_NODES[19].stat !== 13) ok(name + ' TECH_NODES', false);
+  if (c.NEUTRAL_SQRT_COEF_PERMILLE !== undefined) ok(name + ' NEUTRAL_SQRT_COEF 삭제', false);
+  for (const k of ['COMBAT_BASE_ATK_PERMILLE', 'BASE_HP_DMG_CAP_MILLI_PER_TICK', 'BASE_PROD_TILES', 'CAPITAL_PROD_TILES', 'PROD_REF_TILES', 'PACING_P_REF_LAND_PER_PLAYER', 'FLAG_EXPOSED_ATTRITION_NEUTRAL_PCM', 'FLAG_EXPOSED_MIN_MILLI', 'FLAG_EXPOSED_NEUTRAL_MIN_MILLI', 'FLAG_BIT']) if (c[k] === undefined) ok(name + ' const ' + k, false);
+  if (JSON.stringify(mc).length < 100) ok('json', false);
+}
+ok(`baseNames/TECH_NODES/상수 ${n}개 맵`, bad === 0);
+console.log('TECH_NODES[17..19]:', JSON.stringify((buildMatchConfig(createGameState(cases[0][1], Array.from({ length: 7 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), 'NORMAL', 5)).constants as any).TECH_NODES.slice(17, 20).map((x: any) => ({ id: x.id, stat: x.stat, name: x.name, icon: x.icon }))));
+process.exit(bad ? 1 : 0);

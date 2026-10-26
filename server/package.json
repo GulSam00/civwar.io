@@ -1,0 +1,22 @@
+{
+  "name": "@civwar/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "selfplay": "tsx scripts/selfplay.ts",
+    "qa:headless": "tsx scripts/qa-headless.ts",
+    "qa:scenarios": "tsx scripts/qa-scenarios.ts",
+    "qa:ws": "tsx scripts/qa-ws.ts"
+  },
+  "dependencies": {
+    "@civwar/shared": "*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12"
+  }
+}
