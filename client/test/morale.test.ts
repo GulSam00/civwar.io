@@ -43,11 +43,11 @@ describe('사기 표시 (모델 2)', () => {
     expect(moraleTone(500)).toBe('mid');
   });
 
-  it('지금 전투값: 기지 위 방어 검병 = 병종 방어 1000 x 기지 BASE_BUFF(1.2) x 사기 곱, 사기가 줄면 값도 준다', () => {
+  it('지금 전투값: 기지 위 방어 검병 = 병종 방어 1000 x 기지 BASE_BUFF(방어 채널만 1.2) x 사기 곱, 사기가 줄면 값도 준다', () => {
     const { g } = modelWithFlags(2, [800, 0]);
     const [a, b] = [...g.flags.values()].sort((x, y) => x.slotIndex - y.slotIndex);
-    expect(flagChannels(g, a)).toEqual([1200, 1200]); // 사기 800 = ×1.00, 기지 ×1.2 양 채널
-    expect(flagChannels(g, b)).toEqual([720, 720]); // 사기 0 = ×0.60
+    expect(flagChannels(g, a)).toEqual([1000, 1200]); // 사기 800 = ×1.00, 기지 ×1.2 는 방어 채널만 (패치 11차)
+    expect(flagChannels(g, b)).toEqual([600, 720]); // 사기 0 = ×0.60
   });
 
   it('moraleChanged 델타가 깃발 사기를 갱신하고, 새 깃발(flag_issued)은 만땅으로 시작한다', () => {

@@ -8,7 +8,7 @@
  *   raw(s)   = ω_ATK λ_ATK + ω_DEF λ_DEF
  *   loss(s)  = floor(T * raw(s) / Σraw)       — T = 편 수 * L (총량 불변)
  */
-import { BASE_BUFF, CHANNEL_COUNT, COMBAT_VMIN, DEBT_STAT_PERMILLE, DISENGAGE_VALUE_PERMILLE_V2, MORALE_FLOOR, MORALE_FULL, MORALE_MAX, MORALE_MULT_CAP, POSTURE_W, TERRAIN_BUFF, UNIT_STAT } from './constants.js';
+import { BASE_BUFF, CHANNEL_COUNT, COMBAT_VMIN, DEBT_STAT_PERMILLE, DISENGAGE_VALUE_PERMILLE_V2, MORALE_FLOOR, MORALE_FULL, MORALE_MAX, MORALE_MULT_CAP, TERRAIN_BUFF, UNIT_STAT } from './constants.js';
 import { TECH_POINT_PERMILLE, techChannelPts, techMoraleFullBonus } from './tech.js';
 
 /** 깃발 한 개의 전투 입력 (서버 Flag / 클라이언트 FlagSnapshot 에서 만든다) */
@@ -53,11 +53,10 @@ export function channelValues(f: CombatFlagInput): number[] {
   return out;
 }
 
-/** 호환 스칼라 (ω 가중 평균, 사기 포함) — combat_started.power 와 flagValue 의 모델 2 값. 최소 1 */
+/** 호환 스칼라 (두 채널 평균, 사기 포함) — combat_started.power 와 flagValue 의 모델 2 값. 최소 1 (패치 11차: 태세 가중 폐지, 50/50) */
 export function flagScalar(f: CombatFlagInput): number {
   const a = channelValues(f);
-  const w = POSTURE_W[f.posture];
-  return Math.max(1, Math.floor((w[0] * a[0] + w[1] * a[1]) / 1000));
+  return Math.max(1, Math.floor((a[0] + a[1]) / 2));
 }
 
 export interface CombatSideDetail {
@@ -65,8 +64,6 @@ export interface CombatSideDetail {
   /** V_ATK, V_DEF (편 채널값, 하한 COMBAT_VMIN) */
   atk: number;
   def: number;
-  /** ω_ATK (‰) — ω_DEF = 1000 - omegaA */
-  omegaA: number;
   /** 병력 가중 평균 사기 ‰ */
   morale: number;
   /** 호환 스칼라 power (ω 평균, 병력 가중) */
@@ -92,24 +89,20 @@ export function sideLossDetail(sides: readonly (readonly CombatFlagInput[])[], T
   const n = sides.length;
   const prelim = sides.map((flags) => {
     let sum = 0;
-    let wA = 0;
     let mor = 0;
     let pw = 0;
     const vs = new Array(CHANNEL_COUNT).fill(0);
     for (const f of flags) {
       const a = channelValues(f);
       sum += f.troopsMilli;
-      wA += f.troopsMilli * POSTURE_W[f.posture][0];
       mor += f.troopsMilli * f.morale;
-      const w = POSTURE_W[f.posture];
-      pw += f.troopsMilli * Math.max(1, Math.floor((w[0] * a[0] + w[1] * a[1]) / 1000));
+      pw += f.troopsMilli * Math.max(1, Math.floor((a[0] + a[1]) / 2));
       for (let c = 0; c < CHANNEL_COUNT; c++) vs[c] += f.troopsMilli * a[c];
     }
     const d = Math.max(1, sum);
     return {
       troopsMilli: sum,
       v: vs.map((x: number) => Math.max(COMBAT_VMIN, Math.floor(x / d))),
-      omegaA: Math.floor(wA / d),
       morale: Math.floor(mor / d),
       power: Math.max(1, Math.floor(pw / d)),
     };
@@ -121,7 +114,7 @@ export function sideLossDetail(sides: readonly (readonly CombatFlagInput[])[], T
     const sumInv = inv.reduce((a, b) => a + b, 0);
     prelim.forEach((_, i) => (lam[i][c] = Math.floor((1e6 * inv[i]) / sumInv)));
   }
-  const raw = prelim.map((p, i) => p.omegaA * lam[i][0] + (1000 - p.omegaA) * lam[i][1]);
+  const raw = prelim.map((_, i) => lam[i][0] + lam[i][1]); // 패치 11차: 두 채널 가중 50/50 (분배에는 상수 배수가 영향 없음)
   const sumRaw = raw.reduce((a, b) => a + b, 0);
   const loss = raw.map((r) => (sumRaw > 0 ? mulDiv(T, r, sumRaw) : Math.floor(T / n)));
   let rem = T - loss.reduce((a, b) => a + b, 0);
@@ -130,7 +123,6 @@ export function sideLossDetail(sides: readonly (readonly CombatFlagInput[])[], T
     troopsMilli: p.troopsMilli,
     atk: p.v[0],
     def: p.v[1],
-    omegaA: p.omegaA,
     morale: p.morale,
     power: p.power,
     raw: raw[i],

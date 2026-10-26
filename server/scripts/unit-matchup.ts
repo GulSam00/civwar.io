@@ -4,19 +4,13 @@
  * 인자 2 (선택) = 테스트용 기본 능력치 덮어쓰기 "창ATK:창DEF,검ATK:검DEF,기ATK:기DEF" 예) 600:1200,1000:1000,1400:800 — 게임 상수는 건드리지 않고 이 프로세스에서만 바꾼다. 테크는 점수 가산이라 바뀐 기본값에서 증감한다.
  * 업그레이드 = 전투 관련 노드 4개(1티어~4티어) 경로, 테크 효과는 channelValues 의 점수(×10‰) 가산.
  */
-import { POSTURE_W, TECH_STAT, MORALE_DROP_PER_TICK, CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES } from '@civwar/shared';
+import { TECH_STAT, MORALE_DROP_PER_TICK, CHANNEL, POSTURE, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN, UNIT, channelValues, techMaskWith, techStatValues, TECH_NODES, type Posture, type Unit } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, type Flag, type GameState } from '../src/game/state.js';
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창병', '검병', '기병'];
-// 시험 전용: OMEGA=500 이면 태세별 채널 가중(POSTURE_W)을 두 태세 모두 500/500 으로 (상수 배열을 이 프로세스에서만 덮어쓴다)
-if (process.env.OMEGA) {
-  const w = Number(process.env.OMEGA);
-  (POSTURE_W as unknown as number[][]).forEach((row) => { row[0] = w; row[1] = 1000 - w; });
-  console.log(`## 시험: 태세 가중 ATK ${w} / DEF ${1000 - w} (두 태세 동일)`);
-}
 
 // 시험 전용: MU_FLOOR="창,검,기" MU_FULL="창,검,기" 이면 병종별 사기 곱(사기 0 / 1000)을 쓴다 (combatMath.moraleMultiplier TEMP 패치가 있을 때만 의미)
 if (process.env.MU_FLOOR && process.env.MU_FULL) {
@@ -82,8 +76,8 @@ function setup(): GameState {
   return createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
 }
 function addFlag(s: GameState, ownerId: number, unit: number, troops: number, pos: number, posture: number): Flag {
-  const f = makeFlag({ id: s.nextFlagId++, ownerId, slotIndex: s.flags.filter((x) => x.ownerId === ownerId).length, unit, troopsMilli: troops * 1000, initialTroops: troops, posTileId: pos, anchorTileId: pos, originTileId: pos });
-  f.posture = posture;
+  const f = makeFlag({ id: s.nextFlagId++, ownerId, slotIndex: s.flags.filter((x) => x.ownerId === ownerId).length, unit: unit as Unit, troopsMilli: troops * 1000, initialTroops: troops, posTileId: pos, anchorTileId: pos, originTileId: pos });
+  f.posture = posture as Posture;
   f.state = 'ENGAGED';
   s.flags.push(f);
   s.ledger.initial += troops * 1000;

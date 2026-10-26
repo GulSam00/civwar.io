@@ -61,18 +61,18 @@ const U = UNIT;
 describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽 동일)', () => {
   it('2.7 공격 대 방어 평지 손실% 3x3 표 (신규)', () => {
     const rows: [number, number[]][] = [
-      [U.SPEAR, [50.0, 50.2, 52.0]],
-      [U.SWORD, [49.7, 50.0, 51.8]],
-      [U.CAVALRY, [47.8, 48.1, 50.0]],
+      [U.SPEAR, [50.0, 50.25, 52.05]],
+      [U.SWORD, [49.75, 50.0, 51.88]],
+      [U.CAVALRY, [47.95, 48.12, 50.0]],
     ];
     for (const [au, exp] of rows) for (const du of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(au, POSTURE.ATTACK), inp(du, POSTURE.DEFEND)), exp[du]);
   });
 
-  it('2.7 공격 대 공격(조우전) 표', () => {
+  it('2.7 공격 대 공격(조우전) 표 — 패치 11차부터 태세 가중이 같아 공격 대 방어 표와 같다', () => {
     const rows: [number, number[]][] = [
-      [U.SPEAR, [50.0, 51.2, 54.4]],
-      [U.SWORD, [48.8, 50.0, 53.3]],
-      [U.CAVALRY, [45.6, 46.7, 50.0]],
+      [U.SPEAR, [50.0, 50.25, 52.05]],
+      [U.SWORD, [49.75, 50.0, 51.88]],
+      [U.CAVALRY, [47.95, 48.12, 50.0]],
     ];
     for (const [au, exp] of rows) for (const du of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(au, POSTURE.ATTACK), inp(du, POSTURE.ATTACK)), exp[du]);
   });
@@ -81,13 +81,13 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     for (const u of [U.SPEAR, U.SWORD, U.CAVALRY]) near(lossPct(inp(u, POSTURE.ATTACK), inp(u, POSTURE.DEFEND)), 50.0, 0.01);
   });
 
-  it('4절 지형 확인 (패치 6차): 검병 거울 방어 지형별 공격측 손실 구릉 54.7 / 산 62.8 / 비옥 50.0 / 사막 44.7, 평지 위 공격 47.6 · 구릉 위 공격 50.0', () => {
+  it('4절 지형 확인 (패치 6차): 검병 거울 방어 지형별 공격측 손실 구릉 52.4 / 산 56.4 / 비옥 50.0 / 사막 47.4, 평지 위 공격 48.8 · 구릉 위 공격 50.0 (패치 11차: 지형 채널 한정)', () => {
     const sw = (ter: number) => lossPct(inp(U.SWORD, POSTURE.ATTACK), inp(U.SWORD, POSTURE.DEFEND, { terrain: ter }));
-    near(sw(TERRAIN.HILLS), 54.7);
-    near(sw(TERRAIN.MOUNTAIN), 62.8);
+    near(sw(TERRAIN.HILLS), 52.38);
+    near(sw(TERRAIN.MOUNTAIN), 56.41);
     near(sw(TERRAIN.FERTILE), 50.0);
-    near(sw(TERRAIN.DESERT), 44.7);
-    near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN }), inp(U.SWORD, POSTURE.DEFEND)), 47.6);
+    near(sw(TERRAIN.DESERT), 47.38);
+    near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.PLAIN }), inp(U.SWORD, POSTURE.DEFEND)), 48.78);
     near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.HILLS }), inp(U.SWORD, POSTURE.DEFEND)), 50.0);
   });
 
@@ -115,14 +115,14 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(b).toEqual([Math.floor((900 * BASE_BUFF[1][0]) / 1000), Math.floor((1100 * BASE_BUFF[1][1]) / 1000)]);
   });
 
-  it('채널값은 단계마다 floor, 최소 1, 지형표 7행 (공격 태세 / 방어 태세)', () => {
+  it('채널값은 단계마다 floor, 최소 1, 지형표 7행 (공격 태세 / 방어 태세) — 패치 11차: 지형은 한 채널에만', () => {
     const exp: Record<number, [number[], number[]]> = {
       [TERRAIN.DEEP]: [[1000, 1000], [1000, 1000]],
-      [TERRAIN.PLAIN]: [[1050, 1050], [1000, 1000]],
-      [TERRAIN.FERTILE]: [[1050, 1050], [1000, 1000]],
-      [TERRAIN.HILLS]: [[1000, 1000], [1100, 1100]],
-      [TERRAIN.DESERT]: [[900, 900], [900, 900]],
-      [TERRAIN.MOUNTAIN]: [[1000, 1000], [1300, 1300]],
+      [TERRAIN.PLAIN]: [[1050, 1000], [1000, 1000]],
+      [TERRAIN.FERTILE]: [[1050, 1000], [1000, 1000]],
+      [TERRAIN.HILLS]: [[1000, 1000], [1000, 1100]],
+      [TERRAIN.DESERT]: [[900, 1000], [900, 1000]],
+      [TERRAIN.MOUNTAIN]: [[1000, 1000], [1000, 1300]],
       [TERRAIN.SHALLOW]: [[1000, 1000], [1000, 1000]],
     };
     for (const [ter, [atkRow, defRow]] of Object.entries(exp)) {
@@ -156,11 +156,11 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(at(U.SPEAR, 3, 335)).toBe(600 + Math.floor((500 * 0) / 1000)); // 약 67초에 바닥 (1000 - 1005 -> 0)
   });
 
-  it('5.5(a) 사기 소모 후 상성: 기 vs 창 조우전 0초 45.6% → 10초 54.4% (기병 850 / 창 1025) → 20초 66.7%', () => {
+  it('5.5(a) 사기 소모 후 상성: 기 vs 창 조우전 0초 48.0% → 10초 56.7% (기병 850 / 창 1025) → 20초 68.7% (패치 11차: 공·방 50/50)', () => {
     const f = (ticks: number) => lossPct(inp(U.CAVALRY, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 10 * ticks) }), inp(U.SPEAR, POSTURE.ATTACK, { morale: Math.max(0, 1000 - 3 * ticks) }));
-    near(f(0), 45.6);
-    near(f(50), 54.4);
-    near(f(100), 66.7);
+    near(f(0), 47.95);
+    near(f(50), 56.71);
+    near(f(100), 68.72);
   });
 
   it('손실 총량 불변: Σloss == T (병력 상한 전), 편 순서를 바꿔도 같은 편 손실(잔여 milli 1~2 제외)', () => {
@@ -177,12 +177,13 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(sideLossShares([[inp(U.SWORD, POSTURE.ATTACK, { troopsMilli: 5 })], [inp(U.SWORD, POSTURE.DEFEND)]], 2000)[0]).toBe(5);
   });
 
-  it('편 안 혼합: 병력 가중 채널값·ω (병력 3:1 공격/방어 혼합)', () => {
+  it('편 안 혼합: 병력 가중 채널값 (병력 3:1 검병/기병 혼합, 태세 가중은 없다)', () => {
     const det = sideLossDetail(
-      [[inp(U.SWORD, POSTURE.ATTACK, { troopsMilli: 3000 }), inp(U.SWORD, POSTURE.DEFEND, { troopsMilli: 1000 })], [inp(U.SWORD, POSTURE.ATTACK)]],
+      [[inp(U.SWORD, POSTURE.ATTACK, { troopsMilli: 3000 }), inp(U.CAVALRY, POSTURE.DEFEND, { troopsMilli: 1000 })], [inp(U.SWORD, POSTURE.ATTACK)]],
       1000,
     );
-    expect(det[0].omegaA).toBe(Math.floor((3000 * 600 + 1000 * 400) / 4000)); // 550
+    expect(det[0].atk).toBe(Math.floor((3000 * 1100 + 1000 * 1320) / 4000)); // 1155
+    expect(det[0].def).toBe(Math.floor((3000 * 1100 + 1000 * 990) / 4000)); // 1072
     expect(det[0].troopsMilli).toBe(4000);
   });
 
@@ -202,7 +203,7 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(TECH_STAT_BASE.slice(0, 32).length).toBe(32);
     const f = inp(U.CAVALRY, POSTURE.ATTACK);
     expect(channelValues(f)).toEqual(channelValues({ ...f, statPm: NO_TECH.slice(0, 32) }));
-    expect(flagScalar(f)).toBe(Math.floor((600 * channelValues(f)[0] + 400 * channelValues(f)[1]) / 1000));
+    expect(flagScalar(f)).toBe(Math.floor((channelValues(f)[0] + channelValues(f)[1]) / 2));
   });
 
   it('테크 채널별 적용 (A-D6): COMBAT_ATK 는 태세와 무관하게 ATK 채널에만', () => {
@@ -382,7 +383,7 @@ describe('모델 2 — 결정론 · 회계 · 프로토콜', () => {
     const cfg = buildMatchConfig(s2);
     expect(cfg.combatModel).toBe(2);
     expect(validateMessage(cfg)).toEqual([]);
-    for (const k of ['COMBAT_MODEL', 'UNIT_STAT', 'TERRAIN_BUFF', 'BASE_BUFF', 'POSTURE_W', 'COMBAT_GAMMA', 'COMBAT_VMIN', 'DISENGAGE_VALUE_PERMILLE_V2', 'MORALE_FLOOR', 'MORALE_FULL', 'MORALE_MULT_CAP', 'MORALE_DROP_PER_TICK', 'MORALE_RECOVER', 'MORALE_RECOVER_BASE']) {
+    for (const k of ['COMBAT_MODEL', 'UNIT_STAT', 'TERRAIN_BUFF', 'BASE_BUFF', 'COMBAT_GAMMA', 'COMBAT_VMIN', 'DISENGAGE_VALUE_PERMILLE_V2', 'MORALE_FLOOR', 'MORALE_FULL', 'MORALE_MULT_CAP', 'MORALE_DROP_PER_TICK', 'MORALE_RECOVER', 'MORALE_RECOVER_BASE']) {
       expect(cfg.constants[k], k).toBeDefined();
     }
     const s1 = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), undefined, undefined, 1);

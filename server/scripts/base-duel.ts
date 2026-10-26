@@ -2,7 +2,7 @@
  * 기지 위 방어 vs 공격 1:1 결투 (모델 2): npx tsx server/scripts/base-duel.ts
  * 방어 깃발(소유자 2)이 자기 기지/평원/언덕 칸에서 방어 태세로 서 있고, 공격 깃발(소유자 1)이 옆 칸에서 공격 태세로 붙는다. 기지 체력 피해·테크·사기 변화(교전 중 사기 하락)는 모델 안에서 그대로 돈다.
  */
-import { POSTURE, TERRAIN, UNIT } from '@civwar/shared';
+import { POSTURE, TERRAIN, UNIT, type Posture, type Unit } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
@@ -14,8 +14,8 @@ function setup() {
   return createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })));
 }
 function addFlag(s: GameState, ownerId: number, unit: number, troops: number, pos: number, posture: number): Flag {
-  const f = makeFlag({ id: s.nextFlagId++, ownerId, slotIndex: s.flags.filter((x) => x.ownerId === ownerId).length, unit, troopsMilli: troops * 1000, initialTroops: troops, posTileId: pos, anchorTileId: pos, originTileId: pos });
-  f.posture = posture;
+  const f = makeFlag({ id: s.nextFlagId++, ownerId, slotIndex: s.flags.filter((x) => x.ownerId === ownerId).length, unit: unit as Unit, troopsMilli: troops * 1000, initialTroops: troops, posTileId: pos, anchorTileId: pos, originTileId: pos });
+  f.posture = posture as Posture;
   f.state = 'ENGAGED';
   s.flags.push(f);
   s.ledger.initial += troops * 1000;

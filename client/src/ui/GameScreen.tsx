@@ -1000,7 +1000,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           )}
           {onOwnBase && (
             <div className="cs-base">
-              기지 위 <b>{g.config.combatModel === 2 ? `×${(BASE_BUFF[f.posture][0] / 1000).toFixed(1)} (공격·방어)` : '×1.5'}</b>
+              기지 위 <b>{g.config.combatModel === 2 ? `방어력 ×${(BASE_BUFF[f.posture][1] / 1000).toFixed(1)}` : '×1.5'}</b>
             </div>
           )}
         </div>

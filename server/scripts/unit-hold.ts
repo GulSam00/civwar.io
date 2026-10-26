@@ -2,23 +2,17 @@
  * 병종 상성의 시간 의존(단기 0~10초 / 장기 40~60초) 측정용 시제품 — 게임 코드는 바꾸지 않는다.
  *   npx tsx server/scripts/unit-hold.ts            → 지속 교전(hold): 매 틱 병력을 초기값으로 복원해 60초 동안 교환 속도를 구간별로 측정
  *   npx tsx server/scripts/unit-hold.ts terrain    → 지형 버프 방식 비교(현행 두 채널 / 채널 한정)
- * 병종별 사기 곱(MU_FLOOR/MU_FULL)과 방어 가중(OM_DEF)은 게임 코드에 없는 훅이라 server/scripts/proto-morale-patch.diff 를 임시로 적용해야 동작한다(`git apply`, 시험 뒤 `git checkout shared/src/combatMath.ts`).
+ * 병종별 사기 곱(MU_FLOOR/MU_FULL)은 게임 코드에 없는 훅이라 server/scripts/proto-morale-patch.diff(패치 11차 이전 combatMath 기준)를 손으로 맞춰 임시 적용해야 한다. 지형 모드의 '현행'은 지금 상수(채널 한정), '채널한정'은 이 파일이 덮어쓰는 표다.
  * 환경변수: STATS="600:1200,1000:1000,1600:800"  MFLOORS="a,b,c"  MFULLS="a,b,c" (병종별 사기 곱 0 / 1000, combatMath.moraleMultiplier 임시 패치 필요)
  *           DROP_ATK="3,4,6" DROP_DEF="2,3,5" K=10 (사기 고정 하락 + 손실 1%당 K)
  */
-import { POSTURE_W, POSTURE, TERRAIN, UNIT, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN_BUFF, BASE_BUFF } from '@civwar/shared';
+import { POSTURE, TERRAIN, UNIT, UNIT_ATK_PERMILLE, UNIT_DEF_PERMILLE, TERRAIN_BUFF, BASE_BUFF, type Posture, type Unit } from '@civwar/shared';
 import { stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { createGameState, makeFlag, type Flag, type GameState } from '../src/game/state.js';
 import { generateMapForPlayers } from '../src/map/generate.js';
 
 const NAME = ['창', '검', '기'];
-// 시험 전용: OMEGA=500 이면 태세별 채널 가중(POSTURE_W)을 두 태세 모두 500/500 으로 (상수 배열을 이 프로세스에서만 덮어쓴다)
-if (process.env.OMEGA) {
-  const w = Number(process.env.OMEGA);
-  (POSTURE_W as unknown as number[][]).forEach((row) => { row[0] = w; row[1] = 1000 - w; });
-  console.log(`## 시험: 태세 가중 ATK ${w} / DEF ${1000 - w} (두 태세 동일)`);
-}
 
 // 시험 전용: MU_FLOOR="창,검,기" MU_FULL="창,검,기" 이면 병종별 사기 곱(사기 0 / 1000)을 쓴다 (combatMath.moraleMultiplier TEMP 패치가 있을 때만 의미)
 if (process.env.MU_FLOOR && process.env.MU_FULL) {
@@ -60,8 +54,8 @@ function build(aUnit: number, aPosture: number, dUnit: number, dPosture: number,
   }
   const mk = (ownerId: number, unit: number, pos: number, posture: number): Flag => {
     const n = opt.troops ?? 1000;
-    const f = makeFlag({ id: s.nextFlagId++, ownerId, slotIndex: 0, unit, troopsMilli: n * 1000, initialTroops: n, posTileId: pos, anchorTileId: pos, originTileId: pos });
-    f.posture = posture;
+    const f = makeFlag({ id: s.nextFlagId++, ownerId, slotIndex: 0, unit: unit as Unit, troopsMilli: n * 1000, initialTroops: n, posTileId: pos, anchorTileId: pos, originTileId: pos });
+    f.posture = posture as Posture;
     f.state = 'ENGAGED';
     s.flags.push(f);
     s.ledger.initial += n * 1000;
@@ -114,12 +108,6 @@ if (process.argv[2] === 'terrain') {
     const B = BASE_BUFF as unknown as number[][];
     for (let i = 0; i < T.length; i++) for (let p = 0; p < 2; p++) for (let c = 0; c < 2; c++) T[i][p][c] = CUR[i][p][c];
     for (let p = 0; p < 2; p++) for (let c = 0; c < 2; c++) B[p][c] = CURB[p][c];
-    const OMG = globalThis as unknown as { __OM?: number[][] };
-    OMG.__OM = undefined;
-    if (mode === 'chan' && process.env.OM_DEF) {
-      // 방어 태세의 공격 채널 가중 ω_ATK (병종별), 방어 가중 = 1000 − ω_ATK. 공격 태세는 600 그대로
-      OMG.__OM = [[600, 600, 600], process.env.OM_DEF.split(',').map(Number)];
-    }
     if (mode === 'chan') {
       T[TERRAIN.PLAIN][POSTURE.ATTACK] = [1050, 1000]; // 공격 태세: 공격력만 +5%
       T[TERRAIN.FERTILE][POSTURE.ATTACK] = [1050, 1000];

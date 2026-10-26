@@ -52,10 +52,10 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     add('terrain', '지형', terrain);
     const move = arr(m, 'TERRAIN_MOVE_PERMILLE', TERRAIN_MOVE_PERMILLE)[ter];
     if (m.config.combatModel === 2) {
-      // 패치 6차: 모델 2 지형 효과 = 태세별 전능력(공격·방어 두 채널) 배율
+      // 패치 11차: 모델 2 지형 효과 = 한 채널에만 (공격 태세는 공격력, 방어 태세는 방어력)
       const tb = ((m.config.constants?.TERRAIN_BUFF as readonly (readonly (readonly number[])[])[] | undefined) ?? TERRAIN_BUFF)[ter];
       const pct = (pm: number) => (pm === 1000 ? '—' : `${pm > 1000 ? '+' : '−'}${Math.abs(pm - 1000) / 10}%`);
-      add('defense', '전투 보정', `공격 태세 ${pct(tb[0][0])} · 방어 태세 ${pct(tb[1][0])}`);
+      add('defense', '전투 보정', `공격 태세 공격력 ${pct(tb[0][0])} · 방어 태세 방어력 ${pct(tb[1][1])}`);
     } else {
       const def = arr(m, 'COMBAT_TERRAIN_DEF_POSTURE_PERMILLE', COMBAT_TERRAIN_DEF_POSTURE_PERMILLE)[ter];
       add('defense', '방어', x(def));
