@@ -98,13 +98,27 @@ function model(): GameModel {
 
 describe('지형 툴팁 항목 필터', () => {
   const nick = (id: number) => `P${id}`;
-  it('행 순서: 지형 → 방어 → 이동 → 점령 비용 → 골드 → 소유자 → 기지 체력', () => {
-    const i = terrainInfo(model(), 1, 1, nick)!;
-    expect(i.rows.map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'cost', 'gold', 'owner', 'baseHp']);
-    expect(i.rows.find((r) => r.field === 'baseHp')).toEqual({ field: 'baseHp', label: '수도 체력', value: '80%' });
+  it('행 순서: 지형 → 전투 보정 → 이동 → 점령 비용 → 골드 → 소유자 → 기지 체력 (보정 없는 평원·내 땅 점령 비용은 생략)', () => {
+    const i = terrainInfo(model(), 3, 1, nick)!;
+    expect(i.rows.map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'cost', 'gold', 'owner']);
+    // 2026-10-28 절대값: 적 언덕 한 칸 = 11 × 1.3 × 병종 점령 배율(창 1.0 / 검 0.85 / 기 1.4), 올림 · 언덕 100칸 = 900 × 2.08 × 300 tick ÷ 1000 × 100
+    expect(i.rows.find((r) => r.field === 'cost')!.value).toBe('창 15 · 검 13 · 기 21명/칸');
+    expect(i.rows.find((r) => r.field === 'gold')!.value).toBe('+56/분 · 100칸');
+    const cap = terrainInfo(model(), 1, 1, nick)!;
+    expect(cap.rows.map((r) => r.field)).toEqual(['terrain', 'gold', 'owner', 'baseHp']);
+    expect(cap.rows.find((r) => r.field === 'baseHp')).toEqual({ field: 'baseHp', label: '수도 체력', value: '80%' });
+  });
+  it('내 부대 선택 중: 보정·그 병종 점령 비용·기지 체력만 (골드·소유자 생략)', () => {
+    expect(terrainInfo(model(), 3, 1, nick, { selectedUnit: 2 })!.rows.map((r) => [r.field, r.value])).toEqual([
+      ['terrain', '언덕'],
+      ['defense', '방어 태세일 때 방어력 +30%'],
+      ['speed', '이동 속도 −20%'],
+      ['cost', '기 21명/칸'],
+    ]);
+    expect(terrainInfo(model(), 7, 1, nick, { selectedUnit: 1 })!.rows.map((r) => r.field)).toEqual(['terrain', 'cost', 'baseHp']);
   });
   it('끈 항목은 빠지고, 툴팁을 끄면 아무것도 없다', () => {
-    const i = terrainInfo(model(), 1, 1, nick)!;
+    const i = terrainInfo(model(), 3, 1, nick)!;
     const f = { ...defaultOptions().tooltipFields, gold: false, cost: false, baseHp: false };
     expect(visibleTipRows(i, true, f).map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'owner']);
     expect(visibleTipRows(i, false, defaultOptions().tooltipFields)).toEqual([]);

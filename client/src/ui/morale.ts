@@ -6,6 +6,7 @@
 import { MORALE_MAX, channelValues, moraleMultiplier, type CombatFlagInput, type FlagSnapshot } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import { techStatsOf } from './techInfo.js';
+import { moraleNeutralPoint, moraleRange, moraleRates } from './unitStats.js';
 
 /** 사기 곱이 ×1.00 이 되는 사기 값 (그 위는 보너스, 아래는 감쇠) */
 export const MORALE_NEUTRAL = 800;
@@ -74,4 +75,37 @@ export function flagChannels(g: GameModel, f: FlagSnapshot): [number, number] | 
   if (!input) return null;
   const [atk, def] = channelValues(input);
   return [atk, def];
+}
+
+/**
+ * 사기가 바꾸는 것 전부 (2026-10-28 UI 개선 4) — 서버에서 사기가 쓰이는 곳은 채널값의 사기 곱 하나뿐이다(combatMath.channelValues):
+ * 공격력·방어력이 같은 배율로 오르내리고, 교전 손실 분배(양쪽 공격·방어 비교)에 그대로 들어간다.
+ * 그 밖에 보이는 값: 병종 사기 곱 범위, 전투력 ±0 이 되는 사기, 사기 증감 속도(교전·비전투·내 기지 위).
+ */
+export interface MoraleDetail {
+  view: MoraleView;
+  /** 지금 / 사기 100% 일 때 / 사기 0 일 때 채널값 [공격, 방어] ‰ (지형·기지·이탈·빚 반영). 지형을 모르면 null */
+  now: [number, number] | null;
+  full: [number, number] | null;
+  empty: [number, number] | null;
+  /** 사기 곱 범위 ‰ */
+  floorPm: number;
+  fullPm: number;
+  /** 전투력 ±0 사기 (0..1000), 항상 보너스면 null */
+  neutral: number | null;
+  rates: ReturnType<typeof moraleRates>;
+}
+
+export function moraleDetail(g: GameModel, f: FlagSnapshot): MoraleDetail | null {
+  const view = moraleView(g, f);
+  if (!view) return null;
+  const stat = techStatsOf(g.players.get(f.ownerId)?.techMask ?? 0, g.config.constants);
+  const input = flagCombatInput(g, f);
+  const at = (morale: number): [number, number] | null => {
+    if (!input) return null;
+    const [a, d] = channelValues({ ...input, morale });
+    return [a, d];
+  };
+  const r = moraleRange(f.unit, stat);
+  return { view, now: at(view.value), full: at(MORALE_MAX), empty: at(0), floorPm: r.floor, fullPm: r.full, neutral: moraleNeutralPoint(f.unit, stat), rates: moraleRates(f.unit, stat) };
 }

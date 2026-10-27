@@ -35,11 +35,12 @@ function model(flags: FlagSnapshot[] = [], upkeepPm = 0): GameModel {
 
 describe('지형 정보 툴팁', () => {
   const nick = (id: number) => `P${id}`;
-  it('언덕: 방어 ×1.30, 이동 ×0.80, 소유자 이름', () => {
+  it('언덕: 방어 태세 방어력 +30%, 이동 −20%, 소유자 이름 (2026-10-28: 배율 대신 배지 %)', () => {
     const i = terrainInfo(model(), 3, 1, nick)!;
     expect(i.terrain).toBe('언덕');
-    expect(i.mods).toContain('방어 ×1.30');
-    expect(i.mods).toContain('이동 속도 ×0.80');
+    expect(i.mods).toContain('방어 태세일 때 방어력 +30%');
+    expect(i.mods).toContain('이동 속도 −20%');
+    expect(i.rows.find((r) => r.field === 'defense')!.badges).toEqual([{ text: '방어+30%', tone: 'up', posture: 1, long: '방어 태세일 때 방어력 +30%' }]);
     expect(i.ownerName).toBe('P2');
     expect(i.base).toBeNull();
   });
@@ -48,7 +49,7 @@ describe('지형 정보 툴팁', () => {
     expect(cap.ownerName).toBe('P1 (나)');
     expect(cap.base).toBe('수도 · 체력 80%');
     expect(terrainInfo(model(), 5, 1, nick)!.ownerName).toBe('중립');
-    expect(terrainInfo(model(), 5, 1, nick)!.mods).toContain('방어 ×1.60');
+    expect(terrainInfo(model(), 5, 1, nick)!.mods).toContain('방어 태세일 때 방어력 +60%');
     expect(terrainInfo(model(), 0, 1, nick)!.mods[0]).toContain('통행 불가');
     // v4.5 (§22.1): 얕은 물(호수)도 통행 불가 — 이동 속도 행 없음
     const lake = terrainInfo(model(), 6, 1, nick)!;

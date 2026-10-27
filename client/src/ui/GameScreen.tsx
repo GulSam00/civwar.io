@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { BASE_BUFF, ENDGAME_RUSH_TICK, POSTURE, type Posture, type Unit } from '@civwar/shared';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { BASE_BUFF, ENDGAME_RUSH_TICK, POSTURE, type FlagSnapshot, type Posture, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -8,7 +8,9 @@ import { clampCamera } from '../render/camera.js';
 import { GameInputController, Interaction } from '../input/controller.js';
 import { RangeCache, computePreview, type CursorPreview } from '../input/preview.js';
 import type { RoutePreview } from '../input/route.js';
-import { terrainInfo, visibleTipRows } from './terrainInfo.js';
+import { terrainInfo, visibleTipRows, type TipBadge } from './terrainInfo.js';
+import { SHIELD_GLYPH, SWORD_GLYPH } from '../render/combatPairs.js';
+import { captureCost, fmt1, neutralPlainCost, pctOfPm } from './unitStats.js';
 import { TOOLTIP_FIELDS, loadOptions } from './options.js';
 import { OptionsLayer, GearIcon } from './OptionsPanel.js';
 import { PostureIcon, UnitIcon } from './unitIcons.js';
@@ -16,10 +18,10 @@ import { unitUpkeepPerKilo } from './upkeep.js';
 import { usePolled } from './hooks.js';
 import { playerColor } from '../render/palette.js';
 import { EMOTE_TEXT, FLAG_STATE_NAME, GAME_OVER_REASON, POSTURE_NAME, UNIT_NAME, fmtClock } from './text.js';
-import { fmtPm, fmtPts, goldPerSecond, unitCombatStats } from './techInfo.js';
+import { fmtPts, goldPerSecond, unitCombatStats } from './techInfo.js';
 import { flagActionState, myUnitChips } from './unitChips.js';
 import { engagePreview } from './engagePreview.js';
-import { flagChannels, moraleTone, moraleView } from './morale.js';
+import { flagChannels, moraleDetail, moraleTone, type MoraleDetail } from './morale.js';
 import { disengageTicksOf } from '../state/disengage.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, openCard } from './panels.js';
@@ -155,7 +157,7 @@ export function GameScreen({ store }: { store: ClientStore }) {
       updateTooltip(tipRef.current, preview, ix, controller, route);
       positionRing(ctxRef.current, controller);
       positionFlagActions(flagActRef.current, controller, narrowRef.current);
-      updateTerrainTip(terrainRef.current, game, ix, store, narrowRef.current);
+      updateTerrainTip(terrainRef.current, game, controller, store, narrowRef.current);
       updateTargetBar(targetRef.current, game, ix, store, narrowRef.current, now);
       frame = requestAnimationFrame(loop);
     };
@@ -233,67 +235,166 @@ function HelpLayer({ ctl }: { ctl: GameInputController }) {
   );
 }
 
+/** DOM 조각 도우미 (rAF 루프에서 툴팁을 직접 만든다) */
+function h(tag: string, cls: string, text?: string): HTMLElement {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+/** 태세 아이콘 (검 = 공격 태세 · 방패 = 방어 태세) — PostureIcon 과 같은 그림의 DOM 판 */
+function postureSvg(posture: number): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '11');
+  svg.setAttribute('height', '11');
+  svg.setAttribute('class', `posture-icon ${posture === POSTURE.ATTACK ? 'posture-atk' : 'posture-def'}`);
+  svg.setAttribute('aria-hidden', 'true');
+  for (const part of posture === POSTURE.ATTACK ? SWORD_GLYPH : SHIELD_GLYPH) {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', part.d);
+    if (part.mode === 'fill') path.setAttribute('fill', 'currentColor');
+    else {
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'currentColor');
+      path.setAttribute('stroke-width', String(part.width ?? 2));
+      path.setAttribute('stroke-linecap', 'round');
+    }
+    svg.append(path);
+  }
+  return svg;
+}
+
+function tipBadge(b: TipBadge): HTMLElement {
+  const x = h('span', `tt-badge ${b.tone}${b.posture === null ? '' : b.posture === POSTURE.ATTACK ? ' p-atk' : ' p-def'}`);
+  x.setAttribute('aria-label', b.long);
+  if (b.posture !== null) x.append(postureSvg(b.posture));
+  x.append(document.createTextNode(b.text));
+  return x;
+}
+
+/** 내가 명령할 수 있는 선택 부대의 병종 (없으면 null) */
+function selectedMyUnit(game: GameModel, ctl: GameInputController): number | null {
+  const id = ctl.ix.selectedFlagId;
+  if (id === null || !ctl.myFlag(id) || !ctl.canCommand()) return null;
+  return game.flags.get(id)?.unit ?? null;
+}
+
 /**
  * 지형 정보 툴팁 — 맵 캔버스 위 칸에서만(HUD·패널 위 제외), 커서 왼쪽 위에 둔다(출전 안내 툴팁은 오른쪽 아래).
  * 병종 고리가 떠 있는 동안은 숨긴다(고리·경로를 가리지 않게).
+ * 2026-10-28: 전투·이동 보정 = 지형 이름 옆 배지. 내 부대 선택 중 = 행동에 필요한 것만(보정·그 병종 점령 비용·기지 체력).
+ * 깃발 위에 올리면 그 부대의 사기 카드(사기가 바꾸는 값 전부)를 대신 보인다.
  */
-function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ix: Interaction, store: ClientStore, narrow: boolean): void {
+function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ctl: GameInputController, store: ClientStore, narrow: boolean): void {
   if (!el) return;
+  const ix = ctl.ix;
   const hide = () => {
     if (el.style.display !== 'none') el.style.display = 'none';
     el.dataset.key = '';
   };
   if (!game?.ready || !ix.options.tooltip || !ix.overMap || ix.hoverTile < 0 || ix.issue?.phase === 'pick') return hide();
-  const viewer = store.viewerId;
-  const t = ix.hoverTile;
-  const b = game.bases.get(t);
-  const o = ix.options;
-  const fieldsKey = TOOLTIP_FIELDS.map((f) => (o.tooltipFields[f] ? 1 : 0)).join('');
-  const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${fieldsKey}:${narrow ? 1 : 0}`;
-  if (el.dataset.key !== key) {
-    const info = terrainInfo(game, t, store.myPlayerId, (id) => store.nicknameOf(id));
-    // 2026-10-18: 넓은 화면은 주인 정보를 상단 대상 바가 보여 준다 → 커서 툴팁은 지형 위주 (소유자 줄 생략)
-    const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields).filter((r) => narrow || r.field !== 'owner') : [];
-    if (!info || !rows.length) return hide();
-    el.dataset.key = key;
-    // 한 줄에 한 항목 (flex column): 지형 → 보정들 → 소유자 → 기지 체력
-    el.replaceChildren(
-      ...rows.map((r) => {
-        const row = document.createElement('div');
-        row.className = `tt-row tt-${r.field}`;
-        if (r.field === 'terrain') {
-          const name = document.createElement('b');
-          name.textContent = r.value;
-          row.append(name);
+  const hoverFlag = ctl.renderer.flagAt(ix.hoverX, ix.hoverY);
+  const fl = hoverFlag !== null ? game.flags.get(hoverFlag) : undefined;
+  const md = fl && !fl.routed ? moraleDetail(game, fl) : null;
+  if (fl && md) {
+    const key = `m:${fl.id}:${fl.troops}:${md.view.value}:${md.now?.join('/')}:${fl.posture}`;
+    if (el.dataset.key !== key) {
+      el.dataset.key = key;
+      el.replaceChildren(...moraleCard(fl, md, store));
+    }
+  } else {
+    const t = ix.hoverTile;
+    const b = game.bases.get(t);
+    const o = ix.options;
+    const sel = selectedMyUnit(game, ctl);
+    const fieldsKey = TOOLTIP_FIELDS.map((f) => (o.tooltipFields[f] ? 1 : 0)).join('');
+    const key = `${t}:${game.owners[t]}:${b ? `${Math.round(b.hpPct)}/${Math.floor((game.baseProdPm(t) ?? 0) / 10)}` : ''}:${fieldsKey}:${narrow ? 1 : 0}:${sel}:${game.version}`;
+    if (el.dataset.key !== key) {
+      const info = terrainInfo(game, t, store.myPlayerId, (id) => store.nicknameOf(id), { topo: ctl.renderer.topo, selectedUnit: sel });
+      // 2026-10-18: 넓은 화면은 주인 정보를 상단 대상 바가 보여 준다 → 커서 툴팁은 지형 위주 (소유자 줄 생략)
+      const rows = info ? visibleTipRows(info, o.tooltip, o.tooltipFields).filter((r) => narrow || r.field !== 'owner') : [];
+      if (!info || !rows.length) return hide();
+      el.dataset.key = key;
+      // 맨 위 = 지형 이름 + 보정 배지(전투·이동), 그 아래 한 줄에 한 항목 (점령 → 골드 → 소유자 → 기지)
+      const head = h('div', 'tt-row tt-terrain');
+      const badges = rows.flatMap((r) => r.badges ?? []);
+      if (rows.some((r) => r.field === 'terrain')) head.append(h('b', '', info.rows[0].value));
+      if (badges.length) {
+        const wrap = h('span', 'tt-badges');
+        wrap.append(...badges.map(tipBadge));
+        head.append(wrap);
+      }
+      const body = rows
+        .filter((r) => r.field !== 'terrain' && !r.badges)
+        .map((r) => {
+          const row = h('div', `tt-row tt-${r.field}`);
+          const v = h('span', 'tt-v');
+          if (r.field === 'owner' && info.ownerId) {
+            const dot = h('span', 'dot');
+            dot.style.background = playerColor(info.ownerId);
+            v.append(dot);
+          }
+          v.append(document.createTextNode(r.value));
+          row.append(h('span', 'tt-k', r.label), v);
           return row;
-        }
-        const k = document.createElement('span');
-        k.className = 'tt-k';
-        k.textContent = r.label;
-        const v = document.createElement('span');
-        v.className = 'tt-v';
-        if (r.field === 'owner' && info.ownerId) {
-          const dot = document.createElement('span');
-          dot.className = 'dot';
-          dot.style.background = playerColor(info.ownerId);
-          v.append(dot);
-        }
-        v.append(document.createTextNode(r.value));
-        row.append(k, v);
-        return row;
-      }),
-    );
+        });
+      el.replaceChildren(...(head.childNodes.length ? [head] : []), ...body);
+    }
   }
   el.style.display = 'flex'; // .terrain-tip = flex column (한 줄에 한 항목)
   const parent = el.parentElement;
   const w = el.offsetWidth;
-  const h = el.offsetHeight;
+  const hh = el.offsetHeight;
   let x = ix.hoverX - 14 - w;
-  let y = ix.hoverY - 14 - h;
+  let y = ix.hoverY - 14 - hh;
   if (x < 4) x = ix.hoverX + 16; // 왼쪽 끝이면 오른쪽 위로
   if (y < 64) y = ix.hoverY + 40; // 위쪽 HUD 와 겹치면 커서 아래로
   if (parent) x = Math.min(x, parent.clientWidth - w - 4);
   el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+
+/** 깃발 hover 사기 카드 — 사기가 바꾸는 값 전부 (§33: 공격력·방어력 사기 곱 → 교전 손실 분배) + 증감 속도 */
+function moraleCard(f: FlagSnapshot, md: MoraleDetail, store: ClientStore): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const head = h('div', 'tt-row tt-terrain');
+  head.append(h('b', '', `${UNIT_NAME[f.unit]} ${f.troops}명 · 사기 ${md.view.pct}%`), h('span', 'tt-v muted', store.nicknameOf(f.ownerId)));
+  out.push(head);
+  const bar = h('div', `tt-mbar mbar wide ${md.view.tone}`);
+  const fill = h('i', '');
+  fill.style.width = `${md.view.pct}%`;
+  bar.append(fill);
+  if (md.neutral !== null && md.neutral < 1000) {
+    const tick = h('u', '');
+    tick.style.left = `${md.neutral / 10}%`;
+    bar.append(tick);
+  }
+  out.push(bar);
+  out.push(...moraleRows(f, md).map(([k, v, cls]) => {
+    const r = h('div', `tt-row ${cls ?? ''}`);
+    r.append(h('span', 'tt-k', k), h('span', 'tt-v', v));
+    return r;
+  }));
+  out.push(h('div', 'tt-note', '공격·방어 수치가 교전 손실 분배를 정합니다'));
+  return out;
+}
+
+/** 사기 카드·깃발 패널이 같이 쓰는 행 [이름, 값, class] */
+function moraleRows(f: FlagSnapshot, md: MoraleDetail): [string, string, string?][] {
+  const rows: [string, string, string?][] = [];
+  rows.push(['전투력 (공격·방어)', pctOfPm(md.view.multPm), 'tt-strong']);
+  rows.push(['사기 0 → 100%', `${pctOfPm(md.floorPm)} → ${pctOfPm(md.fullPm)}`]);
+  rows.push(['±0 경계', md.neutral === null ? '없음 (늘 보너스)' : `사기 ${Math.round(md.neutral / 10)}%`]);
+  if (md.now && md.full) {
+    rows.push(['지금 공격', md.now[0] === md.full[0] ? fmtPts(md.now[0]) : `${fmtPts(md.now[0])} (100%면 ${fmtPts(md.full[0])})`]);
+    rows.push(['지금 방어', md.now[1] === md.full[1] ? fmtPts(md.now[1]) : `${fmtPts(md.now[1])} (100%면 ${fmtPts(md.full[1])})`]);
+  }
+  const drop = f.posture === POSTURE.ATTACK ? md.rates.dropAtk : md.rates.dropDef;
+  rows.push(['교전 중 사기', `−${fmt1(drop)}%/초, 손실 1%당 −${fmt1(md.rates.lossK)}%p`]);
+  rows.push(['쉬면 회복', `+${fmt1(md.rates.recover)}%/초, 기지 위 +${fmt1(md.rates.recoverBase)}`]);
+  return rows;
 }
 
 /**
@@ -796,14 +897,14 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
           총 +{inc.gross.toFixed(1)} · 깃발 유지비 <b className={upkeep > 0 ? 'upkeep' : ''}>−{upkeep.toFixed(1)}/초</b>
           {p.upkeepPm > 0 && ` (총수입의 ${(p.upkeepPm / 10).toFixed(0)}%)`}
         </span>
-        <span className="muted small">
+        <span className="muted small" title="출전한 깃발 병력 1000명이 1분에 쓰는 골드 (테크 반영). 기지에 남은 병력은 무료">
           병력 1000명당 유지비{' '}
           {perKilo.map((r, u) => (
             <span key={u} className="upkeep-unit">
-              <UnitIcon unit={u as Unit} size={13} /> −{r.toFixed(1)}
+              <UnitIcon unit={u as Unit} size={13} /> −{Math.round(r * 60)}
             </span>
           ))}
-          /초
+          /분
         </span>
       </div>
     );
@@ -909,8 +1010,38 @@ function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputControl
   );
 }
 
+/**
+ * 깃발 패널 각 요소 설명 (2026-10-28 UI 개선 6) — 행 hover(title)와 [?] 도움말이 같은 문구를 쓴다. 의미는 서버 규칙에서 확인한 것:
+ *   태세 쿨타임 = POSTURE_COOLDOWN_TICKS · 공격/방어 점수 = 병종 기본 + 테크 · 지금 값 = combatMath.channelValues
+ *   교전 = 적대 깃발이 8방향으로 닿고 한쪽 이상이 공격 태세일 때 (combat.ts 간선) · 방어 원 = rules.guardContains (앵커에서 FRONT_RADIUS 칸 안 내 땅)
+ */
+const FP_HELP = {
+  head: '이 부대의 주인과 깃발 번호(출전 슬롯)',
+  troops: '부대 병력 — 교전·점령·노출 소모로 줄고, 0이 되면 패주(회색 점선 테두리)해 귀환합니다',
+  posture: '공격 = 적·중립 칸을 점령하며 진격 · 방어 = 점령하지 않고 목적지 둘레 내 땅을 지킴. 바꾸면 5초 쿨타임이 돌고 진척도가 0이 됩니다',
+  status: '행군·교전·귀환·대기 상태와 표시: 전투 중(적 깃발과 맞붙음) · 패주 · 대치(적 깃발에 길이 막힘) · 이탈 대기(전투에서 빠지는 중, 전투력 −30%) · 정체(5초 동안 한 칸도 못 밂)',
+  atkdef: '병종 기본 + 테크 점수. 지형·기지·사기는 빼고 본 값 — 지금 태세 쪽이 굵게 보입니다',
+  capture: '땅 한 칸을 점령할 때 깃발에서 빠지는 병력. 기준 = 보급 거리 안 중립 평원, 목표 칸 = 지금 밀고 있는 칸(지형·인접·보급 거리 반영)',
+  morale: '사기 막대 — 공격력·방어력에 같은 배율로 곱해집니다. 흰 눈금 = 전투력 ±0 경계. 교전하면 줄고, 쉬거나 내 기지 위에 있으면 회복',
+  now: '지형·기지·사기·이탈 대기·골드 빚을 모두 반영한 지금 공격/방어 값 — 교전 손실은 양쪽 이 값의 비교로 나뉩니다',
+  engage: '지금 상태가 이어질 때 이 교전에서 양쪽이 잃을 병력 비율 예상',
+  base: '내 기지 칸 위에서는 지형 보정 대신 기지 보정을 받습니다',
+  eta: '목적지에 닿아 행동을 시작하기까지 남은 시간',
+  progress: '지금 점령 중인 칸의 진척도 — 100%가 되면 그 칸을 차지합니다',
+} as const;
+
+/** 맵 위 선·원 범례 (renderer.ts 에서 그리는 것) */
+const MAP_LEGEND: [string, string][] = [
+  ['파란 점선 + ✕', '방어 태세 부대 → 목적지(앵커) 칸. ✕ 가 목적지 (공격 태세면 빨간 점선)'],
+  ['파란 점선 원', '부대 선택·출전 조준 중 내 땅을 가리키면 보이는 방어 범위 미리보기 — 목적지에서 6칸 안 내 땅을 지킵니다. 원 안에 내 땅이 하나도 안 남으면 부대는 대기로 바뀝니다'],
+  ['움직이는 점선 + 화살촉', '출전·이동 경로 미리보기 (빨강 = 공격, 파랑 = 방어, 회색 = 갈 수 없음)'],
+  ['회색 점선 + 멈춤 표시', '방어 태세는 적 땅을 지나지 못해 그 앞에서 멈춥니다'],
+  ['깃발 테두리 색', '빨강 = 공격 태세 · 파랑 = 방어 태세 · 회색 점선 = 패주'],
+];
+
 function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputController; narrow: boolean }) {
   usePolled(() => ctl.ix.version * 1000 + (store.game?.version ?? 0), 100);
+  const [help, setHelp] = useState(false);
   const g = store.game;
   const id = ctl.ix.selectedFlagId;
   const f = id !== null ? g?.flags.get(id) : undefined;
@@ -936,87 +1067,151 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   // v4.5 (§22.6): 자기 기지 칸 위면 태세와 무관하게 ×1.5 (방어 = 지형 대신, 공격 = 공격값에 곱) — 위 수치는 지형·기지 보정 제외
   const onOwnBase = g.bases.get(f.posTileId)?.ownerId === f.ownerId;
   const st = flagActionState(f, g.tick, g.config.tickMs, disengageTicksOf(g, f.ownerId));
-  const mv = moraleView(g, f); // §33 모델 2 에서만
-  const ch = flagChannels(g, f);
+  const md = moraleDetail(g, f); // §33 모델 2 에서만
+  const ch = md ? null : flagChannels(g, f);
   const ep = engagePreview(g, f); // §33 교전 중일 때만
+  // 2026-10-28: 점령 소모 = 칸당 병력 (배율 대신). 목표 칸이 있으면 그 칸의 실제 비용
+  const capBase = neutralPlainCost(g, f.ownerId, f.unit);
+  const capTarget = f.targetTileId !== null && f.posture === POSTURE.ATTACK ? captureCost(g, ctl.renderer.topo, f.ownerId, f.unit, f.targetTileId) : null;
   return (
-    <div className="flag-panel">
-      <div className="flag-panel-head">
+    <div className={`flag-panel ${help ? 'with-help' : ''}`}>
+      <div className="flag-panel-head" title={FP_HELP.head}>
         <span className="dot" style={{ background: playerColor(f.ownerId) }} />
         <b>{store.nicknameOf(f.ownerId)}</b> · 깃발 #{f.slotIndex + 1}
+        <button className={`fp-help-btn ${help ? 'on' : ''}`} onClick={() => setHelp(!help)} title="각 항목 설명 · 맵 표시 범례" aria-label="깃발 패널 설명" aria-expanded={help}>
+          <HelpIcon size={14} />
+        </button>
       </div>
       <div className="flag-panel-body">
-        <div>
+        <div title={FP_HELP.troops}>
           <UnitIcon unit={f.unit as Unit} size={18} withName /> <b>{f.troops}</b>
         </div>
-        <div>
+        <div title={FP_HELP.posture}>
           태세 <b className={f.posture === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[f.posture]}</b>
           {cd > 0 && <span className="muted"> (전환 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
         </div>
-        <div className="muted">{status}</div>
+        <div className="muted" title={FP_HELP.status}>
+          {status}
+        </div>
         <div className="combat-stats" aria-label="전투값">
-          <div className={`cs-row ${atkNow ? 'now' : ''}`}>
+          <div className={`cs-row ${atkNow ? 'now' : ''}`} title={FP_HELP.atkdef}>
             <PostureIcon posture={POSTURE.ATTACK} size={13} /> 공격력 <b>{fmtPts(cs.atk)}</b>
             <span className="muted small">
               {' '}
               기본 {fmtPts(cs.atkBase)} · 테크 +{cs.atkTechPts}
             </span>
           </div>
-          <div className={`cs-row ${!atkNow ? 'now' : ''}`}>
+          <div className={`cs-row ${!atkNow ? 'now' : ''}`} title={FP_HELP.atkdef}>
             <PostureIcon posture={POSTURE.DEFEND} size={13} /> 방어력 <b>{fmtPts(cs.def)}</b>
             <span className="muted small">
               {' '}
               기본 {fmtPts(cs.defBase)} · 테크 +{cs.defTechPts}
             </span>
           </div>
-          <div className="cs-row">
-            점령 소모 <b>{fmtPm(cs.capturePm)}</b>
+          <div className="cs-row" title={FP_HELP.capture}>
+            점령 소모 <b>{capBase}명</b>
+            <span className="muted small">/칸 (중립 평원)</span>
+            {capTarget !== null && (
+              <span className="muted small">
+                {' '}
+                · 목표 칸 <b>{capTarget}명</b>
+              </span>
+            )}
           </div>
           {(owner?.gold ?? 0) < 0 && (
             <div className="cs-row debt-row" data-testid="debt-note">
               골드 마이너스 — 전투력 −30% · 점령 속도 −50% · 점령 소모 +50%
             </div>
           )}
-          {mv !== null && (
-            <div className="cs-row morale-row" data-testid="flag-morale">
-              사기
-              <span className={`mbar wide ${mv.tone}`} role="img" aria-label={mv.text}>
-                <i style={{ width: `${mv.pct}%` }} />
-                <u style={{ left: '80%' }} />
-              </span>
-              <b>{mv.pct}%</b>
-              <span className="muted small"> 전투력 {mv.deltaPct > 0 ? '+' : mv.deltaPct < 0 ? '−' : '±'}{Math.abs(mv.deltaPct)}%</span>
-            </div>
+          {md !== null && (
+            <>
+              <div className="cs-row morale-row" data-testid="flag-morale" title={FP_HELP.morale}>
+                사기
+                <span className={`mbar wide ${md.view.tone}`} role="img" aria-label={md.view.text}>
+                  <i style={{ width: `${md.view.pct}%` }} />
+                  {md.neutral !== null && md.neutral < 1000 && <u style={{ left: `${md.neutral / 10}%` }} />}
+                </span>
+                <b>{md.view.pct}%</b>
+              </div>
+              <div className="morale-effects" title={FP_HELP.now}>
+                {moraleRows(f, md).map(([k, v, cls]) => (
+                  <div key={k} className={`me-row ${cls ?? ''}`}>
+                    <span className="muted">{k}</span>
+                    <span>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
           {ch !== null && (
-            <div className="cs-row" title="지형·기지·사기·이탈 대기를 모두 반영한 지금 전투값">
+            <div className="cs-row" title={FP_HELP.now}>
               지금 공격 <b>{fmtPts(ch[0])}</b> / 방어 <b>{fmtPts(ch[1])}</b>
             </div>
           )}
           {ep !== null && (
-            <div className={`cs-row engage-preview ${ep.verdict}`} data-testid="engage-preview" title={`깃발 ${ep.flagCount}개가 얽힌 교전의 손실 분배 예상 (지금 상태가 유지될 때)${ep.ratio !== null ? ` · 교환비 1 : ${ep.ratio.toFixed(1)}` : ''}`}>
+            <div className={`cs-row engage-preview ${ep.verdict}`} data-testid="engage-preview" title={`${FP_HELP.engage} · 깃발 ${ep.flagCount}개가 얽힌 교전${ep.ratio !== null ? ` · 교환비 1 : ${ep.ratio.toFixed(1)}` : ''}`}>
               교전 예상 <b>{ep.text}</b>
             </div>
           )}
           {onOwnBase && (
-            <div className="cs-base">
-              기지 위 <b>{g.config.combatModel === 2 ? `방어력 ×${(BASE_BUFF[f.posture][1] / 1000).toFixed(1)}` : '×1.5'}</b>
+            <div className="cs-base" title={FP_HELP.base}>
+              기지 위 <b>{g.config.combatModel === 2 ? `방어력 ${pctOfPm(BASE_BUFF[f.posture][1])}` : '+50%'}</b>
             </div>
           )}
         </div>
-        {f.state === 'MARCHING' && eta !== undefined && <div>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 </div>}
-        {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div>진척도 {f.progressPct}%</div>}
+        {f.state === 'MARCHING' && eta !== undefined && <div title={FP_HELP.eta}>교전 개시 예상 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초 </div>}
+        {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div title={FP_HELP.progress}>진척도 {f.progressPct}%</div>}
       </div>
       {mine && (
         <div className="flag-panel-actions">
-          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F')}>
+          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F — 태세를 바꿉니다 (진척도 0, 5초 쿨타임)')}>
             <kbd>F</kbd> {f.posture === POSTURE.ATTACK ? '방어로' : '공격으로'}
           </button>
           {st.combatWarning !== null && <span className="fa-warn small">{st.combatWarning}</span>}
-          <button className="btn" disabled={f.routed || returning} onClick={() => ctl.recallSelected()} title="단축키 R">
+          <button className="btn" disabled={f.routed || returning} onClick={() => ctl.recallSelected()} title="단축키 R — 가까운 내 기지로 돌아갑니다 (취소 불가)">
             <kbd>R</kbd> 귀환
           </button>
           {returning && <span className="muted small">귀환 중</span>}
+        </div>
+      )}
+      {help && (
+        <div className="fp-help" role="note" aria-label="깃발 패널 설명">
+          <dl>
+            <dt>병종 · 병력</dt>
+            <dd>{FP_HELP.troops}</dd>
+            <dt>태세</dt>
+            <dd>{FP_HELP.posture}</dd>
+            <dt>상태 줄</dt>
+            <dd>{FP_HELP.status}</dd>
+            <dt>공격력 · 방어력</dt>
+            <dd>{FP_HELP.atkdef}</dd>
+            <dt>점령 소모</dt>
+            <dd>{FP_HELP.capture}</dd>
+            {md !== null && (
+              <>
+                <dt>사기</dt>
+                <dd>{FP_HELP.morale}</dd>
+                <dt>지금 공격 / 방어</dt>
+                <dd>{FP_HELP.now}</dd>
+              </>
+            )}
+            <dt>교전 예상 · 기지 위</dt>
+            <dd>
+              {FP_HELP.engage}. {FP_HELP.base}
+            </dd>
+            <dt>F · R 버튼 (부대 옆에도 뜸)</dt>
+            <dd>F = 태세 바꾸기, R = 가까운 기지로 귀환. 전투 중·패주·귀환 중에는 막힙니다</dd>
+          </dl>
+          <div className="fp-help-sub">맵 표시</div>
+          <dl>
+            {MAP_LEGEND.map(([k, v]) => (
+              <Fragment key={k}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </Fragment>
+            ))}
+          </dl>
+          <div className="muted small">방어 태세끼리는 싸우지 않습니다 — 적 깃발과 8방향으로 닿고 한쪽이라도 공격 태세면 교전합니다.</div>
         </div>
       )}
     </div>

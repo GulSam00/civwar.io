@@ -444,7 +444,7 @@ kbd {
   position: absolute;
   right: 8px;
   bottom: 10px;
-  width: 230px;
+  width: 260px;
   background: rgba(18, 26, 36, 0.94);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -508,8 +508,8 @@ kbd {
 }
 .terrain-tip {
   flex-direction: column;
-  gap: 2px;
-  min-width: 150px;
+  gap: 1px;
+  min-width: 0;
 }
 .terrain-tip .tt-row {
   display: flex;
@@ -535,6 +535,80 @@ kbd {
 }
 .terrain-tip .tt-baseHp .tt-v {
   color: var(--warn);
+}
+/* 2026-10-28: 지형 보정 배지 — 지형 이름 오른쪽. 앞 아이콘 = 그 태세일 때만 (검 = 공격 태세 · 방패 = 방어 태세) */
+.tt-badges {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 8px;
+}
+.tt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.08);
+}
+.tt-badge.up {
+  color: #7bd88f;
+}
+.tt-badge.down {
+  color: #ff8a80;
+}
+.tt-badge.p-atk {
+  box-shadow: inset 0 0 0 1px rgba(255, 59, 48, 0.55);
+}
+.tt-badge.p-def {
+  box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.7);
+}
+.tt-badge .posture-icon {
+  flex: none;
+}
+.terrain-tip .tt-terrain:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+.tt-mbar.mbar.wide {
+  display: block;
+  width: auto;
+  margin: 2px 0 3px;
+}
+.tt-row.tt-strong .tt-v {
+  font-weight: 700;
+}
+.tt-note {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: normal;
+}
+/* 출전 버튼 hover 능력치 표 (UnitRing) */
+.unit-spec {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--line);
+}
+.unit-spec .tt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+.unit-spec .tt-k {
+  color: var(--muted);
+}
+.unit-spec .tt-v {
+  font-variant-numeric: tabular-nums;
+}
+.unit-spec-role {
+  color: #ffe9a8;
+  margin-bottom: 2px;
 }
 /* ───── 병종 고리 (2026-10-22, ui/UnitRing.tsx) — 출전 지점 칸 중심에 붙는다 (위치·배율은 렌더 루프) ───── */
 .ctx-anchor {
@@ -2726,4 +2800,68 @@ button.tb-who:hover {
   .room-card .map-thumb canvas {
     height: 60px;
   }
+}
+
+/* 깃발 패널 — 사기가 바꾸는 값 · 설명 (2026-10-28) */
+.flag-panel {
+  max-height: calc(100% - 140px);
+  overflow-y: auto;
+}
+.flag-panel.with-help {
+  width: 300px;
+}
+.flag-panel-head .fp-help-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.flag-panel-head .fp-help-btn:hover,
+.flag-panel-head .fp-help-btn.on {
+  color: #fff;
+  border-color: #fff;
+}
+.morale-effects {
+  margin: 2px 0 2px 2px;
+  font-size: 12px;
+}
+.morale-effects .me-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.morale-effects .me-row.tt-strong span:last-child {
+  font-weight: 700;
+}
+.fp-help {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.fp-help dl {
+  margin: 0;
+}
+.fp-help dt {
+  margin-top: 4px;
+  font-weight: 600;
+}
+.fp-help dd {
+  margin: 0;
+  color: var(--muted);
+}
+.fp-help-sub {
+  margin-top: 8px;
+  font-weight: 700;
+  color: #ffe9a8;
 }

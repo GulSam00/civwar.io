@@ -13,6 +13,8 @@ import { disengageTicksOf as disengageTicksModel } from '../state/disengage.js';
 import { createTopologyView, type TileLayer, type TopologyView } from './topology.js';
 import { fitZoom, worldToScreen, type Camera } from './camera.js';
 import { FlagInterpolator, type Pt } from './flagInterp.js';
+import { moraleNeutralPoint } from '../ui/unitStats.js';
+import { techStatsOf } from '../ui/techInfo.js';
 import { COLOR_ATTACK, COLOR_DEFEND, COLOR_DISABLED, playerColor, playerDark, tileRgba } from './palette.js';
 import { ownerPattern } from './patterns.js';
 import { isDecayTick } from './progressRule.js';
@@ -1161,7 +1163,7 @@ export class GameRenderer {
     const eta = model.flagEta.get(f.id);
     const etaSec = eta !== undefined && f.state === 'MARCHING' && f.ownerId === view.me ? Math.max(0, Math.ceil(((eta - model.tick) * model.config.tickMs) / 1000)) : null;
     this.label(ctx, etaSec !== null ? `${f.troops} · ${etaSec}초` : String(f.troops), x, y + r + 12, 12, '#fff');
-    // §33 사기 막대 (전투 모델 2): 병력 글자 밑 가는 막대, 80% 눈금 = 전투력 ×1.00 경계
+    // §33 사기 막대 (전투 모델 2): 병력 글자 밑 가는 막대, 눈금 = 전투력 ±0 경계 (병종·테크마다 다름 — 창병은 늘 보너스라 눈금 없음)
     if (model.config.combatModel === 2 && f.morale !== undefined && !f.routed) {
       const bw = r * 2.4;
       const bx = x - bw / 2;
@@ -1171,8 +1173,11 @@ export class GameRenderer {
       ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
       ctx.fillStyle = f.morale >= 800 ? '#7bd88f' : f.morale >= 400 ? '#ffd54f' : '#ef5350';
       ctx.fillRect(bx, by, bw * pct, 3);
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillRect(bx + bw * 0.8, by - 1, 1, 5);
+      const neutral = moraleNeutralPoint(f.unit, techStatsOf(model.players.get(f.ownerId)?.techMask ?? 0, model.config.constants));
+      if (neutral !== null && neutral < 1000) {
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillRect(bx + (bw * neutral) / 1000, by - 1, 1, 5);
+      }
     }
 
     if (attack && f.state === 'ENGAGED') {
