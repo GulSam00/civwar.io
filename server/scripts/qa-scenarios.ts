@@ -17,10 +17,18 @@ function check(name: string, ok: boolean, detail = '') {
   results.push({ name, ok, detail });
 }
 
-function setup(seed = 4242, N = 4): { s: GameState; sim: Simulation } {
+function setup(seed = 4242, N = 4, cooldown = false): { s: GameState; sim: Simulation } {
   const map = generateMap(seed, 72, 42, N);
   const s = createGameState(map, Array.from({ length: N }, (_, i) => ({ playerId: i + 1, isBot: false, connected: true })));
+  // v5.1 (§37): 이 스크립트의 기존 장면은 같은 tick·연속 tick 다중 발령으로 거절 순서를 본다 — 기지 출전 쿨타임을 꺼 둔다 (항상 0).
+  // 쿨타임 자체는 아래 '9. v5.1' 장면과 server/test/v51.test.ts 에서 본다.
+  if (!cooldown) for (const b of s.bases) Object.defineProperty(b, 'dispatchReadyTick', { get: () => 0, set: () => {}, configurable: true });
   return { s, sim: new Simulation(s, IdleBot) };
+}
+/** v5.1 (§37): 패주 장면용 — 패주 전에는 사기를 1 이상으로 묶어 4d 사기 0 자동 후퇴가 먼저 걸리지 않게 한다 */
+function pinMoraleUntilRouted(f: { morale: number; routed: boolean }): void {
+  let v = f.morale;
+  Object.defineProperty(f, 'morale', { get: () => (f.routed ? v : Math.max(1, v)), set: (x: number) => { v = x; }, configurable: true, enumerable: true });
 }
 let seqC = 0;
 function stepWith(sim: Simulation, cmds: [number, Record<string, unknown>][]): { acks: any[]; ev: any[] } {
@@ -304,6 +312,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   // v4.5 (§22): 손실률 1.5% → 0.9% · 중립 노출 소모 절반 — GDD 4.15 #7 의 −220 / −186 (1.5% 기준)은 이제 −160 / −142 (두 깃발 모두 중립 칸 위라 노출 0.025%/tick 포함)
   check('GDD 4.15 대표 전투 #7 (창 언덕 즉시 회수, v4.5 손실률 0.9% + 중립 노출 절반): 3초 후 수비 ≈840 / 공격 ≈858 (−160 / −142)', Math.abs(t17.d - 840) <= 2 && Math.abs(t17.a - 858) <= 2, `서버 수비 ${t17.d} / 공격 ${t17.a}  이력(tick:공/수) ${hist.join(' ')}`);
   let routed: any = null;
+  for (const f of s.flags) if (f.id === 1 || f.id === 2) pinMoraleUntilRouted(f); // v5.1: 사기 0 자동 후퇴(4d) 대신 패주를 보려는 장면 (양쪽 모두)
   for (let i = 0; i < 400 && !routed; i++) routed = stepWith(sim, []).ev.find((e) => e.type === 'flag_routed' && e.flagId === 1);
   check('검→창 평원: 공격 깃발 패주 flag_routed', !!routed, JSON.stringify(routed));
   r = stepWith(sim, [

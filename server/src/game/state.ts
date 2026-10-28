@@ -125,6 +125,8 @@ export interface BaseState {
   damagedThisTick: boolean; // 7단계가 쓰고 8단계가 읽는 tick 로컬 플래그
   /** v4.4 (§21): 생산력 × TICKS_PER_MIN (정수 선형 회복용). 표시·계산 ‰ = floor(prodScaled / TICKS_PER_MIN) — baseProdPm() */
   prodScaled: number;
+  /** v5.1 (GDD 2.5): 출전 준비 tick — 현재 tick ≥ 이 값이면 출발 기지가 될 수 있다. 시작 0, 소유권이 바뀌면 0 [A-5.1-2] */
+  dispatchReadyTick: number;
 }
 
 /** v4.4 (§21): 기지 생산력 ‰ (0..1000) */
@@ -374,6 +376,7 @@ export function createGameState(
     lockUntilTick: 0,
     damagedThisTick: false,
     prodScaled: BASE_PROD_MAX_PERMILLE * TICKS_PER_MIN,
+    dispatchReadyTick: 0,
   }));
   const baseIndexOf = new Map<number, number>();
   bases.forEach((b, i) => baseIndexOf.set(b.tileId, i));
@@ -469,6 +472,9 @@ export function setTileOwner(state: GameState, tileId: number, to: number, recor
       while (i < arr.length && arr[i] < tileId) i++;
       arr.splice(i, 0, tileId);
     }
+    // v5.1 [A-5.1-2]: 소유권이 바뀌면 출전 쿨타임 초기화 — 새 주인은 즉시 출전 가능 (함락·합병·중립화 공통 경로)
+    const bi = state.baseIndexOf.get(tileId);
+    if (bi !== undefined) state.bases[bi].dispatchReadyTick = 0;
   }
   state.owners[tileId] = to;
   if (record) state.changes.tileChanges.push([tileId, to]);

@@ -176,7 +176,7 @@ export function buildSnapshotFull(state: Readonly<GameState>): S2C_SnapshotFull 
     owners: rleEncode(state.owners),
     players: state.players.filter(Boolean).map(playerSnap),
     flags: state.flags.map((f) => flagSnap(f, state.combatModel, state.moraleShown)),
-    bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b), prodPm: baseProdPm(b) })),
+    bases: state.bases.map((b) => ({ tileId: b.tileId, ownerId: state.owners[b.tileId], hpPct: hpPct(b), prodPm: baseProdPm(b), dispatchReadyTick: b.dispatchReadyTick })), // v5.1: dispatchReadyTick 은 snapshot_full 에만 [A-5.1-14]
     alliances: state.alliances.map((a) => ({ a: a.a, b: a.b, state: a.state, sinceTick: a.sinceTick, breakAtTick: a.breakAtTick })),
     thresholdPct: thresholdPct(t),
     ticksRemaining: Math.max(0, HARD_TIMEOUT_TICK - t),

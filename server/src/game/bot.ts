@@ -70,11 +70,13 @@ import {
   type Posture,
   type Unit,
   TICK_MS,
+  isBaseDispatchReady,
 } from '@civwar/shared';
 import { computeProduction } from './production.js';
 import { tileTieHash } from '../map/rng.js';
 import { ANNEX } from './annex.js';
 import { engageLossPerTick, flagValue } from './combat.js';
+import { baseDispatchReadyTick, pickOriginBaseFor } from './flagops.js';
 import { flagCap, techCost, troopCap, unitUpkeepRateMilli } from './economy.js';
 import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
@@ -256,6 +258,8 @@ interface Ctx {
   terrDist: Int32Array | null;
   /** 재지정 앵커를 고르는 중인 깃발 (자기 위치는 회랑 중복 검사에서 뺀다) */
   selfFlagId: number;
+  /** v5.1 [A-5.1-15]: 이번 결정에서 앞 발령이 출발 기지로 쓴 기지 (쿨타임으로 친다) */
+  readonly busyBases: Set<number>;
 }
 
 function withSelf<T>(ctx: Ctx, f: Readonly<Flag>, fn: () => T): T {
@@ -302,8 +306,20 @@ function poolCostOf(p: Readonly<PlayerState>, q: number, unit: Unit): number {
   return Math.ceil((q * techConvertPm(p.statPm, unit)) / 1000);
 }
 
-/** issueFlag 기본 출발지 — 앵커에 가장 가까운 내 기지(없으면 수도) */
-function originFor(state: Readonly<GameState>, p: Readonly<PlayerState>, anchor: number): number {
+/**
+ * v5.1 (GDD 8, [A-5.1-15]): 이 결정의 발령이 실제로 나갈 출발 기지 — 서버 issueFlag 와 같은 shared pickOriginBase.
+ * 봇 명령은 다음 tick 1단계에서 처리되므로 쿨타임은 t + 1 기준. 이번 결정에서 앞 발령이 쓴 기지(ctx.busyBases)는 쿨타임으로 친다.
+ * 내 기지가 없으면 수도 칸(서버는 수도에서 가장 가까운 내 땅 — 근사), 기지가 모두 쿨타임이면 null.
+ */
+function issueOrigin(ctx: Ctx, anchor: number): number | null {
+  if (!ctx.p.baseTiles.length) return ctx.p.homeTileId;
+  return pickOriginBaseFor(ctx.state, ctx.me, anchor, ctx.t + 1, ctx.busyBases);
+}
+/** 점수·거리 추정용 출발지 — 실제 출발 기지(쿨타임 반영), 모두 쿨타임이면 쿨타임 무시 최단 기지 */
+function originFor(ctx: Ctx, anchor: number): number {
+  const o = issueOrigin(ctx, anchor);
+  if (o !== null) return o;
+  const { state, p } = ctx;
   let best = p.homeTileId;
   let bd = Infinity;
   for (const b of p.baseTiles) {
@@ -314,6 +330,12 @@ function originFor(state: Readonly<GameState>, p: Readonly<PlayerState>, anchor:
     }
   }
   return best;
+}
+/** v5.1: 지금 결정에서 새 깃발을 낼 출발 기지가 하나라도 있는가 (기지가 없으면 영토 출발 — 항상 true) */
+function anyOriginReady(ctx: Ctx): boolean {
+  if (!ctx.p.baseTiles.length) return true;
+  const tt = ctx.t + 1;
+  return ctx.p.baseTiles.some((b) => !ctx.busyBases.has(b) && isBaseDispatchReady(baseDispatchReadyTick(ctx.state, b), tt));
 }
 
 function pseudoAttack(me: number, unit: Unit, anchor: number, targetOwnerId: number): Flag {
@@ -369,7 +391,11 @@ export function defendReachable(state: Readonly<GameState>, me: number, from: nu
 
 /** 발령 — 앵커가 내 땅(= 방어 태세)인데 출발 기지에서 적 땅 없이 못 가면 내지 않는다 (v4.5). 냈으면 true */
 function issue(ctx: Ctx, unit: Unit, troops: number, anchor: number): boolean {
-  if (ctx.state.owners[anchor] === ctx.me && !defendReachable(ctx.state, ctx.me, originFor(ctx.state, ctx.p, anchor), anchor)) return false;
+  const origin = issueOrigin(ctx, anchor);
+  if (origin === null) return false; // v5.1: 내 기지가 모두 출전 쿨타임 — 이 결정에서는 내지 않는다 (BASE_COOLDOWN 거절을 만들지 않음)
+  if (ctx.state.owners[anchor] === ctx.me && !defendReachable(ctx.state, ctx.me, origin, anchor)) return false;
+  if (ctx.p.baseTiles.length) ctx.busyBases.add(origin);
+  // 출발 기지는 생략(null) — 서버가 같은 pickOriginBase 로 같은 기지를 고른다 (입력 큐 순서대로 앞 발령의 쿨타임 반영)
   push(ctx, { type: 'cmd_flag_issue', clientSeq: seq(ctx), unit, troops, anchorTileId: anchor, originBaseTileId: null });
   ctx.pool -= poolCostOf(ctx.p, troops, unit);
   ctx.slots += 1;
@@ -556,7 +582,7 @@ function scoreAnchor(ctx: Ctx, o: number, anchor: number, adjMinTiles: number, f
   const cost = tileCost(state, pseudoAttack(me, UNIT.SWORD, anchor, o), anchor);
   // v4.2 8.3 [A-65]: mass(원 안 칸 수) → yield = min(병력 / cost, 3 × depth). 최소 1
   const mass = Math.max(1, Math.min(Math.floor(troops / cost), 3 * plowDepth(troops, cost)));
-  const march = state.graph.distance(from >= 0 ? from : originFor(state, p, anchor), anchor);
+  const march = state.graph.distance(from >= 0 ? from : originFor(ctx, anchor), anchor);
   let guardN = 0;
   let enemyDefend = 0;
   let foeAssets = 0;
@@ -970,7 +996,7 @@ function defend(ctx: Ctx): void {
       }
     }
     if (ctx.slots < ctx.cap && defendCount(ctx) < maxDefense(ctx)) {
-      const far = state.graph.distance(originFor(state, ctx.p, anchor), anchor) > BOT_FAR_FRONT_DIST;
+      const far = state.graph.distance(originFor(ctx, anchor), anchor) > BOT_FAR_FRONT_DIST;
       const units: Unit[] = ctx.params.fixedUnit === null && far ? [UNIT.CAVALRY, UNIT.SPEAR] : [UNIT.SPEAR];
       for (const u of units) {
         const vU = valueAs(state, me, u, POSTURE.DEFEND, anchor);
@@ -1317,6 +1343,7 @@ function fill(ctx: Ctx): void {
   let minDefDone = false;
   while (ctx.slots < ctx.cap) {
     if (ctx.pool - reserve < FLAG_MIN_TROOPS) break;
+    if (!anyOriginReady(ctx)) break; // v5.1: 출발 기지가 모두 쿨타임
     scanBorder(ctx);
     if (!minDefDone && defendCount(ctx) * 1000 < ctx.cap * ctx.k.minDefenseRatioPermille && ctx.hostileBorder) {
       minDefDone = true;
@@ -1390,6 +1417,7 @@ export function decideBot(state: Readonly<GameState>, me: number, t: number, par
     hostileBorder: false,
     terrDist: null,
     selfFlagId: -1,
+    busyBases: new Set(),
   };
   diplomacy(ctx);
   buyTech(ctx);

@@ -25,7 +25,7 @@ import {
 import { captureBase } from './basecapture.js';
 import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
-import { combatEligible, type FlagPresence } from './combat.js';
+import { combatEligible, moraleFloorOf, type FlagPresence } from './combat.js';
 import { isGarrison } from './economy.js';
 import { availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
 import { ANNEX } from './annex.js';
@@ -175,7 +175,10 @@ export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number,
     for (const f of state.flags) {
       if (!pushedSet.has(f.id)) continue;
       const mult = techCaptureMultPm(state.players[f.ownerId].statPm, f.unit);
-      f.morale = Math.max(0, f.morale - Math.max(1, Math.floor((CAPTURE_MORALE_DROP * mult) / 1000)));
+      const d = Math.max(1, Math.floor((CAPTURE_MORALE_DROP * mult) / 1000));
+      // v5.1 (GDD 4.5): 자기 기지 칸 위면 m' = max(min(m, 300), m − d) — 300 미만이면 더 떨어지지 않는다
+      const floor = moraleFloorOf(state, f);
+      f.morale = Math.max(Math.min(f.morale, floor), f.morale - d);
     }
   }
   return pushedSet;
@@ -376,7 +379,7 @@ export function stage10_flagEnd(state: GameState, t: number, out: Outbox): void 
     }
     if (f.state === 'IDLE' && f.idleSinceTick !== null && t - f.idleSinceTick >= FLAG_IDLE_TIMEOUT) {
       beginReturn(state, f, null); // [A-61]: IDLE 자동 회수는 지정 기지 없음
-      out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
+      out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId!, reason: 'idle_timeout' });
     }
   }
 }

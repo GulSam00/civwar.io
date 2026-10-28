@@ -9,6 +9,7 @@ import {
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
   DISENGAGE_VALUE_PERMILLE,
+  MORALE_BASE_FLOOR,
   MORALE_DROP_DEFEND_PER_TICK,
   MORALE_DROP_LOSS_K,
   MORALE_DROP_PER_TICK,
@@ -28,7 +29,7 @@ import {
   type CombatFlagInput,
 } from '@civwar/shared';
 import { captureBase } from './basecapture.js';
-import { beginReturn } from './flagops.js';
+import { autoRecallFlag, beginReturn } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { isAlly, type Flag, type GameState } from './state.js';
 
@@ -372,6 +373,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
   }
   if (state.combatModel === 2) {
     stage4c_updateMorale(state, new Set(routedNow), lossBp); // §33: 4b 끝, flagId ASC
+    stage4d_moraleRetreat(state, t, out); // v5.1 (GDD 4.6): 사기 0 자동 후퇴, flagId ASC
   }
   trackCombatEvents(state, plan, routedNow, brokeAway, t, out);
 }
@@ -385,15 +387,39 @@ export function stage4c_updateMorale(state: GameState, skip: ReadonlySet<number>
     if (skip.has(f.id)) continue;
     const stat = state.players[f.ownerId].statPm;
     if (f.inCombat) {
+      if (onOwnBase(state, f) && f.morale < MORALE_BASE_FLOOR) {
+        // v5.1 (사용자 2026-10-28, A-5.1-17 폐기): 기지 칸 위 하한 미만이면 교전 중에도 기지 회복량으로 하한까지만 오른다
+        const rec = Math.floor((MORALE_RECOVER_BASE * techMoraleRecoverPm(stat, f.unit)) / 1000);
+        f.morale = Math.min(MORALE_BASE_FLOOR, f.morale + rec);
+        continue;
+      }
       // 패치 12차 [A]: 고정 감소(병종·태세별) + K × 이번 tick 자기 손실 % (손실 만분율 × K ÷ 100, 반올림)
       const fixed = (f.posture === POSTURE.DEFEND ? MORALE_DROP_DEFEND_PER_TICK : MORALE_DROP_PER_TICK)[f.unit];
       const byLoss = Math.floor(((lossBp.get(f.id) ?? 0) * MORALE_DROP_LOSS_K + 50) / 100);
       const drop = Math.max(1, Math.floor(((fixed + byLoss) * techMoraleDropPm(stat, f.unit)) / 1000));
-      f.morale = Math.max(0, f.morale - drop);
+      f.morale = Math.max(moraleFloorOf(state, f), f.morale - drop); // v5.1: 자기 기지 칸 위는 300 에서 멈춤 (여기선 m ≥ 300)
     } else {
       const rec = Math.floor(((onOwnBase(state, f) ? MORALE_RECOVER_BASE : MORALE_RECOVER) * techMoraleRecoverPm(stat, f.unit)) / 1000);
       f.morale = Math.min(MORALE_MAX, f.morale + rec);
     }
+  }
+}
+
+/** v5.1 (GDD 4.5): 사기 감소의 하한 — 자기 기지 칸(수도 포함) 위면 MORALE_BASE_FLOOR, 아니면 0 (태세 무관) */
+export function moraleFloorOf(state: Readonly<GameState>, f: Readonly<Flag>): number {
+  return onOwnBase(state, f) ? MORALE_BASE_FLOOR : 0;
+}
+
+/**
+ * v5.1 (GDD 4.6, 사용자 확정 2026-10-28) 4d 사기 붕괴 자동 후퇴 — 모델 2 전용, 4c 직후, flagId ASC.
+ * 대상: inCombat · morale 0 · 비패주(병력 > 0, 같은 tick 패주가 우선) · 비귀환 · 비이탈대기 · 자기 기지 칸 아님 [A-5.1-18].
+ * 동작은 cmd_flag_recall 과 같다 (이탈 대기 → 귀환 → 도착 시 85% 환급).
+ */
+export function stage4d_moraleRetreat(state: GameState, t: number, out: Outbox): void {
+  for (const f of state.flags.slice()) {
+    if (!f.inCombat || f.morale !== 0 || f.routed || f.troopsMilli <= 0) continue;
+    if (f.state === 'RETURNING' || f.disengageUntilTick !== null || onOwnBase(state, f)) continue;
+    autoRecallFlag(state, f, t, 'morale', out);
   }
 }
 

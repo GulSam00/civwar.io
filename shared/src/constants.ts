@@ -143,6 +143,9 @@ export const BASE_HP_CAPTURE_PERMILLE = 500;
 export const BASE_HP_REGEN_MILLI = 50;
 export const BASE_REGEN_DELAY_TICK = 25;
 export const BASE_CAPTURE_LOCK_TICK = 25;
+/** v5.1 (GDD 2.5·4.2, 사용자 확정 2026-10-28): 기지에서 깃발이 출전한 tick t 부터 이 tick 동안 그 기지는 출발 기지가 될 수 없다.
+ *  BaseState.dispatchReadyTick = t + 이 값, 출전 가능 = 현재 tick ≥ dispatchReadyTick. 소유권이 바뀌면 0 으로 초기화 [A-5.1-2] */
+export const BASE_DISPATCH_COOLDOWN_TICKS = 25;
 /** 패치 5차: 300 → 200. 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 일반 기지 최소 50 tick(10초), 수도 75 tick(15초).
  *  방어 깃발이 선 기지는 이 상한도 BASE_DEFENDED_DMG_PERMILLE 만큼 줄고, 요새화·공성 테크 배율은 상한에도 곱해진다 */
 export const BASE_HP_DMG_CAP_MILLI_PER_TICK = 200;
@@ -267,8 +270,9 @@ export type Unit = (typeof UNIT)[keyof typeof UNIT];
 //                                     SPEAR SWORD CAVALRY
 // 2026-10-24 기본 능력치 재조정 [A]: 창 90 / 검 100 / 기 120 (구 75 / 100 / 145)
 export const UNIT_SPEED_PERMILLE = [900, 1000, 1200] as const;
-// 2026-10-24 병종 정체성: 점령(영토·기지 공격) 시 병력 소모 배율 — 기병 ≫ 창병 > 검병 [A] (구 1150 / 1000 / 850: 기병이 가장 쌌다)
-export const UNIT_ATK_MULT_PERMILLE = [1000, 850, 1400] as const;
+// 점령(영토·기지 공격) 시 병력 소모 배율. v5.1 (사용자 확정 2026-10-28): 전 병종 1000 — 점령 소모는 병종 무관 (구 1000 / 850 / 1400).
+// 병종 전용 점령 소모 테크(SPE-2A·SPE-3B·SWO-2B·CAV-3A)는 그대로 둔다 — docs/issues/20261028-1600-unit-capture-tech-redesign.md
+export const UNIT_ATK_MULT_PERMILLE = [1000, 1000, 1000] as const;
 // 2026-10-24 밸런스 패치 [A]: 기병 유지비 가중치 1600 → 2000 (사용자 확정 — 기병 쏠림 완화)
 export const UNIT_GARRISON_PERMILLE = [600, 1000, 2000] as const;
 export const UNIT_ASSAULT_PERMILLE = [700, 1000, 1400] as const;
@@ -646,6 +650,10 @@ export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 5] as const;
 export const MORALE_DROP_LOSS_K = 10;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
+/** v5.1 (GDD 4.5, 사용자 확정 2026-10-28): 자기 기지 칸(수도 포함) 위 깃발의 사기 하한 ‰ (화면 30%). 모델 2 전용.
+ *  교전 중: m < 하한 이면 +MORALE_RECOVER_BASE(테크 회복 배율)로 하한까지만 회복, m ≥ 하한 이면 max(하한, m − 감소).
+ *  점령 사기 소모(7단계): m < 하한 이면 소모 없음, 아니면 max(하한, m − 소모). 패주(사기 0 직접 대입)에는 적용하지 않는다 */
+export const MORALE_BASE_FLOOR = 300;
 export const MORALE_DELTA_INTERVAL = 5; // 델타 moraleChanged 주기 (tick)
 /** 2026-10-24 [A] 점령·기지 공격(게이지를 미는 tick) 사기 소모 ‰/tick — 병종별 실효 점령 배율(techCaptureMultPm)을 곱한다. 모델 2 전용 */
 export const CAPTURE_MORALE_DROP = 6;

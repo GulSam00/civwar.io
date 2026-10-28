@@ -18,8 +18,12 @@ import {
   type FlagEndReason,
   type Posture,
   type Unit,
+  isBaseDispatchReady,
+  nextDispatchReadyTick,
+  pickOriginBase,
   techConvertPm,
   techDisengageTicks,
+  type FlagRecallReason,
 } from '@civwar/shared';
 import { flagCap } from './economy.js';
 import type { Outbox } from './outbox.js';
@@ -124,14 +128,21 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
     targetOwnerId = anchorOwner;
   }
 
+  // v5.1 (GDD 2.5·4.2): 출발 기지 결정 — 지정이면 NOT_BASE → NOT_OWNED_BASE → BASE_COOLDOWN, 생략이면 쿨타임 아닌 가장 가까운 기지(shared pickOriginBase)
   let origin: number;
+  let originIsBase = false;
   const ob = msg.originBaseTileId;
   if (ob !== undefined && ob !== null) {
     if (!validTile(state, ob) || !state.map.isBase[ob]) return { reason: 'NOT_BASE' };
     if (state.owners[ob] !== playerId) return { reason: 'NOT_OWNED_BASE' };
+    if (!isBaseDispatchReady(baseDispatchReadyTick(state, ob), t)) return { reason: 'BASE_COOLDOWN' };
     origin = ob;
+    originIsBase = true;
   } else if (p.baseTiles.length) {
-    origin = argminDist(state, p.baseTiles, anchor);
+    const pick = pickOriginBaseFor(state, playerId, anchor, t);
+    if (pick === null) return { reason: 'BASE_COOLDOWN' };
+    origin = pick;
+    originIsBase = true;
   } else {
     const own: number[] = [];
     for (let i = 0; i < state.owners.length; i++) if (state.owners[i] === playerId) own.push(i);
@@ -143,6 +154,7 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
   if (poolCost * 1000 > p.troopsMilli) return { reason: 'INSUFFICIENT' };
 
   p.troopsMilli -= poolCost * 1000;
+  if (originIsBase) state.bases[state.baseIndexOf.get(origin)!].dispatchReadyTick = nextDispatchReadyTick(t); // 거절된 명령은 쿨타임을 만들지 않는다
   state.ledger.conversion += poolCost * 1000 - msg.troops * 1000;
   const used = new Set(mine.map((f) => f.slotIndex));
   let slot = 0;
@@ -178,6 +190,26 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
     engageEtaTick: t + engageEtaTicks(state, f, origin, anchor),
   });
   return { flagId: f.id, posture };
+}
+
+/** v5.1: 기지 칸의 출전 준비 tick (기지가 아니면 0) */
+export function baseDispatchReadyTick(state: Readonly<GameState>, tileId: number): number {
+  const i = state.baseIndexOf.get(tileId);
+  return i === undefined ? 0 : state.bases[i].dispatchReadyTick;
+}
+
+/**
+ * v5.1: 출발 기지 생략 시 실제 출발 기지 (서버·봇 공용). 쿨타임이 아닌 내 기지 중 앵커까지 최단(동률 tileId ASC).
+ * null = 내 기지가 없거나 모두 쿨타임. extraBusy = 봇이 한 결정 안에서 앞 발령에 쓴 기지 [A-5.1-15]
+ */
+export function pickOriginBaseFor(state: Readonly<GameState>, playerId: number, anchor: number, t: number, extraBusy?: ReadonlySet<number>): number | null {
+  return pickOriginBase(
+    state.players[playerId].baseTiles,
+    anchor,
+    t,
+    (x) => (extraBusy?.has(x) ? Number.MAX_SAFE_INTEGER : baseDispatchReadyTick(state, x)),
+    (a, b) => state.graph.distance(a, b),
+  );
 }
 
 function argminDist(state: Readonly<GameState>, tiles: readonly number[], to: number): number {
@@ -272,8 +304,24 @@ export function recallFlag(state: GameState, playerId: number, msg: C2S_CmdFlagR
   beginReturn(state, f, base);
   // v4.7 (§29) A3 [A-128]: 교전 중 회수도 이탈 대기(3초, ×0.5) 동안 접촉 간선을 유지한다 — 상대가 방어 태세여도 공짜로 끊기지 않는다
   if (wasInCombat) f.disengageHold = true;
-  out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
+  out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId!, reason: 'command' });
   return { flagId: f.id, posture: f.posture };
+}
+
+/**
+ * v5.1 (GDD 4.6) 사기 붕괴 자동 후퇴 — recallFlag 의 검증 뒤 본체와 같다 (지정 귀환 기지 없음).
+ * 이탈 대기 개시(flag_disengage_started{auto:true}) → beginReturn(null) → disengageHold → flag_recalled{reason}.
+ * 호출자(4d)가 inCombat·비패주·비귀환·비이탈대기를 보장한다.
+ */
+export function autoRecallFlag(state: GameState, f: Flag, t: number, reason: FlagRecallReason, out: Outbox): void {
+  const wasInCombat = f.inCombat;
+  if (wasInCombat && f.disengageUntilTick === null) {
+    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm);
+    out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: true });
+  }
+  beginReturn(state, f, null);
+  if (wasInCombat) f.disengageHold = true;
+  out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId!, reason });
 }
 
 // ───────────────────────── 4.3a 태세 전환 ─────────────────────────

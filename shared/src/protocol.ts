@@ -34,6 +34,8 @@ export type CmdRejectReason =
   | 'LOCKED'
   | 'NOT_BASE'
   | 'NOT_OWNED_BASE'
+  /** v5.1 (GDD 2.5·4.2): cmd_flag_issue — 지정 출발 기지가 출전 쿨타임 중이거나, 생략했는데 내 기지가 모두 쿨타임 */
+  | 'BASE_COOLDOWN'
   | 'ROUTED'
   | 'IN_COMBAT'
   | 'DISENGAGING'
@@ -465,6 +467,11 @@ export interface BaseSnapshot {
   hpPct: number;
   /** v4.4 (§21, 추가만): 기지 생산력 ‰ (0..1000). 점령 시 ×0.5, 이후 선형 회복. 서버는 항상 싣는다 */
   prodPm?: number;
+  /**
+   * v5.1 (GDD 2.5, 추가만): 출전 준비 tick (절대 tick, 0 = 즉시 가능). 남은 쿨타임 = max(0, dispatchReadyTick − 현재 tick).
+   * snapshot_full 에만 있고(서버는 항상 싣는다) 델타에는 없다 — 사이 구간은 flag_issued(출발 칸이 기지면 tick + 25)·base_captured(0)로 갱신 [A-5.1-14]
+   */
+  dispatchReadyTick?: number;
 }
 
 /**
@@ -713,11 +720,18 @@ export interface S2C_FlagRetargeted {
   /** v4.6 (§27, 추가만): true = 도착지 기본 태세를 쿨타임 때문에 적용하지 못함 (`posture` 는 실제 태세). 서버는 항상 싣는다 */
   postureHeld?: boolean;
 }
+/** v5.1 (GDD 4.6): flag_recalled 의 발생 원인 */
+export type FlagRecallReason = 'command' | 'morale' | 'base_lost' | 'idle_timeout';
 export interface S2C_FlagRecalled {
   type: 'flag_recalled';
   tick: number;
   flagId: number;
   returnTileId: number;
+  /**
+   * v5.1 (추가만): 'command' = cmd_flag_recall · 'morale' = 사기 0 자동 후퇴(4d) · 'base_lost' = 기지 함락 퇴각 · 'idle_timeout' = IDLE 2분 자동 귀환.
+   * 서버는 항상 싣는다 (구 클라이언트는 무시)
+   */
+  reason?: FlagRecallReason;
 }
 export interface S2C_FlagEngaged {
   type: 'flag_engaged';

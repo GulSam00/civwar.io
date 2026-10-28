@@ -27,7 +27,7 @@ export function captureBase(state: GameState, B: number, newOwner: number, t: nu
       const wasInCombat = f.inCombat;
       beginReturn(state, f, null);
       if (wasInCombat) f.disengageHold = true;
-      out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId! });
+      out.broadcast.push({ type: 'flag_recalled', tick: t, flagId: f.id, returnTileId: f.returnTileId!, reason: 'base_lost' });
     }
   }
   out.broadcast.push({

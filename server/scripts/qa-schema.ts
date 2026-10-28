@@ -68,7 +68,7 @@ const UNIT = ['enum', 0, 1, 2] as const;
 const FLAG_STATE = ['enum', 'MARCHING', 'ENGAGED', 'RETURNING', 'IDLE'] as const;
 const DIFF = ['enum', 'EASY', 'NORMAL', 'HARD'] as const;
 /** 문서 §6.1 */
-export const DOC_REJECT = ['ELIMINATED', 'INSUFFICIENT', 'BAD_REQUEST', 'NOT_IN_GAME', 'PREREQ_MISSING', 'ALREADY_OWNED', 'EXCLUSIVE_BLOCKED', 'RATE_LIMITED', 'NO_SLOT', 'BAD_UNIT', 'WATER', 'ALLIED', 'OUT_OF_RANGE', 'TOO_SMALL', 'NO_FLAG', 'RETURNING', 'LOCKED', 'NOT_BASE', 'NOT_OWNED_BASE', 'ROUTED', 'IN_COMBAT', 'DISENGAGING', 'POSTURE_COOLDOWN', 'SAME_POSTURE', 'BAD_TARGET', 'ALLY_LIMIT', 'ALLY_CUTOFF', 'ALLY_FROZEN', 'ALREADY_ALLIED', 'ALLY_PENDING', 'NO_PROPOSAL', 'NOT_ALLIED', 'MIN_DURATION'] as const;
+export const DOC_REJECT = ['ELIMINATED', 'INSUFFICIENT', 'BAD_REQUEST', 'NOT_IN_GAME', 'PREREQ_MISSING', 'ALREADY_OWNED', 'EXCLUSIVE_BLOCKED', 'RATE_LIMITED', 'NO_SLOT', 'BAD_UNIT', 'WATER', 'ALLIED', 'OUT_OF_RANGE', 'TOO_SMALL', 'NO_FLAG', 'RETURNING', 'LOCKED', 'NOT_BASE', 'NOT_OWNED_BASE', 'BASE_COOLDOWN', 'ROUTED', 'IN_COMBAT', 'DISENGAGING', 'POSTURE_COOLDOWN', 'SAME_POSTURE', 'BAD_TARGET', 'ALLY_LIMIT', 'ALLY_CUTOFF', 'ALLY_FROZEN', 'ALREADY_ALLIED', 'ALLY_PENDING', 'NO_PROPOSAL', 'NOT_ALLIED', 'MIN_DURATION'] as const;
 /** 문서 §6.2 */
 export const DOC_ERROR = ['BAD_MESSAGE', 'BAD_VERSION', 'NOT_HELLO', 'ALREADY_HELLO', 'BAD_NICKNAME', 'BAD_TARGET_PLAYERS', 'ROOM_NOT_FOUND', 'ROOM_FULL', 'ROOM_IN_PROGRESS', 'ALREADY_IN_ROOM', 'NOT_IN_ROOM', 'NOT_HOST', 'NOT_LOBBY', 'RATE_LIMITED', 'BAD_ROOM_OPTIONS', 'MAP_NOT_FOUND', 'NOT_ENOUGH_PLAYERS'] as const;
 
@@ -140,7 +140,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
     tick: 'int', owners: arr('int'),
     players: arr(obj({ id: 'int', tiles: 'int', troops: 'int', gold: 'int', goldWeight: 'int', upkeepPm: range(0, Number.MAX_SAFE_INTEGER), techMask: range(0, Number.MAX_SAFE_INTEGER), techCount: range(0, 32), flagCap: range(3, 7), alive: 'bool', connected: 'bool', allyBreaks: 'int' })),
     flags: arr(flagSnap),
-    bases: arr(obj({ tileId: 'int', ownerId: 'int', hpPct: range(0, 100), prodPm: range(0, 1000) })),
+    bases: arr(obj({ tileId: 'int', ownerId: 'int', hpPct: range(0, 100), prodPm: range(0, 1000), dispatchReadyTick: 'int' })), // v5.1 §37: snapshot_full 에만
     alliances: arr(obj({ a: 'int', b: 'int', state: ['enum', 'ACTIVE', 'BREAKING'], sinceTick: 'int', breakAtTick: 'int|null' })),
     thresholdPct: 'num', ticksRemaining: 'int', endgameRushActive: 'bool',
     allyProposals: arr(obj({ proposalId: 'int', fromPlayerId: 'int', toPlayerId: 'int', expireTick: 'int' })),
@@ -172,7 +172,7 @@ export const DOC_SCHEMA: Record<string, Shape> = {
   game_over: { finalTick: 'int', winnerId: 'int|null', reason: ['enum', 'last_standing', 'threshold', 'timeout'], standings: arr(obj({ rank: 'int', playerId: 'int', tiles: 'int', troops: 'int', goldEarned: 'int', alive: 'bool' })) },
   flag_issued: { tick: 'int', flagId: 'int', playerId: 'int', slotIndex: 'int', unit: UNIT, posture: POSTURE, troops: 'int', originTileId: 'int', anchorTileId: 'int', targetOwnerId: 'int', etaTick: 'int', engageEtaTick: 'int' },
   flag_retargeted: { tick: 'int', flagId: 'int', anchorTileId: 'int', targetOwnerId: 'int', posture: POSTURE, resumeTick: 'int', etaTick: 'int', engageEtaTick: 'int', auto: 'bool', postureHeld: 'bool' },
-  flag_recalled: { tick: 'int', flagId: 'int', returnTileId: 'int' },
+  flag_recalled: { tick: 'int', flagId: 'int', returnTileId: 'int', reason: ['enum', 'command', 'morale', 'base_lost', 'idle_timeout'] }, // v5.1 §37: reason 항상
   flag_engaged: { tick: 'int', flagId: 'int', posture: POSTURE, 'frontTileCount?': 'int', 'guardTileCount?': 'int' },
   flag_stalled: { tick: 'int', flagId: 'int', tileId: 'int|null' },
   flag_progress_lost: { tick: 'int', flagId: 'int', tileId: 'int', cause: ['enum', 'captured_by_other', 'target_lost', 'decayed'] },

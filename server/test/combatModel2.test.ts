@@ -224,12 +224,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다.
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다. 2026-10-28 v5.1(점령 배율 전 병종 1000·기지 출전 쿨타임 25 tick·봇 출발 기지 확인 — 모델 1·2 공통)로 다시 뽑았다.
  */
 const GOLDEN = {
-  G1: { stream: '89363059cd2a1048884092dd795e75129f72cb73394dfc7aa05a002080660ba4', state: '5c73a9aeaaddb1f9d0a9ef90aba16864f531ed3b64f72534ad8266510ef4c295' },
-  G2: { stream: 'f54589018effe40548b68490f1293a02ee87b51d972c5f33d06e7390362f2dc9', state: '09861e222c2fbe5ccc3b1dd68c109cb0a77339452eca360ae1a30bddd0e2598e' },
-  G3: { stream: '6b85c6b48dbf0c36395196f9b31e6605c13ef31281b747f345c90acec5f938a2', state: '7b056d4d6f58d78fdf6b29846c48f9a648f2563c192c476568a0abb4d3124d8a' },
+  G1: { stream: '48d493521b2f23b08be65ce03a8fd59564b8dbc7a8129210be75f147791c2dc7', state: '9f24db06a328f7a127f77fbc805f315ac42c8cc960df0fa3a985083c879e20e9' },
+  G2: { stream: '86920904ea2a6fab2d03b9c2bac55c4610d7fc127695e42e65042f2e2c3e61d9', state: '3db543f1483db21ac3935fa2e07b870bb930893d9f25933f501b4c1dc03c3e25' },
+  G3: { stream: 'fc1359b87d99899acfbc2c5d960d2b418957c3ca4f017873dbc66d1e9f0dec65', state: 'ff7d84b2362ebedf82235ac6be955924e4016a113fd236360b066713f87df161' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
@@ -621,7 +621,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(lost(true, 1000, 1500)).toBe((BASE_HP_DMG_CAP_MILLI_PER_TICK * 1.5) / 2);
   });
 
-  it('점령 사기 소모 [A]: 게이지를 미는 tick 마다 창 -6 / 검 -5 / 기 -8 (CAPTURE_MORALE_DROP x 점령 배율), 모델 1 은 사기 없음', () => {
+  it('점령 사기 소모 [A]: 게이지를 미는 tick 마다 v5.1 전 병종 -6 (CAPTURE_MORALE_DROP x 점령 배율 1000), 모델 1 은 사기 없음', () => {
     const drop = (unit: 0 | 1 | 2, model: 1 | 2) => {
       const { s, c } = duelState(model);
       const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 750_000 });
@@ -632,8 +632,8 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       return 1000 - f.morale;
     };
     expect(drop(U.SPEAR, 2)).toBe(6);
-    expect(drop(U.SWORD, 2)).toBe(5);
-    expect(drop(U.CAVALRY, 2)).toBe(8);
+    expect(drop(U.SWORD, 2)).toBe(6); // v5.1: 점령 배율 전 병종 1000 (구 5)
+    expect(drop(U.CAVALRY, 2)).toBe(6); // v5.1 (구 8)
     expect(drop(U.CAVALRY, 1)).toBe(0);
   });
 
