@@ -1,5 +1,5 @@
 /** 표시 문자열 (한국어). 코드 값은 프로토콜 문서 §6 그대로 키로 쓴다. */
-import type { CmdRejectReason, ErrorCode, FlagState, GameOverReason } from '@civwar/shared';
+import { BASE_DISPATCH_COOLDOWN_TICKS, TICK_MS, type CmdRejectReason, type ErrorCode, type FlagState, type GameOverReason } from '@civwar/shared';
 
 export const UNIT_NAME = ['창병', '검병', '기병'] as const;
 export const UNIT_SHORT = ['창', '검', '기'] as const;
@@ -28,6 +28,7 @@ export const REJECT_TEXT: Record<CmdRejectReason, string> = {
   LOCKED: '방금 재지정한 깃발입니다 (잠시 후 가능)',
   NOT_BASE: '기지가 아닙니다',
   NOT_OWNED_BASE: '내 기지가 아닙니다',
+  BASE_COOLDOWN: `출전 준비 중인 기지입니다 (기지마다 출전 뒤 ${(BASE_DISPATCH_COOLDOWN_TICKS * TICK_MS) / 1000}초)`,
   ROUTED: '패주 중인 깃발은 조작할 수 없습니다',
   IN_COMBAT: '전투 중에는 태세를 바꿀 수 없습니다',
   DISENGAGING: '이탈 대기 중입니다',
