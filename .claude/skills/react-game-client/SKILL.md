@@ -93,6 +93,9 @@ function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
 
 ## UI 화면 구성
 
+**civwar.io의 UI 규칙(톤, 정보 표시, 색 토큰, 아이콘, 문구, 확인 절차)은 `client/UI-CONVENTIONS.md`에 있다. 화면을 만들거나 고치기 전에 읽는다.** 아래는 일반적인 화면 구성 방법이다.
+
+
 최소 3개 화면으로 시작한다:
 1. **로비** — 방 생성/참가, 참가자 목록, 방장의 시작 버튼
 2. **인게임 HUD** — 내 자원/병력 요약, 경과/남은 시간, (선택) 미니맵

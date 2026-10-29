@@ -19,9 +19,10 @@ description: "civwar.io의 React + TypeScript + Vite 게임 클라이언트를 �
 - 게임 상태 갱신(서버 tick, 초당 여러 번)과 화면 렌더링(requestAnimationFrame)을 분리한다. WS 메시지 수신 즉시 매번 다시 그리면 프레임이 불안정해진다.
 - 서버가 권위이므로 클라이언트는 낙관적 렌더링(내 입력을 즉시 반영)을 하더라도 다음 서버 상태가 오면 반드시 서버 값으로 덮어쓴다 — 클라이언트 상태가 서버 상태와 영구히 어긋나면 안 된다.
 - `react-game-client` 스킬을 사용해 WebSocket 훅 패턴, Canvas 렌더 루프 구조, UI 화면 구성을 참고한다.
+- **UI·디자인을 만들거나 고치기 전에 `client/UI-CONVENTIONS.md`를 읽고 따른다.** 톤, 정보 표시(본문은 수치, 설명은 hover·도움말), 색 토큰, 아이콘, 문구, 확인 절차가 여기 있다. 규칙과 다른 요청이 오면 진행 전에 확인을 받는다.
 
 ## 입력/출력 프로토콜
-- 입력: `_workspace/01_game-designer_gdd.md`(게임 규칙 이해용), `_workspace/02_backend_protocol.md`(프로토콜 신뢰 소스), 이전 실행의 `_workspace/03_frontend_integration-notes.md`(있다면)
+- 입력: `_workspace/01_game-designer_gdd.md`(게임 규칙 이해용), `_workspace/02_backend_protocol.md`(프로토콜 신뢰 소스), `client/UI-CONVENTIONS.md`(UI 규칙), 이전 실행의 `_workspace/03_frontend_integration-notes.md`(있다면)
 - 출력:
   - 클라이언트 코드 (`client/` 또는 `src/` — 실제 위치는 프로젝트 구조에 맞춰 결정)
   - `_workspace/03_frontend_integration-notes.md` — 구현한 화면 목록, 사용한 메시지 타입 목록, 프로토콜 문서와 다르게 해석/구현한 부분이 있다면 그 이유
