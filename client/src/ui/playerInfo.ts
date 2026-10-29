@@ -218,6 +218,8 @@ export interface PlayerCardData {
   share: number;
   tiles: number;
   troops: number;
+  /** v5.2 (§38): 출전 중인 깃발 병력 합 — 총병력 = troops + deployed */
+  deployed: number;
   troopCap: number;
   troopRate: number | null;
   gold: number;
@@ -268,6 +270,7 @@ export function playerCardData(g: GameModel, id: number, me: number | null, name
     share: sharePct(g, p.tiles),
     tiles: p.tiles,
     troops: p.troops,
+    deployed: g.deployedTroopsOf(id),
     troopCap: g.troopCapOf(p),
     troopRate: inc?.troops ?? null,
     gold: p.gold,

@@ -706,7 +706,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
       {spectating && <span className="pill spectate-pill">{me !== null && g.players.get(me) && !g.players.get(me)!.alive ? '탈락 · 관전' : '관전'}{p ? ` · ${store.nicknameOf(p.id)}` : ''}</span>}
       {p && (
         <>
-          <Stat label="병력" value={`${fmtCompact(p.troops)} / ${fmtCompact(g.troopCapOf(p))}`} breakdown={troopTip} />
+          <Stat label="병력" value={`${fmtCompact(p.troops + g.deployedTroopsOf(p.id))} / ${fmtCompact(g.troopCapOf(p))}`} breakdown={troopTip} />
           <Stat
             label={p.upkeepPm > 0 ? `골드 · 유지비 −${(p.upkeepPm / 10).toFixed(0)}%` : '골드'}
             value={`${p.gold.toLocaleString()}${income ? ` +${income.net.toFixed(1)}/초` : ''}`}
@@ -925,13 +925,23 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
   let budget: number | null = null;
   if (g && p && me !== null) {
     const inc = incomeOf(g, me);
-    const tb = troopBarParts(p.troops, g.troopCapOf(p), inc?.troops ?? null);
+    const deployed = g.deployedTroopsOf(me);
+    const tb = troopBarParts(p.troops, g.troopCapOf(p), inc?.troops ?? null, deployed);
     budget = ratioBudget(p.troops, ix.ratio);
     troopBar = (
-      <div className={`troop-bar ${tb.full ? 'full' : ''}`} role="meter" aria-label="병력" aria-valuemin={0} aria-valuemax={g.troopCapOf(p)} aria-valuenow={p.troops} title={`병력 ${p.troops.toLocaleString()} / 상한 ${g.troopCapOf(p).toLocaleString()}${tb.full ? ' — 가득 참 (더 늘지 않음)' : ''}`}>
+      <div
+        className={`troop-bar ${tb.full ? 'full' : ''}`}
+        role="meter"
+        aria-label="병력"
+        aria-valuemin={0}
+        aria-valuemax={g.troopCapOf(p)}
+        aria-valuenow={p.troops + deployed}
+        title={`대기 ${p.troops.toLocaleString()} · 출전 중 ${deployed.toLocaleString()} / 상한 ${g.troopCapOf(p).toLocaleString()}${tb.full ? ' — 가득 참 (더 늘지 않음)' : ''}`}
+      >
         <span className="tb-cur">{tb.cur}</span>
         <span className="tb-track">
           <span className="tb-fill" style={{ width: `${tb.fillPct}%` }} />
+          {tb.deployedPct > 0 && <span className="tb-deployed" style={{ left: `${tb.fillPct}%`, width: `${tb.deployedPct}%` }} />}
           {tb.rate && <span className="tb-rate">{tb.full ? '가득 참' : tb.rate}</span>}
         </span>
         <span className="tb-cap">{tb.cap}</span>

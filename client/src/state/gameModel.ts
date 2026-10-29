@@ -528,6 +528,13 @@ export class GameModel {
     return Math.min(max, base + Math.floor(p.tiles / per) + bonus);
   }
 
+  /** v5.2 (§38): 출전 중인 깃발 병력 합 — 총병력(대기 + 깃발)이 상한에 닿으면 생산이 멈춘다 */
+  deployedTroopsOf(playerId: number): number {
+    let n = 0;
+    for (const f of this.flags.values()) if (f.ownerId === playerId) n += f.troops;
+    return n;
+  }
+
   /** §8 troopCap = floor((100 + 12·tiles) × capPm / 1000), capPm = 영토 테크 */
   troopCapOf(p: Pick<PlayerSnapshot, 'tiles' | 'techMask'>): number {
     const base = constNum(this.config, 'TROOP_CAP_BASE', TROOP_CAP_BASE);

@@ -2779,3 +2779,26 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 - **tsc 깨짐**: `client/src/ui/text.ts:17` `REJECT_TEXT: Record<CmdRejectReason, string>` 에 `BASE_COOLDOWN` 키 추가.
 - **테스트 깨짐(값 변경)**: `client/test/options.test.ts:105 · 112`(지형 툴팁 점령 비용 — 병종 무관 15명/칸), `client/test/techTree.test.ts:104`(검병 점령 소모 배율 ×1.00 → ×0.80), `client/test/unitStats.test.ts:61`(점령 소모 [7, 7, 7]), `client/test/qaV45.test.ts:107`(봇 판 진행이 달라져 고른 장면의 40명 방어 깃발이 IDLE 전에 노출 소모로 사라짐 — 서버 규칙 오류 아님, 장면 선택이 판 진행에 의존).
 - 표시: 기지 출전 쿨타임 게이지(`dispatchReadyTick` + `flag_issued` · `base_captured` 로 갱신), 출전 미리보기 출발 기지 = `pickOriginBase`, `BASE_COOLDOWN` 토스트, `flag_recalled.reason == "morale"` 알림.
+
+## 38. GDD v5.2 — 깃발 병력도 병력 상한에 포함 (프로토콜 변경 없음 — 2026-10-30, 사용자 결정)
+
+근거: `_workspace/01_game-designer_gdd.md` v5.2 (3.1), 이슈 `docs/issues/20261029-0000-troop-cap-include-flags.md`, 측정 `_workspace/measure-2026-10-29/`.
+
+### 38.1 규칙 (서버, 모델 2 전용 — 모델 1 은 비트 동일)
+- 총병력 `heldTroopsMilli(state, p)` = 풀(`p.troopsMilli`) + 자기 깃발 `troopsMilli` 합 (`server/src/game/economy.ts`).
+- 2단계 생산 로지스틱 `(1 − held/cap)`: `computeProduction` 이 `applyRegenMult(p, base, held)` 를 부른다 (`production.ts`). `applyRegenMult`·`regenMilliPerTick` 은 세 번째 인자(기본값 = 풀)를 받는다. 총병력 ≥ 상한이면 생산 0.
+- 풀 자르기(`tick.ts` stage2, 풀 > 상한이면 `capClamp`)는 종전대로 풀만 본다 — 상한이 줄어도 깃발 몫 때문에 풀을 자르지 않는다 ([A-5.2-1] 부드러운 상한).
+- 합병 보상 공간 `room = cap − held` (`tick.ts` 멸망 처리). 종전은 `cap − 풀`.
+- 회수 환급은 바꾸지 않았다. 깃발이 돌아오면 깃발 몫이 풀로 옮겨 갈 뿐 총병력은 그대로이고, 풀이 상한을 넘으면 종전대로 잘린다.
+- 발령 검증(`issueFlag`)은 바꾸지 않았다. 발령은 풀에서 빼므로 총병력이 늘지 않는다.
+
+### 38.2 봇
+- `minAttack` 의 풀 천장 = `cap − 깃발 병력 − 이번 결정에서 낸 발령 비용` (종전 `cap`). 예비 병력(`reserve = cap × reserveRatio`)은 그대로다.
+
+### 38.3 프로토콜·클라이언트
+- 프로토콜 변경 없음. 깃발 병력은 이미 스냅숏·델타에 있다(안개 없음).
+- 클라이언트: `GameModel.deployedTroopsOf(id)`. 상단 HUD 병력 = `(풀 + 출전) / 상한`, 하단 병력 바 = 풀 채움 뒤에 출전 몫(사선 무늬, `.tb-deployed`)을 잇고 가득 참 = 풀 + 출전 ≥ 상한. 플레이어 카드 병력 = 총병력(hover 에 대기·출전 나눔).
+
+### 38.4 검증
+- `server/test/troopCapFlags.test.ts` (총병력 합, 생산 감소, 상한 이상 생산 0·풀 유지, 모델 1 불변), `server/test/annex.test.ts` 장면 갱신(점령 깃발 500 이 상한을 채우지 않게 상한 배율을 넓힘, "여유 60" 은 깃발 몫 포함), `client/test/uiOct18.test.ts` 병력 바, `client/test/qaV45.test.ts` 장면에서 출전 쿨타임 초기화(봇 판 직후 BASE_COOLDOWN 으로 거절되던 장면 의존 문제). tsc 3종 통과, vitest 619/619.
+- selfplay (M 10인 NORMAL, 시드 1000~1015, `_workspace/measure-2026-10-30/`): 종전 대비 패주 107 → 89/판, 교전 366 → 307/판, **탈락 2.06 → 0.56/판**, 타임아웃 10 → 12/16, 종료 31.1 → 31.5분. 총병력/상한 중간값 1.2 → 0.74.

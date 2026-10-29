@@ -16,7 +16,7 @@
  *   분배 = 각 몫 floor, 잔여는 가중치 최대(동률 = 앞) 행에 → 행 합 = 총합 (정확히). 병력 상한은 그대로(전체 칸 수 기준).
  */
 import { CAPITAL_PROD_TILES, BASE_PROD_TILES, GOLD_RATE_PERMILLE, TECH_STAT, techBaseProdPm } from '@civwar/shared';
-import { applyRegenMult, baseGoldWeight, baseRegenBaseMilli, garrisonUpkeepMilliPerTick, terrRegenBaseMilli } from './economy.js';
+import { applyRegenMult, baseGoldWeight, baseRegenBaseMilli, garrisonUpkeepMilliPerTick, heldTroopsMilli, terrRegenBaseMilli } from './economy.js';
 import { baseProdPm, type GameState, type PlayerState, type ProductionYield } from './state.js';
 
 /** total 을 weights 비례로 floor 분배, 잔여는 가중치 최대(동률 = 앞) 항목에. 합 = total. 가중치 합 0 이면 전부 0 (total 은 첫 항목에) */
@@ -62,6 +62,7 @@ export function computeProduction(state: Readonly<GameState>, p: Readonly<Player
   const regenMilli = applyRegenMult(
     p,
     wT.reduce((a, b) => a + b, 0),
+    state.combatModel === 2 ? heldTroopsMilli(state, p) : p.troopsMilli, // v5.2 (§38): 로지스틱은 총병력(대기 + 깃발) 기준. 모델 1 은 종전대로 대기 병력
   );
   const troops = distribute(regenMilli, wT);
   // 골드

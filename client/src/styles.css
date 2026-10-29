@@ -2632,6 +2632,14 @@ button.tb-who:hover {
 .troop-bar.full .tb-fill {
   background: #6a7d55;
 }
+/* v5.2 (§38): 출전 중인 깃발 병력 몫 — 대기 채움 뒤에 사선 무늬로 잇는다 (색만으로 구분하지 않음) */
+.tb-deployed {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, rgba(148, 163, 179, 0.45) 0 4px, rgba(148, 163, 179, 0.2) 4px 8px);
+  transition: left 0.2s linear, width 0.2s linear;
+}
 .tb-rate {
   position: absolute;
   inset: 0;

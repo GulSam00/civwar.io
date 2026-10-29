@@ -3,7 +3,7 @@
  * 마지막 기지를 점령해 상대를 멸망시킨(합병 받는) 플레이어가 멸망자의 병력·골드 일부와 정액 현상금을 받는다.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { POSTURE, UNIT, isClaimable, type ServerMessage } from '@civwar/shared';
+import { POSTURE, TECH_STAT, UNIT, isClaimable, type ServerMessage } from '@civwar/shared';
 import { ANNEX } from '../src/game/annex.js';
 import { troopCap } from '../src/game/economy.js';
 import { NEUTRAL, baseProdPm, createGameState, ledgerImbalance, makeFlag, setTileOwner, type Flag, type GameState } from '../src/game/state.js';
@@ -43,6 +43,11 @@ function setPool(s: GameState, id: number, troops: number): void {
   const p = s.players[id];
   s.ledger.initial += troops * 1000 - p.troopsMilli;
   p.troopsMilli = troops * 1000;
+}
+
+/** v5.2 (§38): 상한은 풀 + 깃발 병력을 본다. 점령 깃발(500)이 초반 상한을 채우지 않도록 P1 상한 배율을 넓힌다 (보상 레버만 보는 장면용) */
+function widenCap(s: GameState, id: number): void {
+  s.players[id].statPm[TECH_STAT.TROOP_CAP] = 10_000;
 }
 
 const landNeighbor = (s: GameState, b: number): number => s.graph.neighbors(b).find((x) => isClaimable(s.map.terrain[x]) && !s.map.isBase[x])!;
@@ -91,6 +96,7 @@ describe('§31 약소국 정리 보상', () => {
     const scene = (levers: typeof LEVERS) => {
       Object.assign(ANNEX, levers);
       const sim = makeSim();
+      widenCap(sim.state, 1);
       setPool(sim.state, 1, 100);
       const elim = eliminateP2(sim, { troops: 60, gold: 90, flagTroops: 40 });
       return { s: sim.state, elim };
@@ -119,14 +125,16 @@ describe('§31 약소국 정리 보상', () => {
     Object.assign(ANNEX, { ...LEVERS, bountyTroops: 150, bountyGold: 100 });
     const sim = makeSim();
     const s = sim.state;
-    setPool(s, 1, troopCap(s.players[1]) - 60); // 상한까지 여유 60
+    widenCap(s, 1);
+    setPool(s, 1, troopCap(s.players[1]) - 60 - 500); // v5.2 (§38): 상한까지 여유 60 — 점령 깃발 500 도 상한을 차지한다
     const elim = eliminateP2(sim, { troops: 0, gold: 0, flagTroops: 0 });
     if (elim?.type !== 'player_eliminated') throw new Error('no elimination');
     // 합병으로 칸이 늘어 상한도 같이 늘었으므로 받은 양은 60 이상 150 이하
     expect(elim.bountyTroops).toBeGreaterThanOrEqual(60);
     expect(elim.bountyTroops).toBeLessThanOrEqual(150);
     expect(elim.bountyGold).toBe(100);
-    expect(s.players[1].troopsMilli).toBeLessThanOrEqual(troopCap(s.players[1]) * 1000);
+    const flagsMilli = s.flags.filter((f) => f.ownerId === 1).reduce((a, f) => a + f.troopsMilli, 0);
+    expect(s.players[1].troopsMilli + flagsMilli).toBeLessThanOrEqual(troopCap(s.players[1]) * 1000);
   });
 
   it('상한이 이미 꽉 찼으면 병력 보상 0, 골드는 그대로 받는다', () => {
@@ -161,6 +169,7 @@ describe('§31 약소국 정리 보상', () => {
     const scene = (levers: typeof LEVERS | typeof def) => {
       Object.assign(ANNEX, levers);
       const sim = makeSim();
+      widenCap(sim.state, 1);
       setPool(sim.state, 1, 100);
       const elim = eliminateP2(sim, { troops: 60, gold: 90, flagTroops: 40 });
       return { s: sim.state, elim };

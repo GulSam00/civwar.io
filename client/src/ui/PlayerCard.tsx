@@ -55,7 +55,7 @@ export function PlayerCard({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
         <div>
           <dt>병력</dt>
           <dd>
-            {fmtCompact(d.troops)} <span className="muted small">/ {fmtCompact(d.troopCap)}</span>
+            <span title={`대기 ${d.troops.toLocaleString()} · 출전 중 ${d.deployed.toLocaleString()}`}>{fmtCompact(d.troops + d.deployed)}</span> <span className="muted small">/ {fmtCompact(d.troopCap)}</span>
             {d.troopRate !== null && <span className="muted small"> {fmtRate(d.troopRate)}</span>}
           </dd>
         </div>

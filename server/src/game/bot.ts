@@ -77,7 +77,7 @@ import { tileTieHash } from '../map/rng.js';
 import { ANNEX } from './annex.js';
 import { engageLossPerTick, flagValue } from './combat.js';
 import { baseDispatchReadyTick, pickOriginBaseFor } from './flagops.js';
-import { flagCap, techCost, troopCap, unitUpkeepRateMilli } from './economy.js';
+import { flagCap, heldTroopsMilli, techCost, troopCap, unitUpkeepRateMilli } from './economy.js';
 import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 import type { BotBrain } from './tick.js';
@@ -1281,7 +1281,9 @@ function preRecallPays(ctx: Ctx, f: Readonly<Flag>): boolean {
 }
 
 function minAttack(ctx: Ctx, reserve: number): number {
-  return Math.max(2 * FLAG_MIN_TROOPS, Math.min(BOT_MIN_ATTACK_MULT * FLAG_MIN_TROOPS, troopCap(ctx.p) - reserve - FLAG_MIN_TROOPS / 2));
+  // v5.2 (§38): 풀이 차오를 수 있는 최대치 = 상한 − 출전 중인 깃발 병력 (총병력이 상한에 닿으면 생산이 멈춘다)
+  const poolCeil = ctx.state.combatModel === 2 ? troopCap(ctx.p) - Math.floor(heldTroopsMilli(ctx.state, ctx.p) / 1000) + ctx.pool : troopCap(ctx.p);
+  return Math.max(2 * FLAG_MIN_TROOPS, Math.min(BOT_MIN_ATTACK_MULT * FLAG_MIN_TROOPS, poolCeil - reserve - FLAG_MIN_TROOPS / 2));
 }
 
 /**

@@ -70,6 +70,7 @@ describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 
       const bot = new Simulation(state, CivBot);
       for (let i = 0; i < 2600 && !bot.finished; i++) bot.step();
       state.flags.length = 0;
+      for (const b of state.bases) b.dispatchReadyTick = 0; // v5.2: 봇 판 직후 출전 쿨타임이 남은 기지를 고르면 BASE_COOLDOWN 으로 거절된다 — 장면이 판 진행에 의존하지 않게
       for (const p of state.players) if (p) p.isBot = false;
       const sim = new Simulation(state, IdleBot);
       const store = bootstrap(state);

@@ -39,7 +39,7 @@ import { removeFlag } from './flagops.js';
 import { stage5_accumulateBudget, stage6_combatPhaseA, stage7_combatPhaseB, stage7c_progressDecay, stage9_derived, stage10_flagEnd } from './gauge.js';
 import { stage4_moveFlags } from './movement.js';
 import { destOf, fieldKey } from './rules.js';
-import { troopCap } from './economy.js';
+import { heldTroopsMilli, troopCap } from './economy.js';
 import { ANNEX } from './annex.js';
 import { computeProduction } from './production.js';
 import { newOutbox, type Outbox } from './outbox.js';
@@ -82,6 +82,7 @@ export function stage2_produce(state: GameState): void {
     const prod = computeProduction(state, p);
     state.yields[id] = prod.yields;
     // 병력 (3.2) — troops = min(troops + regen, cap). cap 초과분(환급·영토 상실)은 잘리고 장부 capClamp 로 기록
+    // v5.2 (§38): regen 은 총병력(대기 + 깃발) 기준 로지스틱이라 총병력이 상한에 닿으면 0. 자르기는 종전대로 대기 병력만 본다 (상한이 줄어도 깃발 몫은 자르지 않는다 — 결정 A)
     const regen = prod.regenMilli;
     p.troopsMilli += regen;
     state.ledger.regen += regen;
@@ -191,11 +192,11 @@ export function stage12_elimination(state: GameState, t: number, out: Outbox): v
     let gotTroops = 0;
     let gotGold = 0;
     if (heir && heir.alive) {
-      const room = Math.max(0, troopCap(heir) * 1000 - heir.troopsMilli);
+      // v5.2 (§38): 남은 공간 = 상한 − 총병력(풀 + 깃발). 모델 1 은 종전대로 상한 − 풀
+      const ownTotal = heldTroopsMilli(state, heir);
+      const room = Math.max(0, troopCap(heir) * 1000 - (state.combatModel === 2 ? ownTotal : heir.troopsMilli));
       const fromAssets = Math.min(room, Math.floor((assetMilli * ANNEX.assetPermille) / 1000));
       // 패치 6차: 합병자 자신의 현재 총병력(풀+깃발)의 ownTroopsPermille‰ 회복 (상한까지, 새로 생긴 병력 = 회계상 regen)
-      let ownTotal = heir.troopsMilli;
-      for (const f of state.flags) if (f.ownerId === heir.id) ownTotal += f.troopsMilli;
       const ownRecover = Math.min(room - fromAssets, Math.floor((ownTotal * ANNEX.ownTroopsPermille) / 1000));
       const bounty = Math.min(room - fromAssets - ownRecover, ANNEX.bountyTroops * 1000) + ownRecover;
       heir.troopsMilli += fromAssets + bounty;

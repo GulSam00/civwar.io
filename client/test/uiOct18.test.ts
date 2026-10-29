@@ -103,7 +103,10 @@ describe('1·2 병력 짧은 표기 · 병력 바', () => {
     expect(fmtRate(1234)).toBe('+1.23K/초');
   });
   it('병력 바: 채움 = 현재/상한 (0..100), 가득 참 표시, 회복 없으면 null', () => {
-    expect(troopBarParts(8180, 17500, 520)).toEqual({ fillPct: (8180 * 100) / 17500, cur: '8.18K', cap: '17.5K', rate: '+520/초', full: false });
+    expect(troopBarParts(8180, 17500, 520)).toEqual({ fillPct: (8180 * 100) / 17500, deployedPct: 0, cur: '8.18K', cap: '17.5K', rate: '+520/초', full: false });
+    // v5.2 (§38): 출전 몫은 대기 뒤에 이어지고, 대기 + 출전 ≥ 상한이면 가득 참
+    expect(troopBarParts(5000, 10000, 5, 3000)).toMatchObject({ fillPct: 50, deployedPct: 30, full: false });
+    expect(troopBarParts(5000, 10000, 5, 8000)).toMatchObject({ fillPct: 50, deployedPct: 50, full: true });
     expect(troopBarParts(20000, 17500, 5).fillPct).toBe(100);
     expect(troopBarParts(17500, 17500, 5).full).toBe(true);
     expect(troopBarParts(10, 0, null)).toMatchObject({ fillPct: 0, rate: null, full: false });

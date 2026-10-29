@@ -42,6 +42,13 @@ export function troopCap(p: Readonly<PlayerState>): number {
   return Math.floor(((TROOP_CAP_BASE + TROOP_CAP_PER_TILE * p.tiles) * capPm) / 1000);
 }
 
+/** v5.2 (§38): 총병력 milli = 기지 대기 병력 + 출전 중인 깃발 병력 합. 병력 상한·생산 로지스틱은 이 값을 본다 */
+export function heldTroopsMilli(state: Readonly<GameState>, p: Readonly<PlayerState>): number {
+  let held = p.troopsMilli;
+  for (const f of state.flags) if (f.ownerId === p.id) held += f.troopsMilli;
+  return held;
+}
+
 /** 영토 T 칸의 기본 재생 (milli/tick, 테크·로지스틱 전) = 0.8 + 0.5·√T — 정수 (isqrt milli 정밀도) */
 export function terrRegenBaseMilli(tiles: number): number {
   return REGEN_BASE_MILLI + Math.floor((REGEN_SQRT_COEF_PERMILLE * isqrt(tiles * 1_000_000)) / 1000);
@@ -64,13 +71,14 @@ export function baseGoldWeight(eqTiles: number, prodPm: number): number {
 }
 
 /**
- * 기본 재생 합(milli/tick) 에 테크 배율·로지스틱 (1 − troops/cap) 을 곱해 반올림 — regenMilliPerTick 과 같은 식.
+ * 기본 재생 합(milli/tick) 에 테크 배율·로지스틱 (1 − held/cap) 을 곱해 반올림 — regenMilliPerTick 과 같은 식.
+ * v5.2 (§38): held = 총병력(대기 + 깃발, heldTroopsMilli). 총병력이 상한 이상이면 생산 0 (부드러운 상한 — 잘라내지 않는다).
  * 큰 나라 + 기지 다수에서 곱이 2^53 을 넘을 수 있어 BigInt 로 계산한다 (정수·결정론 그대로).
  */
-export function applyRegenMult(p: Readonly<PlayerState>, baseMilli: number): number {
+export function applyRegenMult(p: Readonly<PlayerState>, baseMilli: number, heldMilli: number = p.troopsMilli): number {
   const capMilli = troopCap(p) * 1000;
-  if (capMilli <= 0 || p.troopsMilli >= capMilli || baseMilli <= 0) return 0;
-  const num = BigInt(baseMilli) * BigInt(p.statPm[TECH_STAT.REGEN]) * BigInt(capMilli - p.troopsMilli);
+  if (capMilli <= 0 || heldMilli >= capMilli || baseMilli <= 0) return 0;
+  const num = BigInt(baseMilli) * BigInt(p.statPm[TECH_STAT.REGEN]) * BigInt(capMilli - heldMilli);
   const den = 1000n * BigInt(capMilli);
   return Number((2n * num + den) / (2n * den));
 }
@@ -80,14 +88,14 @@ export function applyRegenMult(p: Readonly<PlayerState>, baseMilli: number): num
  *   = round( (0.8 + 0.5·√tiles) · regenMult · (1 − troops/cap) · 1000 )
  * 정수화: √tiles 는 milli 정밀도(isqrt(tiles·10⁶)), 로지스틱 항은 milli 병력 비율.
  */
-export function regenMilliPerTick(p: Readonly<PlayerState>): number {
+export function regenMilliPerTick(p: Readonly<PlayerState>, heldMilli: number = p.troopsMilli): number {
   const capMilli = troopCap(p) * 1000;
-  if (capMilli <= 0 || p.troopsMilli >= capMilli) return 0;
+  if (capMilli <= 0 || heldMilli >= capMilli) return 0;
   const sqrtMilli = isqrt(p.tiles * 1_000_000);
   const baseMilli = REGEN_BASE_MILLI + Math.floor((REGEN_SQRT_COEF_PERMILLE * sqrtMilli) / 1000);
   const regenPm = p.statPm[TECH_STAT.REGEN];
   // 최대 ≈ 35000 × 1060 × 7.6e7 ≈ 2.8e15 < 2^53 (12인 맵 전 육지 + 상한 ×1.14 기준)
-  const num = baseMilli * regenPm * (capMilli - p.troopsMilli);
+  const num = baseMilli * regenPm * (capMilli - heldMilli);
   const den = 1000 * capMilli;
   return divRound(num, den);
 }

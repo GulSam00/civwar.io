@@ -35,10 +35,19 @@ export function fmtRate(perSec: number): string {
   return `${sign}${a < 10 ? a.toFixed(1) : fmtCompact(a)}/초`;
 }
 
-/** 하단 병력 바 (2026-10-18 UI 개선 2): 채움 % = 현재 / 상한 (0..100), 글자 = 현재 · 초당 회복 · 상한 */
-export function troopBarParts(troops: number, cap: number, ratePerSec: number | null): { fillPct: number; cur: string; cap: string; rate: string | null; full: boolean } {
+/**
+ * 하단 병력 바 (2026-10-18 UI 개선 2): 채움 % = 대기 / 상한 (0..100), 글자 = 대기 · 초당 회복 · 상한.
+ * v5.2 (§38): 출전 중인 깃발 병력도 상한을 차지한다 — 대기 채움 뒤에 출전 몫(deployedPct)을 잇고, 가득 참 = 대기 + 출전 ≥ 상한.
+ */
+export function troopBarParts(
+  troops: number,
+  cap: number,
+  ratePerSec: number | null,
+  deployed = 0,
+): { fillPct: number; deployedPct: number; cur: string; cap: string; rate: string | null; full: boolean } {
   const fillPct = cap > 0 ? Math.max(0, Math.min(100, (troops * 100) / cap)) : 0;
-  return { fillPct, cur: fmtCompact(troops), cap: fmtCompact(cap), rate: ratePerSec === null ? null : fmtRate(ratePerSec), full: cap > 0 && troops >= cap };
+  const deployedPct = cap > 0 ? Math.max(0, Math.min(100 - fillPct, (deployed * 100) / cap)) : 0;
+  return { fillPct, deployedPct, cur: fmtCompact(troops), cap: fmtCompact(cap), rate: ratePerSec === null ? null : fmtRate(ratePerSec), full: cap > 0 && troops + deployed >= cap };
 }
 
 /** 비율 슬라이더 옆 "실제로 풀에서 빠질 병력" = floor(풀 × 비율) (발령 식 troopsForRatio 의 budget 과 같다) */
