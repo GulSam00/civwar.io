@@ -3,7 +3,7 @@
  * 사기는 깃발 단위 0~1000‰, 곱은 shared `moraleMultiplier` (패치 12차: 병종별 범위 — 창 1.05~1.10 / 검 0.85~1.20 / 기 0.75~1.30).
  * 서버가 5 tick(1초)마다 보내는 값을 그대로 보인다 — 서버 값이 기준이므로 추정 보간은 하지 않는다.
  */
-import { MORALE_MAX, channelValues, moraleMultiplier, type CombatFlagInput, type FlagSnapshot } from '@civwar/shared';
+import { MORALE_BASE_FLOOR, MORALE_MAX, channelValues, moraleMultiplier, type CombatFlagInput, type FlagSnapshot } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import { techStatsOf } from './techInfo.js';
 import { moraleNeutralPoint, moraleRange, moraleRates } from './unitStats.js';
@@ -94,6 +94,17 @@ export interface MoraleDetail {
   /** 전투력 ±0 사기 (0..1000), 항상 보너스면 null */
   neutral: number | null;
   rates: ReturnType<typeof moraleRates>;
+  /**
+   * v5.1 (GDD 4.5 ③, §37.2): 자기 기지 칸(수도 포함) 위면 사기 하한 MORALE_BASE_FLOOR(300 = 30%), 아니면 null.
+   * 300 미만이면 교전 중에도 300 까지 기지 회복 속도로 오르고, 이상이면 교전 감소·점령 소모가 300 에서 멈춘다 (패주는 예외).
+   */
+  baseFloor: number | null;
+}
+
+/** 이 깃발에 지금 걸린 기지 사기 하한 (모델 2 · 내 기지 칸 위) — 없으면 null */
+export function moraleBaseFloor(g: GameModel, f: FlagSnapshot): number | null {
+  if (!moraleOn(g) || g.bases.get(f.posTileId)?.ownerId !== f.ownerId) return null;
+  return (g.config.constants?.MORALE_BASE_FLOOR as number | undefined) ?? MORALE_BASE_FLOOR;
 }
 
 export function moraleDetail(g: GameModel, f: FlagSnapshot): MoraleDetail | null {
@@ -107,5 +118,5 @@ export function moraleDetail(g: GameModel, f: FlagSnapshot): MoraleDetail | null
     return [a, d];
   };
   const r = moraleRange(f.unit, stat);
-  return { view, now: at(view.value), full: at(MORALE_MAX), empty: at(0), floorPm: r.floor, fullPm: r.full, neutral: moraleNeutralPoint(f.unit, stat), rates: moraleRates(f.unit, stat) };
+  return { view, now: at(view.value), full: at(MORALE_MAX), empty: at(0), floorPm: r.floor, fullPm: r.full, neutral: moraleNeutralPoint(f.unit, stat), rates: moraleRates(f.unit, stat), baseFloor: moraleBaseFloor(g, f) };
 }

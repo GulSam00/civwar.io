@@ -300,7 +300,7 @@ function updateTerrainTip(el: HTMLDivElement | null, game: GameModel | null, ctl
   const fl = hoverFlag !== null ? game.flags.get(hoverFlag) : undefined;
   const md = fl && !fl.routed ? moraleDetail(game, fl) : null;
   if (fl && md) {
-    const key = `m:${fl.id}:${fl.troops}:${md.view.value}:${md.now?.join('/')}:${fl.posture}`;
+    const key = `m:${fl.id}:${fl.troops}:${md.view.value}:${md.now?.join('/')}:${fl.posture}:${md.baseFloor}`;
     if (el.dataset.key !== key) {
       el.dataset.key = key;
       el.replaceChildren(...moraleCard(fl, md, store));
@@ -371,6 +371,12 @@ function moraleCard(f: FlagSnapshot, md: MoraleDetail, store: ClientStore): HTML
     tick.style.left = `${md.neutral / 10}%`;
     bar.append(tick);
   }
+  if (md.baseFloor !== null) {
+    // v5.1 기지 사기 하한 눈금 (하늘색)
+    const fl = h('s', '');
+    fl.style.left = `${md.baseFloor / 10}%`;
+    bar.append(fl);
+  }
   out.push(bar);
   out.push(...moraleRows(f, md).map(([k, v, cls]) => {
     const r = h('div', `tt-row ${cls ?? ''}`);
@@ -394,6 +400,11 @@ function moraleRows(f: FlagSnapshot, md: MoraleDetail): [string, string, string?
   const drop = f.posture === POSTURE.ATTACK ? md.rates.dropAtk : md.rates.dropDef;
   rows.push(['교전 중 사기', `−${fmt1(drop)}%/초, 손실 1%당 −${fmt1(md.rates.lossK)}%p`]);
   rows.push(['쉬면 회복', `+${fmt1(md.rates.recover)}%/초, 기지 위 +${fmt1(md.rates.recoverBase)}`]);
+  // v5.1 (GDD 4.5 ③): 내 기지 칸 위 = 사기 하한 30% — 그 아래면 전투 중에도 30%까지 회복, 위면 교전·점령 소모가 30%에서 멈춘다
+  if (md.baseFloor !== null) {
+    const fl = Math.round(md.baseFloor / 10);
+    rows.push(['기지 사기 하한', md.view.value < md.baseFloor ? `전투 중에도 ${fl}%까지 회복 (+${fmt1(md.rates.recoverBase)}%/초)` : `${fl}% 아래로 안 떨어짐`, 'tt-floor']);
+  }
   return rows;
 }
 
@@ -1053,6 +1064,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
     FLAG_STATE_NAME[f.state],
     f.inCombat && '전투 중',
     f.routed && '패주',
+    !f.routed && g.moraleRetreat.has(f.id) && '사기 붕괴 후퇴',
     f.blocked && '대치',
     f.disengaging && '이탈 대기',
     f.stalled && '정체',
@@ -1130,6 +1142,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
                 <span className={`mbar wide ${md.view.tone}`} role="img" aria-label={md.view.text}>
                   <i style={{ width: `${md.view.pct}%` }} />
                   {md.neutral !== null && md.neutral < 1000 && <u style={{ left: `${md.neutral / 10}%` }} />}
+                  {md.baseFloor !== null && <s style={{ left: `${md.baseFloor / 10}%` }} title="기지 사기 하한" />}
                 </span>
                 <b>{md.view.pct}%</b>
               </div>

@@ -58,7 +58,7 @@ describe('표시용 절대값', () => {
     const v = [UNIT.SPEAR, UNIT.SWORD, UNIT.CAVALRY].map((u) => unitSpec(g, 1, u));
     expect(v.map((x) => [x.atk, x.def])).toEqual([[90, 110], [100, 100], [120, 90]]);
     expect(v.map((x) => x.sec10)).toEqual([16, 14, 12]);
-    expect(v.map((x) => x.capture)).toEqual([7, 6, 10]);
+    expect(v.map((x) => x.capture)).toEqual([7, 7, 7]); // v5.1: 점령 소모 배율 전 병종 1000
     expect(v.map((x) => x.convertPer100)).toEqual([90, 100, 160]);
     expect(v.map((x) => x.upkeepPerMin)).toEqual([18, 30, 60]);
     expect(v.map((x) => [x.moraleFloor, x.moraleFull])).toEqual([[1050, 1100], [850, 1200], [750, 1300]]);

@@ -513,3 +513,30 @@ UI 문구: Help 규칙 절·단축키 요약, README 조작표, 로비 하단 �
 - 전투 수치는 **점수**로 보인다: 부대 정보 `기본 87 · 테크 +10`, 상세 `공격 창 / 검 / 기 97 / 110 / 128`, 병종 이동도 점수.
 - 아이콘: 노드 id 가 바뀌어 `TECH_ICON_PATHS` 를 새 id 순서로 다시 짰다(기존 그림 재사용, 새 노드 12개 신규).
 - 거절 문구 `EXCLUSIVE_BLOCKED`. 후반 큰 화면에서의 노드 겹침은 아직 실측하지 못했다.
+
+## §26 GDD v5.1 반영 (2026-10-28, 프로토콜 §37 · QA `04_qa_report_v51_backend.md` F-1~F-8, 클라이언트만 — server/·shared/ 변경 없음)
+
+**구현한 화면**
+- 기지 출전 쿨타임 게이지(F-3): 내 기지(관전이면 모든 기지) 오른쪽 위 모서리에 원형 게이지 + 남은 초. 출전한 깃발이 그 기지 칸에서 출발해 아이콘 가운데를 가리므로 깃발 위 레이어에 그린다(`renderer.drawDispatchGauges`). 지형 hover 의 내 기지에 `출전 준비 중 N초` 줄.
+- 출전 미리보기(F-4): 우클릭 고리의 출발 기지 = shared `pickOriginBase`(쿨타임 아닌 내 기지 중 토폴로지 거리 최소, 동률 tileId ASC) — `client/src/input/origin.ts`. 기준 tick = 지금 tick + 1(명령 처리 tick, 봇과 같다). 더 가까운 기지가 쿨타임이면 고리 안내 `내 기지 X (더 가까운 기지는 출전 준비 중)`. 모두 쿨타임이면 병종 전부 비활성 + `모든 기지가 출전 준비 중입니다 (N초 뒤 가능)`, 준비되면 자동으로 다시 활성. 조준(기지 클릭)으로 직접 고른 기지가 쿨타임이면 `이 기지는 출전 준비 중입니다 (N초 뒤 가능)`으로 비활성(다른 기지로 바꾸지 않음 — 서버도 지정 기지는 바꾸지 않는다). `BASE_COOLDOWN` 거절은 기존 cmd_ack 토스트(`REJECT_TEXT`).
+- 사기 붕괴 후퇴(F-5): `flag_recalled.reason == 'morale'` → 피드 + 토스트 "사기 붕괴 후퇴 — …", 지도 깃발 태그 `사기 붕괴`(자홍색, 귀환이 끝날 때까지), 부대 창 상태 `사기 붕괴 후퇴`. reason 없음 = command. 같은 tick 앞의 `flag_disengage_started{auto:true}` 는 알림 없음·"태세 전환 중" 표식 없음(원래 클라이언트에 "귀환 중 붙잡힘" 문구는 없었다).
+- 기지 사기 하한(F-6): 내 기지 칸 위 깃발의 사기 카드·부대 창에 `기지 사기 하한` 줄(300 이상 `30% 아래로 안 떨어짐`, 미만 `전투 중에도 30%까지 회복 (+N%/초)`) + 사기 막대 30% 하늘색 눈금.
+- 점령 병력 hover(F-7): 병종 배율 1000 통일로 무테크면 `N명/칸` 한 숫자, 병종 전용 점령 테크로 달라지면 병종별. 기지 칸은 `함락까지 약 N명`(+ 적대 전투 가능 깃발이 서 있으면 `수비 깃발 있음 (시간 ×2)`).
+
+**사용한 메시지·필드**: `snapshot_full.bases[].dispatchReadyTick`, `flag_issued{tick, originTileId}`, `base_captured`, `snapshot_delta.tileChanges`, `flag_recalled.reason`, `flag_disengage_started.auto`, `cmd_ack.reason = BASE_COOLDOWN`, `match_config.constants.BASE_DISPATCH_COOLDOWN_TICKS · MORALE_BASE_FLOOR`.
+
+**근사 처리한 입력**
+- 기지 남은 체력: `hpPct`(정수 %)에서 되돌린다(최대 1% 오차, GDD 4.4 [A-5.1-7] 그대로). 최대 체력은 `map_init.spawns[].homeTileId`(처음 수도) 15000 / 나머지 10000(`CAPITAL_HP_MILLI`·`BASE_HP_MILLI`, constants 우선).
+- 기지 함락 병력은 tick 마다 올림하는 실제 지출보다 조금 적을 수 있다 → "약 N명".
+- 수비 깃발 판정은 서버 `baseOccupiedByHostile`(패주·이탈 직후·병력 0 제외)과 같은 조건을 스냅숏 필드로 본다.
+
+**문서와 다르게(또는 문서에 없어) 정한 것 [A]**
+- 점령 비용 식은 shared 로 옮기지 않고 기존 클라이언트 복제(`unitStats.captureCost`)를 유지했다. 서버 `tileCost` 와 같은 순서·floor 이고 이미 테스트가 있다. 기지 함락 병력은 `unitStats.baseCaptureTroops` 로 추가.
+- 출발 기지는 미리보기와 같은 기지를 `originBaseTileId` 로 지정해 보낸다(종전과 같다 — 화살표 = 실제 경로). 응답 전에 연타하면 같은 기지를 다시 고르지 않도록, 보낸 기지를 클라이언트에서만 쿨타임으로 본다(`controller.sentFrom`). 전체 QA m-1·m-2(2026-10-29) 반영: 그 발령의 `flag_issued`(출발 기지)가 오거나 거절 `cmd_ack`(clientSeq 일치)가 오면 바로 지운다. 수락 ack 는 flag_issued 보다 먼저 올 수 있어 지우지 않는다. 응답이 끝내 없으면 `SENT_SAFETY_TICKS`(25 tick) 뒤 버린다. 남은 tick 은 m-3 대로 `준비 tick − (지금 tick + 1)`(서버 처리 tick 기준).
+- 우클릭 출전에서 모든 기지가 쿨타임이면 화살표는 쿨타임 무시 최근접 기지에서 그린다.
+- 우클릭 출발 기지 거리를 종전 가중 이동 거리(`nearestOwnBase`)에서 서버와 같은 토폴로지 거리로 바꿨다(F-4 지시). `route.nearestOwnBase` 는 남아 있지만 controller 는 쓰지 않는다.
+- 게이지는 내 기지에만(관전이면 모두). 적 기지 쿨타임은 표시하지 않는다.
+
+**테스트**: `client/test/v51.test.ts` 11건(규칙 3종 · 실제 봇 판 900 tick dispatchReadyTick 불일치 0 · 고리 비활성/재활성 · 연타 · BASE_COOLDOWN 토스트 · morale 알림/표식 · 사기 하한). `gameModel.diffAgainstFull` 에 dispatchReadyTick 비교 추가. F-2 기대값 5건 갱신(qaV45 는 장면 선택을 "출발 기지 → 정지 칸 최단 + 병력 = 풀 절반"으로 바꿔 판 진행에 덜 의존). unitRing 1건은 보내기 전에 기대 기지를 읽게 고침(보낸 뒤엔 그 기지가 쿨타임으로 보이므로).
+
+**미확인**: 사기 붕괴 알림·태그는 실제 판에서 장면을 만들지 못해 단위 테스트로만 확인. 브라우저 확인에 쓴 8080 서버가 v5.1 빌드인지(스냅숏에 dispatchReadyTick 이 실리는지)는 따로 확인하지 않았다 — 게이지는 flag_issued 규칙만으로도 동작한다. 스크린샷 `_workspace/ui-2026-10-28-v51/`.

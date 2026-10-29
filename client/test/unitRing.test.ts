@@ -229,8 +229,9 @@ describe('병종 고리 - 발령', () => {
   it('적 땅: 3 키 = 기병 cmd_flag_issue (originBaseTileId = 최근접 내 기지)', () => {
     const { ctl, ix, cmds } = setup();
     ctl.rightClickTile(ENEMY);
+    const origin = ctl.nearestBaseFor(ENEMY); // 보낸 뒤에는 그 기지가 잠깐 출전 준비 중으로 보인다 (v5.1) → 보내기 전에 읽는다
     key(ctl, '3');
-    expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', unit: 2, anchorTileId: ENEMY, originBaseTileId: ctl.nearestBaseFor(ENEMY) });
+    expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', unit: 2, anchorTileId: ENEMY, originBaseTileId: origin });
     expect(cmds()[0].troops).toBeGreaterThanOrEqual(40);
     expect(ix.issue).toBeNull();
   });

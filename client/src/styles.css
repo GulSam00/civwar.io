@@ -2198,6 +2198,19 @@ kbd {
   width: 1px;
   background: rgba(255, 255, 255, 0.7);
 }
+/* v5.1 기지 사기 하한 눈금 (내 기지 칸 위 깃발) */
+.mbar s {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: #4fc3f7;
+  text-decoration: none;
+}
+.tt-row.tt-floor .tt-v {
+  color: #81d4fa;
+}
 
 /* ══════════ 2026-10-18 UI 개선 (OpenFront.io 참고 — 1·2·3·4·6·7·9) ══════════ */
 

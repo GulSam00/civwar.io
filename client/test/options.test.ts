@@ -101,8 +101,9 @@ describe('지형 툴팁 항목 필터', () => {
   it('행 순서: 지형 → 전투 보정 → 이동 → 점령 비용 → 골드 → 소유자 → 기지 체력 (보정 없는 평원·내 땅 점령 비용은 생략)', () => {
     const i = terrainInfo(model(), 3, 1, nick)!;
     expect(i.rows.map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'cost', 'gold', 'owner']);
-    // 2026-10-28 절대값: 적 언덕 한 칸 = 11 × 1.3 × 병종 점령 배율(창 1.0 / 검 0.85 / 기 1.4), 올림 · 언덕 100칸 = 900 × 2.08 × 300 tick ÷ 1000 × 100
-    expect(i.rows.find((r) => r.field === 'cost')!.value).toBe('창 15 · 검 13 · 기 21명/칸');
+    // 2026-10-28 절대값: 적 언덕 한 칸 = 11 × 1.3 × 병종 점령 배율, 올림 · 언덕 100칸 = 900 × 2.08 × 300 tick ÷ 1000 × 100
+    // v5.1: 병종 배율 전 병종 1000 → 무테크면 병종 무관 15명/칸 (한 숫자로 표기)
+    expect(i.rows.find((r) => r.field === 'cost')!.value).toBe('15명/칸');
     expect(i.rows.find((r) => r.field === 'gold')!.value).toBe('+56/분 · 100칸');
     const cap = terrainInfo(model(), 1, 1, nick)!;
     expect(cap.rows.map((r) => r.field)).toEqual(['terrain', 'gold', 'owner', 'baseHp']);
@@ -113,9 +114,22 @@ describe('지형 툴팁 항목 필터', () => {
       ['terrain', '언덕'],
       ['defense', '방어 태세일 때 방어력 +30%'],
       ['speed', '이동 속도 −20%'],
-      ['cost', '기 21명/칸'],
+      ['cost', '기 15명/칸'],
     ]);
     expect(terrainInfo(model(), 7, 1, nick, { selectedUnit: 1 })!.rows.map((r) => r.field)).toEqual(['terrain', 'cost', 'baseHp']);
+  });
+  it('v5.1 기지 칸 = 함락까지 약 N명 (남은 체력 × 칸 비용 ÷ 1000), 수비 깃발이 있으면 시간 ×2', () => {
+    const m = model();
+    // 적 평원 기지 체력 100% = 10000 milli × 11명/칸 (토폴로지 없음 = 인접 가산·보급 제외) ÷ 1000 = 110
+    expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')).toEqual({ field: 'cost', label: '함락까지', value: '약 110명' });
+    m.bases.get(7)!.hpPct = 50;
+    expect(terrainInfo(m, 7, 1, nick, { selectedUnit: 2 })!.rows.find((r) => r.field === 'cost')!.value).toBe('기 약 55명');
+    m.flags.set(9, { id: 9, ownerId: 2, slotIndex: 0, unit: 0, posture: 1, troops: 50, posTileId: 7, anchorTileId: 7, targetOwnerId: 0, state: 'IDLE', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
+    expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 55명 · 수비 깃발 있음 (시간 ×2)');
+    // 처음 수도였던 칸은 최대 체력 15000 — 적 땅이 되면 15000 × 80% × 적 평원 11명/칸 ÷ 1000 = 132
+    m.owners[1] = 2;
+    m.bases.get(1)!.ownerId = 2;
+    expect(terrainInfo(m, 1, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 132명');
   });
   it('끈 항목은 빠지고, 툴팁을 끄면 아무것도 없다', () => {
     const i = terrainInfo(model(), 3, 1, nick)!;

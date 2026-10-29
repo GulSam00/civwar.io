@@ -54,6 +54,10 @@ export interface RingInput {
   preview: CursorPreview | null;
   /** 병종별 보낼 병력 (controller.troopsToSend) */
   troopsFor: (u: Unit) => number;
+  /** v5.1 출전 쿨타임 때문에 못 보내는 이유 (예: "이 기지는 출전 준비 중입니다 (3초)") — 없으면 null */
+  cooldown?: string | null;
+  /** v5.1 더 가까운 기지가 출전 준비 중이라 다음 기지에서 나간다 */
+  skippedNearer?: boolean;
 }
 
 function minTroops(g: GameModel): number {
@@ -94,6 +98,7 @@ export function unitRingModel(inp: RingInput): RingModel | null {
     const p = g.players.get(me);
     if (p && g.flagsOf(me).length >= p.flagCap) reason = `깃발 슬롯이 꽉 찼습니다 (${g.flagsOf(me).length}/${p.flagCap})`;
     else if (inp.base === null) reason = '출전할 내 기지가 없습니다';
+    else if (inp.cooldown) reason = inp.cooldown;
     else if (inp.preview?.kind === 'blocked') reason = inp.preview.label;
   }
 
@@ -110,7 +115,10 @@ export function unitRingModel(inp: RingInput): RingModel | null {
     kind,
     label,
     hint,
-    detail: inp.base !== null ? `출발: ${tile === inp.base ? '이 기지' : `가장 가까운 내 기지 ${baseName(inp.base)}`}` : null,
+    detail:
+      inp.base === null
+        ? null
+        : `출발: ${tile === inp.base ? '이 기지' : inp.skippedNearer ? `내 기지 ${baseName(inp.base)} (더 가까운 기지는 출전 준비 중)` : `가장 가까운 내 기지 ${baseName(inp.base)}`}`,
     reason,
     base: inp.base,
     units,

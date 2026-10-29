@@ -6,13 +6,14 @@
  *     모델 1: COMBAT_TERRAIN_DEF_POSTURE_PERMILLE (방어 태세 방어력)
  *     이동 = 1000 / TERRAIN_MOVE_PERMILLE (v4.5 §22.1: 물은 전부 통행 불가)
  *   점령 = 그 칸 한 칸에 드는 병력 (ui/unitStats.captureCost — 서버 tileCost 와 같은 식)
+ *     v5.1: 병종 배율 1000 통일 → 무테크면 한 숫자. 기지 칸은 "함락까지 약 N명" (unitStats.baseCaptureTroops, GDD 4.4)
  *   골드 = 그 지형 100칸이 1분에 버는 골드 (테크 반영)
  */
 import { COMBAT_TERRAIN_DEF_POSTURE_PERMILLE, TERRAIN_BUFF, TERRAIN_MOVE_PERMILLE, isClaimable } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import { TERRAIN_NAME, UNIT_SHORT } from './text.js';
 import type { TooltipField } from './options.js';
-import { captureCost, goldPer100TilesPerMin, type TopoLike } from './unitStats.js';
+import { baseCaptureTroops, captureCost, goldPer100TilesPerMin, type TopoLike } from './unitStats.js';
 
 /** 지형 보정 배지. posture = 그 태세일 때만 붙는 보정 (없으면 태세 무관) */
 export interface TipBadge {
@@ -86,6 +87,18 @@ export function combatBadges(m: GameModel, ter: number): TipBadge[] {
   return out;
 }
 
+/**
+ * 기지 칸 위에 나(me)와 적대인 전투 가능 깃발이 서 있는가 (server gauge.baseOccupiedByHostile — 패주·이탈 직후 아님).
+ * 있으면 그 기지는 교전 중 공격 깃발만 ×0.5 피해로 민다 (BASE_DEFENDED_DMG_PERMILLE) — 함락 시간 ×2.
+ */
+export function baseGuarded(m: GameModel, tile: number, me: number): boolean {
+  for (const f of m.flags.values()) {
+    if (f.posTileId !== tile || f.routed || f.breakaway || f.troops <= 0) continue;
+    if (f.ownerId !== me && !m.isAlly(me, f.ownerId)) return true;
+  }
+  return false;
+}
+
 export function terrainInfo(m: GameModel, tile: number, me: number | null, nicknameOf: (id: number) => string, opts: TerrainInfoOpts = {}): TerrainInfo | null {
   if (!m.terrain || tile < 0 || tile >= m.tileCount) return null;
   const ter = m.terrain[tile];
@@ -103,10 +116,22 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     const movePm = Math.round(1000000 / arr(m, 'TERRAIN_MOVE_PERMILLE', TERRAIN_MOVE_PERMILLE)[ter]);
     if (movePm !== 1000) add('speed', '이동', `이동 속도 ${pct(movePm)}`, [{ text: `이동${pct(movePm)}`, tone: movePm > 1000 ? 'up' : 'down', posture: null, long: `이동 속도 ${pct(movePm)}` }]);
     if (me !== null) {
-      // 한 칸 점령에 드는 병력 — 선택한 부대가 있으면 그 병종만, 없으면 세 병종 (내 땅·동맹 땅은 생략)
+      // 점령에 드는 병력 (내 땅·동맹 땅은 생략). 선택한 부대가 있으면 그 병종만, 없으면 세 병종 —
+      // v5.1: 병종 배율은 전 병종 1000 이라 무테크면 셋이 같다 → 한 숫자로. 병종 전용 점령 테크로 달라지면 병종별로 적는다.
+      // 기지 칸 = 함락까지 남은 체력 기준 "약 N명" (baseCaptureTroops), 수비 깃발이 서 있으면 시간 ×2 (병력 효율은 같다)
+      const isBase = m.bases.has(tile);
       const units = sel !== null ? [sel] : [0, 1, 2];
-      const costs = units.map((u) => captureCost(m, opts.topo ?? null, me, u, tile));
-      if (costs[0] !== null) add('cost', '점령', `${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명/칸`);
+      const costs = units.map((u) => (isBase ? baseCaptureTroops : captureCost)(m, opts.topo ?? null, me, u, tile));
+      if (costs[0] !== null) {
+        const same = costs.every((x) => x === costs[0]);
+        const unitTag = sel !== null ? `${UNIT_SHORT[sel]} ` : '';
+        if (isBase) {
+          const nums = same ? `${unitTag}약 ${costs[0]}명` : units.map((u, i) => `${UNIT_SHORT[u]} 약 ${costs[i]}`).join(' · ') + '명';
+          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 깃발 있음 (시간 ×2)' : ''}`);
+        } else {
+          add('cost', '점령', same ? `${unitTag}${costs[0]}명/칸` : `${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명/칸`);
+        }
+      }
     }
     if (sel === null) add('gold', '골드', `+${goldPer100TilesPerMin(m, me, ter)}/분 · 100칸`);
   }
@@ -122,6 +147,9 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     add('baseHp', m.capitalTiles.has(tile) ? '수도 체력' : '기지 체력', `${Math.round(b.hpPct)}%`);
     const prod = m.baseProdPm(tile);
     if (prod !== null && sel === null) add('baseHp', '생산력', `${Math.floor(prod / 10)}%${prod < 1000 ? ' (회복 중)' : ''}`);
+    // v5.1: 내 기지 출전 쿨타임 (기지 아이콘의 원형 게이지와 같은 값)
+    const wait = me !== null && b.ownerId === me ? m.baseDispatchWait(tile) : 0;
+    if (wait > 0) add('baseHp', '출전', `준비 중 ${Math.ceil((wait * m.config.tickMs) / 1000)}초`);
   }
   // 한 줄 요약(이전 형식) — 지형·소유자·기지 행을 뺀 보정 문구
   const mods = !isClaimable(ter)

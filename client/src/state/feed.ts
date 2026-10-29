@@ -2,7 +2,7 @@
  * 이벤트 피드 — 서버 이벤트(§5 표)를 사람이 읽는 한 줄로. 상태는 바꾸지 않는다(표시 전용).
  * 모든 플레이어의 사건을 다 쓰면 10인 봇전에서 초당 수십 줄이 되므로:
  *  - 전원 공지: 기지 함락, 탈락, 동맹 체결/파기, 종반 러시, 승리 기준 하락, Lockout
- *  - 나(또는 관전 중 따라가는 플레이어) 관련만: 전투 개시/종료, 패주, 깃발 종료, 정체, 진척도 감소로 0, 동맹 제안
+ *  - 나(또는 관전 중 따라가는 플레이어) 관련만: 전투 개시/종료, 패주, 깃발 종료, 정체, 진척도 감소로 0, 동맹 제안, 사기 붕괴 후퇴(v5.1)
  */
 import type { ServerMessage } from '@civwar/shared';
 import { TECH_NODES } from '@civwar/shared';
@@ -152,6 +152,12 @@ export function describeEvent(m: ServerMessage, c: FeedCtx): Draft | null {
       const o = c.flagOwner(m.flagId);
       if (!isMe(o)) return null;
       return { kind: 'flag', mine: true, text: `깃발 종료: ${FLAG_END_TEXT[m.reason] ?? m.reason}${m.refunded ? ` (+${m.refunded} 환급)` : ''}` };
+    }
+    case 'flag_recalled': {
+      // v5.1 (§37.1): reason 없음(구 서버) = command. 사기 0 자동 후퇴만 알린다 — 같은 tick 에 앞서 온 flag_disengage_started{auto:true} 는
+      // 이 후퇴의 이탈 대기라 따로 알리지 않는다("귀환 중 붙잡힘" 아님). 회수 명령·기지 함락 퇴각·IDLE 자동 귀환은 기존처럼 조용히.
+      if ((m.reason ?? 'command') !== 'morale' || !isMe(c.flagOwner(m.flagId))) return null;
+      return { kind: 'flag', mine: true, text: '사기 붕괴 후퇴 — 사기가 0이 되어 깃발이 자동으로 물러납니다 (이탈 대기 뒤 귀환, 도착하면 남은 병력 85% 환급)', important: true, toast: true };
     }
     case 'flag_stalled':
       return isMe(c.flagOwner(m.flagId)) ? { kind: 'flag', mine: true, text: '깃발 정체 — 5초 동안 한 칸도 못 밀었습니다' } : null;

@@ -28,6 +28,7 @@ import {
   techStatValues,
   BASE_PROD_MAX_PERMILLE,
   BASE_PROD_RECOVER_PER_MIN_PERMILLE,
+  BASE_DISPATCH_COOLDOWN_TICKS,
   type AllianceSnapshot,
   type AllyProposalSnapshot,
   type BaseSnapshot,
@@ -95,6 +96,12 @@ export class GameModel {
   baseNames = new Map<number, string>();
   /** 기지 생산력 ‰ 의 마지막 서버 값과 그 tick (보간 기준) — snapshot_full.bases[].prodPm · 델타 baseProd · base_captured.newProdPm */
   baseProd = new Map<number, { pm: number; tick: number }>();
+  /**
+   * v5.1 (§37.1 [A-5.1-14]) 기지 출전 준비 tick — bases[].dispatchReadyTick 에 둔다 (0 = 즉시 가능).
+   * snapshot_full 에만 실려 오므로 사이 구간은 세 규칙으로 유지한다(QA 불변식 1 — 서버 값과 정확히 같다):
+   *   flag_issued 의 출발 칸이 기지 → tick + BASE_DISPATCH_COOLDOWN_TICKS · base_captured → 0 · 델타 tileChanges 의 기지 칸(합병 포함) → 0
+   * 아래 baseDispatchWait / dispatchReadyOf 로 읽는다.
+   */
   /** 플레이어별 생산 내역 (snapshot_full.production 전원 / 델타 production 은 바뀐 플레이어만 통째 교체) */
   production = new Map<number, ProductionRow[]>();
   /** 합병 표시용 — player_eliminated 직후 같은 tick tileChanges 로 넘어간 칸 (렌더러가 잠깐 번쩍인다) */
@@ -111,6 +118,12 @@ export class GameModel {
    * flag_disengage_started{auto:false} 가 오면 넣고, flag_disengaged·패주·종료·델타 disengaging=false 에서 뺀다 (호 색·태그 "태세 전환 중").
    */
   disengageForPosture = new Set<number>();
+  /**
+   * v5.1 (§37.1 F-5): 사기 0 자동 후퇴 중인 깃발 — flag_recalled{reason:"morale"} 에서 넣고, 종료·소멸·다른 사유의 회수·새 발령에서 뺀다.
+   * 같은 tick 에 앞서 오는 flag_disengage_started{auto:true} 는 "태세 전환 중"이 아니다(위 disengageForPosture 에 안 들어간다).
+   * 스냅숏에는 이 구분이 없어 재접속자는 "귀환·이탈"로만 본다 (§37.1 F-8, 문서대로).
+   */
+  moraleRetreat = new Set<number>();
   /** flag_posture_changed{auto:false} 를 받은 tick (같은 tick 의 disengage_started 가 태세 전환 때문인지 가리는 용도) */
   private manualPostureTick = new Map<number, number>();
   /** 마지막 tick 을 받은 시각 (performance.now 기준 ms — tick 사이 보간) */
@@ -157,7 +170,8 @@ export class GameModel {
     for (const id of [...this.flagEta.keys()]) if (this.flags.get(id)?.state !== 'MARCHING') this.flagEta.delete(id);
     for (const id of [...this.disengageForPosture]) if (!this.flags.get(id)?.disengaging) this.disengageForPosture.delete(id);
     for (const id of [...this.flagReturn.keys()]) if (this.flags.get(id)?.state !== 'RETURNING') this.flagReturn.delete(id);
-    this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b }]));
+    for (const id of [...this.moraleRetreat]) if (this.flags.get(id)?.state !== 'RETURNING') this.moraleRetreat.delete(id);
+    this.bases = new Map(f.bases.map((b) => [b.tileId, { ...b, dispatchReadyTick: b.dispatchReadyTick ?? 0 }]));
     this.baseProd = new Map(f.bases.filter((b) => b.prodPm !== undefined).map((b) => [b.tileId, { pm: b.prodPm!, tick: f.tick }]));
     if (f.production) this.production = new Map(f.production.map((pp) => [pp.playerId, pp.rows]));
     this.alliances = new Map(f.alliances.map((a) => [allianceKey(a.a, a.b), { ...a }]));
@@ -229,6 +243,12 @@ export class GameModel {
           ...(this.config.combatModel === 2 ? { morale: MORALE_MAX } : {}),
         });
         this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
+        {
+          // v5.1: 출발 칸이 기지면 그 기지의 출전 쿨타임 시작
+          const ob = this.bases.get(e.originTileId);
+          if (ob) ob.dispatchReadyTick = e.tick + this.dispatchCooldownTicks;
+        }
+        this.moraleRetreat.delete(e.flagId);
         break;
       case 'flag_retargeted': {
         const f = this.flags.get(e.flagId);
@@ -271,6 +291,7 @@ export class GameModel {
         break;
       }
       case 'flag_ended':
+        this.moraleRetreat.delete(e.flagId);
         this.disengageForPosture.delete(e.flagId);
         this.manualPostureTick.delete(e.flagId);
         this.flagIdleReason.delete(e.flagId);
@@ -308,7 +329,7 @@ export class GameModel {
         break;
       case 'base_captured': {
         const b = this.bases.get(e.tileId);
-        if (b) Object.assign(b, { ownerId: e.toPlayerId, hpPct: e.newHpPct });
+        if (b) Object.assign(b, { ownerId: e.toPlayerId, hpPct: e.newHpPct, dispatchReadyTick: 0 }); // v5.1: 주인이 바뀌면 쿨타임 0
         if (e.newProdPm !== undefined) {
           this.baseProd.set(e.tileId, { pm: e.newProdPm, tick: e.tick });
           if (b) b.prodPm = e.newProdPm;
@@ -337,6 +358,9 @@ export class GameModel {
         if (e.phase === 'dissolved') this.allianceFreezeUntilTick = e.freezeUntilTick;
         break;
       case 'flag_recalled':
+        // v5.1 (§37.1): reason 이 없으면(구 서버) command. morale = 사기 0 자동 후퇴 → 지도 태그 "사기 붕괴" (귀환이 끝날 때까지)
+        if ((e.reason ?? 'command') === 'morale') this.moraleRetreat.add(e.flagId);
+        else this.moraleRetreat.delete(e.flagId);
         this.flagReturn.set(e.flagId, e.returnTileId);
         this.flagEta.delete(e.flagId);
         this.flagIdleReason.delete(e.flagId); // 주석대로 회수(자동 귀환 포함) 때도 지운다
@@ -389,7 +413,10 @@ export class GameModel {
       this.dirtyTiles.push(t);
       for (const a of flashes) if (a.byPlayerId === o) a.tiles.push(t);
       const b = this.bases.get(t);
-      if (b) b.ownerId = o;
+      if (b) {
+        b.ownerId = o;
+        b.dispatchReadyTick = 0; // v5.1: 함락·합병·중립화 — 서버 setTileOwner 가 0 으로 둔다
+      }
     }
     for (const pd of d.playerDeltas) {
       const p = this.players.get(pd.id);
@@ -429,6 +456,7 @@ export class GameModel {
     }
     for (const pp of d.production ?? []) this.production.set(pp.playerId, pp.rows);
     for (const id of d.flagsGone) {
+      this.moraleRetreat.delete(id);
       this.flags.delete(id);
       this.flagEta.delete(id);
       this.flagReturn.delete(id);
@@ -463,6 +491,21 @@ export class GameModel {
   }
 
   // ───────────── 파생값 (표시용) ─────────────
+
+  /** v5.1 기지 출전 쿨타임 tick (match_config.constants 우선, 25 = 5초) */
+  get dispatchCooldownTicks(): number {
+    return constNum(this.config, 'BASE_DISPATCH_COOLDOWN_TICKS', BASE_DISPATCH_COOLDOWN_TICKS);
+  }
+
+  /** 그 기지의 출전 준비 tick (모르면 0) */
+  dispatchReadyOf(tile: number): number {
+    return this.bases.get(tile)?.dispatchReadyTick ?? 0;
+  }
+
+  /** 그 기지가 다시 출전할 수 있을 때까지 남은 tick (0 = 지금 가능) */
+  baseDispatchWait(tile: number, tick: number = this.tick): number {
+    return Math.max(0, this.dispatchReadyOf(tile) - tick);
+  }
 
   get ticksRemaining(): number {
     return Math.max(0, this.config.hardTimeoutTick - this.tick);
@@ -546,6 +589,7 @@ export class GameModel {
     }
     for (const b of f.bases) {
       const m = this.bases.get(b.tileId);
+      if (b.dispatchReadyTick !== undefined && (m?.dispatchReadyTick ?? 0) !== b.dispatchReadyTick) out.push(`base ${b.tileId}.dispatchReadyTick 모델 ${m?.dispatchReadyTick} / full ${b.dispatchReadyTick}`);
       if (!m || m.hpPct !== b.hpPct || m.ownerId !== b.ownerId) out.push(`base ${b.tileId} 모델 ${JSON.stringify(m)} / full ${JSON.stringify(b)}`);
       // §21.4 생산력: 모델의 마지막 서버 값(보간 전) = full
       if (b.prodPm !== undefined && this.baseProd.get(b.tileId)?.pm !== b.prodPm) out.push(`baseProd ${b.tileId} 모델 ${this.baseProd.get(b.tileId)?.pm} / full ${b.prodPm}`);

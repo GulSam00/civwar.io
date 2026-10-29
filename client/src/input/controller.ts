@@ -19,18 +19,22 @@
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
  *   관전: 순위표에서 플레이어를 누르면 따라가기, 드래그하면 자유 카메라
  */
-import { POSTURE, techConvertPm, type Unit } from '@civwar/shared';
+import { POSTURE, techConvertPm, type ServerMessage, type Unit } from '@civwar/shared';
 import { panBy, screenToWorld, worldToScreen, zoomAt, clampCamera } from '../render/camera.js';
 import type { GameRenderer } from '../render/renderer.js';
 import type { ClientStore } from '../state/store.js';
 import { troopsForRatio } from './preview.js';
-import { RouteCache, computeRoute, nearestOwnBase, type RoutePreview } from './route.js';
+import { RouteCache, computeRoute, type RoutePreview } from './route.js';
 import { defaultOptions, nextDirectionMode, saveOptions, type GameOptions } from '../ui/options.js';
 import { techStatsOf, unitCombatStats } from '../ui/techInfo.js';
 import { RangeCache, computePreview } from './preview.js';
 import { unitRingModel, type RingModel } from './unitRing.js';
+import { baseWaitTicks, pickIssueOrigin, ticksToSec, type OriginPick } from './origin.js';
 
 export type IssuePosture = 'attack' | 'defend' | 'blocked';
+
+/** v5.1 (QA m-1): 보낸 기지 임시 쿨타임의 안전 만료 — 응답(cmd_ack·flag_issued)이 끝내 안 올 때만 쓴다 (25 tick = 5초) */
+export const SENT_SAFETY_TICKS = 25;
 
 /**
  * 출전(발령) 진행 상태.
@@ -85,13 +89,35 @@ export class GameInputController {
   private routeKey = '';
   private route: RoutePreview | null = null;
   private range = new RangeCache();
+  /** v5.1: 지금 열린 고리의 출발 기지를 직접 고르지 않았다(우클릭) — 쿨타임이 바뀌면 출발 기지를 다시 고른다 */
+  private autoOrigin = false;
+  /**
+   * v5.1: 방금 발령을 보낸 기지 → { 예상 준비 tick, 보낸 tick, clientSeq } — 응답 전 연타로 같은 기지를 다시 고르지 않게 (QA m-1·m-2).
+   * 그 발령의 flag_issued(출발 기지 = 이 기지)가 오면 서버 값이 모델에 들어오므로 지운다. 거절 cmd_ack 면 곧바로 지운다.
+   * 수락 cmd_ack 는 flag_issued 보다 먼저 올 수 있어 지우지 않는다. 응답이 끝내 없으면 SENT_SAFETY_TICKS 뒤 버린다.
+   */
+  private sentFrom = new Map<number, { ready: number; sent: number; seq: number }>();
+  private unobserve: (() => void) | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     readonly renderer: GameRenderer,
     private readonly store: ClientStore,
     readonly ix: Interaction,
-  ) {}
+  ) {
+    this.unobserve = store.observe((m) => this.onServerMessage(m));
+  }
+
+  /** v5.1 (QA m-1·m-2): 보낸 기지 임시 쿨타임 해제 — 그 발령의 거절 cmd_ack, 또는 그 기지에서 나간 내 flag_issued */
+  private onServerMessage(m: ServerMessage): void {
+    if (!this.sentFrom.size) return;
+    if (m.type === 'cmd_ack') {
+      if (m.accepted) return;
+      for (const [b, v] of this.sentFrom) if (v.seq === m.clientSeq) this.sentFrom.delete(b);
+    } else if (m.type === 'flag_issued') {
+      if (m.playerId === this.store.myPlayerId) this.sentFrom.delete(m.originTileId);
+    }
+  }
 
   /** 내가 명령할 수 있는가 (관전·탈락 제외) */
   canCommand(): boolean {
@@ -170,6 +196,8 @@ export class GameInputController {
   dispose(): void {
     this.detach?.();
     this.detach = null;
+    this.unobserve?.();
+    this.unobserve = null;
   }
 
   /** 렌더 프레임마다: 키보드 팬 */
@@ -263,14 +291,33 @@ export class GameInputController {
     return tile >= 0 && !!this.store.game?.bases.has(tile);
   }
 
-  /** 목적지까지 이동 거리(서버와 같은 가중 경로)가 가장 짧은 내 기지 */
-  nearestBaseFor(anchor: number): number | null {
+  /** v5.1: 방금 보낸 발령의 기지 (응답 전 임시 표시 — onServerMessage 가 지우고, 응답이 없으면 SENT_SAFETY_TICKS 뒤 버린다) */
+  private localBusy(): Map<number, number> | null {
+    const g = this.store.game;
+    if (!g || !this.sentFrom.size) return null;
+    const out = new Map<number, number>();
+    for (const [b, v] of this.sentFrom) {
+      if (g.tick > v.sent + SENT_SAFETY_TICKS) this.sentFrom.delete(b);
+      else out.set(b, v.ready);
+    }
+    return out;
+  }
+
+  /**
+   * v5.1 (GDD 4.2, §37.2 ④): 출발 기지를 생략했을 때 서버가 고를 기지 — shared pickOriginBase(쿨타임 아닌 내 기지 중 토폴로지 거리 최소, 동률 tileId ASC).
+   * 모두 쿨타임이면 base = null, drawBase = 쿨타임 무시 최근접 (화살표용), waitTicks = 가장 먼저 준비되는 기지까지.
+   */
+  originFor(anchor: number): OriginPick | null {
     const g = this.store.game;
     const me = this.store.myPlayerId;
     const topo = this.renderer.topo;
-    if (!g || me === null || !topo || !g.terrain || anchor < 0) return null;
-    const field = this.routes.fieldFor(g, topo, anchor);
-    return nearestOwnBase(g, field, me);
+    if (!g || me === null || !topo || anchor < 0) return null;
+    return pickIssueOrigin(g, topo, me, anchor, this.localBusy());
+  }
+
+  /** 우클릭 출전의 출발 기지 (쿨타임 아닌 최근접 — 모두 쿨타임이면 쿨타임 무시 최근접). 내 기지가 없으면 null */
+  nearestBaseFor(anchor: number): number | null {
+    return this.originFor(anchor)?.drawBase ?? null;
   }
 
   /** 지점의 기본 태세 예고 (내 땅 = 방어, 적·중립 = 공격, 물·동맹 = 불가) — 표시 전용, 서버가 최종 판정 */
@@ -341,6 +388,7 @@ export class GameInputController {
     const g = this.store.game;
     if (!g?.ready || !this.canCommand() || anchor < 0 || anchor >= g.tileCount) return false;
     const b = base ?? this.nearestBaseFor(anchor);
+    this.autoOrigin = base === null;
     this.ix.issue = { phase: 'pick', base: b, anchor, posture: this.postureAt(anchor) };
     this.ix.selectedFlagId = null;
     this.ix.bump();
@@ -356,7 +404,21 @@ export class GameInputController {
     const topo = this.renderer.topo;
     const canCmd = this.canCommand();
     const preview = canCmd && me !== null && topo && g.terrain ? computePreview(g, topo, me, is.anchor, this.range.get(g, topo, me)) : null;
+    // v5.1 출전 쿨타임: 우클릭(자동) = 지금 쿨타임으로 출발 기지를 다시 고른다 (서버와 같은 함수), 직접 고른 기지 = 쿨타임이면 비활성
+    let cooldown: string | null = null;
+    let skippedNearer = false;
+    if (this.autoOrigin) {
+      const o = this.originFor(is.anchor);
+      if (o && is.base !== o.drawBase) is.base = o.drawBase; // 표시용 상태 — 화살표·하이라이트가 따라간다
+      if (o && o.base === null && o.hasBase) cooldown = `모든 기지가 출전 준비 중입니다 (${ticksToSec(g, o.waitTicks)}초 뒤 가능)`;
+      skippedNearer = !!o && o.base !== null && o.nearest !== null && o.nearest !== o.base;
+    } else if (is.base !== null) {
+      const w = baseWaitTicks(g, is.base, this.localBusy());
+      if (w > 0) cooldown = `이 기지는 출전 준비 중입니다 (${ticksToSec(g, w)}초 뒤 가능)`;
+    }
     return unitRingModel({
+      cooldown,
+      skippedNearer,
       g,
       tile: is.anchor,
       me,
@@ -373,8 +435,9 @@ export class GameInputController {
     const is = this.ix.issue;
     if (!is || is.phase !== 'pick') return;
     if (!this.canCommand()) return this.cancelIssue();
-    // 고리가 떠 있는 동안 기지를 잃었으면(서버는 NOT_OWNED_BASE) 그 지점의 가장 가까운 내 기지로 바꾼다
-    const base = is.base !== null && this.isMyBase(is.base) ? is.base : this.nearestBaseFor(is.anchor);
+    // 고리가 떠 있는 동안 기지를 잃었으면(서버는 NOT_OWNED_BASE) 그 지점의 출발 기지를 다시 고른다 (v5.1: 쿨타임 아닌 최근접)
+    if (!this.autoOrigin && !(is.base !== null && this.isMyBase(is.base))) this.autoOrigin = true;
+    const base = this.autoOrigin ? this.nearestBaseFor(is.anchor) : is.base;
     if (base !== is.base) {
       this.ix.issue = { ...is, base };
       this.ix.bump();
@@ -385,7 +448,10 @@ export class GameInputController {
       return;
     }
     if (base === null) return this.cancelIssue();
-    this.store.issueFlag(u, this.troopsToSend(u), is.anchor, base);
+    // 출발 기지는 미리보기와 같은 기지를 지정해 보낸다 (화살표 = 실제 경로). 서버가 그 사이 쿨타임이면 BASE_COOLDOWN → 토스트
+    const seq = this.store.issueFlag(u, this.troopsToSend(u), is.anchor, base);
+    const g = this.store.game;
+    if (g && seq >= 0) this.sentFrom.set(base, { ready: g.tick + 1 + g.dispatchCooldownTicks, sent: g.tick, seq });
     this.ix.issue = null;
     this.ix.bump();
   }

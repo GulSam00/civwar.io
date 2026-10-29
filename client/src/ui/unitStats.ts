@@ -2,11 +2,15 @@
  * 표시용 절대값 계산 (2026-10-28 UI 개선) — 배율(×0.85)·소수(0.0104 골드) 대신 "칸당 병력", "분당 골드" 같은 정수로 보인다.
  * 서버 식을 그대로 옮겼다. 표시 전용 — 서버 값이 권위:
  *   점령 비용  = server/src/game/rules.ts tileCost (중립 7 / 적 11 × 테크 × 인접 × 지형 × 병종 × 보급 × 러시 × 빚, 올림, 최소 4)
+ *               v5.1: 병종 배율은 전 병종 1000 (UNIT_ATK_MULT_PERMILLE), 병종 전용 점령 테크(SPE-2A·SPE-3B·SWO-2B·CAV-3A)만 병종 차이를 만든다
+ *   기지 함락  = 남은 체력 × 칸 비용 ÷ 1000 (baseCaptureTroops — 체력은 hpPct 근사)
  *   지형 골드  = shared tileGoldWeight × GOLD_RATE × 골드 스탯 (server economy.grossGoldMilliPerTick 를 칸 하나로)
  *   이동       = rules.ts 깃발 속도 (FLAG_SPEED_BASE_MILLI × (병종 속도 + 테크 점수) ÷ 지형 느려짐)
  */
 import {
   ADJACENCY_COEF_PERMILLE,
+  BASE_HP_MILLI,
+  CAPITAL_HP_MILLI,
   DEBT_CAPTURE_COST_PERMILLE,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENEMY_BASE,
@@ -105,6 +109,23 @@ export function captureCost(g: GameModel, topo: TopoLike | null, playerId: numbe
   if (g.endgameRushActive) v = Math.floor((v * c(k, 'ENDGAME_RUSH_COST_MULT_PERMILLE', ENDGAME_RUSH_COST_MULT_PERMILLE)) / 1000);
   if ((g.players.get(playerId)?.gold ?? 0) < 0) v = Math.floor((v * c(k, 'DEBT_CAPTURE_COST_PERMILLE', DEBT_CAPTURE_COST_PERMILLE)) / 1000);
   return Math.max(c(k, 'MIN_TILE_COST', MIN_TILE_COST), Math.floor((v + MICRO - 1) / MICRO));
+}
+
+/**
+ * v5.1 (GDD 4.4 점령 비용 표시, [A-5.1-6·7]) — 그 기지를 함락하는 데 드는 병력 ≈ ceil(남은 체력 milli × 칸 비용 ÷ 1000).
+ * 서버 applyBaseHits 의 지출 = 적용 피해 × tileCost ÷ 1000 (tick 마다 올림). 공성·요새화 배율은 속도·상한만 바꾸고 체력당 병력은 그대로.
+ * 근사: 남은 체력은 스냅숏 hpPct(정수 %)에서 되돌린다 — 최대 체력 = 처음 수도였던 칸(map_init.spawns[].homeTileId) 15000, 나머지 10000.
+ * tick 마다 올림하므로 실제 소모가 조금 더 많을 수 있다 → 표시는 "약 N명". 기지가 아니거나 칸 비용이 없으면(내 땅·동맹) null.
+ */
+export function baseCaptureTroops(g: GameModel, topo: TopoLike | null, playerId: number, unit: number, tile: number): number | null {
+  const b = g.bases.get(tile);
+  if (!b) return null;
+  const cost = captureCost(g, topo, playerId, unit, tile);
+  if (cost === null) return null;
+  const k = g.config.constants;
+  const maxHp = g.capitalTiles.has(tile) ? c(k, 'CAPITAL_HP_MILLI', CAPITAL_HP_MILLI) : c(k, 'BASE_HP_MILLI', BASE_HP_MILLI);
+  const hp = Math.round((maxHp * Math.max(0, Math.min(100, b.hpPct))) / 100);
+  return Math.ceil((hp * cost) / 1000);
 }
 
 /** 기준 점령 비용 — 보급 거리 안 중립 평원 한 칸 (병종 비교용) */
@@ -216,5 +237,5 @@ export function unitSpec(g: GameModel, playerId: number, unit: Unit): UnitSpec {
 }
 
 /** 병종 한 줄 성격 (수치에서 나온 요약 — 별도 상성표는 없다: 교전 손실은 양쪽 공격·방어 수치 비교로 나뉜다) */
-export const UNIT_ROLE = ['방어 강함 · 편성 저렴 · 사기 안정', '균형형 · 점령 소모 가장 적음', '공격·이동·점령 빠름 · 편성·유지 비쌈 · 사기 기복 큼'] as const;
+export const UNIT_ROLE = ['방어 강함 · 편성 저렴 · 사기 안정', '균형형', '공격·이동·점령 빠름 · 편성·유지 비쌈 · 사기 기복 큼'] as const;
 

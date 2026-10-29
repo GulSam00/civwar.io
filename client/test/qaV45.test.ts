@@ -75,8 +75,10 @@ describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 
       const store = bootstrap(state);
       const g = store.game!;
       const topo = createTopologyView('square', state.map.width, state.map.height);
-      let pick: { p: number; B: number; A: number; stop: number } | null = null;
-      outer: for (let p = 1; p <= 8; p++) {
+      // v5.1 (§37.6): 봇 판 진행이 바뀌어 "처음 찾은" 장면의 40명 깃발이 IDLE 전에 노출 소모로 사라졌다 — 장면 선택이 판 진행에 의존하지 않게
+      // 후보를 모두 모아 출발 기지 → 정지 칸 거리가 가장 짧은 것을 고르고, 병력도 그 플레이어 풀의 절반(최소 40)으로 보낸다. 검사 의도(막힘 → IDLE unreachable → 자동 귀환)는 같다.
+      let pick: { p: number; B: number; A: number; stop: number; d: number } | null = null;
+      for (let p = 1; p <= 8; p++) {
         const pl = state.players[p];
         if (!pl.alive || pl.baseTiles.length < 1) continue;
         const mine: number[] = [];
@@ -87,17 +89,18 @@ describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 
             if (A === B) continue;
             const d = defendDest(state, p, B, A);
             if (d !== A && d !== B && state.graph.distance(B, A) < 40) {
-              pick = { p, B, A, stop: d };
-              break outer;
+              const dist = state.graph.distance(B, d);
+              if (!pick || dist < pick.d || (dist === pick.d && (p < pick.p || (p === pick.p && (B < pick.B || (B === pick.B && A < pick.A)))))) pick = { p, B, A, stop: d, d: dist };
             }
           }
       }
       if (!pick) continue;
       const { p, B, A, stop } = pick;
+      const troops = Math.max(40, Math.floor(state.players[p].troopsMilli / 2000));
       const rt = computeRoute(g, topo, new RouteCache().fieldFor(g, topo, A), p, B, A, false);
       expect(rt.blocked).toBe(true);
       expect(rt.stopTile).toBe(stop);
-      const r = step(sim, [[p, { type: 'cmd_flag_issue', unit: UNIT.SWORD, troops: 40, anchorTileId: A, originBaseTileId: B }]], [store]);
+      const r = step(sim, [[p, { type: 'cmd_flag_issue', unit: UNIT.SWORD, troops, anchorTileId: A, originBaseTileId: B }]], [store]);
       expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND });
       const fid = r.acks[0].flagId as number;
       let idle: any = null;

@@ -213,7 +213,29 @@ export class GameRenderer {
     this.drawBases(ctx, model, topo, view);
     this.drawRouteArrow(ctx, topo, view);
     this.drawFlags(ctx, model, topo, view, now);
+    this.drawDispatchGauges(ctx, model, topo, view);
     this.drawEmotes(ctx, model, topo, view);
+  }
+
+  /**
+   * v5.1 (GDD 2.5·9장): 기지 출전 쿨타임 — 내 기지(관전이면 모든 기지) 오른쪽 위 모서리에 원형 게이지 + 남은 초.
+   * 출전한 깃발이 바로 그 기지 칸 위에서 출발하므로 깃발 위에 그린다(아이콘 가운데는 깃발이 가린다). 색에만 의존하지 않게 숫자 병기.
+   */
+  private drawDispatchGauges(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
+    const cam = this.camera;
+    const s = baseIconSize(cam.zoom);
+    const rt = model.renderTick();
+    const cooldown = Math.max(1, model.dispatchCooldownTicks);
+    for (const tile of model.baseTiles) {
+      const b = model.bases.get(tile);
+      if (!b || !b.ownerId || (view.me !== null && b.ownerId !== view.me)) continue;
+      const left = (b.dispatchReadyTick ?? 0) - rt;
+      if (left <= 0) continue;
+      const c = topo.tileCenter(tile);
+      const p = worldToScreen(cam, c.x, c.y);
+      if (p.x < -s - 40 || p.y < -s - 40 || p.x > cam.viewW + s + 40 || p.y > cam.viewH + s + 40) continue;
+      drawDispatchGauge(ctx, p.x + s / 2, p.y - s / 2, s, Math.min(1, left / cooldown), Math.ceil((left * model.config.tickMs) / 1000));
+    }
   }
 
   private hudCache: { x0: number; y0: number; x1: number; y1: number }[] = [];
@@ -1217,13 +1239,15 @@ export class GameRenderer {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-    const tag = f.routed ? '패주' : f.disengaging ? (model.disengageForPosture.has(f.id) ? '태세 전환 중' : '이탈') : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? (model.flagIdleReason.get(f.id) === 'unreachable' ? '막힘' : '대기') : null;
+    // v5.1: 사기 0 자동 후퇴 (flag_recalled{reason:"morale"}) — 이탈 대기·귀환 내내 "사기 붕괴" (패주가 먼저)
+    const collapse = !f.routed && model.moraleRetreat.has(f.id);
+    const tag = f.routed ? '패주' : collapse ? '사기 붕괴' : f.disengaging ? (model.disengageForPosture.has(f.id) ? '태세 전환 중' : '이탈') : f.blocked ? '대치' : f.stalled ? '정체' : f.state === 'RETURNING' ? '귀환' : f.state === 'IDLE' ? (model.flagIdleReason.get(f.id) === 'unreachable' ? '막힘' : '대기') : null;
     if (tag) {
       const tx = x + r + 4;
       const ty = y - r - 2;
       ctx.font = 'bold 10px system-ui, sans-serif';
       const tw = ctx.measureText(tag).width + 6;
-      ctx.fillStyle = f.routed ? '#555' : f.blocked ? '#ef6c00' : f.disengaging ? (model.disengageForPosture.has(f.id) ? '#0277bd' : '#c49000') : f.stalled ? '#b26a00' : 'rgba(0,0,0,0.6)';
+      ctx.fillStyle = f.routed ? '#555' : collapse ? '#ad1457' : f.blocked ? '#ef6c00' : f.disengaging ? (model.disengageForPosture.has(f.id) ? '#0277bd' : '#c49000') : f.stalled ? '#b26a00' : 'rgba(0,0,0,0.6)';
       ctx.fillRect(tx, ty - 7, tw, 13);
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'left';
@@ -1297,6 +1321,39 @@ export class GameRenderer {
 export const LABEL_REFRESH_MS = 1000;
 
 /** 기지 아이콘 한 변 (화면 px) — 칸(zoom px)을 꽉 채운다. 아주 작은 줌에서도 10px 은 유지 */
+/**
+ * v5.1 출전 쿨타임 게이지 — (x, y) 중심 원에 어두운 부채꼴(남은 비율, 12시부터 시계 방향으로 줄어든다) + 가운데 남은 초.
+ * frac = 남은 tick ÷ BASE_DISPATCH_COOLDOWN_TICKS (0..1), sec = 남은 초(올림).
+ */
+export function drawDispatchGauge(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, frac: number, sec: number): void {
+  const r = Math.max(9, Math.min(16, s * 0.42));
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(20,28,40,0.78)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(10,14,22,0.62)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+  ctx.strokeStyle = '#4fc3f7';
+  ctx.lineWidth = Math.max(2, r * 0.18);
+  ctx.stroke();
+  ctx.font = `bold ${Math.round(Math.max(10, Math.min(16, r * 0.9)))}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(String(sec), x, y + 0.5);
+  ctx.fillStyle = '#e1f5fe';
+  ctx.fillText(String(sec), x, y + 0.5);
+  ctx.restore();
+}
+
 export function baseIconSize(zoom: number): number {
   return Math.max(10, Math.min(64, zoom));
 }
