@@ -556,5 +556,5 @@ Phase A 는 상태를 쓰지 않고 Phase B 만 쓴다. 같은 tick 의 소유�
 | `04_qa_report_*.md` | QA 보고 |
 | `05_combat_redesign_draft.md` | 전투 모델 2 설계(rev.4) |
 | `06_tech_overhaul_draft.md` | 테크 개편 설계(노드 표 정본 §10) |
-| `BACKLOG.md` | 작업 목록 |
+| `BACKLOG.md` | 옛 작업 목록 (2026-10-30 폐기, 할 일은 `docs/issues/`) |
 | `00_input/design-decisions.md` | 사용자 결정 원문 |

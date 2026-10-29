@@ -19,8 +19,9 @@
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
 | 2026-08-04 | 초기 구성 (game-designer, multiplayer-backend-engineer, frontend-game-client-engineer, integration-qa + civwar-orchestrator) | 전체 | 빈 레포에서 실시간 IO 게임 개발 하네스 신규 구축 |
+| 2026-08-04 | Notion 프로젝트 관리 문서 자동 동기화 추가, Phase 2(GDD) 완료 후 사용자 승인 게이트 명시 | civwar-orchestrator | 사용자가 Notion을 프로젝트 관리 문서로 지정, 1단계 기획은 진행 전 반드시 검토받기로 합의 |
 | 2026-10-08 | 세션 목표 대역 30~60분 → 25~32분(표준 30분) | CLAUDE.md, game-designer, io-game-design, civwar-orchestrator | GDD v4.0에서 사용자가 표준 종료 30분으로 재조정 |
 | 2026-10-18 | ai-match-monitor 스킬 추가 (봇 전용 대전 실시간 관전·녹화·5분 전황·자기 피드백, `server/scripts/watch-game.ts`) | .claude/skills/ai-match-monitor | 사용자가 AI 대전 모니터링 작업을 같은 양식으로 반복할 수 있게 스킬화 요청 |
 | 2026-10-28 | 모든 작업을 한국어로 진행한다는 언어 규칙 추가 | CLAUDE.md | 다른 세션 보고가 영어로 오는 일이 있어 사용자가 명시 요청 |
 | 2026-10-29 | UI 규칙 문서 `client/UI-CONVENTIONS.md` 추가, 프런트 에이전트·스킬이 읽도록 연결 | frontend-game-client-engineer, react-game-client | 흩어진 UI 결정을 한곳에 모으자는 사용자 요청 |
-| 2026-08-04 | Notion 프로젝트 관리 문서 자동 동기화 추가, Phase 2(GDD) 완료 후 사용자 승인 게이트 명시 | civwar-orchestrator | 사용자가 Notion을 프로젝트 관리 문서로 지정, 1단계 기획은 진행 전 반드시 검토받기로 합의 |
+| 2026-10-30 | Notion 동기화 절차 제거, 오케스트레이터를 부분 재실행 중심으로 갱신, QA 보고서 파일명(판 번호) 통일, game-designer 목표 문구 수정. 낡은 `_workspace/HANDOFF.md`·`CHECKLIST.md` 삭제, `BACKLOG.md` 폐기 표시(남은 항목은 `docs/issues`로 이관) | civwar-orchestrator, game-designer, integration-qa, _workspace | 이슈 관리를 `docs/issues`로 옮긴 뒤 문서가 서로 다른 절차를 지시해 재정비 (이슈 20261029-2358-claude-docs-cleanup) |

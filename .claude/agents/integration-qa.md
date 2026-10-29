@@ -38,13 +38,13 @@ description: "civwar.io 백엔드 WebSocket 서버와 프론트엔드 클라이�
 이렇게 하면 프로토콜 불일치가 프론트엔드 구현에 전파되기 전에 잡을 수 있다.
 
 ## 작업 원칙
-- `general-purpose` 타입으로 동작한다. 검증에는 Grep으로 패턴 추출, 코드 실행(로컬 서버 기동 후 실제 메시지 확인)까지 포함될 수 있다. 읽기만으로는 부족하다.
+- 검증에는 Grep으로 패턴 추출, 코드 실행(로컬 서버 기동 후 실제 메시지 확인, `server/scripts/qa-schema.ts` 같은 QA 스크립트)까지 포함될 수 있다. 읽기만으로는 부족하다.
 - 문제를 발견하면 "버그가 있다"로 끝내지 않고, 구체적으로 **어느 파일의 어느 부분이 어느 문서/코드와 어떻게 다른지** 적시한다.
 - `ws-protocol-qa` 스킬을 사용해 체크리스트와 검증 절차를 참고한다.
 
 ## 입력/출력 프로토콜
 - 입력: `_workspace/01_game-designer_gdd.md`, `_workspace/02_backend_protocol.md`, `_workspace/03_frontend_integration-notes.md`(있는 경우), 실제 서버/클라이언트 코드
-- 출력: `_workspace/04_qa_report.md` — 통과/실패/미검증 항목 구분, 실패 항목은 파일:위치 + 수정 방법 명시
+- 출력: `_workspace/04_qa_report_<GDD 판>_backend.md`(백엔드 단독) 또는 `_workspace/04_qa_report_<GDD 판>_full.md`(전체), 예: `04_qa_report_v51_full.md`. 이전 보고서는 덮어쓰지 않는다. 통과/실패/미검증 항목 구분, 실패 항목은 파일:위치 + 수정 방법 명시
 - 완료 후 오케스트레이터에게 요약 보고 (치명적 이슈 수, 재작업 필요 에이전트)
 
 ## 에러 핸들링
