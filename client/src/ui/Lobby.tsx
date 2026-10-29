@@ -96,6 +96,14 @@ export function Lobby({ store }: { store: ClientStore }) {
         <button className="btn-link" onClick={() => setHelp(true)}>
           규칙 도움말
         </button>
+        {import.meta.env.DEV && (
+          <>
+            {' · '}
+            <a className="btn-link" href="/combat-lab">
+              전투 실험실
+            </a>
+          </>
+        )}
       </p>
       {help && <Help onClose={() => setHelp(false)} />}
     </div>

@@ -23,6 +23,16 @@ export interface CombatFlagInput {
   statPm: readonly number[]; // 소유자 테크 스탯 (TECH_STAT 인덱스)
   /** 패치 6차: 소유자 골드가 0 미만(빚)이면 채널값 ×DEBT_STAT_PERMILLE */
   debt?: boolean;
+  /** 전투 실험실(client/src/lab) 전용: 병종 기본 능력치·사기 곱을 이 값으로 바꾼다. 게임 서버는 넣지 않는다 */
+  statOverride?: CombatStatOverride;
+}
+
+/** 병종 상수(UNIT_STAT·MORALE_FLOOR·MORALE_FULL) 대신 쓸 값 — 모두 ‰ */
+export interface CombatStatOverride {
+  atk: number;
+  def: number;
+  moraleFloor: number;
+  moraleFull: number;
 }
 
 const DEFAULT_STAT: readonly number[] = [];
@@ -35,15 +45,23 @@ export function moraleMultiplier(unit: number, morale: number, statPm: readonly 
   return Math.max(1, Math.min(MORALE_MULT_CAP, mult));
 }
 
+/** moraleMultiplier 와 같은 식, 병종 상수 대신 override 값 (테크 가산 없음) */
+export function overrideMoraleMultiplier(ov: CombatStatOverride, morale: number): number {
+  const m = Math.max(0, Math.min(MORALE_MAX, morale));
+  const mult = ov.moraleFloor + Math.floor(((ov.moraleFull - ov.moraleFloor) * m) / 1000);
+  return Math.max(1, Math.min(MORALE_MULT_CAP, mult));
+}
+
 /** 채널값 a_c(f) (2.2) — [ATK, DEF]. 단계마다 floor, 최소 1 */
 export function channelValues(f: CombatFlagInput): number[] {
   const out: number[] = new Array(CHANNEL_COUNT);
   const stat = f.statPm.length ? f.statPm : null;
-  const mm = moraleMultiplier(f.unit, f.morale, f.statPm);
+  const ov = f.statOverride;
+  const mm = ov ? overrideMoraleMultiplier(ov, f.morale) : moraleMultiplier(f.unit, f.morale, f.statPm);
   for (let c = 0; c < CHANNEL_COUNT; c++) {
     const b = f.onOwnBase ? BASE_BUFF[f.posture][c] : TERRAIN_BUFF[f.terrain][f.posture][c];
     // 2026-10-24: 테크는 병종 기본에 점수를 **더한 뒤** 지형·기지 배율을 곱한다 (절대값 전환)
-    const unitBase = UNIT_STAT[c][f.unit] + (stat ? TECH_POINT_PERMILLE * techChannelPts(stat, f.unit, c) : 0);
+    const unitBase = (ov ? (c === 0 ? ov.atk : ov.def) : UNIT_STAT[c][f.unit]) + (stat ? TECH_POINT_PERMILLE * techChannelPts(stat, f.unit, c) : 0);
     let x = Math.floor((unitBase * b) / 1000);
     x = Math.floor((x * mm) / 1000);
     if (f.disengage) x = Math.floor((x * DISENGAGE_VALUE_PERMILLE_V2) / 1000);

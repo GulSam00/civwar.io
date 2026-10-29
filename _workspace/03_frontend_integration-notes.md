@@ -540,3 +540,12 @@ UI 문구: Help 규칙 절·단축키 요약, README 조작표, 로비 하단 �
 **테스트**: `client/test/v51.test.ts` 11건(규칙 3종 · 실제 봇 판 900 tick dispatchReadyTick 불일치 0 · 고리 비활성/재활성 · 연타 · BASE_COOLDOWN 토스트 · morale 알림/표식 · 사기 하한). `gameModel.diffAgainstFull` 에 dispatchReadyTick 비교 추가. F-2 기대값 5건 갱신(qaV45 는 장면 선택을 "출발 기지 → 정지 칸 최단 + 병력 = 풀 절반"으로 바꿔 판 진행에 덜 의존). unitRing 1건은 보내기 전에 기대 기지를 읽게 고침(보낸 뒤엔 그 기지가 쿨타임으로 보이므로).
 
 **미확인**: 사기 붕괴 알림·태그는 실제 판에서 장면을 만들지 못해 단위 테스트로만 확인. 브라우저 확인에 쓴 8080 서버가 v5.1 빌드인지(스냅숏에 dispatchReadyTick 이 실리는지)는 따로 확인하지 않았다 — 게이지는 flag_issued 규칙만으로도 동작한다. 스크린샷 `_workspace/ui-2026-10-28-v51/`.
+
+## §27 전투 실험실 `/combat-lab` (2026-10-30, 이슈 20261029-2358-combat-attrition-sim-script)
+
+- 사용자 결정: 소모 확인을 스크립트 대신 프런트 테스트 페이지로 한다. 좌우 부대 능력치 조절, 검·창·기병 프리셋, 시작/중단/초기화/속도, 상단 그래프(병력·사기·실효 능력치), 하단 전투 로그.
+- 진입: `http://localhost:5173/combat-lab` (dev 로비 아래 `전투 실험실` 링크). `main.tsx` 가 이 경로면 스토어·WebSocket 을 만들지 않고 `lab/CombatLab` 만 띄운다.
+- 계산: `client/src/lab/combatSim.ts` — 서버 `combat.ts` 4a~4d 의 깃발 1 대 1 경로를 옮겼다. 손실 분배는 shared `sideLossDetail` 그대로, 능력치는 shared `CombatFlagInput.statOverride`(새 선택 필드, 게임 서버는 넣지 않음)로 병종 상수를 대신한다. 무테크·빚 없음.
+- 실험실에서만 바꿀 수 있는 값: 병력, 시작 사기, 공격·방어 ‰, 사기 0/만땅 곱, 태세별 tick 당 사기 감소, 이탈 대기 tick, 태세, 지형, 자기 기지 여부 / 공통: 손실률·하한률·최소 손실·손실 1%당 사기 감소·최대 tick.
+- 다수 대 다수, 편 내부 분배, 기지 함락은 넣지 않았다.
+- 테스트: `client/test/combatLab.test.ts` 4건 (override 중립성, 첫 tick 손실·사기 식, 사기 붕괴 → 이탈, 기지 사기 하한). 스크린샷 `_workspace/ui-2026-10-30/combat-lab.jpg`.
