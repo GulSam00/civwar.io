@@ -21,18 +21,18 @@ function techOf(...codes: string[]): Pick<PlayerState, 'techMask' | 'techPurchas
 }
 
 describe('병력 (3.2)', () => {
-  it('시작 troopCap = 208', () => expect(troopCap(player())).toBe(208));
+  it('시작 troopCap = 262', () => expect(troopCap(player())).toBe(262));
   // 2026-10-24 테크 개편: 병력 상한 노드(징병소·상비군)를 뺐다 — 행정 갈래 전부 사도 상한은 그대로
   it('병력 상한은 테크로 변하지 않는다 (TROOP_CAP 노드 없음)', () => {
     const base = troopCap(player({ tiles: 390 }));
-    expect(base).toBe(4780);
+    expect(base).toBe(7120);
     expect(troopCap(player({ tiles: 390, ...techOf('TER-1', 'TER-2A', 'TER-3A', 'TER-4') }))).toBe(base);
   });
-  it('regen = round((0.8 + 0.5√9) × (1 − 150/208) × 1000)', () => {
-    // 2.3 × 58/208 × 1000 = 641.35 → 641
-    expect(regenMilliPerTick(player())).toBe(641);
+  it('regen = round((0.8 + 0.5√9) × (1 − 150/262) × 1000)', () => {
+    // 2.3 × 112/262 × 1000 = 983.2 → 983
+    expect(regenMilliPerTick(player())).toBe(983);
   });
-  it('상한이면 재생 0', () => expect(regenMilliPerTick(player({ troopsMilli: 208_000 }))).toBe(0));
+  it('상한이면 재생 0', () => expect(regenMilliPerTick(player({ troopsMilli: 262_000 }))).toBe(0));
   it('isqrt 경계', () => {
     for (const x of [0, 1, 2, 3, 4, 15, 16, 17, 999_999, 1_000_000, 4_633_000_000]) {
       const s = isqrt(x);

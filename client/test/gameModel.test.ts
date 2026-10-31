@@ -207,8 +207,8 @@ describe('GameModel — 단위', () => {
     const m = bootstrap();
     // 2026-10-24 개편: 병력 상한 노드는 없다. MOB-1(18), MOB-2A(19), MOB-4(23, 슬롯 +1)
     const mk = (...ids: number[]) => ids.reduce((x, i) => x + 2 ** i, 0);
-    expect(m.troopCapOf({ tiles: 9, techMask: 0 })).toBe(208);
-    expect(m.troopCapOf({ tiles: 9, techMask: mk(12, 13, 15, 17) })).toBe(208);
+    expect(m.troopCapOf({ tiles: 9, techMask: 0 })).toBe(262);
+    expect(m.troopCapOf({ tiles: 9, techMask: mk(12, 13, 15, 17) })).toBe(262);
     expect(m.flagCapOf({ tiles: 600, techMask: mk(18, 19, 21, 23) })).toBe(6);
     expect(m.flagCapOf({ tiles: 1200, techMask: 2 ** 42 - 1 })).toBe(7);
     expect(m.flagCapOf({ tiles: 9, techMask: mk(18, 19, 21, 23) })).toBe(4);

@@ -194,7 +194,7 @@ export const START_GOLD = 200;
 
 // ══ 병력 ══
 export const TROOP_CAP_BASE = 100;
-export const TROOP_CAP_PER_TILE = 12;
+export const TROOP_CAP_PER_TILE = 18;
 export const REGEN_BASE_MILLI = 800; // 0.8
 export const REGEN_SQRT_COEF_PERMILLE = 500; // 0.50
 

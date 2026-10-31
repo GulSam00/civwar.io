@@ -594,7 +594,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 
 정수식:
 - **v4.3**: 아래 `capPm`·`regenPm`·`goldPm` 과 모든 테크 배율은 플레이어 스탯 `statPm = techStatValues(techMask)`(§19) 에서 읽는다 — 각각 `TROOP_CAP`·`REGEN`·`GOLD`
-- `troopCap = floor((100 + 12·tiles) × capPm / 1000)`
+- `troopCap = floor((100 + 18·tiles) × capPm / 1000)`
 - `regenMilli = round_half_up( (800 + floor(500 × isqrt(tiles·10⁶) / 1000)) × regenPm × (capMilli − troopsMilli) / (1000 × capMilli) )`, 이후 `troopsMilli = min(troopsMilli + regen, capMilli)`
 - `goldMilli/tick = floor(goldWeight × 2080 × goldPm / 10⁹)`, `net = gross − floor(gross × upkeepPm / 1000)`
 - `flagCap = min(7, 3 + floor(tiles/300) + SLOT_BONUS)` — **v4.3**: `SLOT_BONUS` = MOB-3A 보유 시 1, 아니면 0 (최대 +1)
@@ -1353,7 +1353,7 @@ net_r    = net 를 gross_r 로 분배
 병력  terr   = 800 + floor(500 × isqrt(T × 10⁶) / 1000)                       // 기존 영토 식 0.8 + 0.5√T (T = 내 칸 수)
       REF    = 800 + floor(500 × isqrt(390 × 10⁶) / 1000) = 10674              // PROD_REF_TILES 390 칸의 기본 재생
       base_b = floor(eq_b × pm_b × REF / (390 × 1000))                          // eq = 60 | 100, pm = 생산력 ‰ → 기지 1642, 수도 2736 (pm 1000)
-      R      = round((terr + Σ base_b) × 재생테크‰ × (cap − troops) / (1000 × cap))   // 로지스틱·테크는 합에 한 번 (BigInt — 2^53 초과 방지). cap 은 그대로 (100 + 12·T) × 상한테크
+      R      = round((terr + Σ base_b) × 재생테크‰ × (cap − troops) / (1000 × cap))   // 로지스틱·테크는 합에 한 번 (BigInt — 2^53 초과 방지). cap 은 그대로 (100 + 18·T) × 상한테크
       행     = R 을 가중치 [base_b…, terr] 로 분배
 골드  GW_b   = floor(eq_b × 1000 × pm_b / 1000)                                 // 평원 가중치 1000 × 칸 수 × 생산력
       GW_terr = goldWeight (지형 가중 합, 기존)
