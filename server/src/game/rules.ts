@@ -450,13 +450,13 @@ export function returnBaseValid(state: Readonly<GameState>, f: Readonly<Flag>): 
 }
 
 /**
- * recallTarget (4.4): v4.2 [A-61] 지정 기지(내 소유일 때) → ① 출발 타일(내 소유) → ② 내 기지 최근접 → ③ 수도 → ④ 최근접 내 타일.
+ * recallTarget (4.4): v4.2 [A-61] 지정 기지(내 소유일 때) → ① 내 기지 최근접(그래프 거리) → ② 수도 → ③ 최근접 내 타일.
+ * 출발 타일은 더 이상 우선하지 않는다(가까운 기지로 복귀). 귀환 중에도 매 tick 재평가하므로 더 가까운 기지가 생기면 바뀐다.
  * 지정 기지를 잃으면 폴백하고, movement.ts 가 returnBaseTileId = null 로 지운다(되찾아도 다시 돌아가지 않는다).
  */
 export function recallTarget(state: Readonly<GameState>, f: Readonly<Flag>): number {
   const me = f.ownerId;
   if (returnBaseValid(state, f)) return f.returnBaseTileId!;
-  if (state.owners[f.originTileId] === me) return f.originTileId;
   const p = state.players[me];
   const pos = f.posTileId;
   let best = -1;

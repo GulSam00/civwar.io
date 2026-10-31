@@ -836,6 +836,24 @@ describe('v4.2 공격 = 깃발 옆 칸 (4.4a) · 귀환 (4.4 v4.2)', () => {
     expect(r2.all.find((m) => m.type === 'flag_ended' && m.flagId === f.id)).toMatchObject({ reason: 'recalled' });
   });
 
+  it('귀환지 = 출발 기지가 아니라 가장 가까운 내 기지, 귀환 중 더 가까운 기지가 생기면 바뀐다', async () => {
+    const { recallTarget } = await import('../src/game/rules.js');
+    const { s } = scenario();
+    const p = s.players[1];
+    const home = p.baseTiles[0];
+    const others = s.map.baseTiles.filter((b) => s.owners[b] !== 1);
+    const near = others.sort((a, b) => s.graph.distance(a, home) - s.graph.distance(b, home) || a - b)[0];
+    setTileOwner(s, near, 1, false);
+    // 출발 기지(home)에서 나왔지만 near 기지 바로 옆에서 귀환 시작 → near 로 돌아간다
+    const pos = s.graph.neighbors(near)[0];
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 100, pos, posture: POSTURE.ATTACK, state: 'RETURNING', originTileId: home });
+    expect(recallTarget(s, f)).toBe(near);
+    // near 를 잃으면 다시 가까운 다른 기지(home 쪽)로 폴백
+    setTileOwner(s, near, 2, false);
+    expect(p.baseTiles.includes(near)).toBe(false);
+    expect(recallTarget(s, f)).not.toBe(near);
+  });
+
   it('귀환 ×1.5 (패주 포함) [A-63] · ZOC 무시 [A-62]', async () => {
     const { speedMilliAt } = await import('../src/game/rules.js');
     const { s, c } = scenario();
@@ -850,7 +868,7 @@ describe('v4.2 공격 = 깃발 옆 칸 (4.4a) · 귀환 (4.4 v4.2)', () => {
       const sc = scenario();
       const { sim: sm, s: ss, c: cc } = sc;
       setTileOwner(ss, cc + 6, 1, false);
-      const g = addFlag(ss, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: cc, anchor: cc + 6, posture: POSTURE.DEFEND, state, returnTileId: cc + 6, originTileId: cc + 6 });
+      const g = addFlag(ss, { ownerId: 1, unit: UNIT.SWORD, troops: 500, pos: cc, anchor: cc + 6, posture: POSTURE.DEFEND, state, returnTileId: cc + 6, returnBaseTileId: cc + 6, originTileId: cc + 6 });
       addFlag(ss, { ownerId: 2, unit: UNIT.SPEAR, troops: 500, pos: cc + 2, posture: POSTURE.DEFEND, state: 'ENGAGED' }); // 경로 위 (방어↔방어 = 무전투)
       run(sm, 30);
       if (state === 'RETURNING') expect(!ss.flags.includes(g) || g.posTileId > cc + 2).toBe(true);
