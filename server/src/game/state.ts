@@ -7,6 +7,7 @@ import {
   CAPITAL_HP_MILLI,
   COMBAT_MODEL,
   MORALE_MAX,
+  SORTIE_INITIAL_MORALE,
   BASE_PROD_MAX_PERMILLE,
   TICKS_PER_MIN,
   BOT_DIFFICULTY,
@@ -508,7 +509,7 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     halted: false,
     returnBaseTileId: null,
     disengageHold: false,
-    morale: MORALE_MAX,
+    morale: SORTIE_INITIAL_MORALE,
     ...partial,
   };
 }

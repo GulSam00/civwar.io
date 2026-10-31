@@ -588,7 +588,7 @@ export interface S2C_SnapshotDelta {
   combatLoss?: [number, number][];
   /**
    * §33 (추가만, 전투 모델 2 에서만): [flagId, morale ‰] — MORALE_DELTA_INTERVAL(5) tick 마다 마지막으로 보낸 값과 다른 깃발만.
-   * 한 번도 보내지 않은 깃발의 사기는 1000(MORALE_MAX). snapshot_full 의 flags[].morale 이 기준점이다.
+   * 한 번도 보내지 않은 깃발의 사기는 900(SORTIE_INITIAL_MORALE, v5.4). snapshot_full 의 flags[].morale 이 기준점이다.
    */
   moraleChanged?: [number, number][];
 }

@@ -9,6 +9,7 @@ import {
   HARD_TIMEOUT_TICK,
   MORALE_DELTA_INTERVAL,
   MORALE_MAX,
+  SORTIE_INITIAL_MORALE,
   PLAYER_DELTA_INTERVAL,
   PRODUCTION_DELTA_INTERVAL,
   POSTURE,
@@ -164,7 +165,7 @@ function flagSnap(f: Readonly<Flag>, model: 1 | 2, shown: ReadonlyMap<number, nu
     breakaway: f.breakaway,
     halted: f.halted,
     returnBaseTileId: f.returnBaseTileId,
-    ...(model === 2 ? { morale: shown.get(f.id) ?? MORALE_MAX } : {}), // 델타로 보낸 값과 같아야 입장자가 어긋나지 않는다 (state.moraleShown)
+    ...(model === 2 ? { morale: shown.get(f.id) ?? SORTIE_INITIAL_MORALE } : {}), // 델타로 보낸 값과 같아야 입장자가 어긋나지 않는다 (state.moraleShown)
   };
 }
 
@@ -326,7 +327,7 @@ export class DeltaTracker {
     if (state.combatModel === 2 && t % MORALE_DELTA_INTERVAL === 0) {
       d.moraleChanged = [];
       for (const f of state.flags) {
-        if ((state.moraleShown.get(f.id) ?? MORALE_MAX) !== f.morale) {
+        if ((state.moraleShown.get(f.id) ?? SORTIE_INITIAL_MORALE) !== f.morale) {
           state.moraleShown.set(f.id, f.morale);
           d.moraleChanged.push([f.id, f.morale]);
         }

@@ -638,6 +638,8 @@ export const COMBAT_VMIN = 100; // 편 채널값 하한
 export const DISENGAGE_VALUE_PERMILLE_V2 = 700; // 이탈 대기 배율 (현행 500)
 // 사기 (깃발 단위, ‰ 0..1000)
 export const MORALE_MAX = 1000;
+/** v5.4 (사용자 확정 2026-10-31): 출전한 새 깃발의 시작 사기 ‰ (화면 90%). 기지에서 기다렸다 나가는 요격을 너프한다 — 행군 중 MORALE_RECOVER 로 회복하므로 기지 앞 짧은 출전만 불리하다. 모델 2 전용 */
+export const SORTIE_INITIAL_MORALE = 900;
 /** 패치 12차 (시제품 A 채택, 사용자 2026-10-26) [A]: 병종별 사기 곱 범위 ‰ — 인덱스 = UNIT (창/검/기). 사기 0 → FLOOR, 1000 → FULL, 사이는 선형 */
 export const MORALE_FLOOR: readonly number[] = [1050, 850, 750];
 export const MORALE_FULL: readonly number[] = [1100, 1200, 1300];

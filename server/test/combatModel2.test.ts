@@ -446,6 +446,8 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     const cv = addFlag(s, { ownerId: 2, unit: U.CAVALRY, troops: 2000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const out = newOutbox();
     const expDrop = (fixed: number, before: number, after: number) => fixed + Math.floor((Math.floor(((before - after) * 10000) / before) * 10 + 50) / 100);
+    sp.morale = 1000; // 출전 직후 사기(900) 대신 만땅에서 감소 규칙만 본다
+    cv.morale = 1000;
     let mSp = 1000;
     let mCv = 1000;
     for (let t = 1; t <= 10; t++) {
@@ -473,6 +475,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     // 패주: 병력 1 -> 한 방에 0, 사기 0
     const { s: s2, c: c2 } = duelState(2);
     const big = addFlag(s2, { ownerId: 1, unit: U.CAVALRY, troops: 3000, pos: c2, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    big.morale = 1000;
     const weak = addFlag(s2, { ownerId: 2, unit: U.SPEAR, troops: 1, pos: c2 + 1, posture: POSTURE.DEFEND, state: 'ENGAGED' });
     s2.tick = 1;
     stage4b_flagCombatPhaseB(s2, stage4a_flagCombatPhaseA(s2, 1), 1, newOutbox());
@@ -538,6 +541,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     const drop = (unit: 0 | 1 | 2, posture: 0 | 1) => {
       const { s, c } = duelState(2);
       const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture, state: 'ENGAGED' });
+      f.morale = 1000;
       addFlag(s, { ownerId: 2, unit: U.SWORD, troops: 3000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
       const out = newOutbox();
       s.tick = 1;
@@ -625,6 +629,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     const drop = (unit: 0 | 1 | 2, model: 1 | 2) => {
       const { s, c } = duelState(model);
       const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 750_000 });
+      f.morale = 1000;
       s.tick = 1;
       const plan = stage6_combatPhaseA(s, 1);
       expect(plan.pushes.length + plan.baseHits.length).toBe(1);

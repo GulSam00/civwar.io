@@ -2,7 +2,7 @@
  * §33.4 사기 표시 (전투 모델 2) — GameModel 반영(flag_issued 만땅, moraleChanged 델타), 순수 표시 함수, 부대 칩.
  */
 import { describe, expect, it } from 'vitest';
-import { POSTURE, UNIT, type ServerMessage } from '@civwar/shared';
+import { POSTURE, SORTIE_INITIAL_MORALE, UNIT, type ServerMessage } from '@civwar/shared';
 import { GameModel } from '../src/state/gameModel.js';
 import { flagChannels, moraleOn, moraleTone, moraleView } from '../src/ui/morale.js';
 import { myUnitChips } from '../src/ui/unitChips.js';
@@ -50,7 +50,7 @@ describe('사기 표시 (모델 2)', () => {
     expect(flagChannels(g, b)).toEqual([850, 1020]); // 사기 0 = 검병 ×0.85
   });
 
-  it('moraleChanged 델타가 깃발 사기를 갱신하고, 새 깃발(flag_issued)은 만땅으로 시작한다', () => {
+  it('moraleChanged 델타가 깃발 사기를 갱신하고, 새 깃발(flag_issued)은 출전 사기(900)로 시작한다', () => {
     const { g, s, home } = modelWithFlags(2, [1000, 1000]);
     const ids = [...g.flags.keys()];
     const base = wire({
@@ -61,7 +61,7 @@ describe('사기 표시 (모델 2)', () => {
     expect(g.flags.get(ids[0])!.morale).toBe(640);
     expect(g.flags.get(ids[1])!.morale).toBe(1000);
     g.applyEvent({ type: 'flag_issued', tick: 6, flagId: 99, playerId: 1, slotIndex: 2, unit: UNIT.CAVALRY, posture: POSTURE.ATTACK, troops: 50, originTileId: home, anchorTileId: home, targetOwnerId: 0, etaTick: 20 } as ServerMessage);
-    expect(g.flags.get(99)!.morale).toBe(1000);
+    expect(g.flags.get(99)!.morale).toBe(SORTIE_INITIAL_MORALE);
     expect(s.combatModel).toBe(2);
   });
 
