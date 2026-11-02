@@ -6,10 +6,10 @@
  *        → 예고 원 → 기지 → 앵커 선 → 깃발 → (미니맵은 별도 캔버스)
  * 타일 좌표 변환은 전부 TopologyView 를 거친다 (사각 전제 식은 topology.ts 에만).
  */
-import { POSTURE, FLAG_ORDER_COOLDOWN_TICKS, type FlagSnapshot } from '@civwar/shared';
+import { POSTURE, type FlagSnapshot } from '@civwar/shared';
 import { FLOAT_LIFE_MS, LossFloaters, floatAnim, lossText } from './lossFloaters.js';
 import type { GameModel } from '../state/gameModel.js';
-import { disengageTicksOf as disengageTicksModel } from '../state/disengage.js';
+import { disengageTicksOf as disengageTicksModel, orderCooldownTicksOf } from '../state/disengage.js';
 import { createTopologyView, type TileLayer, type TopologyView } from './topology.js';
 import { fitZoom, worldToScreen, type Camera } from './camera.js';
 import { FlagInterpolator, type Pt } from './flagInterp.js';
@@ -1232,7 +1232,7 @@ export class GameRenderer {
       ctx.stroke();
     }
     if (selected && model.tick < f.orderCooldownUntilTick) {
-      const left = (f.orderCooldownUntilTick - model.tick) / FLAG_ORDER_COOLDOWN_TICKS;
+      const left = (f.orderCooldownUntilTick - model.tick) / orderCooldownTicksOf(model, f.ownerId);
       ctx.beginPath();
       ctx.arc(x, y, r + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, left));
       ctx.strokeStyle = 'rgba(255,255,255,0.8)';

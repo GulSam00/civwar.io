@@ -136,17 +136,19 @@ describe('v4.6 노드 표', () => {
     expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, value: 100 });
     expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
     expect(s('MOB-1')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 200 });
-    expect(s('MOB-2A')).toMatchObject({ stat: TECH_STAT.MORALE_RECOVER, value: 100 });
-    expect(s('MOB-3A')).toMatchObject({ stat: TECH_STAT.MORALE_RECOVER, value: 200 });
+    expect(s('MOB-2A')).toMatchObject({ stat: TECH_STAT.ORDER_COOLDOWN, value: -2 });
+    expect(s('MOB-3A')).toMatchObject({ stat: TECH_STAT.ORDER_COOLDOWN, value: -3 });
+    const cd = (...codes: string[]) => techStatValues(codes.reduce((m, c) => m + 2 ** s(c).id, 0))[TECH_STAT.ORDER_COOLDOWN];
+    expect([cd('MOB-1'), cd('MOB-1', 'MOB-2A'), cd('MOB-1', 'MOB-2A', 'MOB-3A')]).toEqual([20, 18, 15]); // 4.0 · 3.6 · 3.0초
     expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 500, name: '급속 귀환' });
     expect(s('MOB-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, name: '참모부' });
     expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -100 });
     expect(s('ECO-1')).toMatchObject({ stat: TECH_STAT.CONVERT, op: 'add', value: -50 });
-    expect(s('ECO-2A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 100 });
-    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 400 });
-    expect(s('ECO-3A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 150 });
-    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 600 });
-    expect(s('ECO-4')).toMatchObject({ stat: TECH_STAT.GOLD_TERRAIN, value: 1000, tier: 4 });
+    expect(s('ECO-2A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 50 });
+    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1000 });
+    expect(s('ECO-3A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 100 });
+    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1500 });
+    expect(s('ECO-4')).toMatchObject({ stat: TECH_STAT.GOLD, value: 200, tier: 4 });
     expect(s('TER-3A')).toMatchObject({ stat: TECH_STAT.BASE_PROD, value: 100 });
     expect(s('TER-3B')).toMatchObject({ stat: TECH_STAT.BASE_RECOVER, value: 500 });
     expect(s('TER-4')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -200 });
@@ -167,12 +169,12 @@ describe('v4.6 노드 표', () => {
     expect(v[TECH_STAT.RETURN_SPEED]).toBe(2200);
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
-    expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([250, 1000, 950, 1000]); // 전체 골드 배율 노드는 없다 (국고 = GOLD_TERRAIN)
+    expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([150, 2500, 950, 1200]); // 국고 = 전체 골드 배율 +20%
     expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_PROD], v[TECH_STAT.BASE_RECOVER]]).toEqual([700, 1100, 1500]);
   });
   it('무테크 기본: 전투·이동 점수 0, 기지 3칸 1000, 길이 = TECH_STAT_COUNT', () => {
     const v = techStatValues(0);
-    expect(v.length).toBe(52);
+    expect(v.length).toBe(53);
     expect([v[TECH_STAT.COMBAT_ATK], v[TECH_STAT.COMBAT_DEF], v[TECH_STAT.SPEED]]).toEqual([0, 0, 0]);
     expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_RECOVER], v[TECH_STAT.BASE_PROD]]).toEqual([1000, 1000, 1000]);
     expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT]]).toEqual([0, 0, 1000]);
@@ -366,7 +368,7 @@ describe('v4.6 계산식 연결', () => {
     p.statPm = techStatValues(p.techMask);
     expect(flagCap(p)).toBe(6);
   });
-  it('재정 개편: 징발 규정 편성비 −5% · 농경/관개(평지·비옥·언덕) · 개간/채굴(사막·산) 골드 가중치 · 국고 지형별 골드 가산', () => {
+  it('재정 개편: 징발 규정 편성비 −5% · 농경/관개(평지·비옥·언덕) · 개간/채굴(사막·산) 골드 가중치 · 국고 전체 골드 +20%', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const sum = () => {
@@ -381,9 +383,9 @@ describe('v4.6 계산식 연결', () => {
     // 지형 한 칸 가중치: 평지 1000 / 비옥 2000 / 언덕 900 / 사막 300 / 산 300 (기본, 패치 6차)
     expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 900, 300, 300]);
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A');
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1250, 2500, 1125, 300, 300]); // +25%, 사막·산 불변
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 1035, 300, 300]); // +15%, 사막·산 불변
     giveTech(p, 'ECO-1', 'ECO-2B', 'ECO-3B');
-    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 900, 600, 600]); // +100%, 평지·언덕 불변
+    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 900, 1050, 1050]); // +250%, 평지·언덕 불변
     recomputeGoldWeight(s, p);
     expect(p.goldWeight).toBe(sum());
     expect(p.goldWeight).toBeGreaterThanOrEqual(w0); // 시작 영토가 평지뿐이면 같다
@@ -391,13 +393,13 @@ describe('v4.6 계산식 연결', () => {
     recomputeGoldWeight(s, p);
     expect(p.goldWeight).toBe(sum());
     expect(p.goldWeight).toBeGreaterThan(w0);
-    expect(p.statPm[TECH_STAT.GOLD]).toBe(1000); // 전체 골드 배율을 올리는 노드는 없다
+    expect(p.statPm[TECH_STAT.GOLD]).toBe(1000); // 전체 골드 배율은 국고만 올린다
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4');
-    expect(p.statPm[TECH_STAT.GOLD]).toBe(1000);
-    // 국고: 지형별 가산(평원 +200 · 비옥 +400 · 언덕 +100 · 사막 +200 · 산 +700)을 퍼센트 보너스를 곱한 뒤에 더한다
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1450, 2900, 1225, 500, 1000]);
+    expect(p.statPm[TECH_STAT.GOLD]).toBe(1200);
+    // 국고: 칸 가중치는 그대로고 전체 골드 배율로 ×1.2
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 1035, 300, 300]);
     giveTech(p, 'ECO-4');
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1200, 2400, 1000, 500, 1000]); // 국고만: 표의 최종값
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 900, 300, 300]); // 국고만: 칸 가중치 불변
     // 소유 칸이 바뀌어도 현재 스탯 기준 가중치로 유지된다
     giveTech(p, 'ECO-1', 'ECO-2B');
     recomputeGoldWeight(s, p);

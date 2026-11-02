@@ -46,9 +46,9 @@ describe('골드 (3.3)', () => {
   it('평균 지형 390타일 → floor(376350 × 2080 × 1000 / 1e9) = 782', () => {
     expect(grossGoldMilliPerTick(player({ goldWeight: 376_350 }))).toBe(782);
   });
-  it('패치 6차: 전체 골드 배율을 올리는 테크는 없다 (국고 ECO-4 는 지형별 가중 가산 — 가중치는 goldWeight 에 들어간다)', () => {
+  it('v5.8: 전체 골드 배율은 국고 ECO-4 만 올린다 (+20%)', () => {
     expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A') }))).toBe(782);
-    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4') }))).toBe(782);
+    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4') }))).toBe(939);
   });
 });
 

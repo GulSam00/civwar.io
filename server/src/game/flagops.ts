@@ -5,7 +5,6 @@
 import {
   ANY_HOSTILE,
   FLAG_MIN_TROOPS,
-  FLAG_ORDER_COOLDOWN_TICKS,
   FRONT_MAX_RANGE,
   POSTURE,
   isClaimable,
@@ -22,6 +21,7 @@ import {
   pickOriginBase,
   techConvertPm,
   techDisengageTicks,
+  techOrderCooldownTicks,
   type FlagRecallReason,
 } from '@civwar/shared';
 import { flagCap } from './economy.js';
@@ -248,7 +248,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   f.state = 'MARCHING';
   f.halted = false;
   f.idleSinceTick = null;
-  f.orderCooldownUntilTick = t + FLAG_ORDER_COOLDOWN_TICKS;
+  f.orderCooldownUntilTick = t + techOrderCooldownTicks(state.players[f.ownerId].statPm);
   resetGauge(f);
   f.returnTileId = null;
   f.nextTileId = nextStep(state, f, f.posTileId, anchor); // v4.5: 방어 태세는 적 땅 회피 경로
@@ -320,7 +320,7 @@ export function setPosture(state: GameState, playerId: number, msg: C2S_CmdSetPo
   if (t < f.orderCooldownUntilTick) return { reason: 'ORDER_COOLDOWN' };
   // v4.6 (§27): 쿨타임이 안 돌면 어떤 상태에서든 즉시 전환. 전투 중이면 회수와 같은 이탈 대기(3초 ×0.5)를 치른다.
   applyPosture(state, f, msg.posture);
-  f.orderCooldownUntilTick = t + FLAG_ORDER_COOLDOWN_TICKS;
+  f.orderCooldownUntilTick = t + techOrderCooldownTicks(state.players[f.ownerId].statPm);
   out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.orderCooldownUntilTick, targetOwnerId: f.targetOwnerId });
   if (f.inCombat) {
     startDisengageIfInCombat(state, f, t, out);

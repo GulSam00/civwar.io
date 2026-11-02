@@ -106,16 +106,15 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.90' });
     expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2B')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×0.90', after: '×0.70' });
     expect(techDetailRows(nd('TER-3A'), { techMask: mask(id('TER-1'), id('TER-2A')) }).rows[0]).toMatchObject({ label: '기지 생산 배율 (모든 기지)', before: '×1.00', after: '×1.10' });
-    expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ label: '사막·산 영토 골드 보너스', before: '+0%', after: '+40%' });
+    expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ label: '사막·산 영토 골드 보너스', before: '+0%', after: '+100%' });
     expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '편성비 배율 (전 병종)', before: '×1.00', after: '×0.95' });
   });
   it('실제 값 행: 골드 수입, 슬롯 (콜백)', () => {
-    // 패치 6차: 국고는 퍼센트가 아니라 지형별 절대값을 보인다
     const g = techDetailRows(nd('ECO-4'), { techMask: 0 });
     expect(g.rows[0]).toMatchObject({
-      label: '지형별 영토 골드 가중',
-      before: '평원 1000 · 비옥 2000 · 언덕 900 · 사막 300 · 산 300',
-      after: '평원 1200 · 비옥 2400 · 언덕 1000 · 사막 500 · 산 1000',
+      label: '골드 생산 배율',
+      before: '×1.00',
+      after: '×1.20',
       changed: true,
     });
     const slot = techDetailRows(nd('MOB-4'), { techMask: mask(id('MOB-1'), id('MOB-2A'), id('MOB-3A')), flagCap: (m) => 3 + (techOwned(m, id('MOB-4')) ? 1 : 0) });

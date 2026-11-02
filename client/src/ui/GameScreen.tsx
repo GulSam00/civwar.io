@@ -1046,7 +1046,7 @@ function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputControl
 const FP_HELP = {
   head: '이 부대의 주인과 깃발 번호(출전 슬롯)',
   troops: '부대 병력 — 교전·점령·노출 소모로 줄고, 0이 되면 패주(회색 점선 테두리)해 귀환합니다',
-  posture: '공격 = 적·중립 칸을 점령하며 진격 · 방어 = 점령하지 않고 목적지 둘레 내 땅을 지킴. 방어 깃발을 적·중립 땅으로 보내면 공격으로 바뀝니다. 바꾸면 3초 쿨타임(재지정과 공용)이 돌고 진척도가 0이 됩니다',
+  posture: '공격 = 적·중립 칸을 점령하며 진격 · 방어 = 점령하지 않고 목적지 둘레 내 땅을 지킴. 방어 깃발을 적·중립 땅으로 보내면 공격으로 바뀝니다. 바꾸면 재지정과 공용인 쿨타임이 돌고 진척도가 0이 됩니다',
   status: '행군·교전·귀환·대기 상태와 표시: 전투 중(적 깃발과 맞붙음) · 패주 · 대치(적 깃발에 길이 막힘) · 이탈 대기(전투에서 빠지는 중, 전투력 −30%) · 정체(5초 동안 한 칸도 못 밂)',
   atkdef: '병종 기본 + 테크 점수. 지형·기지·사기는 빼고 본 값 — 지금 태세 쪽이 굵게 보입니다',
   capture: '땅 한 칸을 점령할 때 깃발에서 빠지는 병력. 기준 = 보급 거리 안 중립 평원, 목표 칸 = 지금 밀고 있는 칸(지형·인접·보급 거리 반영)',
@@ -1195,7 +1195,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
       </div>
       {mine && (
         <div className="flag-panel-actions">
-          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F — 태세를 바꿉니다 (진척도 0, 재지정과 공용 3초 쿨타임)')}>
+          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F — 태세를 바꿉니다 (진척도 0, 재지정과 공용 쿨타임)')}>
             <kbd>F</kbd> {f.posture === POSTURE.ATTACK ? '방어로' : '공격으로'}
           </button>
           {st.combatWarning !== null && <span className="fa-warn small">{st.combatWarning}</span>}

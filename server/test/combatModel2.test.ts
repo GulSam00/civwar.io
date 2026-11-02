@@ -200,9 +200,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     expect(det.reduce((a, d) => a + d.lossMilli, 0)).toBe(9_000_000);
   });
 
-  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 52, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
-    expect(TECH_STAT_COUNT).toBe(52);
-    expect(NO_TECH.length).toBe(52);
+  it('테크 예약 스탯: 기본값은 효과 없음 (statPm 길이 53, 앞 32칸 길이 불변), 없는 칸(구 서버 설정)도 같은 값', () => {
+    expect(TECH_STAT_COUNT).toBe(53);
+    expect(NO_TECH.length).toBe(53);
     expect(TECH_STAT_BASE.slice(0, 32).length).toBe(32);
     const f = inp(U.CAVALRY, POSTURE.ATTACK);
     expect(channelValues(f)).toEqual(channelValues({ ...f, statPm: NO_TECH.slice(0, 32) }));
@@ -226,11 +226,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다. 2026-10-28 v5.1(점령 배율 전 병종 1000·기지 출전 쿨타임 25 tick·봇 출발 기지 확인 — 모델 1·2 공통)로 다시 뽑았다.  2026-10-31 귀환지를 출발 기지 대신 가까운 기지로 바꾸면서(모델 1·2 공통) G1·G3 을 다시 뽑았다. 같은 날 병력 상한 칸당 계수 12 → 18 로 G1~G3 을 또 다시 뽑았다. 2026-11-02 칸당 병력 상한 18 → 20 (v5.5) 으로 다시 뽑았다.
  * 2026-11-02 v5.6: 봇이 태세를 명시하고 재지정 뒤 쿨타임을 기다려 태세를 바꾸므로 다시 고정.
+ * 2026-11-03 v5.8: 재정 골드 개편(언덕 이관·수치·국고 ×1.2), 공용 쿨타임 4초와 기동 테크 교체로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: 'dd60dcf02112ec04a0a6923701891da98e29f2a9ef63f8ca1b1d8d7f572c3650', state: '3023dcd1533444a33b22fe1a1d3555aa18fcbd64172b72905df447b25f1a7491' },
-  G2: { stream: '11293ff3af40b210b1a098bd2ce81d20bd7ddb3d2a8b9c109c11955f605afd25', state: 'b00966ccb999c61dbd23de3868c85c18d2d1e7ef54af63c5fce4d8cc0c25816e' },
-  G3: { stream: 'cfc97a2a665f99cb15133eedba4580d9013e33ba8f63f25640ab79e006b5a9f8', state: '68c9fe7339294413b7868c99b12608f34b1a296e9fae9fef52271eda6f734aac' },
+  G1: { stream: 'a7774f2e6ab7aecda9fbb698d247be87373c4d8adbbf5a7099ee7196a4ddfddd', state: 'fcd2f3ef1e2f8b3aa250ba0213547cb8e38f0f3e64574cec495ab23fa7c9b529' },
+  G2: { stream: 'cc7a3eb2e78e18132cdf2454144feb3ffa0521f4659100dd8db8dccc57f4d56b', state: '9a610149c45688a8283b9f83206287182c28b8eb80a9fbe3e276514fdc1d7303' },
+  G3: { stream: '5085af851e0beef0f2c82cb080a794f83081bd50e255efd0aed2646fd21335f6', state: '30e931430fbdfef9fb5d6696ed69d416952c9fc675f719585e7da2fbc820b811' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

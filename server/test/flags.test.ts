@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { POSTURE, TERRAIN, UNIT, isClaimable, type C2S_GameCommand, type ServerMessage } from '@civwar/shared';
+import { POSTURE, TECH_STAT, TERRAIN, UNIT, isClaimable, type C2S_GameCommand, type ServerMessage } from '@civwar/shared';
 import { generateMapForPlayers } from '../src/map/generate.js';
 import { snapshotPresence, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { garrisonUpkeepMilliPerTick } from '../src/game/economy.js';
@@ -161,7 +161,7 @@ describe('ZOC · 대치 · 태세', () => {
     expect(r2.all.map((m) => m.type)).toContain('flag_unblocked');
   });
 
-  it('태세 전환: SAME_POSTURE / 쿨타임 15 tick ORDER_COOLDOWN (v4.6: 전투 중에도 수락 — v48.test.ts)', () => {
+  it('태세 전환: SAME_POSTURE / 쿨타임 20 tick ORDER_COOLDOWN (v4.6: 전투 중에도 수락 — v48.test.ts)', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 1, false);
     const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
@@ -176,12 +176,21 @@ describe('ZOC · 대치 · 태세', () => {
       { type: 'cmd_ack', clientSeq: 2, accepted: true, flagId: f.id, posture: POSTURE.ATTACK },
       { type: 'cmd_ack', clientSeq: 3, accepted: false, reason: 'ORDER_COOLDOWN' },
     ]);
-    expect(f.orderCooldownUntilTick).toBe(t0 + 15);
-    run(sim, 13);
+    expect(f.orderCooldownUntilTick).toBe(t0 + 20);
+    run(sim, 18);
     sim.enqueue(1, 1, cmd(4, POSTURE.DEFEND));
-    expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'ORDER_COOLDOWN' }); // t0+14
+    expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'ORDER_COOLDOWN' }); // t0+19
     sim.enqueue(1, 1, cmd(5, POSTURE.DEFEND));
-    expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true }); // t0+15
+    expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true }); // t0+20
+  });
+  it('v5.8: 공용 쿨타임은 소유자 스탯을 따른다 (전령·지휘 체계 = 15 tick)', () => {
+    const { sim, s, c } = scenario();
+    setTileOwner(s, c, 1, false);
+    s.players[1].statPm[TECH_STAT.ORDER_COOLDOWN] = 15;
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    sim.enqueue(1, 1, { type: 'cmd_set_posture', clientSeq: 1, flagId: f.id, posture: POSTURE.ATTACK });
+    run(sim, 1);
+    expect(f.orderCooldownUntilTick).toBe(s.tick + 15);
   });
 });
 

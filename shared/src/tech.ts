@@ -3,9 +3,9 @@
  * 상수 원본은 constants.ts 의 TECH_NODES / TECH_STAT / TECH_STAT_BASE / TECH_NODE_BASE_COST / TECH_PROGRESSIVE_COEF_PERMILLE.
  */
 import {
+  FLAG_ORDER_COOLDOWN_TICKS,
   SHALLOW_MOVE_PERMILLE,
   TERRAIN,
-  TERRAIN_GOLD_ECO4_ADD,
   TERRAIN_GOLD_MILLI,
   TECH_NODE_BASE_COST,
   TECH_NODE_COUNT,
@@ -174,8 +174,7 @@ export function tileGoldWeight(terrain: number, stat: readonly number[]): number
   const w = TERRAIN_GOLD_MILLI[terrain] ?? 0;
   if (w === 0) return 0;
   const bonus = terrain === TERRAIN.PLAIN || terrain === TERRAIN.FERTILE || terrain === TERRAIN.HILLS ? (stat[TECH_STAT.GOLD_PLAIN] ?? 0) : (stat[TECH_STAT.GOLD_POOR] ?? 0);
-  const add = (stat[TECH_STAT.GOLD_TERRAIN] ?? 0) > 0 ? (TERRAIN_GOLD_ECO4_ADD[terrain] ?? 0) : 0; // 패치 6차: 국고
-  return Math.floor((w * (1000 + bonus)) / 1000) + add;
+  return Math.floor((w * (1000 + bonus)) / 1000);
 }
 
 /**
@@ -194,6 +193,11 @@ export function techDisengageTicks(stat: readonly number[]): number {
 /** v4.5: 그 플레이어의 귀환 속도 배율 ‰ (무테크 1500, MOB-3B 급속 귀환 2200) */
 export function techReturnSpeedPm(stat: readonly number[]): number {
   return stat[TECH_STAT.RETURN_SPEED];
+}
+
+/** v5.8: 그 플레이어의 재지정·태세 공용 쿨타임 tick (무테크 20, 전령 −2 · 지휘 체계 −3). 구 서버 설정이면 기본값 */
+export function techOrderCooldownTicks(stat: readonly number[]): number {
+  return stat[TECH_STAT.ORDER_COOLDOWN] ?? FLAG_ORDER_COOLDOWN_TICKS;
 }
 
 /** 그 플레이어의 병종 유지비 가중치 (UNIT_GARRISON_PERMILLE 대체) */
