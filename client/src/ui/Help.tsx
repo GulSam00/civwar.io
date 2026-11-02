@@ -21,7 +21,7 @@ import {
   HARD_TIMEOUT_TICK,
   MAX_ALLIES_PER_PLAYER,
   NEUTRAL_BASE,
-  POSTURE_COOLDOWN_TICKS,
+  FLAG_ORDER_COOLDOWN_TICKS,
   PROGRESS_DECAY_MILLI_PER_TICK,
   THRESHOLD_DECAY_START,
   THRESHOLD_FLOOR_PCT,
@@ -75,7 +75,7 @@ export function Help({ onClose }: { onClose: () => void }) {
               맵 칸을 <b>우클릭</b> → 병종 고리에서 <UnitIcon unit={0} withName />·<UnitIcon unit={1} withName />·<UnitIcon unit={2} withName /> 선택 (<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>)
             </li>
             <li>
-              내 땅 = 방어 · 적/중립 땅 = 공격 · 가까운 내 기지에서 출전
+              고리 가운데를 눌러 방어·공격 선택 (<kbd>F</kbd>, 처음엔 내 땅 = 방어 · 적/중립 땅 = 공격) · 가까운 내 기지에서 출전
             </li>
             <li>
               육지의 <b>{THRESHOLD_START_PCT}%</b>를 먼저 차지하면 승리
@@ -97,7 +97,7 @@ export function Help({ onClose }: { onClose: () => void }) {
                 <UnitIcon unit={0} withName /> 방어↑ 속도↓ · <UnitIcon unit={1} withName /> 중간 · <UnitIcon unit={2} withName /> 공격↑ 속도↑ 방어↓
               </Row>
               <Row k="태세">
-                공격(마름모) · 방어(원, 보호 반경 {FRONT_RADIUS}칸) · 전환 쿨타임 {sec(POSTURE_COOLDOWN_TICKS)} · 전환 시 진척도 0
+                공격(마름모) · 방어(원, 보호 반경 {FRONT_RADIUS}칸) · 재지정·전환 공용 쿨타임 {sec(FLAG_ORDER_COOLDOWN_TICKS)} · 전환 시 진척도 0 · 방어 깃발을 적·중립 땅으로 보내면 공격으로 자동 전환
               </Row>
               <Row k="점령">
                 진척도 100% = 1칸 · 중립 칸 비용 {NEUTRAL_BASE} · 미는 중이 아니면 {decaySec}초에 0으로 감소

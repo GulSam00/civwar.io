@@ -76,7 +76,7 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
     expect(tiles.reduce((a, b) => a + b, 0) / tiles.length).toBeGreaterThan(80);
   });
 
-  it('결정론: 같은 시드 → 같은 상태 해시 (900 tick, 혼합 난이도), decide 는 순수 함수', () => {
+  it('결정론: 같은 시드 → 같은 상태 해시 (900 tick, 혼합 난이도)', () => {
     const mix: BotDifficultyName[] = ['HARD', 'NORMAL', 'EASY', 'NORMAL', 'HARD', 'EASY', 'NORMAL', 'NORMAL'];
     const a = botGame(77, 8, mix);
     const b = botGame(77, 8, mix);

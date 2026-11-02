@@ -61,7 +61,7 @@ function step(sim: Simulation, cmds: [number, Record<string, unknown>][] = [], s
 const mkState = (seed: number, n: number, size: 'S' | 'M' | 'L', bots: boolean) =>
   createGameState(generateMapForSize(seed, size, n, MAP_GEN_DEFAULT), Array.from({ length: n }, (_, i) => ({ playerId: i + 1, isBot: bots, connected: true, botDifficulty: 'HARD' as const })), 'NORMAL', seed);
 
-// v4.6 (§27): '쿨타임 중 retarget → pendingPosture' 검증은 폐기 — 실제 서버·ClientStore 종단 검증은 postureV46.test.ts (postureHeld · 즉시 전환 · wait_over).
+// v4.6 (§27): '쿨타임 중 retarget → pendingPosture' 검증은 폐기 — 실제 서버·ClientStore 종단 검증은 postureV46.test.ts (즉시 전환 · wait_over).
 
 describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 지도)', () => {
   it('막히는 방어 앵커 발령 → 서버 IDLE(unreachable) @ defendDest → 모델 flagIdleReason, 600 tick 뒤 자동 귀환; 클라이언트 미리보기 = 서버 정지 칸', () => {
@@ -101,7 +101,7 @@ describe('QA v4.5 — 방어 깃발 "unreachable" (실제 명령·실제 소유 
       const rt = computeRoute(g, topo, new RouteCache().fieldFor(g, topo, A), p, B, A, false);
       expect(rt.blocked).toBe(true);
       expect(rt.stopTile).toBe(stop);
-      const r = step(sim, [[p, { type: 'cmd_flag_issue', unit: UNIT.SWORD, troops, anchorTileId: A, originBaseTileId: B }]], [store]);
+      const r = step(sim, [[p, { type: 'cmd_flag_issue', unit: UNIT.SWORD, troops, anchorTileId: A, posture: POSTURE.DEFEND, originBaseTileId: B }]], [store]);
       expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND });
       const fid = r.acks[0].flagId as number;
       let idle: any = null;

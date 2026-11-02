@@ -187,7 +187,7 @@ describe('v5.1 4d 사기 붕괴 자동 후퇴 (모델 2)', () => {
     const sim = new Simulation(s);
     const p = s.players[1];
     p.troopsMilli = 500_000;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: U.SWORD, troops: 100, anchorTileId: p.homeTileId, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: U.SWORD, troops: 100, anchorTileId: p.homeTileId, posture: 1, originBaseTileId: null });
     const o1 = sim.step();
     const fid = (o1.personal.find((m) => m.msg.type === 'cmd_ack')!.msg as { flagId: number }).flagId;
     sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 2, flagId: fid, baseTileId: null });
@@ -299,7 +299,7 @@ describe('v5.1 기지별 출전 쿨타임 BASE_DISPATCH_COOLDOWN_TICKS', () => {
     p.troopsMilli = 5_000_000;
     return { s, p, home, extra };
   };
-  const cmd = (anchor: number, origin: number | null, troops = 100): C2S_CmdFlagIssue => ({ type: 'cmd_flag_issue', clientSeq: 1, unit: U.SWORD, troops, anchorTileId: anchor, originBaseTileId: origin });
+  const cmd = (anchor: number, origin: number | null, troops = 100): C2S_CmdFlagIssue => ({ type: 'cmd_flag_issue', clientSeq: 1, unit: U.SWORD, troops, anchorTileId: anchor, posture: 1, originBaseTileId: origin });
 
   it('지정 출발 기지가 쿨타임이면 BASE_COOLDOWN (풀 차감·쿨타임 갱신 없음), 25 tick 뒤 다시 가능', () => {
     const { s, p, home } = setup();

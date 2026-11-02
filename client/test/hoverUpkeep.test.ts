@@ -9,7 +9,7 @@ import { unitUpkeepPerKilo } from '../src/ui/upkeep.js';
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 1, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: 1, anchorTileId: 2,
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, ...over,
+  disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, ...over,
 });
 
 function model(flags: FlagSnapshot[] = [], upkeepPm = 0): GameModel {

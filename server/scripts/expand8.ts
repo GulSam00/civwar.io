@@ -8,7 +8,7 @@
  * 실행: npx tsx server/scripts/expand8.ts [seed=4242] [size=default|S|M|L]
  *   size=default → 2.3 표 8인 기본 격자 90×54 (v4.0 측정과 같은 조건)
  */
-import { FLAG_MIN_TROOPS, MAP_SIZE_PRESETS, UNIT, isClaimable, type C2S_GameCommand, type MapSizeClass } from '@civwar/shared';
+import { POSTURE, FLAG_MIN_TROOPS, MAP_SIZE_PRESETS, UNIT, isClaimable, type C2S_GameCommand, type MapSizeClass } from '@civwar/shared';
 import { flagCap } from '../src/game/economy.js';
 import { minDistFromTerritory } from '../src/game/rules.js';
 import { NEUTRAL, createGameState, ledgerImbalance, type GameState } from '../src/game/state.js';
@@ -42,7 +42,7 @@ const Greedy: BotBrain = {
       bd = dh;
     }
     if (best < 0) return [];
-    return [{ type: 'cmd_flag_issue', clientSeq: ++clientSeq, unit: UNIT.SWORD, troops: Math.floor((pool * 4) / 5), anchorTileId: best, originBaseTileId: null }];
+    return [{ type: 'cmd_flag_issue', clientSeq: ++clientSeq, unit: UNIT.SWORD, troops: Math.floor((pool * 4) / 5), anchorTileId: best, posture: POSTURE.ATTACK, originBaseTileId: null }];
   },
 };
 

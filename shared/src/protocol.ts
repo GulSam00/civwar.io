@@ -31,7 +31,6 @@ export type CmdRejectReason =
   | 'INSUFFICIENT'
   | 'NO_FLAG'
   | 'RETURNING'
-  | 'LOCKED'
   | 'NOT_BASE'
   | 'NOT_OWNED_BASE'
   /** v5.1 (GDD 2.5·4.2): cmd_flag_issue — 지정 출발 기지가 출전 쿨타임 중이거나, 생략했는데 내 기지가 모두 쿨타임 */
@@ -39,7 +38,8 @@ export type CmdRejectReason =
   | 'ROUTED'
   | 'IN_COMBAT'
   | 'DISENGAGING'
-  | 'POSTURE_COOLDOWN'
+  /** v5.6: cmd_flag_retarget·cmd_set_posture — 깃발 조작 쿨타임 중 (구 LOCKED·POSTURE_COOLDOWN 통합) */
+  | 'ORDER_COOLDOWN'
   | 'SAME_POSTURE'
   // 백엔드 추가 (02_backend_protocol.md 「GDD와 다른 결정」)
   | 'BAD_REQUEST'
@@ -162,6 +162,8 @@ export interface C2S_CmdFlagIssue {
   unit: Unit;
   troops: number;
   anchorTileId: number;
+  /** v5.6: 출전 태세를 직접 고른다 — 서버는 앵커 위치로 태세를 정하지 않는다 */
+  posture: Posture;
   originBaseTileId?: number | null;
 }
 export interface C2S_CmdFlagRetarget {
@@ -444,7 +446,7 @@ export interface FlagSnapshot {
   routed: boolean;
   blocked: boolean;
   disengaging: boolean;
-  postureCooldownUntilTick: number;
+  orderCooldownUntilTick: number;
   /** 2차 추가: 이탈 대기 종료 tick (disengaging 이면 숫자) */
   disengageUntilTick: number | null;
   /** 2차 추가: 이탈 완료 후 첫 칸 이동 전 — 교전 대상 아님 */
@@ -573,7 +575,7 @@ export interface S2C_SnapshotDelta {
   baseHp: [number, number][]; // [tileId, hpPct] — BASE_HP_DELTA_INTERVAL 마다, 바뀐 기지만
   flagsGone: number[];
   thresholdPct?: number; // 값이 바뀐 tick 에만
-  /** 2차 추가: [flagId, posture, bits(FLAG_BIT), postureCooldownUntilTick] — 셋 중 하나라도 바뀐 깃발만, 매 tick */
+  /** 2차 추가: [flagId, posture, bits(FLAG_BIT), orderCooldownUntilTick] — 셋 중 하나라도 바뀐 깃발만, 매 tick */
   flagFlags: [number, Posture, number, number][];
   /** v4.2 [A-61] (추가만): [flagId, returnBaseTileId|null] — 값이 바뀐 깃발만. 서버는 항상 싣는다(빈 배열 가능) */
   flagReturnBase?: [number, number | null][];
@@ -600,11 +602,6 @@ export interface S2C_CmdAck {
   reason?: CmdRejectReason;
   flagId?: number;
   posture?: Posture;
-  /**
-   * v4.6 (§27, 추가만): cmd_flag_retarget 응답 전용. true = 도착지의 기본 태세를 태세 쿨타임 때문에 적용하지 못했다
-   * (이동은 수락됨, `posture` 는 실제 태세). 클라이언트는 "태세 전환 쿨타임 중" 안내를 띄울 것
-   */
-  postureHeld?: boolean;
 }
 
 export interface S2C_Error {
@@ -712,13 +709,12 @@ export interface S2C_FlagRetargeted {
   anchorTileId: number;
   targetOwnerId: number;
   posture: Posture;
-  resumeTick: number;
+  /** v5.6: 다음 재지정·태세 전환이 가능해지는 tick (구 resumeTick — 경직 폐지) */
+  cooldownUntilTick: number;
   etaTick: number;
   /** 프론트 QA m-4 (필드 추가): 교전 개시 추정 tick (auto:true 면 tick) */
   engageEtaTick: number;
   auto: boolean;
-  /** v4.6 (§27, 추가만): true = 도착지 기본 태세를 쿨타임 때문에 적용하지 못함 (`posture` 는 실제 태세). 서버는 항상 싣는다 */
-  postureHeld?: boolean;
 }
 /** v5.1 (GDD 4.6): flag_recalled 의 발생 원인 */
 export type FlagRecallReason = 'command' | 'morale' | 'base_lost' | 'idle_timeout';
@@ -806,7 +802,6 @@ export interface S2C_FlagPostureChanged {
   flagId: number;
   posture: Posture;
   cooldownUntilTick: number;
-  auto: boolean;
   /** QA I-1 (추가 필드): 전환 후 targetOwnerId — owners[anchor] == 소유자 ? 254(ANY_HOSTILE) : owners[anchor] (1단계 처리 시점 owners) */
   targetOwnerId: number;
 }

@@ -178,7 +178,7 @@ function act(p: Probe, step: number): void {
   if (step % 7 === 2) {
     for (const b of g.bases.values()) if (b.ownerId === me) origin = b.tileId;
   }
-  sendCmd(p, s.issueFlag(unit, troops, tile, origin), 'cmd_flag_issue', expect, `t${g.tick} tile ${tile} kind ${pv?.kind} flags ${mine.length}/${pl.flagCap}`);
+  sendCmd(p, s.issueFlag(unit, troops, tile, pv?.kind === 'defend' ? 1 : 0, origin), 'cmd_flag_issue', expect, `t${g.tick} tile ${tile} kind ${pv?.kind} flags ${mine.length}/${pl.flagCap}`);
 }
 
 function summary(p: Probe) {

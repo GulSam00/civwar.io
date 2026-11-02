@@ -21,7 +21,7 @@ export interface CursorPreview {
   /** 공격: 0 (회랑 칸 수는 route.ts) / 방어: 보호 타일 수 */
   count: number;
   label: string;
-  /** v4.6 (§27.3): 쿨타임 때문에 도착지 기본 태세 대신 붙들린 현재 태세를 보여 주는 예고 */
+  /** v5.6: 선택한 내 깃발의 재지정 예고 — 도착지와 상관없이 지금 태세를 유지하거나 쿨타임 중이다 */
   held?: true;
 }
 
@@ -39,21 +39,22 @@ export class RangeCache {
 }
 
 /**
- * v4.6 (§27.3): 선택한 내 깃발이 태세 쿨타임 중이면 우클릭 이동은 이동만 하고 태세는 그대로다(postureHeld).
- * 그때의 예고는 도착지 기본 태세가 아니라 "지금 붙들린 태세"를 보여야 한다 — held 가 있으면 도착지 기본 태세와 다를 때만 덮어쓴다.
+ * v5.6: 공격 깃발은 내 땅으로 가도 공격 그대로다 — 이 경우 예고는 도착지 기본 태세가 아니라 지금 태세를 보여야 한다.
+ * 방어 깃발을 적·중립 땅으로 보내면 서버가 공격으로 자동 전환하므로 도착지 기본(공격) 예고가 맞다.
+ * 쿨타임 중이면 서버가 재지정을 거절하므로(ORDER_COOLDOWN) 남은 초를 덧붙인다.
  */
 export interface HeldPosture {
   posture: Posture;
-  /** 쿨타임 남은 초 */
+  /** 조작 쿨타임 남은 초 (0 = 지금 이동 가능) */
   sec: number;
 }
 
 export function computePreview(model: GameModel, topo: TopologyView, me: number, tile: number, rangeField: Int32Array | null, held?: HeldPosture | null): CursorPreview | null {
   const p = computeDefaultPreview(model, topo, me, tile, rangeField);
-  if (!p || !held || p.posture === null || p.posture === held.posture) return p;
-  const name = held.posture === POSTURE.ATTACK ? '공격' : '방어';
-  const where = p.kind === 'attack' ? '적·중립 땅까지 이동만' : '내 땅까지 이동만';
-  return { ...p, kind: held.posture === POSTURE.ATTACK ? 'attack' : 'defend', posture: held.posture, disk: [], count: 0, held: true, label: `${name} 태세 유지 (전환 쿨타임 ${held.sec}초) · ${where}` };
+  if (!p || !held || p.posture === null) return p;
+  const wait = held.sec > 0 ? ` (쿨타임 ${held.sec}초)` : '';
+  if (p.posture === held.posture || p.posture === POSTURE.ATTACK) return wait ? { ...p, held: true, label: `${p.label}${wait}` } : p;
+  return { ...p, kind: 'attack', posture: POSTURE.ATTACK, disk: [], count: 0, held: true, label: `공격 태세 유지 · 내 땅까지 이동${wait}` };
 }
 
 function computeDefaultPreview(model: GameModel, topo: TopologyView, me: number, tile: number, rangeField: Int32Array | null): CursorPreview | null {

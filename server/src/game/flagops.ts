@@ -5,10 +5,9 @@
 import {
   ANY_HOSTILE,
   FLAG_MIN_TROOPS,
-  FLAG_RETARGET_LOCK_TICK,
+  FLAG_ORDER_COOLDOWN_TICKS,
   FRONT_MAX_RANGE,
   POSTURE,
-  POSTURE_COOLDOWN_TICKS,
   isClaimable,
   type C2S_CmdFlagIssue,
   type C2S_CmdFlagRecall,
@@ -30,7 +29,7 @@ import type { Outbox } from './outbox.js';
 import { engageEtaTicks, etaTicks, minDistFromTerritory, nextStep, recallTarget, stepToward } from './rules.js';
 import { isAlly, makeFlag, type Flag, type GameState } from './state.js';
 
-export type CmdResult = { reason: CmdRejectReason } | { flagId: number; posture: Posture; postureHeld?: boolean };
+export type CmdResult = { reason: CmdRejectReason } | { flagId: number; posture: Posture };
 
 export function flagById(state: Readonly<GameState>, id: number): Flag | undefined {
   // state.flags 는 id 오름차순 — 이진 탐색
@@ -58,11 +57,15 @@ export function removeFlag(state: GameState, f: Flag, t: number, reason: FlagEnd
   out.broadcast.push({ type: 'flag_ended', tick: t, flagId: f.id, reason, refunded });
 }
 
-/** 4.3a applyPosture — 수동 전환·재지정·앵커 함락 재파생 공통 */
-export function applyPosture(state: GameState, f: Flag, posture: Posture, t: number): void {
+/** 4.3a applyPosture — 수동 전환·재지정 자동 공격 전환 공통. 쿨타임은 호출자가 시작한다 */
+export function applyPosture(state: GameState, f: Flag, posture: Posture): void {
   f.posture = posture;
   f.halted = false; // v4.2: 다음 4단계 settle 이 새 태세로 다시 판정
-  f.postureCooldownUntilTick = t + POSTURE_COOLDOWN_TICKS;
+  // v5.6: IDLE 도 새 태세로 다시 판정한다 — 내 땅에 선 공격 깃발이 방어로 바뀌면 수비에 들어가고, 적 땅 앞의 방어 깃발이 공격으로 바뀌면 앵커로 간다
+  if (f.state === 'IDLE') {
+    f.state = 'MARCHING';
+    f.idleSinceTick = null;
+  }
   f.progressMilli = 0;
   f.targetTileId = null;
   f.stalled = false;
@@ -116,17 +119,12 @@ export function issueFlag(state: GameState, playerId: number, msg: C2S_CmdFlagIs
   if (minDistFromTerritory(state, playerId, anchor) > FRONT_MAX_RANGE) return { reason: 'OUT_OF_RANGE' };
   if (msg.troops < FLAG_MIN_TROOPS) return { reason: 'TOO_SMALL' };
 
+  // v5.6: 태세는 발령 명령이 정한다 — 앵커 위치는 태세를 정하지 않고 공격 대상(targetOwnerId)만 정한다
+  const posture = msg.posture;
+  if (posture !== POSTURE.ATTACK && posture !== POSTURE.DEFEND) return { reason: 'BAD_REQUEST' };
   const anchorOwner = state.owners[anchor];
-  let posture: Posture;
-  let targetOwnerId: number;
-  if (anchorOwner === playerId) {
-    posture = POSTURE.DEFEND;
-    targetOwnerId = ANY_HOSTILE;
-  } else {
-    if (isAlly(state, playerId, anchorOwner)) return { reason: 'ALLIED' };
-    posture = POSTURE.ATTACK;
-    targetOwnerId = anchorOwner;
-  }
+  if (anchorOwner !== playerId && isAlly(state, playerId, anchorOwner)) return { reason: 'ALLIED' };
+  const targetOwnerId = anchorOwner === playerId ? ANY_HOSTILE : anchorOwner;
 
   // v5.1 (GDD 2.5·4.2): 출발 기지 결정 — 지정이면 NOT_BASE → NOT_OWNED_BASE → BASE_COOLDOWN, 생략이면 쿨타임 아닌 가장 가까운 기지(shared pickOriginBase)
   let origin: number;
@@ -232,8 +230,7 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   if (!f || f.ownerId !== playerId) return { reason: 'NO_FLAG' };
   if (f.routed) return { reason: 'ROUTED' };
   if (f.state === 'RETURNING') return { reason: 'RETURNING' }; // v4.2 [A-62]: 귀환 취소 불가 — 전투 중이어도 거절 (QA I-2 수락 경로 폐기)
-  // LOCKED: 재지정 경직 중 재재지정 금지. 단 이탈 대기 중엔 허용 (4.15 g "목적지만 바뀌고 타이머 유지")
-  if (t < f.lockUntilTick && f.disengageUntilTick === null) return { reason: 'LOCKED' };
+  if (t < f.orderCooldownUntilTick) return { reason: 'ORDER_COOLDOWN' }; // v5.6: 태세 전환과 같은 쿨타임, 이탈 대기 중에도 예외 없음
   const anchor = msg.anchorTileId;
   if (!validTile(state, anchor)) return { reason: 'BAD_REQUEST' };
   if (!isClaimable(state.map.terrain[anchor])) return { reason: 'WATER' };
@@ -242,25 +239,16 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
   if (minDistFromTerritory(state, playerId, anchor) > FRONT_MAX_RANGE) return { reason: 'OUT_OF_RANGE' };
 
   f.anchorTileId = anchor;
-  // v4.6 (§27, 사용자 2026-10-19): 태세 = 도착지의 기본 태세 (내 땅·내 기지 = DEFEND, 적·중립 = ATTACK).
-  // 쿨타임이 안 돌면 이동과 함께 즉시 바꾼다(전투 중이어도). 쿨타임 중이면 이동은 하되 태세는 그대로 (postureHeld, 대기 없음).
-  const def: Posture = newOwner === playerId ? POSTURE.DEFEND : POSTURE.ATTACK;
-  let postureChanged = false;
-  let postureHeld = false;
-  if (def !== f.posture) {
-    if (t >= f.postureCooldownUntilTick) {
-      applyPosture(state, f, def, t);
-      postureChanged = true;
-    } else postureHeld = true;
-  }
-  f.postureManual = false;
+  // v5.6: 내 땅으로 가도 방어로 바뀌지 않는다. 방어 깃발을 적·중립 땅으로 보낼 때만 공격으로 자동 전환한다 (쿨타임은 재지정 한 번)
+  const toAttack = f.posture === POSTURE.DEFEND && newOwner !== playerId;
+  if (toAttack) applyPosture(state, f, POSTURE.ATTACK);
   f.targetOwnerId = newOwner === playerId ? ANY_HOSTILE : newOwner;
   startDisengageIfInCombat(state, f, t, out);
-  if (postureChanged && f.inCombat) f.disengageHold = true; // 방어↔방어로 바뀌어도 이탈 비용 없이 끊기지 않게 (§27 [A])
+  if (toAttack && f.inCombat) f.disengageHold = true; // 태세 전환과 같이 이탈 대기 동안 접촉 간선 유지
   f.state = 'MARCHING';
   f.halted = false;
   f.idleSinceTick = null;
-  f.lockUntilTick = t + FLAG_RETARGET_LOCK_TICK;
+  f.orderCooldownUntilTick = t + FLAG_ORDER_COOLDOWN_TICKS;
   resetGauge(f);
   f.returnTileId = null;
   f.nextTileId = nextStep(state, f, f.posTileId, anchor); // v4.5: 방어 태세는 적 땅 회피 경로
@@ -271,16 +259,13 @@ export function retargetFlag(state: GameState, playerId: number, msg: C2S_CmdFla
     anchorTileId: anchor,
     targetOwnerId: f.targetOwnerId,
     posture: f.posture,
-    resumeTick: f.lockUntilTick,
-    etaTick: f.lockUntilTick + etaTicks(state, f, f.posTileId, anchor),
-    engageEtaTick: f.lockUntilTick + engageEtaTicks(state, f, f.posTileId, anchor),
+    cooldownUntilTick: f.orderCooldownUntilTick,
+    etaTick: t + etaTicks(state, f, f.posTileId, anchor),
+    engageEtaTick: t + engageEtaTicks(state, f, f.posTileId, anchor),
     auto: false,
-    postureHeld,
   });
-  if (postureChanged) {
-    out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: true, targetOwnerId: f.targetOwnerId });
-  }
-  return { flagId: f.id, posture: f.posture, postureHeld };
+  if (toAttack) out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.orderCooldownUntilTick, targetOwnerId: f.targetOwnerId });
+  return { flagId: f.id, posture: f.posture };
 }
 
 // ───────────────────────── 회수 ─────────────────────────
@@ -332,11 +317,11 @@ export function setPosture(state: GameState, playerId: number, msg: C2S_CmdSetPo
   if (f.routed) return { reason: 'ROUTED' };
   if (f.state === 'RETURNING') return { reason: 'RETURNING' }; // v4.2 [A-62]
   if (msg.posture === f.posture) return { reason: 'SAME_POSTURE' };
-  if (t < f.postureCooldownUntilTick) return { reason: 'POSTURE_COOLDOWN' };
+  if (t < f.orderCooldownUntilTick) return { reason: 'ORDER_COOLDOWN' };
   // v4.6 (§27): 쿨타임이 안 돌면 어떤 상태에서든 즉시 전환. 전투 중이면 회수와 같은 이탈 대기(3초 ×0.5)를 치른다.
-  applyPosture(state, f, msg.posture, t);
-  f.postureManual = true;
-  out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.postureCooldownUntilTick, auto: false, targetOwnerId: f.targetOwnerId });
+  applyPosture(state, f, msg.posture);
+  f.orderCooldownUntilTick = t + FLAG_ORDER_COOLDOWN_TICKS;
+  out.broadcast.push({ type: 'flag_posture_changed', tick: t, flagId: f.id, posture: f.posture, cooldownUntilTick: f.orderCooldownUntilTick, targetOwnerId: f.targetOwnerId });
   if (f.inCombat) {
     startDisengageIfInCombat(state, f, t, out);
     f.disengageHold = true;

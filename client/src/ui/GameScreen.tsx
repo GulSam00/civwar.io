@@ -125,11 +125,16 @@ export function GameScreen({ store }: { store: ClientStore }) {
       // 예고 대상 칸: 병종 고리 = 확정 지점, 기지→커서 화살표 = 커서, 내 깃발 선택 = 커서(우클릭 재지정)
       const pv = ix.issue?.phase === 'pick' ? ix.issue.anchor : ix.issue?.phase === 'aim' || controller.myFlag(ix.selectedFlagId) ? ix.hoverTile : -1;
       if (game && me !== null && renderer.topo && canCmd && pv >= 0) {
-        // §27.3: 쿨타임 중인 내 깃발의 우클릭 이동 예고는 붙들린(현재) 태세 — 도착지 기본 태세가 아니다
+        // v5.6: 공격 깃발은 내 땅으로 가도 공격 그대로 — computePreview 가 지금 태세·쿨타임으로 예고를 고친다
         const sel = !ix.issue && ix.selectedFlagId !== null && controller.myFlag(ix.selectedFlagId) ? game.flags.get(ix.selectedFlagId) : undefined;
-        const cdLeft = sel ? sel.postureCooldownUntilTick - game.tick : 0;
-        const held = sel && cdLeft > 0 ? { posture: sel.posture as Posture, sec: Math.ceil((cdLeft * game.config.tickMs) / 1000) } : null;
+        const cdLeft = sel ? Math.max(0, sel.orderCooldownUntilTick - game.tick) : 0;
+        const held = sel ? { posture: sel.posture as Posture, sec: Math.ceil((cdLeft * game.config.tickMs) / 1000) } : null;
         preview = computePreview(game, renderer.topo, me, pv, range.get(game, renderer.topo, me), held);
+        // v5.6: 병종 고리에서 고른 태세가 칸 기본값과 다르면 보호 원 없이 고른 색으로 예고
+        const picked = ix.issue?.phase === 'pick' ? ix.issue.posture : null;
+        if (preview && picked && picked !== 'blocked' && preview.kind !== 'blocked' && preview.kind !== picked) {
+          preview = { ...preview, kind: picked, posture: picked === 'attack' ? POSTURE.ATTACK : POSTURE.DEFEND, disk: [], count: 0 };
+        }
       }
       const route = canCmd ? controller.currentRoute() : null;
       const routeKind = ix.issue ? (ix.issue.phase === 'pick' ? ix.issue.posture : preview ? (preview.kind as 'attack' | 'defend' | 'blocked') : null) : null;
@@ -366,9 +371,9 @@ function moraleCard(f: FlagSnapshot, md: MoraleDetail, store: ClientStore): HTML
   const fill = h('i', '');
   fill.style.width = `${md.view.pct}%`;
   bar.append(fill);
-  if (md.neutral !== null && md.neutral < 1000) {
+  for (const v of [md.view.bands.low, md.view.bands.mid]) {
     const tick = h('u', '');
-    tick.style.left = `${md.neutral / 10}%`;
+    tick.style.left = `${v / 10}%`;
     bar.append(tick);
   }
   if (md.baseFloor !== null) {
@@ -641,7 +646,7 @@ function updateTooltip(el: HTMLDivElement | null, p: CursorPreview | null, ix: I
     } else if (p) text = `${p.label}${routeText(route, p.kind)}`;
   } else if (ctl.canCommand() && g >= 0) {
     const myFlag = ctl.myFlag(ix.selectedFlagId);
-    // 2026-10-14: 선택 부대 우클릭 = 항상 이동 (내 기지 = 기지 위로 가서 방어, 태세는 서버가 도착지로 정한다)
+    // 2026-10-14: 선택 부대 우클릭 = 항상 이동
     if (myFlag && p?.held && p.kind !== 'blocked') text = `우클릭 = 이동 → ${p.label}`;
     else if (myFlag && ctl.isMyBase(g)) {
       text = '이동 · 방어';
@@ -989,8 +994,10 @@ function UnitChips({ store, ctl }: { store: ClientStore; ctl: GameInputControlle
           <b>{c.troops}</b>
           <PostureIcon posture={c.posture} size={13} />
           {c.morale !== null && (
-            <span className={`mbar ${moraleTone(c.morale)}`} role="img" aria-label={`사기 ${Math.round(c.morale / 10)}%`}>
+            <span className={`mbar ${moraleTone(c.morale, c.moraleBands)}`} role="img" aria-label={`사기 ${Math.round(c.morale / 10)}%`}>
               <i style={{ width: `${Math.round(c.morale / 10)}%` }} />
+              <u style={{ left: `${c.moraleBands.low / 10}%` }} />
+              <u style={{ left: `${c.moraleBands.mid / 10}%` }} />
             </span>
           )}
         </button>
@@ -1033,17 +1040,17 @@ function FlagActions({ store, ctl }: { store: ClientStore; ctl: GameInputControl
 
 /**
  * 깃발 패널 각 요소 설명 (2026-10-28 UI 개선 6) — 행 hover(title)와 [?] 도움말이 같은 문구를 쓴다. 의미는 서버 규칙에서 확인한 것:
- *   태세 쿨타임 = POSTURE_COOLDOWN_TICKS · 공격/방어 점수 = 병종 기본 + 테크 · 지금 값 = combatMath.channelValues
+ *   태세 쿨타임 = FLAG_ORDER_COOLDOWN_TICKS · 공격/방어 점수 = 병종 기본 + 테크 · 지금 값 = combatMath.channelValues
  *   교전 = 적대 깃발이 8방향으로 닿고 한쪽 이상이 공격 태세일 때 (combat.ts 간선) · 방어 원 = rules.guardContains (앵커에서 FRONT_RADIUS 칸 안 내 땅)
  */
 const FP_HELP = {
   head: '이 부대의 주인과 깃발 번호(출전 슬롯)',
   troops: '부대 병력 — 교전·점령·노출 소모로 줄고, 0이 되면 패주(회색 점선 테두리)해 귀환합니다',
-  posture: '공격 = 적·중립 칸을 점령하며 진격 · 방어 = 점령하지 않고 목적지 둘레 내 땅을 지킴. 바꾸면 5초 쿨타임이 돌고 진척도가 0이 됩니다',
+  posture: '공격 = 적·중립 칸을 점령하며 진격 · 방어 = 점령하지 않고 목적지 둘레 내 땅을 지킴. 방어 깃발을 적·중립 땅으로 보내면 공격으로 바뀝니다. 바꾸면 3초 쿨타임(재지정과 공용)이 돌고 진척도가 0이 됩니다',
   status: '행군·교전·귀환·대기 상태와 표시: 전투 중(적 깃발과 맞붙음) · 패주 · 대치(적 깃발에 길이 막힘) · 이탈 대기(전투에서 빠지는 중, 전투력 −30%) · 정체(5초 동안 한 칸도 못 밂)',
   atkdef: '병종 기본 + 테크 점수. 지형·기지·사기는 빼고 본 값 — 지금 태세 쪽이 굵게 보입니다',
   capture: '땅 한 칸을 점령할 때 깃발에서 빠지는 병력. 기준 = 보급 거리 안 중립 평원, 목표 칸 = 지금 밀고 있는 칸(지형·인접·보급 거리 반영)',
-  morale: '사기 막대 — 공격력·방어력에 같은 배율로 곱해집니다. 흰 눈금 = 전투력 ±0 경계. 교전하면 줄고, 쉬거나 내 기지 위에 있으면 회복',
+  morale: '사기 막대 — 공격력·방어력에 같은 배율로 곱해집니다. 흰 눈금 = 색이 바뀌는 구간 (위쪽 눈금은 검·기병의 전투력 ±0 경계). 교전하면 줄고, 쉬거나 내 기지 위에 있으면 회복',
   now: '지형·기지·사기·이탈 대기·골드 빚을 모두 반영한 지금 공격/방어 값 — 교전 손실은 양쪽 이 값의 비교로 나뉩니다',
   engage: '지금 상태가 이어질 때 이 교전에서 양쪽이 잃을 병력 비율 예상',
   base: '내 기지 칸 위에서는 지형 보정 대신 기지 보정을 받습니다',
@@ -1068,7 +1075,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   const f = id !== null ? g?.flags.get(id) : undefined;
   if (!g || !f) return null;
   const mine = ctl.myFlag(f.id) && ctl.canCommand() && !narrow;
-  const cd = Math.max(0, f.postureCooldownUntilTick - g.tick);
+  const cd = Math.max(0, f.orderCooldownUntilTick - g.tick);
   const eta = g.flagEta.get(f.id);
   const status = [
     FLAG_STATE_NAME[f.state],
@@ -1110,7 +1117,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
         </div>
         <div title={FP_HELP.posture}>
           태세 <b className={f.posture === POSTURE.ATTACK ? 'atk' : 'def'}>{POSTURE_NAME[f.posture]}</b>
-          {cd > 0 && <span className="muted"> (전환 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
+          {cd > 0 && <span className="muted"> (쿨타임 {Math.ceil((cd * g.config.tickMs) / 1000)}초)</span>}
         </div>
         <div className="muted" title={FP_HELP.status}>
           {status}
@@ -1151,7 +1158,8 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
                 사기
                 <span className={`mbar wide ${md.view.tone}`} role="img" aria-label={md.view.text}>
                   <i style={{ width: `${md.view.pct}%` }} />
-                  {md.neutral !== null && md.neutral < 1000 && <u style={{ left: `${md.neutral / 10}%` }} />}
+                  <u style={{ left: `${md.view.bands.low / 10}%` }} />
+                  <u style={{ left: `${md.view.bands.mid / 10}%` }} />
                   {md.baseFloor !== null && <s style={{ left: `${md.baseFloor / 10}%` }} title="기지 사기 하한" />}
                 </span>
                 <b>{md.view.pct}%</b>
@@ -1187,7 +1195,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
       </div>
       {mine && (
         <div className="flag-panel-actions">
-          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F — 태세를 바꿉니다 (진척도 0, 5초 쿨타임)')}>
+          <button className="btn" disabled={!!st.postureBlocked} onClick={() => ctl.togglePosture()} title={st.postureBlocked ?? (st.combatWarning ? `단축키 F · ${st.combatWarning}` : '단축키 F — 태세를 바꿉니다 (진척도 0, 재지정과 공용 3초 쿨타임)')}>
             <kbd>F</kbd> {f.posture === POSTURE.ATTACK ? '방어로' : '공격으로'}
           </button>
           {st.combatWarning !== null && <span className="fa-warn small">{st.combatWarning}</span>}

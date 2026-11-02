@@ -117,7 +117,7 @@ describe('v4.5 물 = 통행 불가, 물 ≈ 10%, 육지 한 덩어리', () => {
     const s = sim.state;
     const lake = s.map.terrain.findIndex((t, i) => t === TERRAIN.SHALLOW && !s.map.topology.isBorder(i));
     expect(lake).toBeGreaterThanOrEqual(0);
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.SWORD, troops: 60, anchorTileId: lake, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.SWORD, troops: 60, anchorTileId: lake, posture: 0, originBaseTileId: null });
     const out = sim.step();
     expect(out.personal[0].msg).toMatchObject({ accepted: false, reason: 'WATER' });
   });

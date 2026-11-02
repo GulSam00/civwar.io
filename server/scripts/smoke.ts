@@ -146,7 +146,7 @@ async function main(): Promise<void> {
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 2)).reason === 'BAD_REQUEST', '형식 오류(nodeId 42) → cmd_ack BAD_REQUEST');
     const sfT = await a.wait('snapshot_full', (m) => m.tick > tp1.tick);
     ok(sfT.players.find((p) => p.id === 1)?.techMask === 1 && sfT.players.find((p) => p.id === 1)?.techCount === 1, 'snapshot_full.players[].techMask/techCount');
-    a.send({ type: 'cmd_flag_issue', clientSeq: 3, unit: 1, troops: 50, anchorTileId: 0 });
+    a.send({ type: 'cmd_flag_issue', clientSeq: 3, unit: 1, troops: 50, anchorTileId: 0, posture: 0 });
     ok((await a.wait('cmd_ack', (m) => m.clientSeq === 3)).reason === 'WATER', 'cmd_flag_issue 물 앵커 → WATER');
 
     // ── 2차: 깃발 발령 → 이동 → 교전(게이지) → 중립 점령 ──
@@ -158,7 +158,7 @@ async function main(): Promise<void> {
     for (let t = 0; t < owners0.length && anchor < 0; t++) {
       if (dist(t, home) === 4 && owners0[t] === 0 && terrain[t] !== 0 && terrain[t] !== 6 && !mi.bases.includes(t)) anchor = t;
     }
-    a.send({ type: 'cmd_flag_issue', clientSeq: 4, unit: 1, troops: 140, anchorTileId: anchor, originBaseTileId: null });
+    a.send({ type: 'cmd_flag_issue', clientSeq: 4, unit: 1, troops: 140, anchorTileId: anchor, posture: 0, originBaseTileId: null });
     const ackF = await a.wait('cmd_ack', (m) => m.clientSeq === 4);
     ok(ackF.accepted && ackF.flagId === 1 && ackF.posture === 0, `cmd_flag_issue 수락 (flagId ${ackF.flagId}, posture ATTACK, anchor ${anchor})`);
     const fi = await a.wait('flag_issued', (m) => m.flagId === 1);

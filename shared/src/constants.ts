@@ -7,7 +7,7 @@
  *  - `_MILLI` 접미사는 1/1000 단위 정수(병력·골드·진척도·기지 체력).
  *  - 지형별 배열은 TERRAIN enum 값(0..6)으로 인덱싱한다.
  *  - 테크 단계별 배열은 [무테크, T1, T2, T3] 4칸.
- *  - 페이싱 레버(ENEMY_BASE, THRESHOLD_*, HARD_TIMEOUT_TICK, POSTURE_COOLDOWN_TICKS 등)는
+ *  - 페이싱 레버(ENEMY_BASE, THRESHOLD_*, HARD_TIMEOUT_TICK, FLAG_ORDER_COOLDOWN_TICKS 등)는
  *    여기에서만 정의한다. 서버·클라이언트 어느 곳에서도 하드코딩 금지.
  *
  * 서버는 이 객체 전체를 match_config.constants 로 클라이언트에 내려보낸다(GDD 7.6).
@@ -225,7 +225,8 @@ export const FLAG_TILE_RATE_BASE = 2;
 export const FRONT_RADIUS = 6;
 export const FRONT_MAX_RANGE = 40;
 export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2). 사용자 결정 2026-10-11: 깃발 접촉(전투·ZOC·진척 유지) = 8방향(대각선 포함, topology.touching). 땅 점령은 4방향 그대로
-export const FLAG_RETARGET_LOCK_TICK = 15;
+/** v5.6: 재지정·태세 전환이 함께 쓰는 깃발 조작 쿨타임 (3초). 경직은 아니다 — 깃발은 바로 움직인다 */
+export const FLAG_ORDER_COOLDOWN_TICKS = 15; // 사용자 확정 튜닝 레버
 export const FLAG_RECALL_REFUND_PERMILLE = 850;
 /** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
 export const RETURN_SPEED_PERMILLE = 1500; // v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.RETURN_SPEED (MOB-3B 급속 귀환 2200)
@@ -601,7 +602,6 @@ export const UNIT_ATK_PERMILLE = [900, 1000, 1200] as const; // [A-23] 2026-10-2
 export const UNIT_DEF_PERMILLE = [1100, 1000, 900] as const; // [A-23] 2026-10-24 재조정 (구 1300 / 1000 / 700)
 /** 방어 태세만, 소유자 무관. 인덱스 = TERRAIN (v4.5: 물 칸에는 깃발이 서지 않는다) */
 export const COMBAT_TERRAIN_DEF_POSTURE_PERMILLE = [1000, 1000, 1050, 1300, 1000, 1600, 1000] as const;
-export const POSTURE_COOLDOWN_TICKS = 25; // 사용자 확정 튜닝 레버
 // DISENGAGE_TICKS 는 깃발 절로 옮겼다 (v4.5 — TECH_STAT_BASE 가 참조)
 export const DISENGAGE_VALUE_PERMILLE = 500; // [A-31]
 export const ANY_HOSTILE = 254; // targetOwnerId 예약값 [A-27]
@@ -644,12 +644,12 @@ export const SORTIE_INITIAL_MORALE = 900;
 export const MORALE_FLOOR: readonly number[] = [1050, 850, 750];
 export const MORALE_FULL: readonly number[] = [1100, 1200, 1300];
 export const MORALE_MULT_CAP = 1500; // 곱 상한 (테크 기세 가산 후에도)
-/** 교전 tick 당 사기 고정 감소 ‰ — 인덱스 = UNIT. 공격 태세 창 3 / 검 4 / 기 6 (패치 12차 [A]; 종전 3/6/10 에 방어 ×0.5) */
-export const MORALE_DROP_PER_TICK = [3, 4, 6] as const;
-/** 방어 태세 교전 tick 당 사기 고정 감소 ‰ — 창 2 / 검 3 / 기 5 (패치 12차 [A]) */
-export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 5] as const;
-/** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (패치 12차 [A]) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
-export const MORALE_DROP_LOSS_K = 10;
+/** 교전 tick 당 사기 고정 감소 ‰ — 인덱스 = UNIT. 공격 태세 창 3 / 검 4 / 기 5 (v5.7 사용자 결정: 기병 6 → 5) */
+export const MORALE_DROP_PER_TICK = [3, 4, 5] as const;
+/** 방어 태세 교전 tick 당 사기 고정 감소 ‰ — 창 2 / 검 3 / 기 4 (v5.7 사용자 결정: 기병 5 → 4) */
+export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 4] as const;
+/** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (v5.7 사용자 결정: 10 → 5) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
+export const MORALE_DROP_LOSS_K = 5;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
 /** v5.1 (GDD 4.5, 사용자 확정 2026-10-28): 자기 기지 칸(수도 포함) 위 깃발의 사기 하한 ‰ (화면 30%). 모델 2 전용.

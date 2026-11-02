@@ -127,7 +127,7 @@ function model(owners: number[], flags: FlagSnapshot[] = []): GameModel {
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 1, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: 0, anchorTileId: 0,
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
+  disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
 });
 
 describe('병력 바 위 내 부대 칩', () => {
@@ -159,9 +159,9 @@ describe('선택 부대 떠 있는 버튼 [귀환]/[태세 변경] 상태', () =
   });
 
   it('쿨타임: 남은 초(올림) 표시 + 태세 변경만 막힘', () => {
-    const st = flagActionState(flag({ posture: POSTURE.DEFEND, postureCooldownUntilTick: 107 }), 100, 200); // 7 tick = 1.4초 → 2초
+    const st = flagActionState(flag({ posture: POSTURE.DEFEND, orderCooldownUntilTick: 107 }), 100, 200); // 7 tick = 1.4초 → 2초
     expect(st.cooldownSec).toBe(2);
-    expect(st.postureBlocked).toBe('전환 대기 2초');
+    expect(st.postureBlocked).toBe('쿨타임 2초');
     expect(st.recallBlocked).toBeNull();
     expect(st.nextPosture).toBe(POSTURE.ATTACK);
   });
@@ -171,7 +171,7 @@ describe('선택 부대 떠 있는 버튼 [귀환]/[태세 변경] 상태', () =
     expect(flagActionState(flag({ state: 'RETURNING' }), 0, 200)).toMatchObject({ recallBlocked: '귀환 중 — 취소 불가', postureBlocked: '귀환 중' });
     expect(flagActionState(flag({ disengaging: true, inCombat: true }), 0, 200)).toMatchObject({ recallBlocked: null, postureBlocked: null });
     expect(flagActionState(flag({ inCombat: true }), 0, 200)).toMatchObject({ recallBlocked: null, postureBlocked: null });
-    expect(flagActionState(flag({ inCombat: true, postureCooldownUntilTick: 10 }), 0, 200)).toMatchObject({ postureBlocked: '전환 대기 2초' });
+    expect(flagActionState(flag({ inCombat: true, orderCooldownUntilTick: 10 }), 0, 200)).toMatchObject({ postureBlocked: '쿨타임 2초' });
   });
 });
 

@@ -2,7 +2,7 @@
  * 병종 고리 (2026-10-22 — 우클릭 둘레 메뉴·삼각 병종 메뉴를 대신한다). 내용·판정은 input/unitRing.ts, 상태 전이는 controller.ts(beginPick/chooseUnit).
  * 위치는 GameScreen 렌더 루프가 .ctx-anchor 를 출전 지점 칸 중심으로 옮긴다(화면 가장자리에서는 안쪽으로 당기고, 원래 칸은 작은 핀으로 표시).
  *
- *   가운데 = 태세 예고 (내 땅 = 방어 푸름, 적·중립 = 공격 붉음, 물·동맹 = 지정 불가 회색)
+ *   가운데 = 출전 태세 토글 (방어 푸름, 공격 붉음, 물·동맹 = 지정 불가 회색). 클릭·F 로 바꾼다. 처음 값은 내 땅 = 방어, 적·중립 = 공격 (v5.6)
  *   고리   = 창(위) · 검(왼쪽 아래) · 기병(오른쪽 아래) — 아이콘 + 보낼 병력 + 단축키 1/2/3
  * 쓸 수 없는 병종: 점선 테두리 + 흐림 + 툴팁에 이유 (색만으로 구분하지 않는다 — 아이콘 + 글자).
  * 닫기: Esc · 바깥(맵) 클릭 · 다시 우클릭 (고리 위 우클릭 포함).
@@ -63,7 +63,9 @@ export function UnitRing({ store, ctl }: { store: ClientStore; ctl: GameInputCon
   const note = routeNote(ctl.currentRoute());
   const hubTitle = m.kind === 'blocked' ? m.label : `${m.label} 출전`;
   const hubIcon = m.kind === 'blocked' ? <BlockedIcon size={22} /> : <PostureIcon posture={m.kind === 'attack' ? POSTURE.ATTACK : POSTURE.DEFEND} size={22} />;
-  tips.push({ key: 'hub', x: 0, y: 0, title: hubTitle, hint: m.hint, detail: m.detail, reason: m.reason });
+  const toggleable = m.kind !== 'blocked' && ctl.canCommand();
+  const hubHint = toggleable ? `${m.hint} · 눌러서 ${m.kind === 'attack' ? '방어' : '공격'}로 변경 (F)` : m.hint;
+  tips.push({ key: 'hub', x: 0, y: 0, title: hubTitle, hint: hubHint, detail: m.detail, reason: m.reason });
 
   const units = m.units.map((it) => {
     const p = polar(RING_R, RING_UNIT_ANGLES[it.unit]);
@@ -119,10 +121,18 @@ export function UnitRing({ store, ctl }: { store: ClientStore; ctl: GameInputCon
         {m.ownerId > 0 && <span className="dot" style={{ background: playerColor(m.ownerId) }} />}
         {ownerName}
       </span>
-      <div className="ctx-center ctx-hub" aria-hidden="true" {...hoverProps('hub')}>
-        {hubIcon}
-        <span className="ctx-label">{m.label}</span>
-      </div>
+      {toggleable ? (
+        <button type="button" role="menuitem" className="ctx-center ctx-hub ctx-hub-toggle" aria-label={`출전 태세 ${m.label} · 눌러서 ${m.kind === 'attack' ? '방어' : '공격'}로 변경 · 단축키 F`} onClick={() => ctl.toggleIssuePosture()} {...hoverProps('hub')}>
+          {hubIcon}
+          <span className="ctx-label">{m.label}</span>
+          <kbd>F</kbd>
+        </button>
+      ) : (
+        <div className="ctx-center ctx-hub" aria-hidden="true" {...hoverProps('hub')}>
+          {hubIcon}
+          <span className="ctx-label">{m.label}</span>
+        </div>
+      )}
       {units}
       {tip && (
         // 고리 바깥에 띄운다 (다른 항목을 가리지 않게) — 화면 오른쪽이면 왼쪽으로

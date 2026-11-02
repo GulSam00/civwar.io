@@ -224,12 +224,13 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
- * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다. 2026-10-28 v5.1(점령 배율 전 병종 1000·기지 출전 쿨타임 25 tick·봇 출발 기지 확인 — 모델 1·2 공통)로 다시 뽑았다.  2026-10-31 귀환지를 출발 기지 대신 가까운 기지로 바꾸면서(모델 1·2 공통) G1·G3 을 다시 뽑았다. 같은 날 병력 상한 칸당 계수 12 → 18 로 G1~G3 을 또 다시 뽑았다. 2026-11-02 칸당 병력 상한 18 → 20 (v5.5) 으로 다시 뽑았다. 2026-11-03 언덕 골드 보너스를 농경·관개로 이관(v5.8)하며 다시 뽑았다.
+ * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다. 2026-10-28 v5.1(점령 배율 전 병종 1000·기지 출전 쿨타임 25 tick·봇 출발 기지 확인 — 모델 1·2 공통)로 다시 뽑았다.  2026-10-31 귀환지를 출발 기지 대신 가까운 기지로 바꾸면서(모델 1·2 공통) G1·G3 을 다시 뽑았다. 같은 날 병력 상한 칸당 계수 12 → 18 로 G1~G3 을 또 다시 뽑았다. 2026-11-02 칸당 병력 상한 18 → 20 (v5.5) 으로 다시 뽑았다.
+ * 2026-11-02 v5.6: 봇이 태세를 명시하고 재지정 뒤 쿨타임을 기다려 태세를 바꾸므로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: '41896de7dd53da5476d6269d51291051746169760336a7c4d2ecbc897b2a6e6d', state: '9f6e69eb68cf413960acefcb833dcba7b8ed437d9873c475b1b88a6d38b8648f' },
-  G2: { stream: '609e411ce8f73c93776f8a62d7422084875543363438cd25f6c13155588b1f67', state: '98a9a335f18fb36eca9980deb8d846b15e0db3b686e8b37b80ac6fd2bbe406c7' },
-  G3: { stream: 'c79ce8bf188c4adbc3e483ce9ff78c27cdc8d0411b473daa7e7820c2c543fce7', state: 'ce1a6357e8dfe7a9b7a815d9813fc4290ec681d3ad617cc74e1ec482f8da294a' },
+  G1: { stream: 'dd60dcf02112ec04a0a6923701891da98e29f2a9ef63f8ca1b1d8d7f572c3650', state: '3023dcd1533444a33b22fe1a1d3555aa18fcbd64172b72905df447b25f1a7491' },
+  G2: { stream: '11293ff3af40b210b1a098bd2ce81d20bd7ddb3d2a8b9c109c11955f605afd25', state: 'b00966ccb999c61dbd23de3868c85c18d2d1e7ef54af63c5fce4d8cc0c25816e' },
+  G3: { stream: 'cfc97a2a665f99cb15133eedba4580d9013e33ba8f63f25640ab79e006b5a9f8', state: '68c9fe7339294413b7868c99b12608f34b1a296e9fae9fef52271eda6f734aac' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
@@ -440,12 +441,12 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(g.sides[0].morale).toBe(700);
   });
 
-  it('사기 규칙 (패치 12차): 교전 tick 마다 고정(창 3 / 기 6) + 자기 손실 1%당 10, 이탈 완료 후 비전투 +3, 기지 위 +10, 패주 0', () => {
+  it('사기 규칙 (v5.7): 교전 tick 마다 고정(창 3 / 기 5) + 자기 손실 1%당 5, 이탈 완료 후 비전투 +3, 기지 위 +10, 패주 0', () => {
     const { s, c } = duelState(2);
     const sp = addFlag(s, { ownerId: 1, unit: U.SPEAR, troops: 2000, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const cv = addFlag(s, { ownerId: 2, unit: U.CAVALRY, troops: 2000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const out = newOutbox();
-    const expDrop = (fixed: number, before: number, after: number) => fixed + Math.floor((Math.floor(((before - after) * 10000) / before) * 10 + 50) / 100);
+    const expDrop = (fixed: number, before: number, after: number) => fixed + Math.floor((Math.floor(((before - after) * 10000) / before) * 5 + 50) / 100);
     sp.morale = 1000; // 출전 직후 사기(900) 대신 만땅에서 감소 규칙만 본다
     cv.morale = 1000;
     let mSp = 1000;
@@ -455,7 +456,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       const [bSp, bCv] = [sp.troopsMilli, cv.troopsMilli];
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
       mSp -= expDrop(3, bSp, sp.troopsMilli);
-      mCv -= expDrop(6, bCv, cv.troopsMilli);
+      mCv -= expDrop(5, bCv, cv.troopsMilli);
       expect(sp.morale).toBe(mSp);
       expect(cv.morale).toBe(mCv);
       expect(1000 - mSp).toBeGreaterThan(3 * t); // 손실 항이 붙는다
@@ -537,7 +538,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(b.lastDamageTick).toBe(0);
   });
 
-  it('방어 태세는 교전 중 사기 고정 감소가 더 작다 [A 패치 12차]: 공격 창 3 / 검 4 / 기 6, 방어 창 2 / 검 3 / 기 5 (손실 항 제외)', () => {
+  it('방어 태세는 교전 중 사기 고정 감소가 더 작다 (v5.7): 공격 창 3 / 검 4 / 기 5, 방어 창 2 / 검 3 / 기 4 (손실 항 제외)', () => {
     const drop = (unit: 0 | 1 | 2, posture: 0 | 1) => {
       const { s, c } = duelState(2);
       const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture, state: 'ENGAGED' });
@@ -548,10 +549,10 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out);
       expect(f.inCombat).toBe(true);
       const lossBp = Math.floor(((3_000_000 - f.troopsMilli) * 10000) / 3_000_000);
-      return 1000 - f.morale - Math.floor((lossBp * 10 + 50) / 100); // 손실 항을 뺀 고정 감소
+      return 1000 - f.morale - Math.floor((lossBp * 5 + 50) / 100); // 손실 항을 뺀 고정 감소
     };
-    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 5]);
-    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 6]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 4]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 5]);
   });
 
   it('기지 함락 시 그 칸 위 이전 주인 깃발은 귀환으로 퇴각한다 [A 패치 2차] (모델 2, 마지막 기지 제외, 모델 1 불변)', () => {

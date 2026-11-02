@@ -153,7 +153,7 @@ function onEvent(m: ServerMessage): void {
       line(m.tick, '회수', `${flagDesc(m.flagId)} → ${place(m.returnTileId)}로 귀환`);
       break;
     case 'flag_posture_changed':
-      line(m.tick, '태세', `${flagDesc(m.flagId)} → ${m.posture === POSTURE.ATTACK ? '공격' : '방어'} 태세로 전환${m.auto ? ' (자동)' : ''}`);
+      line(m.tick, '태세', `${flagDesc(m.flagId)} → ${m.posture === POSTURE.ATTACK ? '공격' : '방어'} 태세로 전환`);
       break;
     case 'flag_ended': {
       const why = { exhausted: '병력 소진', recalled: '회수 완료', attrited: '소모로 전멸', eliminated: '소유자 탈락', routed_returned: '패주 후 귀환' }[m.reason];

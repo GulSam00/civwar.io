@@ -8,16 +8,25 @@ import type { GameModel } from '../state/gameModel.js';
 import { techStatsOf } from './techInfo.js';
 import { moraleNeutralPoint, moraleRange, moraleRates } from './unitStats.js';
 
-/** 사기 곱이 ×1.00 이 되는 사기 값 (그 위는 보너스, 아래는 감쇠) */
-export const MORALE_NEUTRAL = 800;
+/** 전투력 ±0 경계가 없는 병종(창병)의 막대 색 경계 ‰ — 다른 병종의 ±0 경계와 비슷한 자리 */
+const MORALE_BAND_FALLBACK = 400;
 
 export type MoraleTone = 'high' | 'mid' | 'low';
+
+/** 사기 막대 구간 ‰ — mid 아래는 노랑, low 아래는 빨강. 눈금도 이 두 자리에 그린다 */
+export interface MoraleBands {
+  /** 전투력 ±0 경계 (창병은 MORALE_BAND_FALLBACK) */
+  mid: number;
+  /** mid 의 절반 */
+  low: number;
+}
 
 export interface MoraleView {
   /** 0..1000 */
   value: number;
   /** 0..100 (막대 길이) */
   pct: number;
+  bands: MoraleBands;
   /** 사기 곱 ‰ (예: 1100 = ×1.10) */
   multPm: number;
   /** 전투력 증감 % (예: +10, −40) */
@@ -31,8 +40,19 @@ export function moraleOn(g: Pick<GameModel, 'config'>): boolean {
   return g.config.combatModel === 2;
 }
 
-export function moraleTone(value: number): MoraleTone {
-  return value >= MORALE_NEUTRAL ? 'high' : value >= 400 ? 'mid' : 'low';
+/** 병종·테크별 사기 막대 구간 */
+export function moraleBands(unit: number, stat: readonly number[]): MoraleBands {
+  const mid = moraleNeutralPoint(unit, stat) ?? MORALE_BAND_FALLBACK;
+  return { mid, low: Math.floor(mid / 2) };
+}
+
+export function moraleTone(value: number, bands: MoraleBands): MoraleTone {
+  return value >= bands.mid ? 'high' : value >= bands.low ? 'mid' : 'low';
+}
+
+/** 이 깃발 소유자의 테크를 반영한 사기 막대 구간 */
+export function flagMoraleBands(g: Pick<GameModel, 'players' | 'config'>, f: Pick<FlagSnapshot, 'ownerId' | 'unit'>): MoraleBands {
+  return moraleBands(f.unit, techStatsOf(g.players.get(f.ownerId)?.techMask ?? 0, g.config.constants));
 }
 
 /** 모델 1(사기 개념 없음)이거나 값이 없으면 null */
@@ -43,12 +63,14 @@ export function moraleView(g: GameModel, f: FlagSnapshot): MoraleView | null {
   const multPm = moraleMultiplier(f.unit, value, stat);
   const deltaPct = Math.round((multPm - 1000) / 10);
   const sign = deltaPct > 0 ? '+' : deltaPct < 0 ? '−' : '±';
+  const bands = moraleBands(f.unit, stat);
   return {
     value,
     pct: Math.round(value / 10),
+    bands,
     multPm,
     deltaPct,
-    tone: moraleTone(value),
+    tone: moraleTone(value, bands),
     text: `사기 ${Math.round(value / 10)}% · 전투력 ${sign}${Math.abs(deltaPct)}%`,
   };
 }

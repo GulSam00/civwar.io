@@ -71,6 +71,7 @@ export function parseClientMessage(raw: string): ParseResult {
       if (!inRange(m.unit, 0, 2)) return bad('unit must be 0..2');
       if (!isInt(m.troops) || m.troops < 0) return bad('troops must be int >= 0');
       if (!isU32(m.anchorTileId)) return bad('anchorTileId must be uint32');
+      if (!inRange(m.posture, 0, 1)) return bad('posture must be 0|1');
       if (m.originBaseTileId !== undefined && m.originBaseTileId !== null && !isU32(m.originBaseTileId)) return bad('originBaseTileId');
       return {
         ok: true,
@@ -80,6 +81,7 @@ export function parseClientMessage(raw: string): ParseResult {
           unit: m.unit as 0 | 1 | 2,
           troops: m.troops,
           anchorTileId: m.anchorTileId,
+          posture: m.posture as 0 | 1,
           originBaseTileId: (m.originBaseTileId as number | null | undefined) ?? null,
         },
       };

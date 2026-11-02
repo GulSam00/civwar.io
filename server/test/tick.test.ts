@@ -86,7 +86,7 @@ describe('Simulation', () => {
 
   it('깃발 명령: 물 앵커는 WATER 로 거절 (2차 — NOT_IMPLEMENTED 소멸)', () => {
     const sim = makeSim();
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 5, unit: 1, troops: 50, anchorTileId: 0, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 5, unit: 1, troops: 50, anchorTileId: 0, posture: 0, originBaseTileId: null });
     const out = sim.step();
     expect(out.personal[0].msg).toMatchObject({ type: 'cmd_ack', clientSeq: 5, accepted: false, reason: 'WATER' });
   });

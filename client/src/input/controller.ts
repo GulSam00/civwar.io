@@ -3,7 +3,7 @@
  *
  * 조작 (2026-10-22 사용자 확정 — 우클릭 병종 고리 · 좌클릭 정보 카드. 삼각 메뉴·우클릭 둘레 메뉴는 폐기):
  *   우클릭 (내 부대 선택 없음) = 그 칸에 바로 출전: 칸 둘레에 창·검·기 병종 고리가 뜬다 → 하나 고르면 가장 가까운 내 기지에서
- *                   발령 (내 땅 = 방어, 적·중립 = 공격, originBaseTileId = 하이라이트 기지). 쓸 수 없으면 병종마다 점선 + 이유 툴팁.
+ *                   발령 (고리 가운데 클릭·F = 방어/공격 선택, 처음 값은 내 땅 = 방어·적·중립 = 공격, originBaseTileId = 하이라이트 기지). 쓸 수 없으면 병종마다 점선 + 이유 툴팁.
  *   내 기지 클릭  → 기지에서 커서까지 경로 화살표가 따라옴 → 지점 클릭 → 같은 병종 고리 → 그 기지에서 발령
  *                   (조준 중 그 기지 자신을 다시 클릭 = 그 기지에 수비 배치 — 고리는 방어 태세. 기지 위에 깃발이 겹쳐 있으면 Alt+클릭으로 기지를 고른다)
  *   1/2/3        병종 고리가 떠 있을 때 병종 선택 (창/검/기)
@@ -11,9 +11,9 @@
  *   Q/E, [/]     발령 비율 −/+10% (하단 바)
  *   좌클릭 순서   내 깃발 = 선택 (내·적·동맹 모두 — 우측 정보 패널) → 깃발 선택 중이면 선택 해제 → 내 기지(깃발 없음) = 조준 시작
  *                 → 누군가의 영토 = 그 플레이어 정보 카드 (동맹·이모트·따라가기는 카드에) → 중립·물 = 아무 일 없음
- *   내 깃발 선택 + 우클릭 = 항상 이동 (2026-10-14): 내 기지·내 땅 = 그 자리로 가서 방어, 적·중립 = 공격 — 태세는 서버가 도착지로 정한다
+ *   내 깃발 선택 + 우클릭 = 항상 이동 (2026-10-14). 방어 깃발 + 적·중립 땅 = 공격으로 자동 전환, 그 밖엔 태세 그대로 (v5.6)
  *                 (예전 "선택 + 내 기지 좌클릭 = 귀환"은 폐기 — 귀환은 선택 부대 옆 [귀환] 버튼 / R)
- *   F          선택 깃발 태세 전환      R  선택 깃발 회수(자동 귀환지)      Tab  내 깃발 순환
+ *   F          선택 깃발 태세 전환 (병종 고리가 떠 있으면 출전 태세 선택)      R  선택 깃발 회수(자동 귀환지)      Tab  내 깃발 순환
  *   Esc        취소 · 선택 해제        H  내 수도로        0  맵 전체
  *   T 테크 · P 외교 · O 옵션 창 · C 색각 보조 · V 이동 방향 화살표(모두→내 것만→숨김) · ? 도움말 (React 패널 — Interaction 플래그)
  *   드래그(좌·가운데) / WASD·방향키 = 이동, 휠 = 줌, 터치 = 한 손가락 이동 · 두 손가락 확대
@@ -320,7 +320,7 @@ export class GameInputController {
     return this.originFor(anchor)?.drawBase ?? null;
   }
 
-  /** 지점의 기본 태세 예고 (내 땅 = 방어, 적·중립 = 공격, 물·동맹 = 불가) — 표시 전용, 서버가 최종 판정 */
+  /** 지점의 기본 태세 (내 땅 = 방어, 적·중립 = 공격, 물·동맹 = 불가) — 병종 고리의 처음 선택값. 실제 태세는 cmd_flag_issue 가 보낸다 */
   postureAt(tile: number): IssuePosture {
     const g = this.store.game;
     const me = this.store.myPlayerId;
@@ -425,6 +425,7 @@ export class GameInputController {
       spectating: this.store.spectating,
       canCommand: canCmd,
       base: is.base,
+      posture: is.posture,
       preview,
       troopsFor: (u) => this.troopsToSend(u),
     });
@@ -449,7 +450,7 @@ export class GameInputController {
     }
     if (base === null) return this.cancelIssue();
     // 출발 기지는 미리보기와 같은 기지를 지정해 보낸다 (화살표 = 실제 경로). 서버가 그 사이 쿨타임이면 BASE_COOLDOWN → 토스트
-    const seq = this.store.issueFlag(u, this.troopsToSend(u), is.anchor, base);
+    const seq = this.store.issueFlag(u, this.troopsToSend(u), is.anchor, is.posture === 'defend' ? POSTURE.DEFEND : POSTURE.ATTACK, base);
     const g = this.store.game;
     if (g && seq >= 0) this.sentFrom.set(base, { ready: g.tick + 1 + g.dispatchCooldownTicks, sent: g.tick, seq });
     this.ix.issue = null;
@@ -640,6 +641,14 @@ export class GameInputController {
     this.ix.bump();
   }
 
+  /** v5.6: 병종 고리의 출전 태세 바꾸기 (가운데 클릭·F) */
+  toggleIssuePosture(): void {
+    const is = this.ix.issue;
+    if (is?.phase !== 'pick' || is.posture === 'blocked' || !this.canCommand()) return;
+    this.ix.issue = { ...is, posture: is.posture === 'attack' ? 'defend' : 'attack' };
+    this.ix.bump();
+  }
+
   togglePosture(): void {
     const id = this.ix.selectedFlagId;
     if (!this.myFlag(id) || !this.canCommand()) return;
@@ -705,7 +714,7 @@ export class GameInputController {
       case ']':
         return this.setRatio(this.ix.ratio + 0.1);
       case 'f':
-        return this.togglePosture();
+        return this.ix.issue?.phase === 'pick' ? this.toggleIssuePosture() : this.togglePosture();
       case 'r':
         return this.recallSelected();
       case 'h':

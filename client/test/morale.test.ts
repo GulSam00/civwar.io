@@ -2,9 +2,9 @@
  * §33.4 사기 표시 (전투 모델 2) — GameModel 반영(flag_issued 만땅, moraleChanged 델타), 순수 표시 함수, 부대 칩.
  */
 import { describe, expect, it } from 'vitest';
-import { POSTURE, SORTIE_INITIAL_MORALE, UNIT, type ServerMessage } from '@civwar/shared';
+import { POSTURE, SORTIE_INITIAL_MORALE, TECH_STAT, TECH_STAT_COUNT, UNIT, type ServerMessage } from '@civwar/shared';
 import { GameModel } from '../src/state/gameModel.js';
-import { flagChannels, moraleOn, moraleTone, moraleView } from '../src/ui/morale.js';
+import { flagChannels, moraleBands, moraleOn, moraleTone, moraleView } from '../src/ui/morale.js';
 import { myUnitChips } from '../src/ui/unitChips.js';
 import { createGameState, makeFlag } from '../../server/src/game/state.js';
 import { generateMapForPlayers } from '../../server/src/map/generate.js';
@@ -30,17 +30,32 @@ function modelWithFlags(combatModel: 1 | 2, morales: number[]) {
 }
 
 describe('사기 표시 (모델 2)', () => {
-  it('사기 곱 (검병, 패치 12차): 만땅 +20% / 800 +13% / 0 −15%, 색 구간 800·400', () => {
+  it('사기 곱 (검병, 패치 12차): 만땅 +20% / 800 +13% / 0 −15%, 색 구간 429·214', () => {
     const { g } = modelWithFlags(2, [1000, 800, 300, 0]);
     expect(moraleOn(g)).toBe(true);
     const v = [...g.flags.values()].sort((a, b) => a.slotIndex - b.slotIndex).map((f) => moraleView(g, f)!);
     expect(v.map((x) => x.deltaPct)).toEqual([20, 13, -4, -15]);
     expect(v.map((x) => x.pct)).toEqual([100, 80, 30, 0]);
-    expect(v.map((x) => x.tone)).toEqual(['high', 'high', 'low', 'low']);
+    expect(v.map((x) => x.tone)).toEqual(['high', 'high', 'mid', 'low']);
     expect(v[0].text).toBe('사기 100% · 전투력 +20%');
     expect(v[2].text).toBe('사기 30% · 전투력 −4%');
     expect(v[1].text).toBe('사기 80% · 전투력 +13%');
-    expect(moraleTone(500)).toBe('mid');
+  });
+
+  it('막대 구간은 병종별이다: 창 400·200 / 검 429·214 / 기 455·227, 기세 테크가 경계를 내린다', () => {
+    expect(moraleBands(UNIT.SPEAR, [])).toEqual({ mid: 400, low: 200 });
+    expect(moraleBands(UNIT.SWORD, [])).toEqual({ mid: 429, low: 214 });
+    expect(moraleBands(UNIT.CAVALRY, [])).toEqual({ mid: 455, low: 227 });
+    const stat = new Array(TECH_STAT_COUNT).fill(0);
+    stat[TECH_STAT.MORALE_FULL_BONUS_CAVALRY] = 100;
+    expect(moraleBands(UNIT.CAVALRY, stat)).toEqual({ mid: 385, low: 192 });
+    const sword = moraleBands(UNIT.SWORD, []);
+    expect([429, 428, 214, 213].map((m) => moraleTone(m, sword))).toEqual(['high', 'mid', 'mid', 'low']);
+  });
+
+  it('부대 칩의 막대 구간이 소유자 테크와 병종을 따른다', () => {
+    const { g } = modelWithFlags(2, [420]);
+    expect(myUnitChips(g, 1, null)[0].moraleBands).toEqual({ mid: 429, low: 214 });
   });
 
   it('지금 전투값: 기지 위 방어 검병 = 병종 방어 1000 x 기지 BASE_BUFF(방어 채널만 1.2) x 사기 곱, 사기가 줄면 값도 준다', () => {
