@@ -1,0 +1,23 @@
+import { readFileSync, readdirSync } from 'node:fs';
+const load = (d) => readdirSync(d).filter((f) => f.endsWith('.jsonl')).flatMap((f) => readFileSync(`${d}/${f}`, 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length; const f = (x, d = 1) => x.toFixed(d);
+const row = (n, r) => [n, r.length, f(mean(r.map((x) => x.routs))), f(mean(r.map((x) => x.combats))), f(mean(r.map((x) => x.grpMed))), f(mean(r.map((x) => x.grpP90))), f(mean(r.map((x) => x.endMin))), `${r.filter((x) => x.reason === 'timeout').length}/${r.length}`, `${r.filter((x) => x.reason === 'threshold').length}/${r.length}`, f(mean(r.map((x) => x.elim)), 2)].join(' | ');
+const old = load('../measure-2026-11-02/raw'), cur = load('raw');
+console.log('판정 | 판 | 패주/판 | 교전/판 | 교전 중간값 s | p90 | 종료 분 | 타임아웃 | 점유 threshold | 탈락/판');
+console.log(row('v5.5 (직전)', old)); console.log(row('v5.6 (이번)', cur));
+console.log('reasons', JSON.stringify(Object.fromEntries([...new Set(cur.map((x) => x.reason))].map((k) => [k, cur.filter((x) => x.reason === k).length]))), 'old', JSON.stringify(Object.fromEntries([...new Set(old.map((x) => x.reason))].map((k) => [k, old.filter((x) => x.reason === k).length]))));
+console.log('endMin by seed cur:', cur.map((x) => `${x.seed}:${x.endMin}/${x.reason}/top${x.topSharePct}/elim${x.elim}`).join(' '));
+console.log('endMin by seed old:', old.map((x) => `${x.seed}:${x.endMin}/${x.reason}/elim${x.elim}`).join(' '));
+const sum = (k) => cur.reduce((a, x) => a + (x[k] ?? 0), 0);
+const tot = {}; const rejT = {}; const accT = {};
+for (const x of cur) { for (const [t, n] of Object.entries(x.acc)) accT[t] = (accT[t] ?? 0) + n; for (const [t, o] of Object.entries(x.rej)) for (const [r, n] of Object.entries(o)) (rejT[t] ??= {})[r] = ((rejT[t] ??= {})[r] ?? 0) + n; }
+console.log('수락(명령별, 16판 합)', JSON.stringify(accT)); console.log('거절(명령별·사유별)', JSON.stringify(rejT));
+const A = Object.values(accT).reduce((a, b) => a + b, 0), R = Object.values(rejT).flatMap((o) => Object.values(o)).reduce((a, b) => a + b, 0);
+console.log('수락', A, '거절', R, `거절률 ${f(R * 100 / (A + R), 2)}%`);
+const g = (k) => f(sum(k) / cur.length);
+console.log(`판당: 공격 발령 ${g('issuedBy') }`);
+console.log('issuedBy 판당', ['atk', 'def', 'defBase'].map((k) => `${k} ${f(cur.reduce((a, x) => a + x.issuedBy[k], 0) / cur.length)}`).join(', '));
+console.log('재지정 판당', g('retargets'), '기지로', g('retargetsToBase'), '내 땅으로', g('retargetsOwn'), '| 태세 전환 판당 ->방어', g('postureToDef'), '->공격', g('postureToAtk'));
+console.log('IDLE 깃발 평균(공격 태세)', f(mean(cur.map((x) => x.idleAtkAvg)), 3), '전체', f(mean(cur.map((x) => x.idleAllAvg)), 3), '최대 IDLE 지속 tick', Math.max(...cur.map((x) => x.idleMaxDurTicks)), '150tick 초과 IDLE 깃발 합', sum('idleLongFlags'), '깃발 평균 수', f(mean(cur.map((x) => x.flagAvg))));
+console.log('태세 대기(botPlannedPosture) 평균', f(mean(cur.map((x) => x.pendingAvg)), 3), '최대 동시', Math.max(...cur.map((x) => x.pendingMax)), '최대 대기 tick', Math.max(...cur.map((x) => x.pendMaxDurTicks)), '75tick 초과 대기 깃발', sum('pendLongFlags'));
+console.log('ends 합', JSON.stringify(cur.reduce((a, x) => { for (const [k, n] of Object.entries(x.ends)) a[k] = (a[k] ?? 0) + n; return a; }, {})), 'old', JSON.stringify(old.reduce((a, x) => { for (const [k, n] of Object.entries(x.ends)) a[k] = (a[k] ?? 0) + n; return a; }, {})));
