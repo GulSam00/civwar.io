@@ -366,9 +366,9 @@ function moraleCard(f: FlagSnapshot, md: MoraleDetail, store: ClientStore): HTML
   const fill = h('i', '');
   fill.style.width = `${md.view.pct}%`;
   bar.append(fill);
-  if (md.neutral !== null && md.neutral < 1000) {
+  for (const v of [md.view.bands.low, md.view.bands.mid]) {
     const tick = h('u', '');
-    tick.style.left = `${md.neutral / 10}%`;
+    tick.style.left = `${v / 10}%`;
     bar.append(tick);
   }
   if (md.baseFloor !== null) {
@@ -989,8 +989,10 @@ function UnitChips({ store, ctl }: { store: ClientStore; ctl: GameInputControlle
           <b>{c.troops}</b>
           <PostureIcon posture={c.posture} size={13} />
           {c.morale !== null && (
-            <span className={`mbar ${moraleTone(c.morale)}`} role="img" aria-label={`사기 ${Math.round(c.morale / 10)}%`}>
+            <span className={`mbar ${moraleTone(c.morale, c.moraleBands)}`} role="img" aria-label={`사기 ${Math.round(c.morale / 10)}%`}>
               <i style={{ width: `${Math.round(c.morale / 10)}%` }} />
+              <u style={{ left: `${c.moraleBands.low / 10}%` }} />
+              <u style={{ left: `${c.moraleBands.mid / 10}%` }} />
             </span>
           )}
         </button>
@@ -1043,7 +1045,7 @@ const FP_HELP = {
   status: '행군·교전·귀환·대기 상태와 표시: 전투 중(적 깃발과 맞붙음) · 패주 · 대치(적 깃발에 길이 막힘) · 이탈 대기(전투에서 빠지는 중, 전투력 −30%) · 정체(5초 동안 한 칸도 못 밂)',
   atkdef: '병종 기본 + 테크 점수. 지형·기지·사기는 빼고 본 값 — 지금 태세 쪽이 굵게 보입니다',
   capture: '땅 한 칸을 점령할 때 깃발에서 빠지는 병력. 기준 = 보급 거리 안 중립 평원, 목표 칸 = 지금 밀고 있는 칸(지형·인접·보급 거리 반영)',
-  morale: '사기 막대 — 공격력·방어력에 같은 배율로 곱해집니다. 흰 눈금 = 전투력 ±0 경계. 교전하면 줄고, 쉬거나 내 기지 위에 있으면 회복',
+  morale: '사기 막대 — 공격력·방어력에 같은 배율로 곱해집니다. 흰 눈금 = 색이 바뀌는 구간 (위쪽 눈금은 검·기병의 전투력 ±0 경계). 교전하면 줄고, 쉬거나 내 기지 위에 있으면 회복',
   now: '지형·기지·사기·이탈 대기·골드 빚을 모두 반영한 지금 공격/방어 값 — 교전 손실은 양쪽 이 값의 비교로 나뉩니다',
   engage: '지금 상태가 이어질 때 이 교전에서 양쪽이 잃을 병력 비율 예상',
   base: '내 기지 칸 위에서는 지형 보정 대신 기지 보정을 받습니다',
@@ -1151,7 +1153,8 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
                 사기
                 <span className={`mbar wide ${md.view.tone}`} role="img" aria-label={md.view.text}>
                   <i style={{ width: `${md.view.pct}%` }} />
-                  {md.neutral !== null && md.neutral < 1000 && <u style={{ left: `${md.neutral / 10}%` }} />}
+                  <u style={{ left: `${md.view.bands.low / 10}%` }} />
+                  <u style={{ left: `${md.view.bands.mid / 10}%` }} />
                   {md.baseFloor !== null && <s style={{ left: `${md.baseFloor / 10}%` }} title="기지 사기 하한" />}
                 </span>
                 <b>{md.view.pct}%</b>

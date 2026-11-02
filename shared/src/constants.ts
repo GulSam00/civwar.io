@@ -644,12 +644,12 @@ export const SORTIE_INITIAL_MORALE = 900;
 export const MORALE_FLOOR: readonly number[] = [1050, 850, 750];
 export const MORALE_FULL: readonly number[] = [1100, 1200, 1300];
 export const MORALE_MULT_CAP = 1500; // 곱 상한 (테크 기세 가산 후에도)
-/** 교전 tick 당 사기 고정 감소 ‰ — 인덱스 = UNIT. 공격 태세 창 3 / 검 4 / 기 6 (패치 12차 [A]; 종전 3/6/10 에 방어 ×0.5) */
-export const MORALE_DROP_PER_TICK = [3, 4, 6] as const;
-/** 방어 태세 교전 tick 당 사기 고정 감소 ‰ — 창 2 / 검 3 / 기 5 (패치 12차 [A]) */
-export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 5] as const;
-/** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (패치 12차 [A]) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
-export const MORALE_DROP_LOSS_K = 10;
+/** 교전 tick 당 사기 고정 감소 ‰ — 인덱스 = UNIT. 공격 태세 창 3 / 검 4 / 기 5 (v5.7 사용자 결정: 기병 6 → 5) */
+export const MORALE_DROP_PER_TICK = [3, 4, 5] as const;
+/** 방어 태세 교전 tick 당 사기 고정 감소 ‰ — 창 2 / 검 3 / 기 4 (v5.7 사용자 결정: 기병 5 → 4) */
+export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 4] as const;
+/** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (v5.7 사용자 결정: 10 → 5) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
+export const MORALE_DROP_LOSS_K = 5;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
 /** v5.1 (GDD 4.5, 사용자 확정 2026-10-28): 자기 기지 칸(수도 포함) 위 깃발의 사기 하한 ‰ (화면 30%). 모델 2 전용.

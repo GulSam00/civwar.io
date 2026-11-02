@@ -440,12 +440,12 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(g.sides[0].morale).toBe(700);
   });
 
-  it('사기 규칙 (패치 12차): 교전 tick 마다 고정(창 3 / 기 6) + 자기 손실 1%당 10, 이탈 완료 후 비전투 +3, 기지 위 +10, 패주 0', () => {
+  it('사기 규칙 (v5.7): 교전 tick 마다 고정(창 3 / 기 5) + 자기 손실 1%당 5, 이탈 완료 후 비전투 +3, 기지 위 +10, 패주 0', () => {
     const { s, c } = duelState(2);
     const sp = addFlag(s, { ownerId: 1, unit: U.SPEAR, troops: 2000, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const cv = addFlag(s, { ownerId: 2, unit: U.CAVALRY, troops: 2000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
     const out = newOutbox();
-    const expDrop = (fixed: number, before: number, after: number) => fixed + Math.floor((Math.floor(((before - after) * 10000) / before) * 10 + 50) / 100);
+    const expDrop = (fixed: number, before: number, after: number) => fixed + Math.floor((Math.floor(((before - after) * 10000) / before) * 5 + 50) / 100);
     sp.morale = 1000; // 출전 직후 사기(900) 대신 만땅에서 감소 규칙만 본다
     cv.morale = 1000;
     let mSp = 1000;
@@ -455,7 +455,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       const [bSp, bCv] = [sp.troopsMilli, cv.troopsMilli];
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
       mSp -= expDrop(3, bSp, sp.troopsMilli);
-      mCv -= expDrop(6, bCv, cv.troopsMilli);
+      mCv -= expDrop(5, bCv, cv.troopsMilli);
       expect(sp.morale).toBe(mSp);
       expect(cv.morale).toBe(mCv);
       expect(1000 - mSp).toBeGreaterThan(3 * t); // 손실 항이 붙는다
@@ -537,7 +537,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(b.lastDamageTick).toBe(0);
   });
 
-  it('방어 태세는 교전 중 사기 고정 감소가 더 작다 [A 패치 12차]: 공격 창 3 / 검 4 / 기 6, 방어 창 2 / 검 3 / 기 5 (손실 항 제외)', () => {
+  it('방어 태세는 교전 중 사기 고정 감소가 더 작다 (v5.7): 공격 창 3 / 검 4 / 기 5, 방어 창 2 / 검 3 / 기 4 (손실 항 제외)', () => {
     const drop = (unit: 0 | 1 | 2, posture: 0 | 1) => {
       const { s, c } = duelState(2);
       const f = addFlag(s, { ownerId: 1, unit, troops: 3000, pos: c, posture, state: 'ENGAGED' });
@@ -548,10 +548,10 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out);
       expect(f.inCombat).toBe(true);
       const lossBp = Math.floor(((3_000_000 - f.troopsMilli) * 10000) / 3_000_000);
-      return 1000 - f.morale - Math.floor((lossBp * 10 + 50) / 100); // 손실 항을 뺀 고정 감소
+      return 1000 - f.morale - Math.floor((lossBp * 5 + 50) / 100); // 손실 항을 뺀 고정 감소
     };
-    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 5]);
-    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 6]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 4]);
+    expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 5]);
   });
 
   it('기지 함락 시 그 칸 위 이전 주인 깃발은 귀환으로 퇴각한다 [A 패치 2차] (모델 2, 마지막 기지 제외, 모델 1 불변)', () => {

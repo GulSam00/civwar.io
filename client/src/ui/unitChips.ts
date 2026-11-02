@@ -3,6 +3,7 @@
  */
 import { DISENGAGE_TICKS, POSTURE, type FlagSnapshot, type Posture, type Unit } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
+import { flagMoraleBands, type MoraleBands } from './morale.js';
 
 export interface UnitChip {
   id: number;
@@ -18,6 +19,8 @@ export interface UnitChip {
   inCombat: boolean;
   /** §33 사기 0..1000 (전투 모델 2 일 때만, 아니면 null) */
   morale: number | null;
+  /** 사기 막대 구간 (morale 이 null 이면 쓰지 않는다) */
+  moraleBands: MoraleBands;
 }
 
 /** 병력 바 위 칩 — 내 깃발 전부, 슬롯 순. 없으면 빈 배열 */
@@ -37,6 +40,7 @@ export function myUnitChips(g: GameModel, me: number | null, selectedFlagId: num
       returning: f.state === 'RETURNING',
       inCombat: f.inCombat,
       morale: g.config.combatModel === 2 ? (f.morale ?? null) : null,
+      moraleBands: flagMoraleBands(g, f),
     }));
 }
 

@@ -549,3 +549,9 @@ UI 문구: Help 규칙 절·단축키 요약, README 조작표, 로비 하단 �
 - 실험실에서만 바꿀 수 있는 값: 병력, 시작 사기, 공격·방어 ‰, 사기 0/만땅 곱, 태세별 tick 당 사기 감소, 이탈 대기 tick, 태세, 지형, 자기 기지 여부 / 공통: 손실률·하한률·최소 손실·손실 1%당 사기 감소·최대 tick.
 - 다수 대 다수, 편 내부 분배, 기지 함락은 넣지 않았다.
 - 테스트: `client/test/combatLab.test.ts` 4건 (override 중립성, 첫 tick 손실·사기 식, 사기 붕괴 → 이탈, 기지 사기 하한). 스크린샷 `_workspace/ui-2026-10-30/combat-lab.jpg`.
+
+
+## GDD v5.7 사기 막대 구간 (2026-11-03)
+
+- `MORALE_NEUTRAL`(800 고정)을 없애고 `moraleBands(unit, stat)` 로 바꿨다. `mid` = `moraleNeutralPoint`(창병은 ±0 경계가 없어 400), `low` = `mid` 의 절반. 기세 테크를 반영한다.
+- 칩·깃발 패널·hover 카드 모두 `mid`·`low` 자리에 `<u>` 눈금을 그리고, 색은 `moraleTone(value, bands)` 로 정한다.

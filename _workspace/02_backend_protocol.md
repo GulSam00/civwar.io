@@ -2808,3 +2808,8 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 - `TROOP_CAP_PER_TILE` = 20. 상수는 `match_config.constants` 로 내려가므로 클라이언트 코드는 바뀌지 않는다.
 - 모델 1 도 같은 상수를 쓰므로 `server/test/combatModel2.test.ts` 골든 해시 G1~G3 을 이 값으로 다시 뽑았다(v5.3 과 같은 처리).
 - 측정: `_workspace/measure-2026-11-02/`.
+
+
+## 41. GDD v5.7 — 사기 감소 완화 (프로토콜 변경 없음 — 2026-11-03, 사용자 결정)
+
+- `MORALE_DROP_LOSS_K` 10 → 5, `MORALE_DROP_PER_TICK` [3,4,6] → [3,4,5], `MORALE_DROP_DEFEND_PER_TICK` [2,3,5] → [2,3,4]. 식과 필드는 그대로이고 값은 `match_config.constants` 로 내려간다.
