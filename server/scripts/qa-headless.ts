@@ -77,7 +77,7 @@ const BIT = { IN_COMBAT: 1, ROUTED: 2, BLOCKED: 4, DISENGAGING: 8, BREAKAWAY: 16
 function applyEvent(e: any): void {
   switch (e.type) {
     case 'flag_issued':
-      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
+      M.flags.set(e.flagId, { id: e.flagId, ownerId: e.playerId, slotIndex: e.slotIndex, unit: e.unit, posture: e.posture, troops: e.troops, posTileId: e.originTileId, anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
       break;
     case 'flag_retargeted': {
       const f = M.flags.get(e.flagId);
@@ -87,7 +87,7 @@ function applyEvent(e: any): void {
     case 'flag_posture_changed': {
       const f = M.flags.get(e.flagId);
       // I-1 수정 후: 이벤트의 targetOwnerId 를 그대로 쓴다 (문서 §5)
-      if (f) Object.assign(f, { posture: e.posture, postureCooldownUntilTick: e.cooldownUntilTick, targetOwnerId: e.targetOwnerId });
+      if (f) Object.assign(f, { posture: e.posture, orderCooldownUntilTick: e.cooldownUntilTick, targetOwnerId: e.targetOwnerId });
       break;
     }
     case 'flag_disengage_started': {
@@ -166,7 +166,7 @@ function applyDelta(d: any): void {
   for (const [id, posture, bits, cd] of d.flagFlags) {
     const f = M.flags.get(id);
     if (!f) { recon.push(`t${d.tick} flagFlags 모르는 깃발 ${id}`); continue; }
-    Object.assign(f, { posture, postureCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED) });
+    Object.assign(f, { posture, orderCooldownUntilTick: cd, inCombat: !!(bits & BIT.IN_COMBAT), routed: !!(bits & BIT.ROUTED), blocked: !!(bits & BIT.BLOCKED), disengaging: !!(bits & BIT.DISENGAGING), breakaway: !!(bits & BIT.BREAKAWAY), stalled: !!(bits & BIT.STALLED), halted: !!(bits & BIT.HALTED) });
   }
   for (const [id, rb] of d.flagReturnBase ?? []) {
     const f = M.flags.get(id);
@@ -257,7 +257,6 @@ while (!sim.finished && state.tick < HARD_TIMEOUT_TICK + 5) {
     if (m.cause !== undefined) sub(`${m.type}.${m.cause}`);
     if (m.type === 'alliance_lockout') sub(`alliance_lockout.${m.phase}`);
     if (m.type === 'flag_retargeted') sub(`flag_retargeted.auto=${m.auto}`);
-    if (m.type === 'flag_posture_changed') sub(`flag_posture_changed.auto=${m.auto}`);
     if (m.type === 'combat_ended') sub(`combat_ended.winner=${m.winnerSideKey === null ? 'null' : 'side'}`);
     if (m.type === 'combat_started') {
       if (m.groupKey !== Math.min(...m.flagIds)) sub('combat_started.groupKey≠min(flagIds)');

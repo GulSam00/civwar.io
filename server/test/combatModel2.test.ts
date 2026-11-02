@@ -225,11 +225,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
 /**
  * 방송·개인 메시지 전 tick JSON + 최종 상태 해시. 모델 2 도입 때는 변경 전 코드에서 뽑아 모델 1 비트 동일을 증명했고,
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다. 2026-10-28 v5.1(점령 배율 전 병종 1000·기지 출전 쿨타임 25 tick·봇 출발 기지 확인 — 모델 1·2 공통)로 다시 뽑았다.  2026-10-31 귀환지를 출발 기지 대신 가까운 기지로 바꾸면서(모델 1·2 공통) G1·G3 을 다시 뽑았다. 같은 날 병력 상한 칸당 계수 12 → 18 로 G1~G3 을 또 다시 뽑았다. 2026-11-02 칸당 병력 상한 18 → 20 (v5.5) 으로 다시 뽑았다.
+ * 2026-11-02 v5.6: 봇이 태세를 명시하고 재지정 뒤 쿨타임을 기다려 태세를 바꾸므로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: 'f834307fd09aadf971dfab4f428b85c03cb4b14a78fac407b00be0c1df54f306', state: '9c992a246d746879d6efcd808a40af8180a9b18b7ba84b075e9282eb88853a86' },
-  G2: { stream: '0533097f4b74a27f952a82a29a177be7f36ba57cba12b419a79e7a352bc7ebd0', state: '00bc09aa14b98a34ad60271f27ddcfd8aca6389dc2eabcde8f8fe30803da8ddc' },
-  G3: { stream: '3136d6e6ff2417f8cdd19c90ee705841c126604d2fd2f8a668b7572398d6c86f', state: '6ba84c2a83f6bf4e00df0df1aa85edbc6c2298e4d718f17667e2031312c82a02' },
+  G1: { stream: 'dd60dcf02112ec04a0a6923701891da98e29f2a9ef63f8ca1b1d8d7f572c3650', state: '3023dcd1533444a33b22fe1a1d3555aa18fcbd64172b72905df447b25f1a7491' },
+  G2: { stream: '11293ff3af40b210b1a098bd2ce81d20bd7ddb3d2a8b9c109c11955f605afd25', state: 'b00966ccb999c61dbd23de3868c85c18d2d1e7ef54af63c5fce4d8cc0c25816e' },
+  G3: { stream: 'cfc97a2a665f99cb15133eedba4580d9013e33ba8f63f25640ab79e006b5a9f8', state: '68c9fe7339294413b7868c99b12608f34b1a296e9fae9fef52271eda6f734aac' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

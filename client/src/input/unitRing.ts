@@ -2,7 +2,7 @@
  * 병종 고리 (2026-10-22 사용자 확정 — 조작 변경). 우클릭 둘레 메뉴(정보·동맹·이모트·따라가기·수비 배치)와 삼각 병종 메뉴를 대신한다.
  *
  * 맵 칸을 우클릭하면(내 부대 선택 없음) 그 칸 둘레에 창·검·기 세 병종 고리가 뜬다. 고르면 가장 가까운 내 기지에서 출전
- * (내 땅 = 방어, 적·중립 = 공격). 기지 클릭 → 조준 → 지점 클릭도 같은 고리에서 끝난다 (출전 기지만 고른 기지).
+ * (고리가 열릴 때 내 땅 = 방어, 적·중립 = 공격이 미리 선택되고, 가운데를 눌러 바꾼다 — v5.6). 기지 클릭 → 조준 → 지점 클릭도 같은 고리에서 끝난다 (출전 기지만 고른 기지).
  * 쓸 수 없는 병종은 점선 + 툴팁에 이유. 서버 검증을 대신하지 않는다(표시 전용 사전 판정 — 수락/거절은 cmd_ack).
  *
  * 이 파일은 GameModel 을 읽기만 하는 순수 함수 — 상태 전이는 controller.ts, 그리기는 ui/UnitRing.tsx.
@@ -26,7 +26,7 @@ export interface RingModel {
   tile: number;
   ownerId: number;
   land: boolean;
-  /** 내 땅 = defend, 적·중립 = attack, 물·동맹 = blocked */
+  /** 고른 출전 태세. 물·동맹 = blocked */
   kind: RingKind;
   /** 가운데 글자 (방어 / 공격 / 지정 불가) */
   label: string;
@@ -50,6 +50,8 @@ export interface RingInput {
   canCommand: boolean;
   /** 출발 기지 (controller 가 정한 것) */
   base: number | null;
+  /** v5.6 지금 고른 출전 태세 (controller.ix.issue.posture). 없으면 땅 기준 기본값 */
+  posture?: RingKind;
   /** 커서 예고 (preview.computePreview — 사거리 밖·물·동맹 판정) */
   preview: CursorPreview | null;
   /** 병종별 보낼 병력 (controller.troopsToSend) */
@@ -91,10 +93,13 @@ export function unitRingModel(inp: RingInput): RingModel | null {
     hint = '동맹 영토에는 깃발을 보낼 수 없습니다';
     reason = '동맹 영토입니다';
   } else {
-    const defend = ownerId === me;
+    const mine = ownerId === me;
+    const defend = (inp.posture ?? (mine ? 'defend' : 'attack')) === 'defend';
+    const where = ownerId === 0 ? '중립' : '적';
     kind = defend ? 'defend' : 'attack';
     label = defend ? '방어' : '공격';
-    hint = defend ? '여기로 부대를 보내 지킵니다 (방어 태세)' : `${ownerId === 0 ? '중립' : '적'} 땅으로 진격합니다 (공격 태세)`;
+    if (defend) hint = mine ? '여기로 부대를 보내 지킵니다 (방어 태세)' : `${where} 땅 방향으로 보내 지킵니다 — 적 땅은 지나가지 못합니다 (방어 태세)`;
+    else hint = mine ? '내 땅으로 보내 옆 칸의 적·중립 땅을 공격합니다 (공격 태세)' : `${where} 땅으로 진격합니다 (공격 태세)`;
     const p = g.players.get(me);
     if (p && g.flagsOf(me).length >= p.flagCap) reason = `깃발 슬롯이 꽉 찼습니다 (${g.flagsOf(me).length}/${p.flagCap})`;
     else if (inp.base === null) reason = '출전할 내 기지가 없습니다';

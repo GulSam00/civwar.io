@@ -164,7 +164,7 @@ describe('GameModel — 단위', () => {
       playerDeltas: [{ id: 1, tiles: 3, troops: 40, gold: 210, goldWeight: 4300, upkeepPm: 0, techMask: 0 }],
     });
     const f = m.flags.get(9)!;
-    expect([f.posTileId, f.troops, f.state, f.progressPct, f.targetTileId, f.postureCooldownUntilTick]).toEqual([5, 98, 'ENGAGED', 37, 8, 51]);
+    expect([f.posTileId, f.troops, f.state, f.progressPct, f.targetTileId, f.orderCooldownUntilTick]).toEqual([5, 98, 'ENGAGED', 37, 8, 51]);
     expect([f.inCombat, f.blocked, f.routed, f.stalled]).toEqual([true, true, false, false]);
     expect(m.owners[6]).toBe(1);
     expect(m.dirtyTiles).toContain(6);
@@ -179,7 +179,7 @@ describe('GameModel — 단위', () => {
   it('flag_posture_changed 는 targetOwnerId 를 덮어쓴다 (QA I-1), 이탈 대기 → 패주 시 null', () => {
     const m = bootstrap();
     m.apply({ type: 'flag_issued', tick: 26, flagId: 1, playerId: 1, slotIndex: 0, unit: 1, posture: 1, troops: 60, originTileId: 4, anchorTileId: 5, targetOwnerId: 254, etaTick: 30, engageEtaTick: 28 });
-    m.apply({ type: 'flag_posture_changed', tick: 27, flagId: 1, posture: 0, cooldownUntilTick: 52, auto: false, targetOwnerId: 254 });
+    m.apply({ type: 'flag_posture_changed', tick: 27, flagId: 1, posture: 0, cooldownUntilTick: 52, targetOwnerId: 254 });
     expect(m.flags.get(1)!.posture).toBe(0);
     m.apply({ type: 'flag_disengage_started', tick: 28, flagId: 1, untilTick: 43, auto: false });
     expect(m.flags.get(1)!.disengageUntilTick).toBe(43);

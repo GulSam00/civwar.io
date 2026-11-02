@@ -69,7 +69,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   const far = findTile(s, (t) => isClaimable(s.map.terrain[t]) && minDistFromTerritory(s, 1, t) > 40);
   const neutralBase = findTile(s, (t) => !!s.map.isBase[t] && s.owners[t] === NEUTRAL);
   const ownNonBase = findTile(s, (t) => s.owners[t] === 1 && !s.map.isBase[t]);
-  const issue = (anchor: number, troops = 40, extra: Record<string, unknown> = {}) => ({ type: 'cmd_flag_issue', unit: UNIT.SWORD, troops, anchorTileId: anchor, originBaseTileId: null, ...extra });
+  const issue = (anchor: number, troops = 40, extra: Record<string, unknown> = {}) => ({ type: 'cmd_flag_issue', unit: UNIT.SWORD, troops, anchorTileId: anchor, posture: POSTURE.ATTACK, originBaseTileId: null, ...extra });
 
   let r = stepWith(sim, [
     [1, issue(n5, 39)],
@@ -124,20 +124,20 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
   expect('남의 깃발 recall', r.acks[2], 'NO_FLAG');
   expect('남의 깃발 set_posture', r.acks[3], 'NO_FLAG');
   expect('retarget', r.acks[4], 'ACCEPT');
-  expect('경직 중 재재지정', r.acks[5], 'LOCKED');
+  expect('쿨타임 중 재재지정', r.acks[5], 'ORDER_COOLDOWN');
   expect('같은 태세', r.acks[6], 'SAME_POSTURE');
   expect('태세 전환', r.acks[7], 'ACCEPT');
-  expect('쿨타임 중 전환', r.acks[8], 'POSTURE_COOLDOWN');
+  expect('쿨타임 중 전환', r.acks[8], 'ORDER_COOLDOWN');
   expect('recall', r.acks[9], 'ACCEPT');
   expect('귀환 중 retarget', r.acks[10], 'RETURNING');
   expect('귀환 중 recall', r.acks[11], 'RETURNING');
-  expect('retarget 물 앵커', r.acks[12], 'WATER');
+  expect('쿨타임이 WATER 보다 먼저', r.acks[12], 'ORDER_COOLDOWN');
   const pc = r.ev.find((e) => e.type === 'flag_posture_changed');
-  check('flag_posture_changed cooldownUntilTick = t+25, auto:false', pc && pc.cooldownUntilTick === pc.tick + 25 && pc.auto === false, JSON.stringify(pc));
+  check('flag_posture_changed cooldownUntilTick = t+15', pc && pc.cooldownUntilTick === pc.tick + 15, JSON.stringify(pc));
   check('set_posture ack.posture = 새 태세', r.acks[7]?.posture === 1, JSON.stringify(r.acks[7]));
   check('recall ack 에 flagId/posture (문서: 회수도 포함)', r.acks[9]?.flagId === 3 && r.acks[9]?.posture !== undefined, JSON.stringify(r.acks[9]));
   const rt = r.ev.find((e) => e.type === 'flag_retargeted');
-  check('flag_retargeted resumeTick = t+15', rt?.resumeTick === rt?.tick + 15, JSON.stringify(rt));
+  check('flag_retargeted cooldownUntilTick = t+15', rt?.cooldownUntilTick === rt?.tick + 15, JSON.stringify(rt));
 
   // 테크 (2026-10-24 개편: nodeId — 0 MIL-1, 1 MIL-2A, 18 MOB-1, 6 ECO-1, 3 MIL-3A)
   s.players[1].goldMilli = 100_000;
@@ -181,7 +181,7 @@ function findTile(s: GameState, pred: (t: number) => boolean): number {
     [1, { type: 'cmd_ally_propose', targetPlayerId: 2 }],
     [1, { type: 'cmd_ally_break', allyPlayerId: 2 }],
     [1, { type: 'cmd_ally_break', allyPlayerId: 3 }],
-    [1, { type: 'cmd_flag_issue', unit: 1, troops: 40, anchorTileId: s.players[2].homeTileId, originBaseTileId: null }],
+    [1, { type: 'cmd_flag_issue', unit: 1, troops: 40, anchorTileId: s.players[2].homeTileId, posture: POSTURE.ATTACK, originBaseTileId: null }],
     [3, { type: 'cmd_ally_propose', targetPlayerId: 4 }],
     [4, { type: 'cmd_ally_respond', proposalId: 2, accept: false }],
   ]);

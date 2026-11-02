@@ -125,7 +125,6 @@ export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void
   state.zocBlocked = new Map();
 
   for (const f of state.flags.slice()) {
-    if (t < f.lockUntilTick) continue;
     if (f.inCombat || f.state === 'ENGAGED') {
       f.halted = false;
       applyExposureAttrition(state, f, t, out);

@@ -215,11 +215,11 @@ async function main() {
     // ── 명령 형식 견고성 ──
     const ack = (o: any) => h.cmd(o);
     const r = await Promise.all([
-      ack({ type: 'cmd_flag_issue', unit: 3, troops: 50, anchorTileId: 10 }),
-      ack({ type: 'cmd_flag_issue', unit: 1, troops: 1e300, anchorTileId: 10 }),
-      ack({ type: 'cmd_flag_issue', unit: 1, troops: -1, anchorTileId: 10 }),
-      ack({ type: 'cmd_flag_issue', unit: 1, troops: 50, anchorTileId: 2 ** 33 }),
-      ack({ type: 'cmd_flag_issue', unit: 1, troops: 50, anchorTileId: 4294967295 }),
+      ack({ type: 'cmd_flag_issue', unit: 3, troops: 50, anchorTileId: 10, posture: 0 }),
+      ack({ type: 'cmd_flag_issue', unit: 1, troops: 1e300, anchorTileId: 10, posture: 0 }),
+      ack({ type: 'cmd_flag_issue', unit: 1, troops: -1, anchorTileId: 10, posture: 0 }),
+      ack({ type: 'cmd_flag_issue', unit: 1, troops: 50, anchorTileId: 2 ** 33, posture: 0 }),
+      ack({ type: 'cmd_flag_issue', unit: 1, troops: 50, anchorTileId: 4294967295, posture: 0 }),
       ack({ type: 'cmd_flag_retarget', flagId: 4294967295, anchorTileId: 5 }),
       ack({ type: 'cmd_flag_recall', flagId: -1 }),
       ack({ type: 'cmd_set_posture', flagId: 1, posture: 2 }),

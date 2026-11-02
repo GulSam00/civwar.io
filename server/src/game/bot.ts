@@ -4,7 +4,7 @@
  * - 11단계에서 decide() 가 일반 C2S_GameCommand 만 돌려준다(다음 tick 1단계, 사람과 같은 검증·거절 경로).
  *   게임 상태는 읽기만 한다. 거리장(getField/stepToward/etaTicks)은 쓰지 않는다(캐시 오염·비용 회피).
  * - 결정론: Math.random·부동소수 누적 없음. 모든 순회는 tileId/flagId/playerId ASC, 동률은 작은 id.
- * - 무상태: 봇 메모리를 두지 않는다(같은 state → 같은 명령). clientSeq 도 (tick, 순번)에서 파생.
+ * - 봇 메모리를 따로 두지 않는다. 예외는 깃발에 얹는 botPlannedPosture 하나(v5.6, 결정 때 갱신). clientSeq 도 (tick, 순번)에서 파생.
  *
  * 난이도(params): decisionInterval(11단계 필터) · reserveRatioPermille · minDefenseRatioPermille · fixedUnit(공격 병종 고정).
  * GDD 에 없어 정한 것은 프로토콜 문서 §10 "3차-2" 항목에 기록.
@@ -390,13 +390,18 @@ export function defendReachable(state: Readonly<GameState>, me: number, from: nu
 }
 
 /** 발령 — 앵커가 내 땅(= 방어 태세)인데 출발 기지에서 적 땅 없이 못 가면 내지 않는다 (v4.5). 냈으면 true */
+/** 봇의 태세 기준: 내 땅 = 방어, 적·중립 = 공격. 서버는 위치로 태세를 정하지 않으므로 봇이 명시한다 (v5.6) */
+function postureFor(ctx: Ctx, anchor: number): Posture {
+  return ctx.state.owners[anchor] === ctx.me ? POSTURE.DEFEND : POSTURE.ATTACK;
+}
+
 function issue(ctx: Ctx, unit: Unit, troops: number, anchor: number): boolean {
   const origin = issueOrigin(ctx, anchor);
   if (origin === null) return false; // v5.1: 내 기지가 모두 출전 쿨타임 — 이 결정에서는 내지 않는다 (BASE_COOLDOWN 거절을 만들지 않음)
   if (ctx.state.owners[anchor] === ctx.me && !defendReachable(ctx.state, ctx.me, origin, anchor)) return false;
   if (ctx.p.baseTiles.length) ctx.busyBases.add(origin);
   // 출발 기지는 생략(null) — 서버가 같은 pickOriginBase 로 같은 기지를 고른다 (입력 큐 순서대로 앞 발령의 쿨타임 반영)
-  push(ctx, { type: 'cmd_flag_issue', clientSeq: seq(ctx), unit, troops, anchorTileId: anchor, originBaseTileId: null });
+  push(ctx, { type: 'cmd_flag_issue', clientSeq: seq(ctx), unit, troops, anchorTileId: anchor, posture: postureFor(ctx, anchor), originBaseTileId: null });
   ctx.pool -= poolCostOf(ctx.p, troops, unit);
   ctx.slots += 1;
   return true;
@@ -430,10 +435,10 @@ function extremelyOutmatched(ctx: Ctx, f: Readonly<Flag>): boolean {
 function retarget(ctx: Ctx, f: Readonly<Flag>, anchor: number): boolean {
   if (engageLocked(ctx, f)) return false;
   if (ctx.state.owners[anchor] === ctx.me && !defendReachable(ctx.state, ctx.me, f.posTileId, anchor)) return false;
-  // v4.6 (§27): 도착지 기본 태세가 지금 태세와 다른데 태세 쿨타임 중이면 서버는 태세를 못 바꾼 채 이동만 한다 — 봇은 쿨타임이 끝날 때까지 미룬다
-  const def = ctx.state.owners[anchor] === ctx.me ? POSTURE.DEFEND : POSTURE.ATTACK;
-  if (def !== f.posture && ctx.t + 1 < f.postureCooldownUntilTick) return false;
+  if (!canRetarget(ctx, f)) return false;
   push(ctx, { type: 'cmd_flag_retarget', clientSeq: seq(ctx), flagId: f.id, anchorTileId: anchor });
+  // v5.6: 적·중립 땅은 서버가 공격으로 자동 전환한다. 공격 깃발을 내 땅으로 보낼 때만 쿨타임이 끝난 뒤 maintain 이 방어로 바꾼다
+  (f as Flag).botPlannedPosture = f.posture === POSTURE.ATTACK && postureFor(ctx, anchor) === POSTURE.DEFEND ? POSTURE.DEFEND : null;
   ctx.touched.add(f.id);
   return true;
 }
@@ -452,9 +457,9 @@ function posture(ctx: Ctx, f: Readonly<Flag>, to: Posture): void {
  * 다음 tick 1단계에서 적용되므로 t+1 기준으로 경직·쿨타임을 본다.
  * v4.6 (§27): 서버는 전투 중 전환도 받지만(이탈 비용 부과), 봇은 전투 중 전환하지 않는다 (후퇴 규칙이 전투 중 판단을 맡고, 전환 반복을 막는다).
  */
-const canRetarget = (ctx: Ctx, f: Readonly<Flag>): boolean => isLive(f) && (ctx.t + 1 >= f.lockUntilTick || f.disengageUntilTick !== null);
+const canRetarget = (ctx: Ctx, f: Readonly<Flag>): boolean => isLive(f) && ctx.t + 1 >= f.orderCooldownUntilTick;
 const canPosture = (ctx: Ctx, f: Readonly<Flag>): boolean =>
-  isLive(f) && !f.inCombat && f.disengageUntilTick === null && ctx.t + 1 >= f.postureCooldownUntilTick;
+  isLive(f) && !f.inCombat && f.disengageUntilTick === null && ctx.t + 1 >= f.orderCooldownUntilTick;
 
 // ───────────────────────── 지형 스캔 (결정당 1회) ─────────────────────────
 
@@ -939,7 +944,7 @@ function guardBases(ctx: Ctx): void {
       return;
     }
   }
-  // ② 마지막 기지: 가장 가까운 비전투 깃발을 기지로 (재지정 = 도착지 내 기지 → 방어 태세)
+  // ② 마지막 기지: 가장 가까운 비전투 깃발을 기지로 (재지정 뒤 방어 태세로 전환)
   if (!last) return;
   let pick: Flag | null = null;
   let pd = Infinity;
@@ -1071,6 +1076,17 @@ function maintain(ctx: Ctx): void {
   for (const f of ctx.mine) {
     if (!isLive(f) || ctx.touched.has(f.id)) continue;
     const myTroops = Math.floor(f.troopsMilli / 1000);
+
+    // v5.6: 재지정이 미룬 태세 전환 — 쿨타임이 끝나면 다른 규칙보다 먼저 처리한다
+    if (f.botPlannedPosture !== null) {
+      const to = f.botPlannedPosture;
+      if (to === f.posture || state.owners[f.anchorTileId] !== me) f.botPlannedPosture = null; // 그 사이 앵커를 잃으면 취소
+      else if (canPosture(ctx, f)) {
+        f.botPlannedPosture = null;
+        posture(ctx, f, to);
+        continue;
+      }
+    }
 
     // ── 8.6.0 3. 후퇴 ──
     if (f.inCombat) {
@@ -1433,5 +1449,5 @@ export function decideBot(state: Readonly<GameState>, me: number, t: number, par
   return ctx.cmds;
 }
 
-/** 3차 봇 (GDD 8장). 무상태 — 룸 여러 개가 공유해도 된다 */
+/** 3차 봇 (GDD 8장). 상태는 GameState 안에만 둔다 — 룸 여러 개가 공유해도 된다 */
 export const CivBot: BotBrain = { decide: decideBot };

@@ -413,7 +413,7 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'ECO-1');
     p.troopsMilli = 200_000;
     const c0 = L.conversion;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, posture: 0, originBaseTileId: null });
     sim.step();
     expect(L.conversion - c0).toBe(52_000); // ceil(100 × 1520 / 1000) − 100 = 52
   });
@@ -464,14 +464,14 @@ describe('v4.6 계산식 연결', () => {
     const L = sim.state.ledger;
     p.troopsMilli = 200_000;
     const c0 = L.conversion;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, posture: 0, originBaseTileId: null });
     sim.step();
     expect(L.conversion - c0).toBe(60_000);
     giveTech(p, 'CAV-1', 'CAV-2A');
     p.troopsMilli = 200_000;
     for (const b of sim.state.bases) b.dispatchReadyTick = 0; // v5.1: 출전 쿨타임은 이 검사의 대상이 아니다
     const c1 = L.conversion;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 2, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 2, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, posture: 0, originBaseTileId: null });
     sim.step();
     expect(L.conversion - c1).toBe(60_000);
   });

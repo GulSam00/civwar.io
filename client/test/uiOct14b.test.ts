@@ -23,7 +23,7 @@ const NAMES: Record<number, string> = { [CAP1]: '한울', [BASE1B]: '가람', [C
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 7, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: id(2, 5), anchorTileId: id(2, 7),
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
+  disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
 });
 
 const delta = (tick: number, over: Partial<S2C_SnapshotDelta> = {}): S2C_SnapshotDelta => ({
@@ -207,7 +207,7 @@ describe('§21.4 병력·골드 출처 (production)', () => {
   });
 });
 
-// v4.6 (§27): §21.2 대기 태세(pendingPosture · 델타 비트 128)는 서버에서 제거됨 — 대체 검증은 postureV46.test.ts (postureHeld · 즉시 전환 규칙).
+// v4.6 (§27): §21.2 대기 태세(pendingPosture · 델타 비트 128)는 서버에서 제거됨 — 대체 검증은 postureV46.test.ts (즉시 전환 규칙).
 
 describe('§21.3 멸망·합병', () => {
   it('피드 "멸망 — 합병", 같은 tick tileChanges 의 넘어간 칸을 번쩍임 목록에 모은다, 생산 내역 비움', () => {

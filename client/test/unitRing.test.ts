@@ -39,7 +39,7 @@ const ENEMY_BASE = id(2, 9);
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 7, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: id(2, 5), anchorTileId: id(2, 7),
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, ...over,
+  disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, ...over,
 });
 
 function setup(flags: FlagSnapshot[] = []) {
@@ -226,6 +226,28 @@ describe('병종 고리 - 열고 닫기', () => {
 });
 
 describe('병종 고리 - 발령', () => {
+  it('v5.6: 가운데·F 로 출전 태세를 바꾸면 그 태세로 발령한다 (처음 값은 땅 기준)', () => {
+    const { ctl, cmds } = setup();
+    ctl.rightClickTile(MY_LAND);
+    expect(ctl.ringModel()).toMatchObject({ kind: 'defend', label: '방어' });
+    ctl.toggleIssuePosture();
+    expect(ctl.ringModel()).toMatchObject({ kind: 'attack', label: '공격' });
+    key(ctl, 'f');
+    expect(ctl.ringModel()).toMatchObject({ kind: 'defend' });
+    key(ctl, 'f');
+    key(ctl, '1');
+    expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', anchorTileId: MY_LAND, posture: POSTURE.ATTACK });
+  });
+
+  it('v5.6: 적 땅 기본값은 공격, 방어로 바꿔 발령할 수 있다', () => {
+    const { ctl, cmds } = setup();
+    ctl.rightClickTile(ENEMY);
+    expect(ctl.ringModel()).toMatchObject({ kind: 'attack' });
+    ctl.toggleIssuePosture();
+    ctl.chooseUnit(0);
+    expect(cmds()[0]).toMatchObject({ type: 'cmd_flag_issue', anchorTileId: ENEMY, posture: POSTURE.DEFEND });
+  });
+
   it('적 땅: 3 키 = 기병 cmd_flag_issue (originBaseTileId = 최근접 내 기지)', () => {
     const { ctl, ix, cmds } = setup();
     ctl.rightClickTile(ENEMY);

@@ -1,13 +1,13 @@
 /**
  * v4.6 (프로토콜 §27) 클라이언트 연결 — 태세 전환 즉시 적용.
  *  - flagActionState: 전투 중·이탈 대기 중에도 버튼 가능, 쿨타임·패주·귀환만 막힘, 교전 중 전환 경고(실제 이탈 대기 초)
- *  - postureHeld: cmd_ack / flag_retargeted → "태세 전환 쿨타임 중 — 이동만 했습니다" 토스트 (중복 1회)
- *  - 우클릭 이동 예고: 쿨타임 중이면 도착지 기본 태세가 아니라 붙들린(현재) 태세
+ *  - v5.6: 방어 깃발 + 적·중립 땅 재지정만 공격으로 자동 전환, 쿨타임 중 재지정은 ORDER_COOLDOWN 거절
+ *  - 우클릭 이동 예고: 도착지 기본 태세가 아니라 지금 태세 + 쿨타임
  *  - 이탈 호: wait_over 는 조용히 닫고, posture_changed 직후 disengage_started{auto:false} 는 "태세 전환 중"
  *  - 실제 Simulation + 실제 ClientStore 종단 검증 (qaV45 에서 폐기된 pendingPosture 검증의 대체)
  */
 import { describe, expect, it } from 'vitest';
-import { DISENGAGE_TICKS, FLAG_BIT, POSTURE, POSTURE_COOLDOWN_TICKS, TERRAIN, UNIT, isClaimable, rleEncode, type C2S_GameCommand, type FlagSnapshot, type RoomMember, type S2C_RoomState, type S2C_SnapshotDelta, type ServerMessage } from '@civwar/shared';
+import { DISENGAGE_TICKS, FLAG_BIT, POSTURE, FLAG_ORDER_COOLDOWN_TICKS, TERRAIN, UNIT, isClaimable, rleEncode, type C2S_GameCommand, type FlagSnapshot, type RoomMember, type S2C_RoomState, type S2C_SnapshotDelta, type ServerMessage } from '@civwar/shared';
 import { ClientStore } from '../src/state/store.js';
 import { disengageTicksOf } from '../src/state/disengage.js';
 import { flagActionState } from '../src/ui/unitChips.js';
@@ -21,7 +21,7 @@ import { buildMapInit, buildMatchConfig, buildSnapshotFull } from '../../server/
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 7, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: 0, anchorTileId: 0,
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
+  disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
 });
 
 // ───────────────────────── flagActionState (§27.5-2) ─────────────────────────
@@ -31,11 +31,11 @@ describe('§27 태세 버튼 상태', () => {
     expect(flagActionState(flag({ inCombat: true, disengaging: true, disengageUntilTick: 9 }), 0, 200).postureBlocked).toBeNull();
   });
 
-  it('남은 차단 사유: 패주 > 귀환 > 쿨타임("전환 대기 n초")', () => {
+  it('남은 차단 사유: 패주 > 귀환 > 쿨타임("쿨타임 n초")', () => {
     expect(flagActionState(flag({ routed: true, inCombat: true }), 0, 200).postureBlocked).toBe('패주 중');
     expect(flagActionState(flag({ state: 'RETURNING', inCombat: true }), 0, 200).postureBlocked).toBe('귀환 중');
-    const cd = flagActionState(flag({ inCombat: true, postureCooldownUntilTick: 12 }), 2, 200); // 10 tick = 2초
-    expect(cd.postureBlocked).toBe('전환 대기 2초');
+    const cd = flagActionState(flag({ inCombat: true, orderCooldownUntilTick: 12 }), 2, 200); // 10 tick = 2초
+    expect(cd.postureBlocked).toBe('쿨타임 2초');
     expect(cd.cooldownSec).toBe(2);
     expect(cd.combatWarning).toBeNull(); // 막혀 있으면 경고도 없다
   });
@@ -103,7 +103,7 @@ const delta = (tick: number, over: Partial<S2C_SnapshotDelta> = {}): S2C_Snapsho
 describe('§27 이탈 호 — 태세 전환 중 / wait_over', () => {
   it('posture_changed{auto:false} 와 같은 tick 의 disengage_started{auto:false} = "태세 전환 중" 표식, wait_over 로 조용히 닫힌다', () => {
     const { store, g } = smallStore([flag({ inCombat: true, state: 'ENGAGED' })]);
-    store.onMessage({ type: 'flag_posture_changed', tick: 101, flagId: 7, posture: POSTURE.DEFEND, cooldownUntilTick: 126, auto: false, targetOwnerId: 2 });
+    store.onMessage({ type: 'flag_posture_changed', tick: 101, flagId: 7, posture: POSTURE.DEFEND, cooldownUntilTick: 126, targetOwnerId: 2 });
     store.onMessage({ type: 'flag_disengage_started', tick: 101, flagId: 7, untilTick: 116, auto: false });
     expect(g.flags.get(7)!.disengageUntilTick).toBe(116);
     expect(g.disengageForPosture.has(7)).toBe(true);
@@ -118,19 +118,15 @@ describe('§27 이탈 호 — 태세 전환 중 / wait_over', () => {
     const { store, g } = smallStore([flag({ inCombat: true, state: 'ENGAGED' })]);
     store.onMessage({ type: 'flag_disengage_started', tick: 101, flagId: 7, untilTick: 116, auto: false });
     expect(g.disengageForPosture.has(7)).toBe(false);
-    store.onMessage({ type: 'flag_posture_changed', tick: 105, flagId: 7, posture: POSTURE.DEFEND, cooldownUntilTick: 130, auto: false, targetOwnerId: 2 });
+    store.onMessage({ type: 'flag_posture_changed', tick: 105, flagId: 7, posture: POSTURE.DEFEND, cooldownUntilTick: 130, targetOwnerId: 2 });
     store.onMessage({ type: 'flag_disengage_started', tick: 106, flagId: 7, untilTick: 121, auto: false });
-    expect(g.disengageForPosture.has(7)).toBe(false);
-    // auto:true 전환(우클릭 이동) 뒤의 이탈 대기도 이동 이탈이다
-    store.onMessage({ type: 'flag_posture_changed', tick: 110, flagId: 7, posture: POSTURE.ATTACK, cooldownUntilTick: 135, auto: true, targetOwnerId: 2 });
-    store.onMessage({ type: 'flag_disengage_started', tick: 110, flagId: 7, untilTick: 125, auto: false });
     expect(g.disengageForPosture.has(7)).toBe(false);
   });
 
   it('패주·델타 disengaging=false 에서도 표식이 사라진다', () => {
     const { store, g } = smallStore([flag({ id: 7, inCombat: true, state: 'ENGAGED' }), flag({ id: 8, slotIndex: 1, inCombat: true, state: 'ENGAGED' })]);
     for (const fid of [7, 8]) {
-      store.onMessage({ type: 'flag_posture_changed', tick: 101, flagId: fid, posture: POSTURE.DEFEND, cooldownUntilTick: 126, auto: false, targetOwnerId: 2 });
+      store.onMessage({ type: 'flag_posture_changed', tick: 101, flagId: fid, posture: POSTURE.DEFEND, cooldownUntilTick: 126, targetOwnerId: 2 });
       store.onMessage({ type: 'flag_disengage_started', tick: 101, flagId: fid, untilTick: 116, auto: false });
     }
     store.onMessage({ type: 'flag_routed', tick: 103, flagId: 7, returnTileId: CAP1 });
@@ -147,7 +143,7 @@ describe('§27 이탈 호 — 태세 전환 중 / wait_over', () => {
     expect(f.pendingPosture).toBeUndefined();
     expect(f.inCombat).toBe(true);
     expect(f.disengaging).toBe(true);
-    expect(f.postureCooldownUntilTick).toBe(120);
+    expect(f.orderCooldownUntilTick).toBe(120);
     expect(Object.keys(FLAG_BIT)).not.toContain('POSTURE_PENDING');
   });
 
@@ -158,70 +154,50 @@ describe('§27 이탈 호 — 태세 전환 중 / wait_over', () => {
   });
 });
 
-// ───────────────────────── postureHeld 토스트 (§27.5-3) ─────────────────────────
-describe('§27 postureHeld 안내', () => {
-  const heldAck = (clientSeq: number, flagId = 7) => ({ type: 'cmd_ack' as const, clientSeq, accepted: true, flagId, posture: POSTURE.DEFEND, postureHeld: true });
-  const retargeted = (over: Record<string, unknown> = {}) =>
-    ({
-      type: 'flag_retargeted', tick: 102, flagId: 7, anchorTileId: id(2, 6), targetOwnerId: 0, posture: POSTURE.DEFEND, resumeTick: 102, etaTick: 120, engageEtaTick: 118, auto: false, postureHeld: true, ...over,
-    }) as unknown as ServerMessage;
-
-  it('cmd_ack.postureHeld = true → 토스트(남은 초·현재 태세), 같은 tick 의 flag_retargeted 는 중복 토스트를 만들지 않는다', () => {
-    const { store, g } = smallStore([flag({ posture: POSTURE.DEFEND, postureCooldownUntilTick: 110 })]);
-    store.onMessage(heldAck(5));
-    expect(store.toasts.map((t) => t.text)).toEqual(['태세 전환 쿨타임 중 — 이동만 했습니다 (2초 남음, 방어 태세 유지)']);
-    store.onMessage(retargeted());
-    expect(store.toasts.length).toBe(1);
-    expect(g.flags.get(7)!.posture).toBe(POSTURE.DEFEND); // 서버의 실제 태세
-  });
-
-  it('flag_retargeted.postureHeld 만 와도 (내 깃발, 사람 명령) 토스트', () => {
-    const { store, g } = smallStore([flag({ posture: POSTURE.DEFEND, postureCooldownUntilTick: 125 })]);
-    store.onMessage(retargeted());
-    expect(store.toasts.length).toBe(1);
-    expect(store.toasts[0].text).toMatch(/태세 전환 쿨타임 중 — 이동만 했습니다/);
-    expect(g.flags.get(7)!.posture).toBe(POSTURE.DEFEND);
-  });
-
-  it('postureHeld = false / 없음 / 남의 깃발 / 거절 ack 는 이동만 안내가 없다', () => {
-    const { store } = smallStore([flag({ posture: POSTURE.DEFEND, postureCooldownUntilTick: 125 }), flag({ id: 9, ownerId: 2, slotIndex: 0 })]);
-    store.onMessage({ type: 'cmd_ack', clientSeq: 1, accepted: true, flagId: 7, posture: POSTURE.DEFEND, postureHeld: false });
-    store.onMessage({ type: 'cmd_ack', clientSeq: 2, accepted: true, flagId: 7, posture: POSTURE.DEFEND });
-    store.onMessage(retargeted({ postureHeld: false }));
-    store.onMessage(retargeted({ flagId: 9 }));
+// ───────────────────────── 거절 안내 (v5.6) ─────────────────────────
+describe('v5.6 쿨타임 거절 안내', () => {
+  it('ORDER_COOLDOWN 은 재지정·태세 공용 문구로 토스트, flag_retargeted 는 쿨타임을 모델에 반영', () => {
+    const { store, g } = smallStore([flag({ posture: POSTURE.DEFEND })]);
+    store.onMessage({ type: 'flag_retargeted', tick: 102, flagId: 7, anchorTileId: id(2, 6), targetOwnerId: 0, posture: POSTURE.DEFEND, cooldownUntilTick: 117, etaTick: 120, engageEtaTick: 118, auto: false });
+    expect(g.flags.get(7)!.orderCooldownUntilTick).toBe(117);
     expect(store.toasts.length).toBe(0);
-    store.onMessage({ type: 'cmd_ack', clientSeq: 3, accepted: false, reason: 'POSTURE_COOLDOWN' });
-    expect(store.toasts.map((t) => t.text)).toEqual(['태세 전환 쿨타임 중입니다']);
+    store.onMessage({ type: 'cmd_ack', clientSeq: 3, accepted: false, reason: 'ORDER_COOLDOWN' });
+    expect(store.toasts.map((t) => t.text)).toEqual(['재지정·태세 변경 쿨타임 중입니다']);
   });
 });
 
-// ───────────────────────── 우클릭 이동 예고 (§27.5-3) ─────────────────────────
-describe('§27 우클릭 이동 예고 — 쿨타임 중이면 붙들린 태세', () => {
+// ───────────────────────── 우클릭 이동 예고 (v5.6) ─────────────────────────
+describe('v5.6 우클릭 이동 예고', () => {
   const topo = createTopologyView('square', W, H);
-  it('쿨타임이 없으면 도착지 기본 태세 (내 땅 = 방어, 적 땅 = 공격)', () => {
+  it('선택 깃발이 없으면 땅 기준 기본 태세 (내 땅 = 방어, 적 땅 = 공격)', () => {
     const { g } = smallStore([flag({ posture: POSTURE.ATTACK })]);
     expect(computePreview(g, topo, 1, id(2, 2), null, null)).toMatchObject({ kind: 'defend', posture: POSTURE.DEFEND });
     expect(computePreview(g, topo, 1, id(2, 8), null, null)).toMatchObject({ kind: 'attack', posture: POSTURE.ATTACK });
   });
 
-  it('쿨타임 중 ATTACK 깃발 → 내 땅 예고는 공격 색 + "공격 태세 유지 (전환 쿨타임 n초)", held 표식', () => {
+  it('ATTACK 깃발 → 내 땅 예고도 공격 색 + "공격 태세 유지", held 표식', () => {
     const { g } = smallStore([flag({ posture: POSTURE.ATTACK })]);
-    const p = computePreview(g, topo, 1, id(2, 2), null, { posture: POSTURE.ATTACK, sec: 3 })!;
+    const p = computePreview(g, topo, 1, id(2, 2), null, { posture: POSTURE.ATTACK, sec: 0 })!;
     expect(p).toMatchObject({ kind: 'attack', posture: POSTURE.ATTACK, held: true, disk: [], count: 0 });
-    expect(p.label).toContain('공격 태세 유지 (전환 쿨타임 3초)');
+    expect(p.label).toBe('공격 태세 유지 · 내 땅까지 이동');
   });
 
-  it('쿨타임 중 DEFEND 깃발 → 적 땅 예고는 방어 색 (서버가 방어로 유지한 채 이동)', () => {
+  it('DEFEND 깃발 → 적 땅 예고는 공격(자동 전환), 쿨타임 중이면 남은 초를 덧붙인다', () => {
     const { g } = smallStore([flag({ posture: POSTURE.DEFEND })]);
+    expect(computePreview(g, topo, 1, id(2, 8), null, { posture: POSTURE.DEFEND, sec: 0 })).toMatchObject({ kind: 'attack', posture: POSTURE.ATTACK });
     const p = computePreview(g, topo, 1, id(2, 8), null, { posture: POSTURE.DEFEND, sec: 1 })!;
-    expect(p).toMatchObject({ kind: 'defend', posture: POSTURE.DEFEND, held: true });
+    expect(p).toMatchObject({ kind: 'attack', posture: POSTURE.ATTACK, held: true });
+    expect(p.label).toContain('(쿨타임 1초)');
   });
 
-  it('도착지 기본 태세 = 붙들린 태세면 평소 예고 그대로(held 없음), 불가 칸(물)은 그대로 불가', () => {
+  it('도착지 기본 태세 = 지금 태세면 평소 예고 그대로, 쿨타임만 덧붙고, 불가 칸(물)은 그대로 불가', () => {
     const { g } = smallStore([flag({ posture: POSTURE.DEFEND })]);
+    const free = computePreview(g, topo, 1, id(2, 2), null, { posture: POSTURE.DEFEND, sec: 0 })!;
+    expect(free.held).toBeUndefined();
+    expect(free).toMatchObject({ kind: 'defend', posture: POSTURE.DEFEND });
     const p = computePreview(g, topo, 1, id(2, 2), null, { posture: POSTURE.DEFEND, sec: 4 })!;
-    expect(p.held).toBeUndefined();
-    expect(p).toMatchObject({ kind: 'defend', posture: POSTURE.DEFEND });
+    expect(p).toMatchObject({ kind: 'defend', held: true });
+    expect(p.label).toContain('(쿨타임 4초)');
     g.terrain![id(0, 0)] = 0; // 물
     expect(computePreview(g, topo, 1, id(0, 0), null, { posture: POSTURE.ATTACK, sec: 4 })).toMatchObject({ kind: 'blocked', posture: null });
   });
@@ -289,57 +265,27 @@ function scenario() {
 }
 
 describe('§27 종단 — 실제 서버 시뮬레이션 + ClientStore', () => {
-  it('쿨타임 중 우클릭: 이동만 (postureHeld), 쿨타임이 끝나도 자동 전환 없음, 토스트 1회, 모델 = 서버', () => {
+  it('공용 쿨타임: 태세 전환 뒤 재지정·재전환 거절, 쿨타임이 끝나면 중립 재지정 = 공격 자동 전환, 모델 = 서버', () => {
     const { state, sim, c } = scenario();
     const f = addFlag(state, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: c, anchor: c + 2, posture: POSTURE.ATTACK, state: 'MARCHING' });
     const store = bootstrap(state);
     const g = store.game!;
     step(sim, [], store);
-    // 즉시 전환 → 쿨타임 시작
     let r = step(sim, [[1, { type: 'cmd_set_posture', flagId: f.id, posture: POSTURE.DEFEND }]], store);
     expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND });
-    expect(r.msgs.some((m) => m.type === 'flag_posture_changed' && (m as { auto?: boolean }).auto === false)).toBe(true);
-    const cdUntil = f.postureCooldownUntilTick;
-    expect(cdUntil).toBe(state.tick + POSTURE_COOLDOWN_TICKS);
-    expect(g.flags.get(f.id)!.postureCooldownUntilTick).toBe(cdUntil);
-    // 쿨타임 중 재전환은 거절
+    const cdUntil = f.orderCooldownUntilTick;
+    expect(cdUntil).toBe(state.tick + FLAG_ORDER_COOLDOWN_TICKS);
+    expect(g.flags.get(f.id)!.orderCooldownUntilTick).toBe(cdUntil);
     r = step(sim, [[1, { type: 'cmd_set_posture', flagId: f.id, posture: POSTURE.ATTACK }]], store);
-    expect(r.acks[0]).toMatchObject({ accepted: false, reason: 'POSTURE_COOLDOWN' });
-    store.toasts = [];
-    // 쿨타임 중 중립 칸 우클릭 → 도착지 기본 ATTACK 이지만 DEFEND 유지
+    expect(r.acks[0]).toMatchObject({ accepted: false, reason: 'ORDER_COOLDOWN' });
     r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: f.id, anchorTileId: c + 4 }]], store);
-    expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND, postureHeld: true });
-    expect(r.msgs.find((m) => m.type === 'flag_retargeted')).toMatchObject({ posture: POSTURE.DEFEND, postureHeld: true });
-    expect(r.msgs.some((m) => m.type === 'flag_posture_changed')).toBe(false);
-    expect(g.flags.get(f.id)!.posture).toBe(POSTURE.DEFEND);
-    const held = store.toasts.filter((t) => /이동만 했습니다/.test(t.text));
-    expect(held.length).toBe(1);
-    expect(held[0].text).toMatch(/방어 태세 유지/);
-    // 쿨타임이 끝나도 자동 전환 없음
-    let autoChanged = false;
-    while (state.tick < cdUntil + 10) autoChanged ||= step(sim, [], store).msgs.some((m) => m.type === 'flag_posture_changed' && (m as { flagId: number }).flagId === f.id);
-    expect(autoChanged).toBe(false);
-    expect(f.posture).toBe(POSTURE.DEFEND);
-    expect(g.flags.get(f.id)!.posture).toBe(POSTURE.DEFEND);
-    // 쿨타임이 끝난 뒤의 우클릭은 이동과 함께 즉시 전환 (postureHeld = false → 토스트 없음)
-    store.toasts = [];
+    expect(r.acks[0]).toMatchObject({ accepted: false, reason: 'ORDER_COOLDOWN' });
+    while (state.tick < cdUntil + 1) step(sim, [], store);
     r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: f.id, anchorTileId: c + 5 }]], store);
-    expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.ATTACK, postureHeld: false });
-    expect(r.msgs.find((m) => m.type === 'flag_posture_changed')).toMatchObject({ auto: true, posture: POSTURE.ATTACK });
-    expect(store.toasts.length).toBe(0);
+    expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.ATTACK });
+    expect(r.msgs.some((m) => m.type === 'flag_posture_changed')).toBe(true);
     expect(g.flags.get(f.id)!.posture).toBe(POSTURE.ATTACK);
-  });
-
-  it('쿨타임 중이어도 도착지 기본 태세가 이미 현재 태세면 postureHeld = false (토스트 없음)', () => {
-    const { state, sim, c } = scenario();
-    const f = addFlag(state, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: c, anchor: c + 2, posture: POSTURE.ATTACK, state: 'MARCHING' });
-    const store = bootstrap(state);
-    step(sim, [], store);
-    step(sim, [[1, { type: 'cmd_set_posture', flagId: f.id, posture: POSTURE.DEFEND }]], store);
-    store.toasts = [];
-    const r = step(sim, [[1, { type: 'cmd_flag_retarget', flagId: f.id, anchorTileId: state.players[1].homeTileId }]], store); // 내 땅 → 기본 DEFEND = 현재
-    expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND, postureHeld: false });
-    expect(store.toasts.length).toBe(0);
+    expect(g.flags.get(f.id)!.orderCooldownUntilTick).toBe(f.orderCooldownUntilTick);
   });
 
   it('전투 중 전환: 수락 + posture_changed → disengage_started 같은 tick → "태세 전환 중", 대기 끝 wait_over 로 조용히 닫히고 전투에 남는다', () => {
@@ -365,7 +311,7 @@ describe('§27 종단 — 실제 서버 시뮬레이션 + ClientStore', () => {
     expect(mf.disengageUntilTick).toBe(state.tick + DISENGAGE_TICKS);
     expect(g.disengageForPosture.has(mine.id)).toBe(true);
     // 쿨타임 중이라 버튼은 다시 막힌다 (이탈 대기 때문이 아니라)
-    expect(flagActionState(mf, g.tick, g.config.tickMs).postureBlocked).toMatch(/^전환 대기 \d초$/);
+    expect(flagActionState(mf, g.tick, g.config.tickMs).postureBlocked).toMatch(/^쿨타임 \d초$/);
     let over: ServerMessage | undefined;
     for (let i = 0; i < DISENGAGE_TICKS + 2 && !over; i++) over = step(sim, [], store).msgs.find((m) => m.type === 'flag_disengaged');
     expect(over).toMatchObject({ flagId: mine.id, reason: 'wait_over' });

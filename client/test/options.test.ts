@@ -124,7 +124,7 @@ describe('지형 툴팁 항목 필터', () => {
     expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')).toEqual({ field: 'cost', label: '함락까지', value: '약 110명' });
     m.bases.get(7)!.hpPct = 50;
     expect(terrainInfo(m, 7, 1, nick, { selectedUnit: 2 })!.rows.find((r) => r.field === 'cost')!.value).toBe('기 약 55명');
-    m.flags.set(9, { id: 9, ownerId: 2, slotIndex: 0, unit: 0, posture: 1, troops: 50, posTileId: 7, anchorTileId: 7, targetOwnerId: 0, state: 'IDLE', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
+    m.flags.set(9, { id: 9, ownerId: 2, slotIndex: 0, unit: 0, posture: 1, troops: 50, posTileId: 7, anchorTileId: 7, targetOwnerId: 0, state: 'IDLE', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
     expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 55명 · 수비 깃발 있음 (시간 ×2)');
     // 처음 수도였던 칸은 최대 체력 15000 — 적 땅이 되면 15000 × 80% × 적 평원 11명/칸 ÷ 1000 = 132
     m.owners[1] = 2;

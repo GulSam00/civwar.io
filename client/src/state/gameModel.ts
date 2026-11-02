@@ -115,7 +115,7 @@ export class GameModel {
   /** §22.12 IDLE 깃발이 멈춘 이유 (flag_idle.reason — "unreachable" 이면 지도에 "막힘" 태그). 재지정·회수·종료 시 지운다 */
   flagIdleReason = new Map<number, string>();
   /**
-   * v4.6 (§27): 이탈 대기가 "태세 전환"으로 열린 깃발 id — flag_posture_changed{auto:false} 와 같은 tick 의
+   * v4.6 (§27): 이탈 대기가 "태세 전환"으로 열린 깃발 id — flag_posture_changed 와 같은 tick 의
    * flag_disengage_started{auto:false} 가 오면 넣고, flag_disengaged·패주·종료·델타 disengaging=false 에서 뺀다 (호 색·태그 "태세 전환 중").
    */
   disengageForPosture = new Set<number>();
@@ -125,7 +125,7 @@ export class GameModel {
    * 스냅숏에는 이 구분이 없어 재접속자는 "귀환·이탈"로만 본다 (§37.1 F-8, 문서대로).
    */
   moraleRetreat = new Set<number>();
-  /** flag_posture_changed{auto:false} 를 받은 tick (같은 tick 의 disengage_started 가 태세 전환 때문인지 가리는 용도) */
+  /** flag_posture_changed 를 받은 tick (같은 tick 의 disengage_started 가 태세 전환 때문인지 가리는 용도) */
   private manualPostureTick = new Map<number, number>();
   /** 마지막 tick 을 받은 시각 (performance.now 기준 ms — tick 사이 보간) */
   tickReceivedAt = 0;
@@ -234,7 +234,7 @@ export class GameModel {
           routed: false,
           blocked: false,
           disengaging: false,
-          postureCooldownUntilTick: 0,
+          orderCooldownUntilTick: 0,
           disengageUntilTick: null,
           breakaway: false,
           // v4.2 (shared FlagSnapshot 추가 필드) — 이후 snapshot_delta flagFlags(HALTED)·flagReturnBase 가 갱신
@@ -253,7 +253,7 @@ export class GameModel {
         break;
       case 'flag_retargeted': {
         const f = this.flags.get(e.flagId);
-        if (f) Object.assign(f, { anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, posture: e.posture });
+        if (f) Object.assign(f, { anchorTileId: e.anchorTileId, targetOwnerId: e.targetOwnerId, posture: e.posture, orderCooldownUntilTick: e.cooldownUntilTick });
         if (!e.auto) this.flagEta.set(e.flagId, e.engageEtaTick ?? e.etaTick);
         this.flagIdleReason.delete(e.flagId);
         break;
@@ -261,8 +261,8 @@ export class GameModel {
       case 'flag_posture_changed': {
         const f = this.flags.get(e.flagId);
         // QA I-1: 이벤트의 targetOwnerId 로 덮어쓴다 (§16)
-        if (f) Object.assign(f, { posture: e.posture, postureCooldownUntilTick: e.cooldownUntilTick, targetOwnerId: e.targetOwnerId });
-        if (!e.auto) this.manualPostureTick.set(e.flagId, e.tick);
+        if (f) Object.assign(f, { posture: e.posture, orderCooldownUntilTick: e.cooldownUntilTick, targetOwnerId: e.targetOwnerId });
+        this.manualPostureTick.set(e.flagId, e.tick);
         break;
       }
       case 'flag_disengage_started': {
@@ -467,7 +467,7 @@ export class GameModel {
       const f = this.flags.get(id);
       if (!f) continue;
       f.posture = posture;
-      f.postureCooldownUntilTick = cd;
+      f.orderCooldownUntilTick = cd;
       f.inCombat = (bits & FLAG_BIT.IN_COMBAT) !== 0;
       f.routed = (bits & FLAG_BIT.ROUTED) !== 0;
       f.blocked = (bits & FLAG_BIT.BLOCKED) !== 0;

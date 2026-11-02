@@ -87,7 +87,7 @@ function setup(opts: { combatModel?: 1 | 2; flags?: FlagSnapshot[]; ready?: [num
 const flag = (over: Partial<FlagSnapshot>): FlagSnapshot => ({
   id: 7, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.ATTACK, troops: 100, posTileId: id(2, 5), anchorTileId: id(2, 7),
   targetOwnerId: 0, state: 'MARCHING', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false,
-  disengaging: false, postureCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
+  disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null, ...over,
 });
 
 const issued = (tick: number, flagId: number, originTileId: number) =>

@@ -256,12 +256,12 @@ describe('§22.12 flag_idle "unreachable"', () => {
     const g = model(grid(() => LAND), grid(() => 1));
     g.flags.set(31, {
       id: 31, ownerId: 1, slotIndex: 0, unit: 1, posture: POSTURE.DEFEND, troops: 100, posTileId: 0, anchorTileId: 5, targetOwnerId: 254, state: 'IDLE',
-      targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, postureCooldownUntilTick: 0,
+      targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, orderCooldownUntilTick: 0,
       disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null,
     });
     g.applyEvent({ type: 'flag_idle', tick: 2290, flagId: 31, reason: 'unreachable', autoRecallTick: 2890 });
     expect(g.flagIdleReason.get(31)).toBe('unreachable');
-    g.applyEvent({ type: 'flag_retargeted', tick: 2300, flagId: 31, anchorTileId: 7, targetOwnerId: 254, posture: POSTURE.DEFEND, resumeTick: 2315, etaTick: 2400, engageEtaTick: 2400, auto: false });
+    g.applyEvent({ type: 'flag_retargeted', tick: 2300, flagId: 31, anchorTileId: 7, targetOwnerId: 254, posture: POSTURE.DEFEND, cooldownUntilTick: 2315, etaTick: 2400, engageEtaTick: 2400, auto: false });
     expect(g.flagIdleReason.has(31)).toBe(false);
   });
 });

@@ -69,7 +69,7 @@ describe('v4.4 기지 방어 — 깃발이 내 기지 칸 위에 선다', () => 
     const sim = makeSim();
     const s = sim.state;
     const cap = s.players[1].homeTileId;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.SPEAR, troops: 60, anchorTileId: cap, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.SPEAR, troops: 60, anchorTileId: cap, posture: 1, originBaseTileId: null });
     const r = run(sim, 2);
     expect(r.personal[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND });
     const f = s.flags.find((x) => x.ownerId === 1)!;
@@ -121,40 +121,21 @@ describe('v4.4 재지정(우클릭) = 항상 이동, 태세는 도착지로', ()
     const s = sim.state;
     const cap = s.players[1].homeTileId;
     const mine = s.graph.disk(cap, 1).find((x) => x !== cap && s.owners[x] === 1 && isClaimable(s.map.terrain[x]))!;
-    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: mine, anchor: mine, posture: POSTURE.ATTACK, state: 'IDLE', idleSinceTick: 0 });
+    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: mine, anchor: mine, posture: POSTURE.DEFEND, state: 'IDLE', idleSinceTick: 0 });
     sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 1, flagId: f.id, anchorTileId: cap });
     const r = run(sim, 1);
     expect(r.personal[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND });
-    expect(r.all.find((m) => m.type === 'flag_posture_changed')).toMatchObject({ flagId: f.id, posture: POSTURE.DEFEND, auto: true });
+    expect(r.all.find((m) => m.type === 'flag_posture_changed')).toBeUndefined();
     run(sim, 40);
     expect(f.posTileId).toBe(cap);
     expect(f.state).toBe('ENGAGED');
     expect(s.flags.includes(f)).toBe(true);
-    // 중립 칸 → ATTACK
+    // 방어 깃발 + 중립 칸 = 공격으로 자동 전환 (v5.6)
     const neutral = s.graph.disk(cap, 4).find((x) => s.owners[x] === NEUTRAL && isClaimable(s.map.terrain[x]))!;
-    f.postureCooldownUntilTick = 0;
     sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 2, flagId: f.id, anchorTileId: neutral });
     expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true, posture: POSTURE.ATTACK });
   });
 
-  it('v4.6 (§27): 태세 쿨타임 중이면 이동은 하되 태세는 그대로 (postureHeld, 대기 상태·비트 128 없음)', () => {
-    const sim = makeSim();
-    const s = sim.state;
-    const cap = s.players[1].homeTileId;
-    const neutral = s.graph.disk(cap, 4).find((x) => s.owners[x] === NEUTRAL && isClaimable(s.map.terrain[x]))!;
-    const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: cap, anchor: cap, posture: POSTURE.DEFEND, state: 'ENGAGED' });
-    f.postureCooldownUntilTick = s.tick + 10;
-    sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 1, flagId: f.id, anchorTileId: neutral });
-    const r = run(sim, 1);
-    expect(r.personal[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND, postureHeld: true });
-    expect(f.anchorTileId).toBe(neutral);
-    expect(f.state).toBe('MARCHING');
-    expect(flagBits(f) & 128).toBe(0);
-    expect(buildSnapshotFull(s).flags.find((x) => x.id === f.id)).not.toHaveProperty('pendingPosture');
-    const r2 = run(sim, 12);
-    expect(f.posture).toBe(POSTURE.DEFEND); // 쿨타임이 끝나도 자동 적용 없음
-    expect(r2.all.find((m) => m.type === 'flag_posture_changed')).toBeUndefined();
-  });
 });
 
 describe('v4.4 멸망·합병 — 기지를 모두 잃으면 즉시 멸망, 남은 땅은 마지막 기지를 점령한 쪽에', () => {
@@ -314,5 +295,20 @@ describe('v4.4 봇 기지 수비', () => {
     bs.hpMilli -= 1000;
     bs.lastDamageTick = 29;
     expect(issuedAt(30)).toBe(true);
+  });
+
+  it('v5.6: 봇은 재지정이 미룬 태세 전환을 쿨타임이 끝난 뒤 cmd_set_posture 로 낸다', async () => {
+    const { decideBot } = await import('../src/game/bot.js');
+    const map = generateMapForPlayers(4242, 8);
+    const s = createGameState(map, Array.from({ length: 8 }, (_, i) => ({ playerId: i + 1, isBot: true, connected: true })), undefined, undefined, 1);
+    const p = s.players[2];
+    const f = addFlag(s, { ownerId: 2, unit: UNIT.SWORD, troops: 200, pos: p.homeTileId, anchor: p.homeTileId, posture: POSTURE.ATTACK, state: 'MARCHING' });
+    f.botPlannedPosture = POSTURE.DEFEND;
+    f.orderCooldownUntilTick = 40;
+    const posts = (t: number) => decideBot(s, 2, t, p.bot).filter((c) => c.type === 'cmd_set_posture' && c.flagId === f.id);
+    expect(posts(30)).toEqual([]);
+    expect(f.botPlannedPosture).toBe(POSTURE.DEFEND);
+    expect(posts(40)).toMatchObject([{ posture: POSTURE.DEFEND }]);
+    expect(f.botPlannedPosture).toBeNull();
   });
 });

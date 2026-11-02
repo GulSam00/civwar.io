@@ -7,7 +7,7 @@
  *  - `_MILLI` 접미사는 1/1000 단위 정수(병력·골드·진척도·기지 체력).
  *  - 지형별 배열은 TERRAIN enum 값(0..6)으로 인덱싱한다.
  *  - 테크 단계별 배열은 [무테크, T1, T2, T3] 4칸.
- *  - 페이싱 레버(ENEMY_BASE, THRESHOLD_*, HARD_TIMEOUT_TICK, POSTURE_COOLDOWN_TICKS 등)는
+ *  - 페이싱 레버(ENEMY_BASE, THRESHOLD_*, HARD_TIMEOUT_TICK, FLAG_ORDER_COOLDOWN_TICKS 등)는
  *    여기에서만 정의한다. 서버·클라이언트 어느 곳에서도 하드코딩 금지.
  *
  * 서버는 이 객체 전체를 match_config.constants 로 클라이언트에 내려보낸다(GDD 7.6).
@@ -225,7 +225,8 @@ export const FLAG_TILE_RATE_BASE = 2;
 export const FRONT_RADIUS = 6;
 export const FRONT_MAX_RANGE = 40;
 export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2). 사용자 결정 2026-10-11: 깃발 접촉(전투·ZOC·진척 유지) = 8방향(대각선 포함, topology.touching). 땅 점령은 4방향 그대로
-export const FLAG_RETARGET_LOCK_TICK = 15;
+/** v5.6: 재지정·태세 전환이 함께 쓰는 깃발 조작 쿨타임 (3초). 경직은 아니다 — 깃발은 바로 움직인다 */
+export const FLAG_ORDER_COOLDOWN_TICKS = 15; // 사용자 확정 튜닝 레버
 export const FLAG_RECALL_REFUND_PERMILLE = 850;
 /** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
 export const RETURN_SPEED_PERMILLE = 1500; // v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.RETURN_SPEED (MOB-3B 급속 귀환 2200)
@@ -601,7 +602,6 @@ export const UNIT_ATK_PERMILLE = [900, 1000, 1200] as const; // [A-23] 2026-10-2
 export const UNIT_DEF_PERMILLE = [1100, 1000, 900] as const; // [A-23] 2026-10-24 재조정 (구 1300 / 1000 / 700)
 /** 방어 태세만, 소유자 무관. 인덱스 = TERRAIN (v4.5: 물 칸에는 깃발이 서지 않는다) */
 export const COMBAT_TERRAIN_DEF_POSTURE_PERMILLE = [1000, 1000, 1050, 1300, 1000, 1600, 1000] as const;
-export const POSTURE_COOLDOWN_TICKS = 25; // 사용자 확정 튜닝 레버
 // DISENGAGE_TICKS 는 깃발 절로 옮겼다 (v4.5 — TECH_STAT_BASE 가 참조)
 export const DISENGAGE_VALUE_PERMILLE = 500; // [A-31]
 export const ANY_HOSTILE = 254; // targetOwnerId 예약값 [A-27]

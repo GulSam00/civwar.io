@@ -48,7 +48,7 @@ const timer = setInterval(() => {
     if (g.owners[t] === me || !g.isLand(t)) continue;
     if (topo.neighbors(t).some((n) => g.owners[n] === me)) cands.push(t);
   }
-  if (cands.length && p.troops >= 120) store.issueFlag((step % 3) as 0 | 1 | 2, Math.floor(p.troops * 0.6), cands[(step * 7919) % cands.length]);
+  if (cands.length && p.troops >= 120) store.issueFlag((step % 3) as 0 | 1 | 2, Math.floor(p.troops * 0.6), cands[(step * 7919) % cands.length], 0);
 }, 2000);
 
 setTimeout(() => {

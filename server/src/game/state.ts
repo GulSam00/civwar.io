@@ -89,7 +89,6 @@ export interface Flag {
   nextTileId: number;
   anchorTileId: number;
   targetOwnerId: number; // 0 = NEUTRAL, ANY_HOSTILE = 254
-  lockUntilTick: number;
   idleSinceTick: number | null;
   originTileId: number;
   returnTileId: number | null;
@@ -97,8 +96,9 @@ export interface Flag {
   inCombat: boolean;
   combatSinceTick: number | null;
   routed: boolean;
-  postureManual: boolean;
-  postureCooldownUntilTick: number;
+  orderCooldownUntilTick: number; // v5.6: 재지정·태세 전환 공용 쿨타임
+  /** v5.6 봇 전용: 재지정 뒤 쿨타임이 끝나면 바꿀 태세 (재지정과 태세 전환은 같은 쿨타임이라 한 번에 못 한다). 스냅숏에 싣지 않는다 */
+  botPlannedPosture: Posture | null;
   disengageUntilTick: number | null;
   breakaway: boolean;
   blocked: boolean;
@@ -493,15 +493,14 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     targetTileId: null,
     nextTileId: partial.posTileId,
     targetOwnerId: NEUTRAL,
-    lockUntilTick: 0,
     idleSinceTick: null,
     returnTileId: null,
     spendBudgetMilli: 0,
     inCombat: false,
     combatSinceTick: null,
     routed: false,
-    postureManual: false,
-    postureCooldownUntilTick: 0,
+    orderCooldownUntilTick: 0,
+    botPlannedPosture: null,
     disengageUntilTick: null,
     breakaway: false,
     blocked: false,

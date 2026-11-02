@@ -30,6 +30,8 @@ describe('입력 검증', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', maxPlayers: 4, botCount: 2, map: { kind: 'random', size: 'S' } })).ok).toBe(true);
     expect(parseClientMessage(JSON.stringify({ type: 'lobby_create_private', timeLimitMin: 1.5 })).ok).toBe(false);
     expect(parseClientMessage(JSON.stringify({ type: 'lobby_update_settings', botDifficulty: 'HARD' }))).toMatchObject({ ok: true, msg: { type: 'lobby_update_settings', botDifficulty: 'HARD' } });
-    expect(parseClientMessage(JSON.stringify({ type: 'cmd_flag_issue', clientSeq: 1, unit: 1, troops: 1.5, anchorTileId: 3 })).ok).toBe(false);
+    expect(parseClientMessage(JSON.stringify({ type: 'cmd_flag_issue', clientSeq: 1, unit: 1, troops: 1.5, anchorTileId: 3, posture: 0 })).ok).toBe(false);
+    expect(parseClientMessage(JSON.stringify({ type: 'cmd_flag_issue', clientSeq: 1, unit: 1, troops: 50, anchorTileId: 3 })).ok).toBe(false); // v5.6: 태세 필수
+    expect(parseClientMessage(JSON.stringify({ type: 'cmd_flag_issue', clientSeq: 1, unit: 1, troops: 50, anchorTileId: 3, posture: 2 })).ok).toBe(false);
   });
 });

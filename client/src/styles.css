@@ -732,6 +732,20 @@ kbd {
 .ctx-center {
   cursor: default;
 }
+.ctx-hub-toggle {
+  cursor: pointer;
+  padding: 0;
+}
+.ctx-hub-toggle kbd {
+  font-size: 9px;
+  line-height: 1;
+}
+.ctx-hub-toggle:hover,
+.ctx-hub-toggle:focus-visible {
+  background: var(--panel-2);
+  border-color: var(--text);
+  outline: none;
+}
 .ctx-out:hover,
 .ctx-out:focus-visible {
   background: var(--panel-2);

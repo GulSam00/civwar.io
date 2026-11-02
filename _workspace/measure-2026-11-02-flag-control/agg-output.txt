@@ -1,0 +1,15 @@
+판정 | 판 | 패주/판 | 교전/판 | 교전 중간값 s | p90 | 종료 분 | 타임아웃 | 점유 threshold | 탈락/판
+v5.5 (직전) | 16 | 103.7 | 326.9 | 5.9 | 14.2 | 31.1 | 10/16 | 6/16 | 1.25
+v5.6 (이번) | 16 | 100.3 | 348.9 | 5.9 | 14.0 | 31.3 | 11/16 | 5/16 | 1.19
+reasons {"timeout":11,"threshold":5} old {"threshold":6,"timeout":10}
+endMin by seed cur: 1000:32/timeout/top20/elim1 1001:32/timeout/top23/elim0 1002:32/timeout/top20.1/elim2 1003:32/timeout/top21.9/elim2 1012:30.96/threshold/top25/elim0 1013:29.79/threshold/top25.7/elim1 1014:29.66/threshold/top26.2/elim2 1015:32/timeout/top18/elim0 1004:32/timeout/top22.1/elim2 1005:28.98/threshold/top28.6/elim2 1006:32/timeout/top21.5/elim1 1007:32/timeout/top20.2/elim2 1008:32/timeout/top19.7/elim1 1009:32/timeout/top20.3/elim1 1010:32/timeout/top24.7/elim2 1011:29.53/threshold/top26.7/elim0
+endMin by seed old: 1000:30.44/threshold/elim0 1001:29.68/threshold/elim1 1002:29.41/threshold/elim2 1003:28.79/threshold/elim1 1012:32/timeout/elim0 1013:32/timeout/elim2 1014:32/timeout/elim2 1015:32/timeout/elim0 1004:32/timeout/elim1 1005:30.03/threshold/elim2 1006:32/timeout/elim1 1007:32/timeout/elim3 1008:32/timeout/elim1 1009:29.11/threshold/elim3 1010:32/timeout/elim1 1011:32/timeout/elim0
+수락(명령별, 16판 합) {"cmd_buy_tech":2245,"cmd_flag_issue":12421,"cmd_flag_recall":6014,"cmd_set_posture":2818,"cmd_flag_retarget":8456}
+거절(명령별·사유별) {}
+수락 31954 거절 0 거절률 0.00%
+판당: 공격 발령 NaN
+issuedBy 판당 atk 618.8, def 157.5, defBase 108.3
+재지정 판당 528.5 기지로 31.2 내 땅으로 114.6 | 태세 전환 판당 ->방어 153.7 ->공격 30.4
+IDLE 깃발 평균(공격 태세) 0.823 전체 0.846 최대 IDLE 지속 tick 150 150tick 초과 IDLE 깃발 합 0 깃발 평균 수 34.5
+태세 대기(botPlannedPosture) 평균 0.138 최대 동시 3 최대 대기 tick 210 75tick 초과 대기 깃발 37
+ends 합 {"exhausted":2804,"recalled":7367,"routed_returned":1599,"attrited":59} old {"exhausted":2718,"recalled":7011,"routed_returned":1655,"attrited":54,"eliminated":18}

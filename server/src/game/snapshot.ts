@@ -160,7 +160,7 @@ function flagSnap(f: Readonly<Flag>, model: 1 | 2, shown: ReadonlyMap<number, nu
     routed: f.routed,
     blocked: f.blocked,
     disengaging: f.disengageUntilTick !== null,
-    postureCooldownUntilTick: f.postureCooldownUntilTick,
+    orderCooldownUntilTick: f.orderCooldownUntilTick,
     disengageUntilTick: f.disengageUntilTick,
     breakaway: f.breakaway,
     halted: f.halted,
@@ -202,7 +202,7 @@ export function flagBits(f: Readonly<Flag>): number {
 }
 
 function flagFlagsKey(f: Readonly<Flag>): string {
-  return `${f.posture}|${flagBits(f)}|${f.postureCooldownUntilTick}`;
+  return `${f.posture}|${flagBits(f)}|${f.orderCooldownUntilTick}`;
 }
 
 /** 델타용 "마지막으로 보낸 값" 캐시 */
@@ -317,7 +317,7 @@ export class DeltaTracker {
       const fk = flagFlagsKey(f);
       if (this.flagFlag.get(f.id) !== fk) {
         this.flagFlag.set(f.id, fk);
-        d.flagFlags.push([f.id, f.posture, flagBits(f), f.postureCooldownUntilTick]);
+        d.flagFlags.push([f.id, f.posture, flagBits(f), f.orderCooldownUntilTick]);
       }
       if (this.flagTarget.get(f.id) !== f.targetTileId) {
         this.flagTarget.set(f.id, f.targetTileId);

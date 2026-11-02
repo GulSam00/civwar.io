@@ -161,7 +161,7 @@ describe('ZOC · 대치 · 태세', () => {
     expect(r2.all.map((m) => m.type)).toContain('flag_unblocked');
   });
 
-  it('태세 전환: SAME_POSTURE / 쿨타임 25 tick POSTURE_COOLDOWN (v4.6: 전투 중에도 수락 — v48.test.ts)', () => {
+  it('태세 전환: SAME_POSTURE / 쿨타임 15 tick ORDER_COOLDOWN (v4.6: 전투 중에도 수락 — v48.test.ts)', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 1, false);
     const f = addFlag(s, { ownerId: 1, unit: UNIT.SWORD, troops: 200, pos: c, posture: POSTURE.DEFEND, state: 'ENGAGED' });
@@ -174,14 +174,14 @@ describe('ZOC · 대치 · 태세', () => {
     expect(r.personal).toEqual([
       { type: 'cmd_ack', clientSeq: 1, accepted: false, reason: 'SAME_POSTURE' },
       { type: 'cmd_ack', clientSeq: 2, accepted: true, flagId: f.id, posture: POSTURE.ATTACK },
-      { type: 'cmd_ack', clientSeq: 3, accepted: false, reason: 'POSTURE_COOLDOWN' },
+      { type: 'cmd_ack', clientSeq: 3, accepted: false, reason: 'ORDER_COOLDOWN' },
     ]);
-    expect(f.postureCooldownUntilTick).toBe(t0 + 25);
-    run(sim, 23);
+    expect(f.orderCooldownUntilTick).toBe(t0 + 15);
+    run(sim, 13);
     sim.enqueue(1, 1, cmd(4, POSTURE.DEFEND));
-    expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'POSTURE_COOLDOWN' }); // t0+24
+    expect(run(sim, 1).personal[0]).toMatchObject({ reason: 'ORDER_COOLDOWN' }); // t0+14
     sim.enqueue(1, 1, cmd(5, POSTURE.DEFEND));
-    expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true }); // t0+25
+    expect(run(sim, 1).personal[0]).toMatchObject({ accepted: true }); // t0+15
   });
 });
 
@@ -443,7 +443,7 @@ describe('게이지 (계속)', () => {
     }
     expect(anchor).toBeGreaterThanOrEqual(0);
     const tiles0 = s.players[1].tiles;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 60, anchorTileId: anchor, originBaseTileId: null }); // 편성비 ×1.6 — 풀이 모자라지 않게 60
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 60, anchorTileId: anchor, posture: 0, originBaseTileId: null }); // 편성비 ×1.6 — 풀이 모자라지 않게 60
     let haltedSeen = false;
     const r = run(sim, 300, () => {
       if (s.flags.some((f) => f.id === 1 && f.halted && f.state === 'MARCHING')) haltedSeen = true;
@@ -582,7 +582,7 @@ describe('결정론 (전투·게이지 포함)', () => {
         for (let p = 1; p <= 4; p++) {
           const home = s.players[p].homeTileId;
           const anchor = s.graph.disk(home, 4).find((t) => s.graph.distance(t, home) === 4 && s.owners[t] === NEUTRAL && isClaimable(s.map.terrain[t]));
-          if (anchor !== undefined) sim.enqueue(p, p, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.SWORD, troops: 60, anchorTileId: anchor, originBaseTileId: null });
+          if (anchor !== undefined) sim.enqueue(p, p, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.SWORD, troops: 60, anchorTileId: anchor, posture: 0, originBaseTileId: null });
         }
       }
       if (i === 120) sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 2, flagId: 4 });
@@ -632,7 +632,7 @@ describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
     const sim = makeSim();
     const s = sim.state;
     const home = s.players[1].homeTileId;
-    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: 0, troops: 60, anchorTileId: home, originBaseTileId: null });
+    sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: 0, troops: 60, anchorTileId: home, posture: 1, originBaseTileId: null });
     sim.step();
     const f = s.flags.find((x) => x.ownerId === 1)!;
     for (let i = 0; i < 30; i++) sim.step();
