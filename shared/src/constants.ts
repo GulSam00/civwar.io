@@ -370,7 +370,7 @@ export const TECH_STAT = {
   BASE_PROD: 46, // 모든 기지 생산 배율 ‰ (기지 증산 +100). 2026-10-24: 수도 전용 → 전 기지
   // 2026-10-24 재정 개편: 지형별 골드 보너스(‰, 기본 0)와 공통 편성비 배율
   GOLD_PLAIN: 47, // 평지·비옥·언덕 영토 골드 가산 ‰ (농경 +50 · 관개 +100)
-  GOLD_POOR: 48, // 사막·산 영토 골드 가산 ‰ (개간 +1000 · 채굴 +1500)
+  GOLD_POOR: 48, // 사막·산 영토 골드 가산 ‰ (개간 +800 · 채굴 +1200)
   CONVERT: 49, // 편성비 공통 배율 ‰ (기본 1000, 징발 규정 −50) — 병종별 CONVERT_* 에 곱한다
   // 51: 폐지된 GOLD_TERRAIN (v5.8 국고가 GOLD 로 바뀜). 뒤 칸 번호 유지를 위해 비워 둔다
   SIEGE: 50, // 공성: 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (기본 1000, 공성 전술 +100 · 공성 장비 +150). tick 당 피해 상한에도 같은 배율
@@ -443,9 +443,9 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   // 재정 ECO (6..11) — 2A/2B 양자택일
   { id: 6, code: 'ECO-1', branch: 1, tier: 1, parent: null, stat: TECH_STAT.CONVERT, op: 'add', value: -50, name: '징발 규정', desc: '편성비 −5% (전 병종)' },
   { id: 7, code: 'ECO-2A', branch: 1, tier: 2, parent: 6, exclusive: 8, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 50, name: '농경', desc: '평지·비옥·언덕 영토 골드 +5%' },
-  { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1000, name: '개간', desc: '사막·산 영토 골드 +100%' },
+  { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 800, name: '개간', desc: '사막·산 영토 골드 +80%' },
   { id: 9, code: 'ECO-3A', branch: 1, tier: 3, parent: 7, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 100, name: '관개', desc: '평지·비옥·언덕 영토 골드 +10%' },
-  { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1500, name: '채굴', desc: '사막·산 영토 골드 +150%' },
+  { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1200, name: '채굴', desc: '사막·산 영토 골드 +120%' },
   { id: 11, code: 'ECO-4', branch: 1, tier: 4, parent: 9, parentAlt: 10, stat: TECH_STAT.GOLD, op: 'add', value: 200, name: '국고', desc: '모든 지형 골드 +20%' },
   // 행정 TER (12..17) — 2A/2B 양자택일
   { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -60, name: '개척민', desc: '중립 땅 점령비용 −6%' },

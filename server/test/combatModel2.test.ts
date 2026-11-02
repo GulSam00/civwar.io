@@ -229,9 +229,9 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-11-03 v5.8: 재정 골드 개편(언덕 이관·수치·국고 ×1.2), 공용 쿨타임 4초와 기동 테크 교체로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: 'a7774f2e6ab7aecda9fbb698d247be87373c4d8adbbf5a7099ee7196a4ddfddd', state: 'fcd2f3ef1e2f8b3aa250ba0213547cb8e38f0f3e64574cec495ab23fa7c9b529' },
-  G2: { stream: 'cc7a3eb2e78e18132cdf2454144feb3ffa0521f4659100dd8db8dccc57f4d56b', state: '9a610149c45688a8283b9f83206287182c28b8eb80a9fbe3e276514fdc1d7303' },
-  G3: { stream: '5085af851e0beef0f2c82cb080a794f83081bd50e255efd0aed2646fd21335f6', state: '30e931430fbdfef9fb5d6696ed69d416952c9fc675f719585e7da2fbc820b811' },
+  G1: { stream: '1cf66dc223d7e8e4f0b1fe43935d1235f8b5394f2c61d6a38467671d4120b1d2', state: '76cccbd17b6ec200390276c71a029ecf24c9f9cb350b3d84a3b9860af2b8480b' },
+  G2: { stream: 'd96f1c37985513be46872f2cc94452d7367d46397ba1f680b8b8aaff3e769421', state: 'ad280d3b778f8a3ed2804cbba1b60dc913f7aac9507efe569f57d2f886db51fb' },
+  G3: { stream: '5e3651277d5753f0a8b10105770ba661ca7d665127ff6ce2fb861c349e0d5826', state: 'fc5b8321de8d4226bc50c7ce554dc850cd2c6bea1a8796fa1a7d5751c2c6b84c' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

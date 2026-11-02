@@ -145,9 +145,9 @@ describe('v4.6 노드 표', () => {
     expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -100 });
     expect(s('ECO-1')).toMatchObject({ stat: TECH_STAT.CONVERT, op: 'add', value: -50 });
     expect(s('ECO-2A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 50 });
-    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1000 });
+    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 800 });
     expect(s('ECO-3A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 100 });
-    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1500 });
+    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1200 });
     expect(s('ECO-4')).toMatchObject({ stat: TECH_STAT.GOLD, value: 200, tier: 4 });
     expect(s('TER-3A')).toMatchObject({ stat: TECH_STAT.BASE_PROD, value: 100 });
     expect(s('TER-3B')).toMatchObject({ stat: TECH_STAT.BASE_RECOVER, value: 500 });
@@ -169,7 +169,7 @@ describe('v4.6 노드 표', () => {
     expect(v[TECH_STAT.RETURN_SPEED]).toBe(2200);
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
-    expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([150, 2500, 950, 1200]); // 국고 = 전체 골드 배율 +20%
+    expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([150, 2000, 950, 1200]); // 국고 = 전체 골드 배율 +20%
     expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_PROD], v[TECH_STAT.BASE_RECOVER]]).toEqual([700, 1100, 1500]);
   });
   it('무테크 기본: 전투·이동 점수 0, 기지 3칸 1000, 길이 = TECH_STAT_COUNT', () => {
@@ -385,7 +385,7 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A');
     expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 1035, 300, 300]); // +15%, 사막·산 불변
     giveTech(p, 'ECO-1', 'ECO-2B', 'ECO-3B');
-    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 900, 1050, 1050]); // +250%, 평지·언덕 불변
+    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 900, 900, 900]); // +200%, 평지·언덕 불변
     recomputeGoldWeight(s, p);
     expect(p.goldWeight).toBe(sum());
     expect(p.goldWeight).toBeGreaterThanOrEqual(w0); // 시작 영토가 평지뿐이면 같다

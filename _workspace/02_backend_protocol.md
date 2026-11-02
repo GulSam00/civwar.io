@@ -2851,7 +2851,7 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 
 ## 42. GDD v5.8 — 재정 골드 개편 · 공용 쿨타임 4초 · 기동 테크 교체 (메시지 모양 변경 없음 — 2026-11-03, 사용자 결정)
 
-- `tileGoldWeight`: 언덕이 `GOLD_POOR`(개간·채굴)에서 `GOLD_PLAIN`(농경·관개)으로 옮겨 갔다. 수치는 농경 +50 · 관개 +100 · 개간 +1000 · 채굴 +1500 (‰).
+- `tileGoldWeight`: 언덕이 `GOLD_POOR`(개간·채굴)에서 `GOLD_PLAIN`(농경·관개)으로 옮겨 갔다. 수치는 농경 +50 · 관개 +100 · 개간 +800 · 채굴 +1200 (‰).
 - 국고(ECO-4): 지형별 가산을 없애고 `TECH_STAT.GOLD` +200(모든 지형 골드 +20%)으로 바꿨다. `GOLD_TERRAIN`·`TERRAIN_GOLD_ECO4_ADD` 는 삭제했고 스탯 칸 51 은 비워 둔다.
 - `FLAG_ORDER_COOLDOWN_TICKS` 15 → 20. 깃발 쿨타임은 이제 소유자별로 다르다: `TECH_STAT.ORDER_COOLDOWN`(새 칸 52, `TECH_STAT_COUNT` 53, 값 자체가 tick) = 20, MOB-2A 전령 −2, MOB-3A 지휘 체계 −3. 서버는 `techOrderCooldownTicks` 로 읽고 `cooldownUntilTick` 필드는 그대로 절대 tick 이다.
 - 클라이언트 쿨타임 호의 분모는 상수가 아니라 `orderCooldownTicksOf`(소유자 techMask 기준)를 쓴다.
