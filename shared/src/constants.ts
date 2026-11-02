@@ -370,8 +370,8 @@ export const TECH_STAT = {
   BASE_RECOVER: 45, // 기지 생산력 회복 속도 배율 ‰ (기지 재건 +500)
   BASE_PROD: 46, // 모든 기지 생산 배율 ‰ (기지 증산 +100). 2026-10-24: 수도 전용 → 전 기지
   // 2026-10-24 재정 개편: 지형별 골드 보너스(‰, 기본 0)와 공통 편성비 배율
-  GOLD_PLAIN: 47, // 평지·비옥 영토 골드 가산 ‰ (농경 +100 · 관개 +150)
-  GOLD_POOR: 48, // 언덕·사막·산 영토 골드 가산 ‰ (개간 +400 · 채굴 +600)
+  GOLD_PLAIN: 47, // 평지·비옥·언덕 영토 골드 가산 ‰ (농경 +100 · 관개 +150)
+  GOLD_POOR: 48, // 사막·산 영토 골드 가산 ‰ (개간 +400 · 채굴 +600)
   CONVERT: 49, // 편성비 공통 배율 ‰ (기본 1000, 징발 규정 −50) — 병종별 CONVERT_* 에 곱한다
   GOLD_TERRAIN: 51, // 패치 6차: 1000 이면 지형별 골드 가산 표(TERRAIN_GOLD_ECO4_ADD) 적용 (국고)
   SIEGE: 50, // 공성: 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (기본 1000, 공성 전술 +100 · 공성 장비 +150). tick 당 피해 상한에도 같은 배율
@@ -441,10 +441,10 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 5, code: 'MIL-4', branch: 0, tier: 4, parent: 3, parentAlt: 4, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '총동원령', desc: '깃발 슬롯 +1' },
   // 재정 ECO (6..11) — 2A/2B 양자택일
   { id: 6, code: 'ECO-1', branch: 1, tier: 1, parent: null, stat: TECH_STAT.CONVERT, op: 'add', value: -50, name: '징발 규정', desc: '편성비 −5% (전 병종)' },
-  { id: 7, code: 'ECO-2A', branch: 1, tier: 2, parent: 6, exclusive: 8, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 100, name: '농경', desc: '평지·비옥 영토 골드 +10%' },
-  { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 400, name: '개간', desc: '언덕·사막·산 영토 골드 +40%' },
-  { id: 9, code: 'ECO-3A', branch: 1, tier: 3, parent: 7, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 150, name: '관개', desc: '평지·비옥 영토 골드 +15%' },
-  { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 600, name: '채굴', desc: '언덕·사막·산 영토 골드 +60%' },
+  { id: 7, code: 'ECO-2A', branch: 1, tier: 2, parent: 6, exclusive: 8, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 100, name: '농경', desc: '평지·비옥·언덕 영토 골드 +10%' },
+  { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 400, name: '개간', desc: '사막·산 영토 골드 +40%' },
+  { id: 9, code: 'ECO-3A', branch: 1, tier: 3, parent: 7, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 150, name: '관개', desc: '평지·비옥·언덕 영토 골드 +15%' },
+  { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 600, name: '채굴', desc: '사막·산 영토 골드 +60%' },
   { id: 11, code: 'ECO-4', branch: 1, tier: 4, parent: 9, parentAlt: 10, stat: TECH_STAT.GOLD_TERRAIN, op: 'add', value: 1000, name: '국고', desc: '지형별 골드 가중 가산 (평원 +200 · 비옥 +400 · 언덕 +100 · 사막 +200 · 산 +700)' },
   // 행정 TER (12..17) — 2A/2B 양자택일
   { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -60, name: '개척민', desc: '중립 땅 점령비용 −6%' },

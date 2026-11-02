@@ -366,7 +366,7 @@ describe('v4.6 계산식 연결', () => {
     p.statPm = techStatValues(p.techMask);
     expect(flagCap(p)).toBe(6);
   });
-  it('재정 개편: 징발 규정 편성비 −5% · 농경/관개(평지·비옥) · 개간/채굴(험지) 골드 가중치 · 국고 지형별 골드 가산', () => {
+  it('재정 개편: 징발 규정 편성비 −5% · 농경/관개(평지·비옥·언덕) · 개간/채굴(사막·산) 골드 가중치 · 국고 지형별 골드 가산', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const sum = () => {
@@ -381,9 +381,9 @@ describe('v4.6 계산식 연결', () => {
     // 지형 한 칸 가중치: 평지 1000 / 비옥 2000 / 언덕 900 / 사막 300 / 산 300 (기본, 패치 6차)
     expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 900, 300, 300]);
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A');
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1250, 2500, 900]); // +25%, 험지 불변
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1250, 2500, 1125, 300, 300]); // +25%, 사막·산 불변
     giveTech(p, 'ECO-1', 'ECO-2B', 'ECO-3B');
-    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 1800, 600, 600]); // +100%, 평지 불변
+    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 900, 600, 600]); // +100%, 평지·언덕 불변
     recomputeGoldWeight(s, p);
     expect(p.goldWeight).toBe(sum());
     expect(p.goldWeight).toBeGreaterThanOrEqual(w0); // 시작 영토가 평지뿐이면 같다
@@ -395,7 +395,7 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4');
     expect(p.statPm[TECH_STAT.GOLD]).toBe(1000);
     // 국고: 지형별 가산(평원 +200 · 비옥 +400 · 언덕 +100 · 사막 +200 · 산 +700)을 퍼센트 보너스를 곱한 뒤에 더한다
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1450, 2900, 1000, 500, 1000]);
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1450, 2900, 1225, 500, 1000]);
     giveTech(p, 'ECO-4');
     expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1200, 2400, 1000, 500, 1000]); // 국고만: 표의 최종값
     // 소유 칸이 바뀌어도 현재 스탯 기준 가중치로 유지된다

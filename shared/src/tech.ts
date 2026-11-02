@@ -169,11 +169,11 @@ export function techBaseProdPm(stat: readonly number[]): number {
   return stat[TECH_STAT.BASE_PROD] ?? 1000;
 }
 
-/** 2026-10-24 재정 개편: 영토 한 칸의 골드 가중치 = floor(지형 기본 × (1000 + 지형 보너스) / 1000). 평지·비옥은 GOLD_PLAIN, 언덕·사막·산은 GOLD_POOR */
+/** 2026-10-24 재정 개편: 영토 한 칸의 골드 가중치 = floor(지형 기본 × (1000 + 지형 보너스) / 1000). 평지·비옥·언덕은 GOLD_PLAIN, 사막·산은 GOLD_POOR */
 export function tileGoldWeight(terrain: number, stat: readonly number[]): number {
   const w = TERRAIN_GOLD_MILLI[terrain] ?? 0;
   if (w === 0) return 0;
-  const bonus = terrain === TERRAIN.PLAIN || terrain === TERRAIN.FERTILE ? (stat[TECH_STAT.GOLD_PLAIN] ?? 0) : (stat[TECH_STAT.GOLD_POOR] ?? 0);
+  const bonus = terrain === TERRAIN.PLAIN || terrain === TERRAIN.FERTILE || terrain === TERRAIN.HILLS ? (stat[TECH_STAT.GOLD_PLAIN] ?? 0) : (stat[TECH_STAT.GOLD_POOR] ?? 0);
   const add = (stat[TECH_STAT.GOLD_TERRAIN] ?? 0) > 0 ? (TERRAIN_GOLD_ECO4_ADD[terrain] ?? 0) : 0; // 패치 6차: 국고
   return Math.floor((w * (1000 + bonus)) / 1000) + add;
 }

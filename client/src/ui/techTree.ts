@@ -209,8 +209,8 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
         )
           .map(([t, n]) => `${n} ${tileGoldWeight(t, v)}`)
           .join(' · '));
-  else if (stat === S.GOLD_PLAIN) (label = '평지·비옥 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
-  else if (stat === S.GOLD_POOR) (label = '언덕·사막·산 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
+  else if (stat === S.GOLD_PLAIN) (label = '평지·비옥·언덕 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
+  else if (stat === S.GOLD_POOR) (label = '사막·산 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
   else if (stat === S.CONVERT) (label = '편성비 배율 (전 병종)'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.SIEGE) (label = '적 기지 공격 피해 배율'), (fmt = (v) => x2(v[stat]));
   else (label = `스탯 ${stat}`), (fmt = (v) => String(v[stat]));

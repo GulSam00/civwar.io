@@ -55,14 +55,14 @@ describe('m-6 테크 상세 — 국고(ECO-4)는 지형별 절대값 (패치 6�
   const mask = (...ids: number[]) => ids.reduce((m, i) => m + 2 ** i, 0);
   it('앞 노드(농경·관개) 퍼센트 보너스를 곱한 값 위에 지형별 가산이 더해진 절대값이 "구매 후"로 보인다', () => {
     const d = techDetailRows(node, { techMask: mask(id('ECO-1'), id('ECO-2A'), id('ECO-3A')) });
-    expect(d.rows[0].before).toBe('평원 1250 · 비옥 2500 · 언덕 900 · 사막 300 · 산 300');
-    expect(d.rows[0].after).toBe('평원 1450 · 비옥 2900 · 언덕 1000 · 사막 500 · 산 1000');
+    expect(d.rows[0].before).toBe('평원 1250 · 비옥 2500 · 언덕 1125 · 사막 300 · 산 300');
+    expect(d.rows[0].after).toBe('평원 1450 · 비옥 2900 · 언덕 1225 · 사막 500 · 산 1000');
     expect(d.rows).toHaveLength(1); // 전체 골드 배율 노드가 아니므로 수입 행은 없다
   });
   it('이미 보유한 노드: "보유" 쪽이 최종값, "없을 때" 는 더 낮다 (험지 보너스 개간·채굴과도 합산)', () => {
     const d = techDetailRows(node, { techMask: mask(id('ECO-1'), id('ECO-2B'), id('ECO-3B'), node.id) });
-    expect(d.rows[0].before).toBe('평원 1000 · 비옥 2000 · 언덕 1800 · 사막 600 · 산 600');
-    expect(d.rows[0].after).toBe('평원 1200 · 비옥 2400 · 언덕 1900 · 사막 800 · 산 1300');
+    expect(d.rows[0].before).toBe('평원 1000 · 비옥 2000 · 언덕 900 · 사막 600 · 산 600');
+    expect(d.rows[0].after).toBe('평원 1200 · 비옥 2400 · 언덕 1000 · 사막 800 · 산 1300');
   });
 });
 
