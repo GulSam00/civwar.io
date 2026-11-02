@@ -1,7 +1,7 @@
 ---
 id: 20261028-1600-unit-capture-tech-redesign
 title: 테크 개선 (점령 소모와 별개로 진행)
-status: todo
+status: doing
 priority: medium
 created: 2026-10-28
 external:
@@ -34,3 +34,4 @@ external:
 
 - 2026-10-28: 병종 무관 점령 소모 결정에 따라 후속으로 남김. 테크 업데이트 때 리마인드
 - 2026-11-02: 사용자 요청으로 점령 소모와 별개인 테크 개선 이슈로 변경, 상태 todo
+- 2026-11-02: 별도 worktree 세션에서 착수, 상태 doing. 수정 범위와 점령 소모 테크 4개 처리는 사용자가 항목별로 직접 지시하기로 함
