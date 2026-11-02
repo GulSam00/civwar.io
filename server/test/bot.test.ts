@@ -110,14 +110,14 @@ describe('봇 AI (GDD 8장, 3차-2)', () => {
       decideBot(fresh, 1, 30, BOT_DIFFICULTY[d])
         .filter((c): c is Extract<C2S_GameCommand, { type: 'cmd_flag_issue' }> => c.type === 'cmd_flag_issue')
         .reduce((a, c) => a + c.troops, 0);
-    at(150); // 시작 병력: 예비(EASY 45% / HARD 20% of cap 262)를 빼면 최소 공격 병력 미만 → 셋 다 대기
+    at(150); // 시작 병력: 예비(EASY 45% / HARD 20% of cap 280)를 빼면 최소 공격 병력 미만 → 셋 다 대기
     expect(issued('EASY')).toBe(0);
     expect(issued('HARD')).toBe(0);
-    at(180); // HARD 만 발령 (180 − 52 ≥ 120), NORMAL 180 − 79 < 120, EASY 180 − 118 < 95
+    at(180); // HARD 만 발령 (180 − 56 ≥ 120), NORMAL 180 − 84 < 120, EASY 180 − 126 < 95
     expect(issued('EASY')).toBe(0);
     expect(issued('NORMAL')).toBe(0);
     expect(issued('HARD')).toBeGreaterThan(0);
-    at(240); // EASY 도 발령한다 (예비 118 → 220 에서는 아직 대기)
+    at(260); // EASY 도 발령한다 (예비 126 → 240 에서는 아직 대기)
     expect(issued('EASY')).toBeGreaterThan(0);
     expect(issued('EASY')).toBeLessThanOrEqual(issued('HARD'));
   });

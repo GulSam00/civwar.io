@@ -2802,3 +2802,9 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 ### 38.4 검증
 - `server/test/troopCapFlags.test.ts` (총병력 합, 생산 감소, 상한 이상 생산 0·풀 유지, 모델 1 불변), `server/test/annex.test.ts` 장면 갱신(점령 깃발 500 이 상한을 채우지 않게 상한 배율을 넓힘, "여유 60" 은 깃발 몫 포함), `client/test/uiOct18.test.ts` 병력 바, `client/test/qaV45.test.ts` 장면에서 출전 쿨타임 초기화(봇 판 직후 BASE_COOLDOWN 으로 거절되던 장면 의존 문제). tsc 3종 통과, vitest 619/619.
 - selfplay (M 10인 NORMAL, 시드 1000~1015, `_workspace/measure-2026-10-30/`): 종전 대비 패주 107 → 89/판, 교전 366 → 307/판, **탈락 2.06 → 0.56/판**, 타임아웃 10 → 12/16, 종료 31.1 → 31.5분. 총병력/상한 중간값 1.2 → 0.74.
+
+## 39. GDD v5.5 — 병력 상한 칸당 계수 18 → 20 (프로토콜 변경 없음 — 2026-11-02, 사용자 결정)
+
+- `TROOP_CAP_PER_TILE` = 20. 상수는 `match_config.constants` 로 내려가므로 클라이언트 코드는 바뀌지 않는다.
+- 모델 1 도 같은 상수를 쓰므로 `server/test/combatModel2.test.ts` 골든 해시 G1~G3 을 이 값으로 다시 뽑았다(v5.3 과 같은 처리).
+- 측정: `_workspace/measure-2026-11-02/`.
