@@ -71,13 +71,13 @@ describe('반투명 영토', () => {
 });
 
 describe('하단 바 유지비 (패치 7차 — 병력 비례)', () => {
-  it('병종 단가: 병력 1000명당 창 0.3 / 검 0.5 / 기병 0.9 골드/초, 마구간(CAV-2A)은 기병 ×0.8', () => {
+  it('병종 단가: 병력 1000명당 창 0.3 / 검 0.5 / 기병 0.9 골드/초, 마구간(CAV-2A)은 기병 가중 −0.1', () => {
     const m = model([], 0);
     expect([0, 1, 2].map((u) => unitUpkeepPerKilo(m, 1, u as 0 | 1 | 2))).toEqual([0.3, 0.5, 0.9]);
-    // 마구간 CAV-2A(id 37) 보유: 기병 가중 1800 → 1440 = 0.72
+    // 마구간 CAV-2A(id 37) 보유: 기병 가중 1800 → 1700 = 0.85
     const withTech = model([], 0);
     withTech.players.get(1)!.techMask = 2 ** 37;
-    expect(unitUpkeepPerKilo(withTech, 1, 2)).toBe(0.72);
+    expect(unitUpkeepPerKilo(withTech, 1, 2)).toBe(0.85);
     expect(unitUpkeepPerKilo(withTech, 1, 1)).toBe(0.5);
   });
 });

@@ -430,9 +430,9 @@ describe('v5.1 점령 소모 배율 전 병종 1000', () => {
     }
   });
 
-  it('병종 전용 점령 테크는 그대로: SWO-2B 산 검병만 800 (다른 병종 1000)', () => {
+  it('병종 전용 점령 테크: SWO-4 돌격 보병 산 검병만 800 (v5.8) (다른 병종 1000)', () => {
     const id = (code: string) => TECH_NODES.find((n) => n.code === code)!.id;
-    const st = techStatValues(techMaskWith(techMaskWith(0, id('SWO-1')), id('SWO-2B')));
+    const st = techStatValues(['SWO-1', 'SWO-2B', 'SWO-3B', 'SWO-4'].reduce((m, c) => techMaskWith(m, id(c)), 0));
     const { s, c } = mkState();
     s.players[1].statPm = st;
     const cost = (u: 0 | 1 | 2) => {

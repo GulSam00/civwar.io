@@ -123,17 +123,19 @@ describe('v4.6 노드 표', () => {
     expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
     expect(s('MIL-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, tier: 4, name: '총동원령' });
     expect(s('SPE-1')).toMatchObject({ stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10 });
-    expect(s('SPE-2A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100 });
+    expect(s('SPE-2A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SPEAR, op: 'add', value: 10 });
     expect(s('SPE-4')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SPEAR, value: 20, tier: 4 });
     expect(s('SPE-3B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100 });
-    expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200 });
-    expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10 });
-    expect(s('SWO-4')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_SWORD, value: 100 }); // 검병 태세 보너스(기세) +10%p
-    expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1440 });
+    expect(s('SWO-2A')).toMatchObject({ stat: TECH_STAT.SPEED_SWORD, op: 'add', value: 10 });
+    expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10 });
+    expect(s('SWO-3A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10 });
+    expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10 });
+    expect(s('SWO-4')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200 });
+    expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'add', value: -100 });
     expect(s('CAV-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 20 });
-    expect(s('CAV-4')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 30 });
-    expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200 });
-    expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_CAVALRY, value: 100 });
+    expect(s('CAV-4')).toMatchObject({ stat: TECH_STAT.CONVERT_CAVALRY, op: 'add', value: -100 });
+    expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'add', value: -200 });
+    expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 30 });
     expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
     expect(s('MOB-1')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 200 });
     expect(s('MOB-2A')).toMatchObject({ stat: TECH_STAT.ORDER_COOLDOWN, value: -2 });
@@ -268,7 +270,8 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
     expect(v[TECH_STAT.SPEED] + v[TECH_STAT.SPEED_CAVALRY]).toBe(10); // CAV-1 (점수)
     expect(v[TECH_STAT.COMBAT_DEF] + v[TECH_STAT.COMBAT_DEF_SPEAR]).toBe(0);
     expect(v[TECH_STAT.SPEED_SPEAR]).toBe(10); // SPE-1 행군 대열
-    expect(v[TECH_STAT.CAPTURE_MULT_SPEAR]).toBe(800); // 기본 1000 - 200: SPE-2A + SPE-3B
+    expect(v[TECH_STAT.CAPTURE_MULT_SPEAR]).toBe(900); // 기본 1000 - 100: SPE-3B (v5.8: SPE-2A 는 공격)
+    expect(v[TECH_STAT.COMBAT_ATK_SPEAR]).toBe(10); // SPE-2A 장창 돌격
     expect(v[TECH_STAT.NEUTRAL_COST]).toBe(860);
   });
   it('techStatValues 는 마스크만의 함수 (노드 하나만 있을 때 정확히 그 스탯 하나만 바뀐다)', () => {
@@ -282,7 +285,7 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
 });
 
 describe('v4.6 계산식 연결', () => {
-  it('유지비(패치 7차 병력 비례): CAV-2A 마구간 기병 가중치 1800 → 1440 = 병력당 단가 ×0.8', () => {
+  it('유지비(패치 7차 병력 비례): CAV-2A 마구간 기병 가중치 1800 → 1700 = 병력당 단가 0.9 → 0.85', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const h = p.homeTileId;
@@ -290,7 +293,9 @@ describe('v4.6 계산식 연결', () => {
     // 기병 300명 × 0.9골드/초(1000명당) = 0.27골드/초 = 54 milli/tick
     expect(garrisonUpkeepMilliPerTick(s, p)).toBe(54);
     giveTech(p, 'CAV-1', 'CAV-2A');
-    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(43); // 0.72골드/초 → 216 milli/초 = 43.2 → floor
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(51); // 0.85골드/초 × 300명 = 255 milli/초 = 51 milli/tick
+    giveTech(p, 'CAV-1', 'CAV-2A', 'CAV-3A');
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(45); // 목초지까지 0.75골드/초 = 225 milli/초
   });
   it('유지비 감소가 실제 골드 정산에 들어간다 (같은 깃발, upkeepPm 낮음)', () => {
     const a = makeSim();
