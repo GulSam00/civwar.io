@@ -129,7 +129,7 @@ describe('v4.6 노드 표', () => {
     expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200 });
     expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10 });
     expect(s('SWO-4')).toMatchObject({ stat: TECH_STAT.MORALE_FULL_BONUS_SWORD, value: 100 }); // 검병 태세 보너스(기세) +10%p
-    expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1600 });
+    expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'set', value: 1440 });
     expect(s('CAV-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 20 });
     expect(s('CAV-4')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 30 });
     expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_CAVALRY, op: 'add', value: -200 });
@@ -282,15 +282,15 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
 });
 
 describe('v4.6 계산식 연결', () => {
-  it('유지비(패치 7차 병력 비례): CAV-2A 마구간 기병 가중치 2000 → 1600 = 병력당 단가 ×0.8', () => {
+  it('유지비(패치 7차 병력 비례): CAV-2A 마구간 기병 가중치 1800 → 1440 = 병력당 단가 ×0.8', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const h = p.homeTileId;
     for (let i = 0; i < 3; i++) addFlag(s, { ownerId: 1, unit: UNIT.CAVALRY, troops: 100, pos: h });
-    // 기병 300명 × 1.0골드/초(1000명당) = 0.3골드/초 = 60 milli/tick
-    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(60);
+    // 기병 300명 × 0.9골드/초(1000명당) = 0.27골드/초 = 54 milli/tick
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(54);
     giveTech(p, 'CAV-1', 'CAV-2A');
-    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(48); // 0.8골드/초
+    expect(garrisonUpkeepMilliPerTick(s, p)).toBe(43); // 0.72골드/초 → 216 milli/초 = 43.2 → floor
   });
   it('유지비 감소가 실제 골드 정산에 들어간다 (같은 깃발, upkeepPm 낮음)', () => {
     const a = makeSim();
@@ -408,7 +408,7 @@ describe('v4.6 계산식 연결', () => {
     setTileOwner(s, t0, NEUTRAL, false);
     expect(p.goldWeight).toBe(before - tileGoldWeight(s.map.terrain[t0], p.statPm));
   });
-  it('징발 규정 ECO-1: 병종 편성비 ×0.95 (기병 1.60 → 1.52 → 풀 차감 올림)', () => {
+  it('징발 규정 ECO-1: 병종 편성비 ×0.95 (기병 1.20 → 1.14 → 풀 차감 올림)', () => {
     const sim = makeSim();
     const p = sim.state.players[1];
     const L = sim.state.ledger;
@@ -417,7 +417,7 @@ describe('v4.6 계산식 연결', () => {
     const c0 = L.conversion;
     sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, posture: 0, originBaseTileId: null });
     sim.step();
-    expect(L.conversion - c0).toBe(52_000); // ceil(100 × 1520 / 1000) − 100 = 52
+    expect(L.conversion - c0).toBe(14_000); // ceil(100 × 1140 / 1000) − 100 = 14
   });
   it('점령비용: TER-1/2A(중립), SWO-2B(검병) — 군사 갈래는 점령비용을 줄이지 않는다', () => {
     const s = makeSim().state;
@@ -460,7 +460,7 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'SWO-1', 'SPE-1', 'SPE-2B'); // 검병 공격 +10, 창병 방어 +10점 (SPE-1 은 이동)
     expect([flagValue(s, att, [att]), flagValue(s, def, [def])]).toEqual([1100, 1200]);
   });
-  it('편성비: 병종 기본 창 0.9 / 검 1.0 / 기 1.6 (풀 차감, 테크로 바뀌지 않음)', () => {
+  it('편성비: 병종 기본 창 1.0 / 검 1.0 / 기 1.2 (풀 차감, 테크로 바뀌지 않음)', () => {
     const sim = makeSim();
     const p = sim.state.players[1];
     const L = sim.state.ledger;
@@ -468,14 +468,14 @@ describe('v4.6 계산식 연결', () => {
     const c0 = L.conversion;
     sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 1, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, posture: 0, originBaseTileId: null });
     sim.step();
-    expect(L.conversion - c0).toBe(60_000);
+    expect(L.conversion - c0).toBe(20_000);
     giveTech(p, 'CAV-1', 'CAV-2A');
     p.troopsMilli = 200_000;
     for (const b of sim.state.bases) b.dispatchReadyTick = 0; // v5.1: 출전 쿨타임은 이 검사의 대상이 아니다
     const c1 = L.conversion;
     sim.enqueue(1, 1, { type: 'cmd_flag_issue', clientSeq: 2, unit: UNIT.CAVALRY, troops: 100, anchorTileId: p.homeTileId, posture: 0, originBaseTileId: null });
     sim.step();
-    expect(L.conversion - c1).toBe(60_000);
+    expect(L.conversion - c1).toBe(20_000);
   });
 });
 

@@ -122,7 +122,7 @@ export function paysUpkeep(f: Readonly<Flag>): boolean {
  * drainPm = min(700, floor(billable × 90 / 1000)).
  * v4.3: 가중치·계수는 플레이어 스탯 — UPKEEP_WEIGHT_<unit>(SPE-2A 450, CAV-3 1300), UPKEEP_COEF(ECO-2B 72). 상한 700 < 1000 → 순증 ≥ 그로스의 30% (순증 ≥ 0 보장 유지).
  */
-/** 패치 7차: 그 플레이어의 병종 단가 (병력 1000명당 milli-골드/초) = 기본 단가 × 테크 가중치 / 기본 가중치 (마구간 1600/2000 = ×0.8) */
+/** 패치 7차: 그 플레이어의 병종 단가 (병력 1000명당 milli-골드/초) = 기본 단가 × 테크 가중치 / 기본 가중치 (마구간 1440/1800 = ×0.8) */
 export function unitUpkeepRateMilli(stat: readonly number[], unit: number): number {
   return Math.floor((UNIT_UPKEEP_RATE_MILLI[unit] * techUpkeepWeight(stat, unit)) / UNIT_GARRISON_PERMILLE[unit]);
 }
