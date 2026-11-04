@@ -151,7 +151,7 @@ describe('v4.6 노드 표', () => {
     expect(s('ECO-3A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 100 });
     expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1200 });
     expect(s('ECO-4')).toMatchObject({ stat: TECH_STAT.GOLD, value: 200, tier: 4 });
-    expect(s('TER-3A')).toMatchObject({ stat: TECH_STAT.BASE_GOLD, value: 150, name: '교역소' });
+    expect(s('TER-3A')).toMatchObject({ stat: TECH_STAT.BASE_PROD, value: 100, name: '기지 증산' });
     expect(s('TER-3B')).toMatchObject({ stat: TECH_STAT.BASE_RECOVER, value: 500 });
     expect(s('TER-4')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -200 });
   });
@@ -172,7 +172,7 @@ describe('v4.6 노드 표', () => {
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
     expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([150, 2000, 1000, 1200]); // 국고 = 전체 골드 배율 +20%
-    expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_PROD], v[TECH_STAT.BASE_RECOVER], v[TECH_STAT.BASE_GOLD]]).toEqual([700, 1000, 1500, 1200]); // 기지 골드 = 세금 징수 +5% + 교역소 +15%
+    expect([v[TECH_STAT.BASE_DMG], v[TECH_STAT.BASE_PROD], v[TECH_STAT.BASE_RECOVER], v[TECH_STAT.BASE_GOLD]]).toEqual([700, 1100, 1500, 1050]); // 기지 증산 +10%(병력·골드), 세금 징수 기지 골드 +5%
   });
   it('무테크 기본: 전투·이동 점수 0, 기지 3칸 1000, 길이 = TECH_STAT_COUNT', () => {
     const v = techStatValues(0);
@@ -413,7 +413,7 @@ describe('v4.6 계산식 연결', () => {
     setTileOwner(s, t0, NEUTRAL, false);
     expect(p.goldWeight).toBe(before - tileGoldWeight(s.map.terrain[t0], p.statPm));
   });
-  it('v5.8 세금 징수 ECO-1 · 교역소 TER-3A: 기지 골드만 +5% · +15%, 병력 생산은 그대로', () => {
+  it('v5.8 세금 징수 ECO-1: 기지 골드만 +5%, 병력 생산은 그대로 (기지 증산과 곱한다)', () => {
     const s = makeSim().state;
     const p = s.players[1];
     p.goldWeight = 0; // 영토 골드를 빼고 기지 행만 본다
@@ -423,10 +423,10 @@ describe('v4.6 계산식 연결', () => {
     expect(r0.grossMilli).toBe(208); // floor(100000 × 2080 / 1e6)
     const r1 = run('ECO-1');
     expect(r1.grossMilli).toBe(218); // 105000 → 218.4
+    expect(r1.regenMilli).toBe(r0.regenMilli);
     const r2 = run('ECO-1', 'TER-1', 'TER-2A', 'TER-3A');
-    expect(r2.grossMilli).toBe(249); // 120000 → 249.6
-    expect([r1.regenMilli, r2.regenMilli]).toEqual([r0.regenMilli, r0.regenMilli]);
-    expect(baseEqTiles(s, p.homeTileId)).toBe(100); // 환산 칸(병력)은 테크로 바뀌지 않는다
+    expect(r2.grossMilli).toBe(240); // 환산 110칸 × 1000 × 1.05 = 115500 → 240.2
+    expect(r2.regenMilli).toBeGreaterThan(r0.regenMilli); // 기지 증산은 병력도 올린다
   });
   it('점령비용: TER-1/2A(중립), SWO-2B(검병) — 군사 갈래는 점령비용을 줄이지 않는다', () => {
     const s = makeSim().state;
@@ -546,14 +546,14 @@ describe('v4.6 기지 효과 (행정 갈래)', () => {
     expect(base).toBe(20 * 167);
     expect(fast).toBe(20 * Math.floor((167 * 1500) / 1000));
   });
-  it('BASE_PROD 스탯(노드 없음): 값을 올리면 그 소유자 기지의 환산 칸만 늘어난다', () => {
+  it('기지 증산 TER-3A: 모든 기지의 환산 칸 ×1.1 (수도 100 → 110)', () => {
     const s = makeSim().state;
     const p = s.players[1];
     expect(baseEqTiles(s, p.homeTileId)).toBe(100);
-    p.statPm[TECH_STAT.BASE_PROD] = 1100;
+    giveTech(p, 'TER-1', 'TER-2A', 'TER-3A');
     expect(baseEqTiles(s, p.homeTileId)).toBe(110);
     const other = s.players[2];
-    expect(baseEqTiles(s, other.homeTileId)).toBe(100); // 다른 사람의 수도는 그 사람 스탯 기준
+    expect(baseEqTiles(s, other.homeTileId)).toBe(100); // 다른 사람의 수도는 그 사람 테크 기준
   });
 });
 

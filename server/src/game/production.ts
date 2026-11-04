@@ -37,7 +37,7 @@ export function distribute(total: number, weights: readonly number[]): number[] 
 /** v4.5 [A-107]: 기지 칸의 환산 칸 수 — 시작 수도였던 칸(누가 갖고 있든) 100, 그 밖의 기지 60 */
 export function baseEqTiles(state: Readonly<GameState>, tileId: number): number {
   const eq = state.capitalTiles.has(tileId) ? CAPITAL_PROD_TILES : BASE_PROD_TILES;
-  // 2026-10-24: 그 칸을 지금 소유한 플레이어의 기지 생산 배율 BASE_PROD (수도 포함 모든 기지, v5.8 현재 노드 없음)
+  // 2026-10-24 기지 증산(TER-3A): 그 칸을 지금 소유한 플레이어의 기지 생산 배율 (수도 포함 모든 기지)
   const own = state.players[state.owners[tileId]];
   return own ? Math.floor((eq * techBaseProdPm(own.statPm)) / 1000) : eq;
 }
@@ -66,7 +66,7 @@ export function computeProduction(state: Readonly<GameState>, p: Readonly<Player
   );
   const troops = distribute(regenMilli, wT);
   // 골드
-  const baseGoldPm = techBaseGoldPm(p.statPm); // v5.8: 세금 징수·교역소 — 골드에만 곱한다
+  const baseGoldPm = techBaseGoldPm(p.statPm); // v5.8: 세금 징수 — 골드에만 곱한다
   const gw = bases.map((_, i) => Math.floor((baseGoldWeight(eqs[i], pms[i]) * baseGoldPm) / 1000));
   gw.push(p.goldWeight);
   const sumGW = gw.reduce((a, b) => a + b, 0);

@@ -368,14 +368,14 @@ export const TECH_STAT = {
   // 2026-10-24 테크 개편 (재정·행정): 기지 효과는 최대치를 바꾸지 않고 피해·회복·생산 배율로 둔다. 기본 1000
   BASE_DMG: 44, // 기지 체력 피해 배율 ‰ (요새화 −200)
   BASE_RECOVER: 45, // 기지 생산력 회복 속도 배율 ‰ (기지 재건 +500)
-  BASE_PROD: 46, // 모든 기지 생산(병력·골드) 배율 ‰. v5.8: 노드 없음 (기지 증산 → 교역소 BASE_GOLD)
+  BASE_PROD: 46, // 모든 기지 생산(병력·골드) 배율 ‰ (기지 증산 +100). 2026-10-24: 수도 전용 → 전 기지
   // 2026-10-24 재정 개편: 지형별 골드 보너스(‰, 기본 0)와 공통 편성비 배율
   GOLD_PLAIN: 47, // 평지·비옥·언덕 영토 골드 가산 ‰ (농경 +50 · 관개 +100)
   GOLD_POOR: 48, // 사막·산 영토 골드 가산 ‰ (개간 +800 · 채굴 +1200)
   CONVERT: 49, // 편성비 공통 배율 ‰ (기본 1000, v5.8: 노드 없음) — 병종별 CONVERT_* 에 곱한다
   // 51: 폐지된 GOLD_TERRAIN (v5.8 국고가 GOLD 로 바뀜). 뒤 칸 번호 유지를 위해 비워 둔다
   SIEGE: 50, // 공성: 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (기본 1000, 공성 전술 +100 · 공성 장비 +150). tick 당 피해 상한에도 같은 배율
-  BASE_GOLD: 53, // v5.8: 기지 칸 골드 가중 배율 ‰ (기본 1000, 세금 징수 +50 · 교역소 +150). 기지 병력 생산에는 곱하지 않는다
+  BASE_GOLD: 53, // v5.8: 기지 칸 골드 가중 배율 ‰ (기본 1000, 세금 징수 +50). 기지 병력 생산에는 곱하지 않는다
   ORDER_COOLDOWN: 52, // v5.8: 그 플레이어의 재지정·태세 공용 쿨타임 tick (값 자체, 무테크 FLAG_ORDER_COOLDOWN_TICKS 20, 전령 −2 · 지휘 체계 −3)
 } as const;
 export type TechStat = (typeof TECH_STAT)[keyof typeof TECH_STAT];
@@ -454,7 +454,7 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -50, name: '개척민', desc: '중립 땅 점령비용 −5%' },
   { id: 13, code: 'TER-2A', branch: 2, tier: 2, parent: 12, exclusive: 14, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -100, name: '확장', desc: '중립 땅 점령비용 −10%' },
   { id: 14, code: 'TER-2B', branch: 2, tier: 2, parent: 12, exclusive: 13, stat: TECH_STAT.BASE_DMG, op: 'add', value: -100, name: '요새화', desc: '기지 체력 피해 −10%' },
-  { id: 15, code: 'TER-3A', branch: 2, tier: 3, parent: 13, stat: TECH_STAT.BASE_GOLD, op: 'add', value: 150, name: '교역소', desc: '기지 골드 +15% (수도 포함 모든 기지)', icon: '기지 지붕 아래 동전' },
+  { id: 15, code: 'TER-3A', branch: 2, tier: 3, parent: 13, stat: TECH_STAT.BASE_PROD, op: 'add', value: 100, name: '기지 증산', desc: '모든 기지 생산 +10% (병력·골드)' },
   { id: 16, code: 'TER-3B', branch: 2, tier: 3, parent: 14, stat: TECH_STAT.BASE_RECOVER, op: 'add', value: 500, name: '기지 재건', desc: '기지 생산력 회복 +50%' },
   { id: 17, code: 'TER-4', branch: 2, tier: 4, parent: 15, parentAlt: 16, stat: TECH_STAT.BASE_DMG, op: 'add', value: -200, name: '기지 확충', desc: '기지 체력 피해 −20%' },
   // 기동 MOB — 공통 (18..23)
