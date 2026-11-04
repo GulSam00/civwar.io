@@ -12,6 +12,7 @@ import {
   ENEMY_BASE,
   FLAG_SPEED_BASE_MILLI,
   FLAG_TILE_RATE_BASE,
+  FLAG_MIN_TROOPS,
   FRONT_RADIUS,
   MIN_TILE_COST,
   NEUTRAL_BASE,
@@ -195,6 +196,25 @@ export function tileCost(state: Readonly<GameState>, f: Readonly<Flag>, X: numbe
   if (state.endgameRushActive) v = Math.floor((v * ENDGAME_RUSH_COST_MULT_PERMILLE) / 1000);
   if (p.goldMilli < 0) v = Math.floor((v * DEBT_CAPTURE_COST_PERMILLE) / 1000); // 패치 6차: 빚이면 점령 소모 ×1.5 (기지 공격 포함)
   return Math.max(MIN_TILE_COST, ceilMicro(v));
+}
+
+/**
+ * v5.9 (이슈 20261104-0110, 사용자 결정): 공격 계열 깃발(ENGAGED·ATTACK, 정지 점령) 소진 경계 (milli).
+ * 쓸 수 있는 병력(floor 명 단위) × 1000 이 이 값보다 작으면 소진 — "칸 하나를 더 못 살 때만".
+ * 타깃 칸 = 남은 진척(1000 − progress)을 채우는 병력, 기지 = 1명(피해는 기지에 남는다), 타깃 없음 = MIN_TILE_COST.
+ */
+export function attackExhaustLineMilli(state: Readonly<GameState>, f: Readonly<Flag>): number {
+  const X = selectAttackTargetRO(state, f);
+  if (X === null) return MIN_TILE_COST * 1000;
+  if (state.map.isBase[X]) return 1000;
+  const prog = f.targetTileId === X ? f.progressMilli : 0;
+  return (1000 - prog) * tileCost(state, f, X);
+}
+
+/** v5.9: 공격 계열 깃발이 남은 병력으로 더 점령할 수 없는가 (stage10 소진 판정). 모델 1 은 구 규칙(< FLAG_MIN_TROOPS) 비트 동일 */
+export function attackExhausted(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  if (state.combatModel !== 2) return f.troopsMilli < FLAG_MIN_TROOPS * 1000;
+  return Math.floor(f.troopsMilli / 1000) * 1000 < attackExhaustLineMilli(state, f);
 }
 
 export function availAP(f: Readonly<Flag>): number {

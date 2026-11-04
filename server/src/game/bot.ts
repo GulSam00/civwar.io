@@ -1183,7 +1183,8 @@ function maintain(ctx: Ctx): void {
         continue;
       }
       // 소진 직전 회수 (§10 — 소진은 잔여 전액 소멸, 회수는 85% 환급). v4.2: 미는 중 = pushing (halted 포함)
-      if (pushing(f) && f.troopsMilli < exhaustLine(ctx, f) && preRecallPays(ctx, f)) {
+      // v5.9: 모델 2 는 폐지 — 공격 깃발은 칸 하나를 더 못 살 때만 소진되므로(남는 병력 < 칸 비용) 회수 손실 15% 가 늘 더 크다
+      if (state.combatModel !== 2 && pushing(f) && f.troopsMilli < exhaustLine(ctx, f) && preRecallPays(ctx, f)) {
         recall(ctx, f);
         continue;
       }

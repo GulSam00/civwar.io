@@ -27,7 +27,7 @@ import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { combatEligible, moraleFloorOf, type FlagPresence } from './combat.js';
 import { isGarrison } from './economy.js';
-import { availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
+import { attackExhausted, availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
 import { ANNEX } from './annex.js';
 import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } from './state.js';
 
@@ -367,14 +367,14 @@ export function stage10_flagEnd(state: GameState, t: number, out: Outbox): void 
     if (f.inCombat || !state.players[f.ownerId].alive) continue;
     if (f.state === 'ENGAGED' && f.posture === POSTURE.ATTACK) {
       if (!marchFrontNonEmpty(state, f)) goIdle(f, t, 'front_cleared', out); // v4.2: 옆 칸이 없으면 IDLE [A-59]
-      else if (f.troopsMilli < FLAG_MIN_TROOPS * 1000) exhaust(state, f, t, out);
+      else if (attackExhausted(state, f)) exhaust(state, f, t, out); // v5.9: 칸 하나를 더 못 살 때만 소진 (40명 기준 폐지)
       continue;
     } else if (f.state === 'ENGAGED' && f.posture === POSTURE.DEFEND) {
       if (guardCount(state, f) === 0) goIdle(f, t, 'guard_lost', out);
       else if (f.troopsMilli < FLAG_MIN_TROOPS * 1000) exhaust(state, f, t, out);
       continue;
-    } else if (f.state === 'MARCHING' && f.halted && f.troopsMilli < FLAG_MIN_TROOPS * 1000) {
-      exhaust(state, f, t, out); // v4.2 (4.4a c): 정지 점령도 소진 규칙 동일
+    } else if (f.state === 'MARCHING' && f.halted && attackExhausted(state, f)) {
+      exhaust(state, f, t, out); // v4.2 (4.4a c): 정지 점령도 소진 규칙 동일 (v5.9: 칸 하나를 더 못 살 때)
       continue;
     }
     if (f.state === 'IDLE' && f.idleSinceTick !== null && t - f.idleSinceTick >= FLAG_IDLE_TIMEOUT) {
