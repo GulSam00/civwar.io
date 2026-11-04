@@ -194,6 +194,7 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   else if (stat === S.BASE_DMG) (label = '기지 체력 피해 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.BASE_RECOVER) (label = '기지 생산력 회복 속도'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.BASE_PROD) (label = '기지 생산 배율 (모든 기지)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.BASE_GOLD) (label = '기지 골드 배율 (모든 기지)'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.GOLD_PLAIN) (label = '평지·비옥·언덕 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
   else if (stat === S.GOLD_POOR) (label = '사막·산 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
   else if (stat === S.CONVERT) (label = '편성비 배율 (전 병종)'), (fmt = (v) => x2(v[stat]));
@@ -256,7 +257,7 @@ export function techScopeText(node: TechNodeDef): string {
   if ((s >= S.MORALE_FULL_BONUS_SPEAR && s <= S.MORALE_FULL_BONUS_CAVALRY) || (s >= S.MORALE_DROP_SPEAR && s <= S.MORALE_DROP_CAVALRY) || (s >= S.MORALE_RECOVER_SPEAR && s <= S.MORALE_RECOVER_CAVALRY)) {
     return `${UNIT_NAME[(s - S.MORALE_FULL_BONUS_SPEAR) % 4]} 깃발에만 적용`;
   }
-  if (s === S.BASE_DMG || s === S.BASE_RECOVER || s === S.BASE_PROD) return '내 기지에 적용';
+  if (s === S.BASE_DMG || s === S.BASE_RECOVER || s === S.BASE_PROD || s === S.BASE_GOLD) return '내 기지에 적용';
   if (s === S.GOLD_PLAIN || s === S.GOLD_POOR) return '해당 지형의 내 영토에 적용';
   if (s === S.GOLD) return '내 모든 영토에 적용';
   if (s === S.SIEGE) return '적 기지를 공격할 때';

@@ -10,12 +10,12 @@
  *         base_b = floor(eq_b × pm_b × PROD_REF_REGEN_MILLI / (PROD_REF_TILES × 1000))   (칸당 = 기준 390칸 평균 재생, 선형)
  *         R      = round((terr + Σ base_b) × 재생 테크 × (1 − troops/cap))   (economy.applyRegenMult — 로지스틱은 합에 한 번)
  *         행     = R 을 가중치 [base_b…, terr] 로 분배
- *   골드  GW_terr = p.goldWeight (지형 가중 합), GW_b = floor(eq_b × 1000(평원) × pm_b / 1000)
+ *   골드  GW_terr = p.goldWeight (지형 가중 합), GW_b = floor(floor(eq_b × 1000(평원) × pm_b / 1000) × 기지 골드 테크 / 1000)
  *         gross  = floor(ΣGW × GOLD_RATE × 골드 테크 / 1e9), 행 = GW 비례 분배
  *         net    = gross − floor(gross × 유지비 / 1000) (총액에 한 번), 행 = gross 행 비례 분배
  *   분배 = 각 몫 floor, 잔여는 가중치 최대(동률 = 앞) 행에 → 행 합 = 총합 (정확히). 병력 상한은 그대로(전체 칸 수 기준).
  */
-import { CAPITAL_PROD_TILES, BASE_PROD_TILES, GOLD_RATE_PERMILLE, TECH_STAT, techBaseProdPm } from '@civwar/shared';
+import { CAPITAL_PROD_TILES, BASE_PROD_TILES, GOLD_RATE_PERMILLE, TECH_STAT, techBaseGoldPm, techBaseProdPm } from '@civwar/shared';
 import { applyRegenMult, baseGoldWeight, baseRegenBaseMilli, garrisonUpkeepMilliPerTick, heldTroopsMilli, terrRegenBaseMilli } from './economy.js';
 import { baseProdPm, type GameState, type PlayerState, type ProductionYield } from './state.js';
 
@@ -37,7 +37,7 @@ export function distribute(total: number, weights: readonly number[]): number[] 
 /** v4.5 [A-107]: 기지 칸의 환산 칸 수 — 시작 수도였던 칸(누가 갖고 있든) 100, 그 밖의 기지 60 */
 export function baseEqTiles(state: Readonly<GameState>, tileId: number): number {
   const eq = state.capitalTiles.has(tileId) ? CAPITAL_PROD_TILES : BASE_PROD_TILES;
-  // 2026-10-24 기지 증산(TER-3A): 그 칸을 지금 소유한 플레이어의 기지 생산 배율 (수도 포함 모든 기지)
+  // 2026-10-24: 그 칸을 지금 소유한 플레이어의 기지 생산 배율 BASE_PROD (수도 포함 모든 기지, v5.8 현재 노드 없음)
   const own = state.players[state.owners[tileId]];
   return own ? Math.floor((eq * techBaseProdPm(own.statPm)) / 1000) : eq;
 }
@@ -66,7 +66,8 @@ export function computeProduction(state: Readonly<GameState>, p: Readonly<Player
   );
   const troops = distribute(regenMilli, wT);
   // 골드
-  const gw = bases.map((_, i) => baseGoldWeight(eqs[i], pms[i]));
+  const baseGoldPm = techBaseGoldPm(p.statPm); // v5.8: 세금 징수·교역소 — 골드에만 곱한다
+  const gw = bases.map((_, i) => Math.floor((baseGoldWeight(eqs[i], pms[i]) * baseGoldPm) / 1000));
   gw.push(p.goldWeight);
   const sumGW = gw.reduce((a, b) => a + b, 0);
   const grossMilli = Math.floor((sumGW * GOLD_RATE_PERMILLE * p.statPm[TECH_STAT.GOLD]) / 1_000_000_000);

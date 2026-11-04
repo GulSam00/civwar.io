@@ -2856,6 +2856,7 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 - 병종 기본값: `UNIT_CONVERT_PERMILLE` [900, 1000, 1600] → [1000, 1000, 1200], `UNIT_GARRISON_PERMILLE` 기병 2000 → 1800, `UNIT_UPKEEP_RATE_MILLI` 기병 1000 → 900, CAV-2A 마구간 set 1600 → 1440(−20% 유지). match_config 상수로 나가므로 클라이언트 표시는 그대로 따라온다.
 - 병종 갈래 노드 효과 교체(id·부모 불변): SPE-2A `COMBAT_ATK_SPEAR` +10 · SWO-2A `SPEED_SWORD` +10 · SWO-2B `COMBAT_DEF_SWORD` +10 · SWO-3A `COMBAT_ATK_SWORD` +10 · SWO-3B `COMBAT_DEF_SWORD` +10 · SWO-4 `CAPTURE_MULT_SWORD` −200 · CAV-2A `UPKEEP_WEIGHT_CAVALRY` add −100(set → add) · CAV-3A 같은 칸 add −200 · CAV-3B `COMBAT_ATK_CAVALRY` +30 · CAV-4 `CONVERT_CAVALRY` −100. `MORALE_FULL_BONUS_*` 노드는 이제 없다(칸 유지).
 - 공통 노드 수치: MIL-2B `TROOP_CAP` +100 · MIL-3B +150, TER-1 `NEUTRAL_COST` −50 · TER-2A −100, SWO-3A/3B +20, CAV-2B +30 · CAV-3B +40. MOB-2B 와 MOB-3B 효과 교환: MOB-2B `RETURN_SPEED` +300(→ 2000), MOB-3B `DISENGAGE_TICKS` set 10. 귀환 속도 최대는 2200 → 2000.
+- 새 스탯 `TECH_STAT.BASE_GOLD`(칸 53, `TECH_STAT_COUNT` 54, 기본 1000): 기지 행 골드 가중 `GW_b` 에만 곱한다(병력 생산은 그대로). ECO-1 세금 징수 +50, TER-3A 교역소 +150. 이에 따라 `CONVERT`(징발 규정)와 `BASE_PROD`(기지 증산)는 노드가 없다(칸 유지).
 - `FLAG_ORDER_COOLDOWN_TICKS` 15 → 20. 깃발 쿨타임은 이제 소유자별로 다르다: `TECH_STAT.ORDER_COOLDOWN`(새 칸 52, `TECH_STAT_COUNT` 53, 값 자체가 tick) = 20, MOB-2A 전령 −2, MOB-3A 지휘 체계 −3. 서버는 `techOrderCooldownTicks` 로 읽고 `cooldownUntilTick` 필드는 그대로 절대 tick 이다.
 - 클라이언트 쿨타임 호의 분모는 상수가 아니라 `orderCooldownTicksOf`(소유자 techMask 기준)를 쓴다.
 - MOB-2A·3A 는 더 이상 `MORALE_RECOVER` 를 바꾸지 않는다. 이 칸에는 노드가 없지만 스탯 칸과 계산식은 유지한다.

@@ -106,9 +106,9 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(techDetailRows(nd('CAV-4'), { techMask: mask(id('CAV-1'), id('CAV-2B'), id('CAV-3B')) }).rows[0]).toMatchObject({ before: '×1.20', after: '×1.10' });
     expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.90' });
     expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2B')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×0.90', after: '×0.70' });
-    expect(techDetailRows(nd('TER-3A'), { techMask: mask(id('TER-1'), id('TER-2A')) }).rows[0]).toMatchObject({ label: '기지 생산 배율 (모든 기지)', before: '×1.00', after: '×1.10' });
+    expect(techDetailRows(nd('TER-3A'), { techMask: mask(id('TER-1'), id('TER-2A')) }).rows[0]).toMatchObject({ label: '기지 골드 배율 (모든 기지)', before: '×1.00', after: '×1.15' });
     expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ label: '사막·산 영토 골드 보너스', before: '+0%', after: '+80%' });
-    expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '편성비 배율 (전 병종)', before: '×1.00', after: '×0.95' });
+    expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '기지 골드 배율 (모든 기지)', before: '×1.00', after: '×1.05' });
   });
   it('실제 값 행: 골드 수입, 슬롯 (콜백)', () => {
     const g = techDetailRows(nd('ECO-4'), { techMask: 0 });

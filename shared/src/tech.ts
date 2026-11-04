@@ -164,9 +164,14 @@ export function techSiegePm(stat: readonly number[]): number {
   return stat[TECH_STAT.SIEGE] ?? 1000;
 }
 
-/** 2026-10-24: 모든 기지 생산 배율 ‰ (기지 증산). 구 서버 설정이면 1000 */
+/** 2026-10-24: 모든 기지 생산 배율 ‰ (v5.8: 노드 없음). 구 서버 설정이면 1000 */
 export function techBaseProdPm(stat: readonly number[]): number {
   return stat[TECH_STAT.BASE_PROD] ?? 1000;
+}
+
+/** v5.8: 기지 칸 골드 가중 배율 ‰ (세금 징수·교역소). 구 서버 설정이면 1000 */
+export function techBaseGoldPm(stat: readonly number[]): number {
+  return stat[TECH_STAT.BASE_GOLD] ?? 1000;
 }
 
 /** 2026-10-24 재정 개편: 영토 한 칸의 골드 가중치 = floor(지형 기본 × (1000 + 지형 보너스) / 1000). 평지·비옥·언덕은 GOLD_PLAIN, 사막·산은 GOLD_POOR */
