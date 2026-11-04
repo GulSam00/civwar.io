@@ -91,8 +91,8 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
     near(lossPct(inp(U.SWORD, POSTURE.ATTACK, { terrain: TERRAIN.HILLS }), inp(U.SWORD, POSTURE.DEFEND)), 50.0);
   });
 
-  it('2.8 이탈 x0.7: 검병 거울, 이탈 대기 방어 깃발 손실 67.1%', () => {
-    near(lossPct(inp(U.SWORD, POSTURE.DEFEND, { disengage: true }), inp(U.SWORD, POSTURE.ATTACK)), 67.1);
+  it('2.8 이탈 x0.9 (v5.9, 구 x0.7 = 67.1%): 검병 거울, 이탈 대기 방어 깃발 손실 55.2%', () => {
+    near(lossPct(inp(U.SWORD, POSTURE.DEFEND, { disengage: true }), inp(U.SWORD, POSTURE.ATTACK)), 55.2);
   });
 
   it('2.9 기지 양 채널 배율(BASE_BUFF): 문서 수치는 1300 기준이므로 배율이 1300 일 때만 재현값과 비교하고 아니면 방향(손실 감소)만 확인', () => {
@@ -227,11 +227,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-10-24 봇 '약한 적 우선'(A-167)과 테크 개편(4티어·절대 점수, 봇 테크 목록 교체, 병종 점령 소모·편성비 개편)으로 봇 행동이 달라져 그 시점 코드로 다시 뽑았다(회귀 고정용). 같은 날 밸런스 패치(중립 확장 검병·신중형·기병 편성비 ×1.6·유지비 ×2.0)로 한 번 더 다시 뽑았다. 2026-10-25 패치 5차(기지 체력 10000/15000·상한 200·회복 5초 +50)로 또 다시 뽑았다. 2026-10-25 패치 6차(지형 골드 가중·기지 생산 50칸·정리 보상·ECO-4 지형 가산)로 한 번 더 다시 뽑았다. 같은 날 패치 7차(병력 비례 유지비·봇 빚 회피)로 또 다시 뽑았다. 2026-10-28 v5.1(점령 배율 전 병종 1000·기지 출전 쿨타임 25 tick·봇 출발 기지 확인 — 모델 1·2 공통)로 다시 뽑았다.  2026-10-31 귀환지를 출발 기지 대신 가까운 기지로 바꾸면서(모델 1·2 공통) G1·G3 을 다시 뽑았다. 같은 날 병력 상한 칸당 계수 12 → 18 로 G1~G3 을 또 다시 뽑았다. 2026-11-02 칸당 병력 상한 18 → 20 (v5.5) 으로 다시 뽑았다.
  * 2026-11-02 v5.6: 봇이 태세를 명시하고 재지정 뒤 쿨타임을 기다려 태세를 바꾸므로 다시 고정.
  * 2026-11-03 v5.8: 재정 골드 개편(언덕 이관·수치·국고 ×1.2), 공용 쿨타임 4초, 기동 테크 교체, 병종 편성비·기병 유지비, 병종 갈래 재구성, 공통·병종 노드 수치와 MOB-2B·3B 교환, 기지 골드 테크(ECO-1)로 다시 고정.
+ * 2026-11-05 v5.9: 이탈 대기 15 → 8 tick(모델 1·2 공통)·철수 훈련 5 tick·귀환 이탈 면제 2초로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: 'f340eb3c5c657ec3966a3c5a2c08a6901d5b6d59ff3509db34d7b345b46cbad3', state: '03953871b8a942bcfa615ebed238655359c98974d0fd00dfb64ba6c84c3ed14c' },
-  G2: { stream: '4e5c14176dc24b1e1d9f0a0c3a2f685e7267fdd20afa10789e5a598422e17b1c', state: 'd6605750ac87c8a09db0d8d818a078571359346a72b3538902d4ca8270744aaa' },
-  G3: { stream: '0a63abc7792cd51e6a79a7a35b5b9567a744ea62329f74b1542df916d85d064f', state: '241a03c8fc76bd17f40b5ba0fe060a40d248986f227e39dc10f0966a8a129173' },
+  G1: { stream: '240fd6da5207468dd1f83533c7b94fc030cd3d53704296808842cec45770ee56', state: '88af7378fa6438666383915396a5d7229e17f619560aea5ee98da7ad5a14e701' },
+  G2: { stream: '7fbc228fb2f7afe7547a9ffe5678c7599b3fe79e15fb5135e998d2500fd9b4d1', state: '7b7161d866bed21bdab1b1f4a8047bed4c556152cf3ae332c7647c7fd3ed1d92' },
+  G3: { stream: '564003cc87c39dd60bccc767759d5d6f67ee8c54516adbbcfffcb0636b0ed56f', state: 'c6cc2ecfeb4eedf97c2ffafc894a8fa5479af2603b64a7576d8c3462eb74f21b' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

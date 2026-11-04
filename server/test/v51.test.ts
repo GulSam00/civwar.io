@@ -90,14 +90,14 @@ describe('v5.1 4d 사기 붕괴 자동 후퇴 (모델 2)', () => {
     expect(a.morale).toBe(0);
     expect(a.routed).toBe(false);
     expect(a.state).toBe('RETURNING');
-    expect(a.disengageUntilTick).toBe(1 + 15); // 소유자 스탯 기본 15 tick
+    expect(a.disengageUntilTick).toBe(1 + 8); // 소유자 스탯 기본 8 tick (v5.9)
     expect(a.disengageHold).toBe(true);
     expect(a.returnBaseTileId).toBe(null);
     const iDis = msgs.findIndex((m) => m.type === 'flag_disengage_started' && m.flagId === a.id);
     const iRec = msgs.findIndex((m) => m.type === 'flag_recalled' && m.flagId === a.id);
     expect(iDis).toBeGreaterThanOrEqual(0);
     expect(iRec).toBeGreaterThan(iDis);
-    expect(msgs[iDis]).toMatchObject({ auto: true, untilTick: 16 });
+    expect(msgs[iDis]).toMatchObject({ auto: true, untilTick: 1 + 8 });
     expect(msgs[iRec]).toMatchObject({ reason: 'morale', returnTileId: a.returnTileId });
     for (const m of msgs) expect(validateMessage(m as never), m.type).toEqual([]);
     expect(d.state).not.toBe('RETURNING');

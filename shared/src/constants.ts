@@ -228,8 +228,10 @@ export const FLAG_ORDER_COOLDOWN_TICKS = 20; // 사용자 확정 튜닝 레버. 
 export const FLAG_RECALL_REFUND_PERMILLE = 850;
 /** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
 export const RETURN_SPEED_PERMILLE = 1500; // v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.RETURN_SPEED (MOB-3B 급속 귀환 2200)
-/** 이탈 대기 tick (4.15 g). v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.DISENGAGE_TICKS (MOB-2B 철수 훈련 10) */
-export const DISENGAGE_TICKS = 15;
+/** 이탈 대기 tick (4.15 g). v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.DISENGAGE_TICKS (MOB-3B 철수 훈련 5) */
+export const DISENGAGE_TICKS = 8; // v5.9 (사용자 2026-11-05, 후퇴 피해 완화): 15 → 8 (1.6초)
+/** v5.9 (사용자 2026-11-05): 귀환 깃발이 이탈(broke_away)한 뒤 교전 대상이 되지 않는 tick. 지난 뒤 처음 칸을 옮기면 면제가 풀린다 (귀환 외 이탈은 한 칸 이동까지 그대로) */
+export const RETURN_BREAKAWAY_TICKS = 10;
 export const FLAG_IDLE_TIMEOUT = 600;
 /**
  * 노출 소모 — **적 땅**(적대 플레이어 소유) 위 깃발, tick 당 병력의 0.05% (최소 1 병력 = 1000 milli/tick).
@@ -462,7 +464,7 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 19, code: 'MOB-2A', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -2, name: '전령', desc: '재지정·태세 전환 쿨타임 −0.4초', icon: '속도선이 붙은 신호 깃발' },
   { id: 20, code: 'MOB-2B', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 300, name: '급속 귀환', desc: '귀환 속도 ×1.7 → ×2.0', icon: '기지 지붕 + 안으로 들어가는 화살표' },
   { id: 21, code: 'MOB-3A', branch: 3, tier: 3, parent: 19, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -3, name: '지휘 체계', desc: '재지정·태세 전환 쿨타임 −0.6초', icon: '시계' },
-  { id: 22, code: 'MOB-3B', branch: 3, tier: 3, parent: 20, stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련', desc: '이탈 대기 3.0초 → 2.0초', icon: '방패 뒤로 꺾여 돌아가는 화살표' },
+  { id: 22, code: 'MOB-3B', branch: 3, tier: 3, parent: 20, stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 5, name: '철수 훈련', desc: '이탈 대기 1.6초 → 1.0초', icon: '방패 뒤로 꺾여 돌아가는 화살표' },
   { id: 23, code: 'MOB-4', branch: 3, tier: 4, parent: 21, parentAlt: 22, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '참모부', desc: '깃발 슬롯 +1' },
   // 창병 SPE — 창병 깃발에만 (24..29)
   { id: 24, code: 'SPE-1', branch: 4, tier: 1, parent: null, stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10, name: '행군 대열', desc: '창병 이동 +10' },
@@ -638,7 +640,7 @@ export const BASE_BUFF: readonly (readonly number[])[] = [
 ];
 export const COMBAT_GAMMA = 2; // 대비 지수 (구현은 정수 역제곱 고정; 값은 표시·문서용)
 export const COMBAT_VMIN = 100; // 편 채널값 하한
-export const DISENGAGE_VALUE_PERMILLE_V2 = 700; // 이탈 대기 배율 (현행 500)
+export const DISENGAGE_VALUE_PERMILLE_V2 = 900; // 이탈 대기 배율 (모델 1 은 500). v5.9 (사용자 2026-11-05): 700 → 900
 // 사기 (깃발 단위, ‰ 0..1000)
 export const MORALE_MAX = 1000;
 /** v5.4 (사용자 확정 2026-10-31): 출전한 새 깃발의 시작 사기 ‰ (화면 90%). 기지에서 기다렸다 나가는 요격을 너프한다 — 행군 중 MORALE_RECOVER 로 회복하므로 기지 앞 짧은 출전만 불리하다. 모델 2 전용 */

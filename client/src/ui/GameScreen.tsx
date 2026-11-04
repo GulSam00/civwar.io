@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { BASE_BUFF, ENDGAME_RUSH_TICK, POSTURE, type FlagSnapshot, type Posture, type Unit } from '@civwar/shared';
+import { BASE_BUFF, DISENGAGE_VALUE_PERMILLE_V2, ENDGAME_RUSH_TICK, POSTURE, type FlagSnapshot, type Posture, type Unit } from '@civwar/shared';
 import type { ClientStore } from '../state/store.js';
 import type { GameModel } from '../state/gameModel.js';
 import { GameRenderer } from '../render/renderer.js';
@@ -1047,7 +1047,7 @@ const FP_HELP = {
   head: '이 부대의 주인과 깃발 번호(출전 슬롯)',
   troops: '부대 병력 — 교전·점령·노출 소모로 줄고, 0이 되면 패주(회색 점선 테두리)해 귀환합니다',
   posture: '공격 = 적·중립 칸을 점령하며 진격 · 방어 = 점령하지 않고 목적지 둘레 내 땅을 지킴. 방어 깃발을 적·중립 땅으로 보내면 공격으로 바뀝니다. 바꾸면 재지정과 공용인 쿨타임이 돌고 진척도가 0이 됩니다',
-  status: '행군·교전·귀환·대기 상태와 표시: 전투 중(적 깃발과 맞붙음) · 패주 · 대치(적 깃발에 길이 막힘) · 이탈 대기(전투에서 빠지는 중, 전투력 −30%) · 정체(5초 동안 한 칸도 못 밂)',
+  status: `행군·교전·귀환·대기 상태와 표시: 전투 중(적 깃발과 맞붙음) · 패주 · 대치(적 깃발에 길이 막힘) · 이탈 대기(전투에서 빠지는 중, 전투력 −${(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%) · 정체(5초 동안 한 칸도 못 밂)`,
   atkdef: '병종 기본 + 테크 점수. 지형·기지·사기는 빼고 본 값 — 지금 태세 쪽이 굵게 보입니다',
   capture: '땅 한 칸을 점령할 때 깃발에서 빠지는 병력. 기준 = 보급 거리 안 중립 평원, 목표 칸 = 지금 밀고 있는 칸(지형·인접·보급 거리 반영)',
   morale: '사기 막대 — 공격력·방어력에 같은 배율로 곱해집니다. 흰 눈금 = 색이 바뀌는 구간 (위쪽 눈금은 검·기병의 전투력 ±0 경계). 교전하면 줄고, 쉬거나 내 기지 위에 있으면 회복',

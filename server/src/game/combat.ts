@@ -9,6 +9,7 @@ import {
   COMBAT_MIN_LOSS_MILLI,
   COMBAT_TERRAIN_DEF_POSTURE_PERMILLE,
   DISENGAGE_VALUE_PERMILLE,
+  RETURN_BREAKAWAY_TICKS,
   MORALE_BASE_FLOOR,
   MORALE_DROP_DEFEND_PER_TICK,
   MORALE_DROP_LOSS_K,
@@ -357,6 +358,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
       f.disengageUntilTick = null;
       f.disengageHold = false;
       f.breakaway = true;
+      if (f.state === 'RETURNING') f.breakawayUntilTick = t + RETURN_BREAKAWAY_TICKS; // v5.9: 귀환 이탈은 2초 동안 이동해도 면제 유지
       f.inCombat = false;
       brokeAway.add(f.id);
       out.broadcast.push({ type: 'flag_disengaged', tick: t, flagId: f.id, reason: 'broke_away' });

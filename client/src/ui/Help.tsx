@@ -13,6 +13,7 @@ import {
   CAPITAL_PROD_TILES,
   COMBAT_LOSS_BP,
   DISENGAGE_TICKS,
+  DISENGAGE_VALUE_PERMILLE_V2,
   ENDGAME_RUSH_TICK,
   FLAG_MIN_TROOPS,
   FLAG_RECALL_REFUND_PERMILLE,
@@ -23,6 +24,8 @@ import {
   NEUTRAL_BASE,
   FLAG_ORDER_COOLDOWN_TICKS,
   PROGRESS_DECAY_MILLI_PER_TICK,
+  RETURN_BREAKAWAY_TICKS,
+  RETURN_SPEED_PERMILLE,
   THRESHOLD_DECAY_START,
   THRESHOLD_FLOOR_PCT,
   THRESHOLD_START_PCT,
@@ -33,6 +36,7 @@ import { isNarrowScreen, useDraggableWindow } from './draggable.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
+const sec1 = (ticks: number) => `${+((ticks * TICK_MS) / 1000).toFixed(1)}초`; // v5.9: 이탈 대기처럼 1초 단위가 아닌 값
 const min = (ticks: number) => `${Math.round((ticks * TICK_MS) / 60000)}분`;
 
 /** 표 한 줄 — 이름 · 값 (설명 문장 없음) */
@@ -106,7 +110,7 @@ export function Help({ onClose }: { onClose: () => void }) {
                 1칸 이내 접촉 · 0.2초마다 양쪽 −{COMBAT_LOSS_BP / 100}% · 지형: 평원·비옥 공격 태세 공격력 {pctOf(TERRAIN_BUFF[TERRAIN.PLAIN][0][0])} · 언덕 방어 태세 방어력 {pctOf(TERRAIN_BUFF[TERRAIN.HILLS][1][1])} · 산 방어 태세 방어력 {pctOf(TERRAIN_BUFF[TERRAIN.MOUNTAIN][1][1])} · 사막 공격력 {pctOf(TERRAIN_BUFF[TERRAIN.DESERT][0][0])} · 내 기지 칸 방어력 ×{(BASE_BUFF[1][1] / 1000).toFixed(1)}
               </Row>
               <Row k="이탈">
-                전투 중 회수·재지정·태세 전환 = 대기 {sec(DISENGAGE_TICKS)} (방어력 ×0.5)
+                전투 중 회수·재지정·태세 전환 = 대기 {sec1(DISENGAGE_TICKS)} (제자리, 전투력 −{(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%) · 귀환 깃발은 빠져나간 뒤 {sec1(RETURN_BREAKAWAY_TICKS)} 동안 다시 붙잡히지 않음 · 귀환 속도 ×{RETURN_SPEED_PERMILLE / 1000}
               </Row>
               <Row k="기지">
                 생산 {BASE_PROD_TILES}칸분 (수도 {CAPITAL_PROD_TILES}) · 함락 최단 {baseMinSec}초 (수도 {capitalMinSec}초) · 모두 잃으면 멸망

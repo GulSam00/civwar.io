@@ -101,6 +101,8 @@ export interface Flag {
   botPlannedPosture: Posture | null;
   disengageUntilTick: number | null;
   breakaway: boolean;
+  /** v5.9: 귀환 깃발의 이탈 면제가 이동으로 풀리지 않는 마지막 tick (RETURN_BREAKAWAY_TICKS). 스냅숏에 싣지 않는다 */
+  breakawayUntilTick: number;
   blocked: boolean;
   calmTicks: number; // 주둔 유지비 무위협 누진 (4.4d)
   /** v4.2 (4.4a, A-54): MARCHING·ATTACK 깃발의 행군 중 정지 점령. 4단계가 매 tick 다시 쓴다 (4b 가 inCombat 이면 false) */
@@ -503,6 +505,7 @@ export function makeFlag(partial: Pick<Flag, 'id' | 'ownerId' | 'slotIndex' | 'u
     botPlannedPosture: null,
     disengageUntilTick: null,
     breakaway: false,
+    breakawayUntilTick: 0,
     blocked: false,
     calmTicks: 0,
     halted: false,

@@ -7,7 +7,7 @@
  *  - 실제 Simulation + 실제 ClientStore 종단 검증 (qaV45 에서 폐기된 pendingPosture 검증의 대체)
  */
 import { describe, expect, it } from 'vitest';
-import { DISENGAGE_TICKS, FLAG_BIT, POSTURE, FLAG_ORDER_COOLDOWN_TICKS, TERRAIN, UNIT, isClaimable, rleEncode, type C2S_GameCommand, type FlagSnapshot, type RoomMember, type S2C_RoomState, type S2C_SnapshotDelta, type ServerMessage } from '@civwar/shared';
+import { DISENGAGE_TICKS, DISENGAGE_VALUE_PERMILLE_V2, FLAG_BIT, POSTURE, FLAG_ORDER_COOLDOWN_TICKS, TERRAIN, UNIT, isClaimable, rleEncode, type C2S_GameCommand, type FlagSnapshot, type RoomMember, type S2C_RoomState, type S2C_SnapshotDelta, type ServerMessage } from '@civwar/shared';
 import { ClientStore } from '../src/state/store.js';
 import { disengageTicksOf } from '../src/state/disengage.js';
 import { flagActionState } from '../src/ui/unitChips.js';
@@ -40,10 +40,13 @@ describe('§27 태세 버튼 상태', () => {
     expect(cd.combatWarning).toBeNull(); // 막혀 있으면 경고도 없다
   });
 
-  it('교전 중 전환 경고: 이탈 대기 초는 소유자 스탯(기본 15 tick = 3초, 철수 훈련 10 tick = 2초)', () => {
-    expect(flagActionState(flag({ inCombat: true }), 0, 200).combatWarning).toBe('교전 중 전환: 이탈 대기 3초, 방어력 ×0.5');
-    expect(flagActionState(flag({ inCombat: true }), 0, 200, DISENGAGE_TICKS).combatWarning).toBe('교전 중 전환: 이탈 대기 3초, 방어력 ×0.5');
-    expect(flagActionState(flag({ inCombat: true }), 0, 200, 10).combatWarning).toBe('교전 중 전환: 이탈 대기 2초, 방어력 ×0.5');
+  it('교전 중 전환 경고: 이탈 대기 초는 소유자 스탯(소수 한 자리), 배율은 DISENGAGE_VALUE_PERMILLE_V2 (v5.9)', () => {
+    const pen = `전투력 −${(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%`;
+    const base = `교전 중 전환: 이탈 대기 ${+((DISENGAGE_TICKS * 200) / 1000).toFixed(1)}초, ${pen}`;
+    expect(flagActionState(flag({ inCombat: true }), 0, 200).combatWarning).toBe(base);
+    expect(flagActionState(flag({ inCombat: true }), 0, 200, DISENGAGE_TICKS).combatWarning).toBe(base);
+    expect(flagActionState(flag({ inCombat: true }), 0, 200, 15).combatWarning).toBe(`교전 중 전환: 이탈 대기 3초, ${pen}`);
+    expect(flagActionState(flag({ inCombat: true }), 0, 200, 5).combatWarning).toBe(`교전 중 전환: 이탈 대기 1초, ${pen}`);
   });
 
   it('이미 이탈 대기 중이면 대기 시간은 그대로라는 경고, 평상시는 경고 없음, pendingPosture 필드는 없다', () => {
@@ -147,7 +150,7 @@ describe('§27 이탈 호 — 태세 전환 중 / wait_over', () => {
     expect(Object.keys(FLAG_BIT)).not.toContain('POSTURE_PENDING');
   });
 
-  it('disengageTicksOf: 노드 표가 없는 모델은 무테크 기본값 15 tick (경고·호 길이 공용)', () => {
+  it('disengageTicksOf: 노드 표가 없는 모델은 무테크 기본값 DISENGAGE_TICKS (경고·호 길이 공용)', () => {
     const { g } = smallStore([flag({})]);
     expect(disengageTicksOf(g, 1)).toBe(DISENGAGE_TICKS);
     expect(disengageTicksOf(g, 99)).toBe(DISENGAGE_TICKS); // 모르는 플레이어 = 무테크
@@ -301,7 +304,7 @@ describe('§27 종단 — 실제 서버 시뮬레이션 + ClientStore', () => {
     // 버튼이 막히지 않고 경고가 실제 이탈 대기 초를 쓴다
     const st = flagActionState(g.flags.get(mine.id)!, g.tick, g.config.tickMs, disengageTicksOf(g, 1));
     expect(st.postureBlocked).toBeNull();
-    expect(st.combatWarning).toBe('교전 중 전환: 이탈 대기 3초, 방어력 ×0.5');
+    expect(st.combatWarning).toBe(`교전 중 전환: 이탈 대기 ${+((DISENGAGE_TICKS * 200) / 1000).toFixed(1)}초, 전투력 −${(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%`);
     const r = step(sim, [[1, { type: 'cmd_set_posture', flagId: mine.id, posture: POSTURE.DEFEND }]], store);
     expect(r.acks[0]).toMatchObject({ accepted: true, posture: POSTURE.DEFEND });
     const types = r.msgs.map((m) => m.type);

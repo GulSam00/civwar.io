@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { POSTURE, TECH_STAT, TERRAIN, UNIT, isClaimable, type C2S_GameCommand, type ServerMessage } from '@civwar/shared';
+import { DISENGAGE_TICKS, DISENGAGE_VALUE_PERMILLE_V2, POSTURE, RETURN_BREAKAWAY_TICKS, TECH_STAT, TERRAIN, UNIT, isClaimable, type C2S_GameCommand, type ServerMessage } from '@civwar/shared';
 import { generateMapForPlayers } from '../src/map/generate.js';
 import { snapshotPresence, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
 import { garrisonUpkeepMilliPerTick } from '../src/game/economy.js';
@@ -253,7 +253,7 @@ describe('깃발 접촉 = 8방향 (사용자 결정 2026-10-11)', () => {
 });
 
 describe('이탈 대기 · 패주', () => {
-  it('전투 중 회수 → 3초 대기(실효값 ×0.5) → broke_away, 패주 깃발 명령은 ROUTED', () => {
+  it('전투 중 회수 → 1.6초 대기(실효값 ×0.9, v5.9) → broke_away, 패주 깃발 명령은 ROUTED', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 2, false);
     setTileOwner(s, c + 1, 1, false);
@@ -264,11 +264,11 @@ describe('이탈 대기 · 패주', () => {
     const a0 = atk.troopsMilli;
     const d0 = def.troopsMilli;
     sim.enqueue(2, 2, { type: 'cmd_flag_recall', clientSeq: 1, flagId: def.id });
-    const r = run(sim, 16); // 명령 tick + DISENGAGE_TICKS
+    const r = run(sim, DISENGAGE_TICKS + 1); // 명령 tick + DISENGAGE_TICKS
     expect(r.personal[0]).toMatchObject({ accepted: true, flagId: def.id });
     expect(r.all.find((m) => m.type === 'flag_disengage_started')).toBeTruthy();
-    // 검 방어(1000×0.5=500) vs 검 공격 1000 → 수비가 2배 잃는다
-    expect(d0 - def.troopsMilli).toBeGreaterThan(1.8 * (a0 - atk.troopsMilli));
+    // v5.9: 검 방어 ×0.9 vs 검 공격 → 수비가 (1/0.9)² ≈ 1.23배 잃는다
+    expect(d0 - def.troopsMilli).toBeGreaterThan(0.95 * (1000 / DISENGAGE_VALUE_PERMILLE_V2) ** 2 * (a0 - atk.troopsMilli));
     expect(r.all.find((m) => m.type === 'flag_disengaged')).toMatchObject({ flagId: def.id, reason: 'broke_away' });
     expect(def.breakaway).toBe(true);
     expect(def.inCombat).toBe(false);
@@ -623,7 +623,7 @@ describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
     addFlag(s, { ownerId: 2, unit: 2, troops: 1000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED', targetOwnerId: 1 });
     const out1 = sim.step();
     expect(back.inCombat).toBe(true);
-    expect(out1.broadcast.find((m) => m.type === 'flag_disengage_started' && m.flagId === back.id)).toMatchObject({ auto: true, untilTick: 1 + 15 });
+    expect(out1.broadcast.find((m) => m.type === 'flag_disengage_started' && m.flagId === back.id)).toMatchObject({ auto: true, untilTick: 1 + DISENGAGE_TICKS });
     sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 1, flagId: back.id });
     sim.enqueue(1, 1, { type: 'cmd_flag_retarget', clientSeq: 2, flagId: back.id, anchorTileId: c + 2 });
     sim.enqueue(1, 1, { type: 'cmd_set_posture', clientSeq: 3, flagId: back.id, posture: POSTURE.ATTACK });
@@ -635,6 +635,29 @@ describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
     sim.enqueue(1, 1, { type: 'cmd_flag_recall', clientSeq: 4, flagId: back.id });
     expect(sim.step().personal.find((p) => p.msg.type === 'cmd_ack')?.msg).toMatchObject({ accepted: false, reason: 'ROUTED' });
     expect(ledgerImbalance(s)).toBe(0);
+  });
+
+  it('v5.9: 귀환 깃발 이탈 면제 — broke_away 뒤 RETURN_BREAKAWAY_TICKS 동안은 칸을 옮겨도 다시 붙잡히지 않고, 지난 뒤 첫 이동에서 풀린다', () => {
+    const sim = makeSim();
+    const s = sim.state;
+    const c = findOpenArea(s, 3);
+    plainify(s, c, 3);
+    const t0 = s.tick;
+    const back = addFlag(s, { ownerId: 1, unit: 0, troops: 1000, pos: c, posture: POSTURE.DEFEND, state: 'RETURNING', returnTileId: s.players[1].homeTileId });
+    back.breakaway = true;
+    back.breakawayUntilTick = t0 + RETURN_BREAKAWAY_TICKS;
+    addFlag(s, { ownerId: 2, unit: 2, troops: 1000, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED', targetOwnerId: 1 });
+    let movedInWindow = false;
+    while (s.tick < t0 + RETURN_BREAKAWAY_TICKS - 1) {
+      const pos = back.posTileId;
+      sim.step();
+      if (back.posTileId !== pos) movedInWindow = true;
+      expect(back.breakaway).toBe(true);
+      expect(back.inCombat).toBe(false);
+    }
+    expect(movedInWindow).toBe(true); // 창 귀환 0.95칸/초 — 2초 안에 한 칸은 옮긴다
+    for (let i = 0; i < 20 && back.breakaway; i++) sim.step();
+    expect(back.breakaway).toBe(false); // 면제 시간이 지나고 처음 칸을 옮기면 풀린다
   });
 
   it('I-1: flag_posture_changed 에 targetOwnerId (내 땅 앵커 → 254)', () => {
