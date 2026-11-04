@@ -95,7 +95,7 @@ export function Help({ onClose }: { onClose: () => void }) {
                 점유율 {THRESHOLD_START_PCT}% ({min(THRESHOLD_DECAY_START)}부터 하락, 바닥 {THRESHOLD_FLOOR_PCT}%) · {min(ENDGAME_RUSH_TICK)} 종반 러시 · {min(HARD_TIMEOUT_TICK)} 종료 시 최대 영토
               </Row>
               <Row k="깃발">
-                최소 {FLAG_MIN_TROOPS}명 · 내 땅에서 {FRONT_MAX_RANGE}칸 · 회수 환급 {FLAG_RECALL_REFUND_PERMILLE / 10}%
+                최소 {FLAG_MIN_TROOPS}명 · 점령 중엔 칸 하나를 더 못 먹을 만큼 줄면 소진 · 방어 깃발은 {FLAG_MIN_TROOPS}명 미만이면 소진 · 내 땅에서 {FRONT_MAX_RANGE}칸 · 회수 환급 {FLAG_RECALL_REFUND_PERMILLE / 10}%
               </Row>
               <Row k="병종">
                 <UnitIcon unit={0} withName /> 방어↑ 속도↓ · <UnitIcon unit={1} withName /> 중간 · <UnitIcon unit={2} withName /> 공격↑ 속도↑ 방어↓

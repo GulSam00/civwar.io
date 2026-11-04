@@ -589,7 +589,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 | **7c 진척도 자동 감소 (v4.1)** flagId ASC — `progressMilli > 0 ∧ ∉ pushedSet ∧ ¬holdProgress` 이면 −20(0 클램프), 0 도달 시 `flag_progress_lost{cause:"decayed"}`. `holdProgress` = inCombat ∨ 4a 스냅숏 위치 거리 ≤ 1 에 적대(비동맹) presentEnemy 깃발(¬routed ∧ troops > 0, 상태·태세 무관) | `gauge.ts stage7c_progressDecay` (+ `combat.ts snapshotPresence`, 4a 산출물 `FlagCombatPlan.presence`) | ✅ |
 | 8 기지 체력 회복 tileId ASC | `stage8_baseRegen` | ✅ |
 | 9 파생 상태 | `gauge.ts stage9_derived` | ✅ calmTicks — `threatened`(inCombat ∨ 관할 원 안 칸을 `targetTileId`로 둔 적 **`pushing`** 공격 깃발 — v4.2) 사용. `GARRISON_ESCALATE_MAX = 1` 이라 규칙 영향 없음 |
-| 10 깃발 종료 판정 | `gauge.ts stage10_flagEnd` | ✅ **v4.2**: ENGAGED·ATTACK 은 옆 칸(`marchFront`) 비면 IDLE(`front_cleared`), 아니면 < 40 소진 / ENGAGED·DEFEND guard 소멸 → IDLE·소진 / **MARCHING·halted < 40 → 소진** / IDLE 600 tick → 자동 귀환(`returnBaseTileId = null`). **중립 자동 전환 삭제** |
+| 10 깃발 종료 판정 | `gauge.ts stage10_flagEnd` | ✅ **v4.2**: ENGAGED·ATTACK 은 옆 칸(`marchFront`) 비면 IDLE(`front_cleared`), 아니면 소진(**v5.9 모델 2: `attackExhausted` — 남은 병력 < 현재 타깃 남은 비용**, 모델 1: < 40) / ENGAGED·DEFEND guard 소멸 → IDLE·소진 / **MARCHING·halted → 같은 공격 소진 판정** / IDLE 600 tick → 자동 귀환(`returnBaseTileId = null`). **중립 자동 전환 삭제** |
 | 11 봇 — **v4.1: 봇별 `t % bot.decisionInterval == 0`**(EASY 30 / NORMAL 15 / HARD 10), playerId ASC | `stage11_bots` | ✅ 3차-2 `CivBot` (`bot.ts`, §11) |
 | 12 탈락 | `stage12_elimination` | ✅ |
 | 13 승리 | `stage13_victory` | ✅ |
@@ -801,7 +801,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 19. ~~기본 태세 자동 재파생~~ → **폐지(사용자 결정, GDD 4.3a 개정)**. 기본 태세는 발령·재지정 때만 정해진다. 공격 깃발은 앵커를 점령한 뒤에도 front 가 빌 때까지 계속 밀고, 비면 기존 IDLE/중립 자동 전환 규칙을 따른다. 9단계는 calmTicks 만 갱신. (`flag_posture_changed auto:true`는 이제 재지정 때만 나온다.)
 20. **되돌리기 배분은 GDD 의사코드 그대로**: `pending = adv − undo`(기지는 `dmg − undo`) → 방어는 그 tick 전진량만 상쇄하고(ceil 잔여만큼 소폭 음수 가능) 이미 쌓인 진척도·깎인 기지 체력을 되돌리지는 않는다. 산문("역방향으로 민다")과 다를 수 있어 **확인 요청**.
 21. ~~IDLE 공격 깃발은 자동 재교전하지 않는다~~ → **v4.2 A-59: 옆 칸이 다시 적·중립이면 그 자리에서 재점화**(§18).
-22. 소진 판정(< 40)은 GDD 4.11b 대로 **ENGAGED 깃발 + v4.2 정지 점령(halted) 깃발**. 걷는 MARCHING/IDLE/RETURNING 깃발은 40 미만이어도 유지.
+22. 소진 판정(방어 < 40, v5.9 모델 2 공격 계열은 칸 하나를 더 못 살 때)은 GDD 4.4·4.11b 대로 **ENGAGED 깃발 + v4.2 정지 점령(halted) 깃발**. 걷는 MARCHING/IDLE/RETURNING 깃발은 40 미만이어도 유지.
 23. **3.2 `min(troops + regen, cap)` 그대로** — 회수 환급·영토 상실로 풀이 cap 을 넘으면 다음 tick 잘린다. 장부 `capClamp` 로 기록. GDD 빈칸(환급이 cap 에 잘리는 것이 의도인지) → **확인 요청**.
 24. ZOC 는 tick 당 1회, 전진 전에 판정(최고 속도도 tick 당 1칸 미만이라 루프 중 재판정 불필요). 대치 중엔 `moveProgMilli`가 늘지 않는다. `lockUntilTick` 중인 깃발은 노출 소모도 건너뛴다(4.4 `continue` 그대로).
 25. 기지가 함락 락(25 tick) 중이면 그 기지를 고른 공격 깃발은 그 tick 아무것도 하지 않는다(지출 0).
@@ -845,7 +845,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 55. **경로 위험 (8.6) 은 근사**: 거리장 경로를 만들지 않고 앵커 거리 ≤ 2 의 적 깃발 실효력 합 × 0.9 와 비교. **상륙 후보** (기동 T2+ → **v4.3: MOB-2B 조선술 보유**, §10-99): 내 해안에서 얕은 물만 12칸 BFS 로 닿는, 내 땅과 비인접·적 깃발 거리 > 2 인 육지 — 점수 ×0.8. **차단 쓰기**: 내 땅을 노리는 적 행군 깃발과 그 앵커 사이 맨해튼 최단 경로 위 (깃발에서 2~6칸) 내 언덕·산 칸, 빈 슬롯 ≥ 2, 창병 = max(40, 요격 필요 병력). 결정당 1회.
 56. **추격**: 기병 공격 깃발 거리 ≤ 6 에 이탈 대기 적 깃발이 있고 그 칸이 적·중립 육지면 그 칸으로 재지정.
 57. **공격 깃발 최소 병력 = 3 × FLAG_MIN_TROOPS** (cap − 예비가 작은 소국은 2× 까지): GDD 식 `clamp(풀×45%, 40, …)` 은 40 근처 깃발을 반복 발령 → 몇 AP 쓰고 소진 (잔여 전액 소멸) → 소국이 영원히 못 자라는 함정이 있었다 (실측 10분에 소진 802회).
-58. **소진 직전 회수**: ENGAGED 공격 깃발 병력 < 40 + 쌓인 예산 + 누적률 × 2 tick 이고, 그 경계 × 15% < 20 (회수 손실이 소진 손실 상한의 절반 미만) 일 때만 회수. 큰 깃발은 그냥 소진시키는 편이 손실·슬롯 점유가 적다 (측정).
+58. (**v5.9 모델 2 에서 폐지** — 공격 소진 손실이 칸 하나 값 미만이 되어 회수 손실 15% 가 늘 더 크다. 모델 1 만 남음) **소진 직전 회수**: ENGAGED 공격 깃발 병력 < 40 + 쌓인 예산 + 누적률 × 2 tick 이고, 그 경계 × 15% < 20 (회수 손실이 소진 손실 상한의 절반 미만) 일 때만 회수. 큰 깃발은 그냥 소진시키는 편이 손실·슬롯 점유가 적다 (측정).
 59. **슬롯 재활용**: 슬롯이 꽉 찼고 새 깃발 예상 병력 (풀 × 35%, 풀 − 예비 이내) ≥ 2 × 최소 공격 병력이면, 병력 × 4 ≤ 그 값인 가장 약한 비전투 깃발 (공격, 또는 위협 없는 방어) 1개를 회수.
 60. ~~**테크**~~ (**v4.3 에서 대체 — §10-99**): `botIndex = playerId − 1`. 수비형 `[군사T1, 기동T2, …]` 처럼 선행 단계가 빠진 항목은 선행부터 산다 (TECH_ORDER 거절 방지). 결정당 1개, 못 사면 기다린다 (건너뛰지 않음). 목록 6개 소진 후엔 (단계, 축) 오름차순.
 61. **외교**: 8.5 그대로 — 제안 수신 시 제안자 타일 ≥ 내 타일 × 1.2 ∧ 내 동맹 < 2 → 수락, 아니면 거절. 먼저 제안 안 함. 파기 = 내 타일 ≥ 동맹 × 2 ∧ t > 7500 ∧ 최소 유지 경과.
