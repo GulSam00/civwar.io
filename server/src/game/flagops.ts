@@ -100,7 +100,7 @@ export function beginReturn(state: GameState, f: Flag, baseTileId?: number | nul
 
 function startDisengageIfInCombat(state: Readonly<GameState>, f: Flag, t: number, out: Outbox): void {
   if (f.inCombat && f.disengageUntilTick === null) {
-    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm); // v4.5: 명령 수락 시점의 소유자 스탯 (MOB-2B 철수 훈련 10)
+    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm); // v4.5: 명령 수락 시점의 소유자 스탯 (MOB-3B 철수 훈련 10)
     out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: false });
   }
 }

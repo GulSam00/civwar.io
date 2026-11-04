@@ -90,7 +90,7 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
   });
   it('set 노드: 마구간 기병 유지비 가중치 1.80 → 1.70, 철수 훈련 3.0초 → 2.0초 (v4.5)', () => {
     expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '1.80', after: '1.70' });
-    expect(techDetailRows(nd('MOB-2B'), { techMask: mask(id('MOB-1')) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
+    expect(techDetailRows(nd('MOB-3B'), { techMask: mask(id('MOB-1'), id('MOB-2B')) }).rows[0]).toMatchObject({ before: '3.0초', after: '2.0초' });
   });
   it('병종 이동은 공통 MOB 를 합친 값', () => {
     const d = techDetailRows(nd('CAV-1'), { techMask: mask(id('MOB-1')) }); // 행군로 +10 보유, 군마 +10
@@ -98,11 +98,11 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
   });
   it('사기·기지 스탯 행 (재정·행정·병종 T3·T4)', () => {
     expect(techDetailRows(nd('MIL-4'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }).rows[0]).toMatchObject({ label: '깃발 슬롯 보너스', before: '+0', after: '+1' });
-    expect(techDetailRows(nd('MIL-2B'), { techMask: mask(id('MIL-1')) }).rows[0]).toMatchObject({ label: '병력 상한 배율', before: '×1.00', after: '×1.06' });
+    expect(techDetailRows(nd('MIL-2B'), { techMask: mask(id('MIL-1')) }).rows[0]).toMatchObject({ label: '병력 상한 배율', before: '×1.00', after: '×1.10' });
     expect(techDetailRows(nd('MIL-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '병력 재생 배율', before: '×1.00', after: '×1.05' });
     expect(techDetailRows(nd('SWO-4'), { techMask: mask(id('SWO-1'), id('SWO-2B'), id('SWO-3B')) }).rows[0]).toMatchObject({ label: '검병 점령 소모 배율', before: '×1.00', after: '×0.80' });
     expect(techDetailRows(nd('SWO-2B'), { techMask: mask(id('SWO-1')) }).rows[0]).toMatchObject({ before: '100', after: '110' });
-    expect(techDetailRows(nd('CAV-3B'), { techMask: mask(id('CAV-1'), id('CAV-2B')) }).rows[0]).toMatchObject({ before: '140', after: '170' });
+    expect(techDetailRows(nd('CAV-3B'), { techMask: mask(id('CAV-1'), id('CAV-2B')) }).rows[0]).toMatchObject({ before: '150', after: '190' });
     expect(techDetailRows(nd('CAV-4'), { techMask: mask(id('CAV-1'), id('CAV-2B'), id('CAV-3B')) }).rows[0]).toMatchObject({ before: '×1.20', after: '×1.10' });
     expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.90' });
     expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2B')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×0.90', after: '×0.70' });

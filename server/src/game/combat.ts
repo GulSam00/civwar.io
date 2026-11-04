@@ -338,7 +338,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
   // v4.2 [A-62]: 전투에 붙잡힌 귀환(비패주) 깃발 → 자동 이탈 대기 (3초, 실효값 ×0.5 — 4.15 g 그대로)
   for (const f of state.flags) {
     if (!f.inCombat || f.state !== 'RETURNING' || f.routed || f.disengageUntilTick !== null || f.breakaway) continue;
-    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm); // v4.5: 소유자 스탯 (MOB-2B 철수 훈련 10)
+    f.disengageUntilTick = t + techDisengageTicks(state.players[f.ownerId].statPm); // v4.5: 소유자 스탯 (MOB-3B 철수 훈련 10)
     out.broadcast.push({ type: 'flag_disengage_started', tick: t, flagId: f.id, untilTick: f.disengageUntilTick, auto: true });
   }
   // 이탈 대기 (4.15 g)

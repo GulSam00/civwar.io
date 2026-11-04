@@ -144,7 +144,7 @@ export const TECH_PRIORITY_CODES: readonly (readonly string[])[] = [
   ['TER-1', 'CAV-1', 'MOB-1', 'TER-2A', 'ECO-1', 'MOB-2A', 'CAV-2B', 'ECO-2A', 'TER-3A', 'MIL-1', 'CAV-3B', 'MOB-3A', 'MIL-2A', 'ECO-3A', 'TER-4', 'MIL-3A'],
   // 1 재정형
   ['ECO-1', 'TER-1', 'ECO-2A', 'CAV-1', 'ECO-3A', 'MOB-1', 'CAV-2B', 'ECO-4', 'SPE-1', 'MIL-1', 'TER-2A', 'MOB-2A', 'CAV-3B', 'TER-3A', 'MIL-2A', 'SPE-2B'],
-  // 2 수비형 (철수 훈련 MOB-2B 를 MOB-1 바로 뒤에)
+  // 2 수비형 (v5.8: MOB-2B 는 급속 귀환, 철수 훈련은 MOB-3B)
   ['SPE-1', 'MIL-1', 'ECO-1', 'SPE-2B', 'MIL-2B', 'CAV-1', 'ECO-2B', 'SPE-3A', 'MIL-3B', 'MOB-1', 'MOB-2B', 'TER-1', 'TER-2B', 'SPE-4', 'MOB-3B', 'ECO-3B'],
   // 3 기동형
   ['MOB-1', 'CAV-1', 'MOB-2A', 'CAV-2B', 'ECO-1', 'CAV-2A', 'MOB-3A', 'MOB-2B', 'MIL-1', 'MIL-2A', 'CAV-3B', 'MIL-3A', 'MOB-3B', 'CAV-3A', 'CAV-4', 'ECO-2B', 'TER-1'],

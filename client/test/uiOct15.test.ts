@@ -268,21 +268,21 @@ describe('§22.12 flag_idle "unreachable"', () => {
 
 // ───────────── 테크 17·19 ─────────────
 
-describe('§22.7 테크 철수 훈련(MOB-2B) · 급속 귀환(MOB-3B) — 2026-10-24 개편 후 id 20·22', () => {
-  const ctx = { consts: undefined, techMask: 0, goldWeight: 0, upkeepPm: 0 };
+describe('§22.7 테크 급속 귀환(MOB-2B) · 철수 훈련(MOB-3B) — v5.8 에 효과 교환, id 20·22', () => {
+  const ctx = { consts: undefined, techMask: 2 ** 18, goldWeight: 0, upkeepPm: 0 }; // 행군로 MOB-1 보유
   const n20 = TECH_NODES.find((n) => n.code === 'MOB-2B')!;
   const n22 = TECH_NODES.find((n) => n.code === 'MOB-3B')!;
   it('노드 이름·설명 (shared)', () => {
-    expect(n20.name).toBe('철수 훈련');
-    expect(n22.name).toBe('급속 귀환');
+    expect(n20.name).toBe('급속 귀환');
+    expect(n22.name).toBe('철수 훈련');
   });
   it('철수 훈련: 상세 "이탈 대기 시간 3.0초 → 2.0초"', () => {
-    const d = techDetailRows(n20, ctx as Parameters<typeof techDetailRows>[1]);
+    const d = techDetailRows(n22, ctx as Parameters<typeof techDetailRows>[1]);
     expect(d.rows[0]).toMatchObject({ label: '이탈 대기 시간', before: '3.0초', after: '2.0초', changed: true });
   });
-  it('급속 귀환: 상세 "귀환 속도 배율 ×1.50 → ×2.00" (보유 노드 없음 기준, 행군로 +0.2 는 별도 노드)', () => {
-    const d = techDetailRows(n22, ctx as Parameters<typeof techDetailRows>[1]);
-    expect(d.rows[0]).toMatchObject({ before: '×1.50', after: '×2.00', changed: true });
+  it('급속 귀환: 상세 "귀환 속도 배율 ×1.70 → ×2.00" (행군로 보유 기준)', () => {
+    const d = techDetailRows(n20, ctx as Parameters<typeof techDetailRows>[1]);
+    expect(d.rows[0]).toMatchObject({ before: '×1.70', after: '×2.00', changed: true });
     expect(d.rows[0].label).toContain('귀환 속도');
   });
 });

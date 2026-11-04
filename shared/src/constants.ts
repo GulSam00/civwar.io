@@ -437,9 +437,9 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   // 군사 MIL — 공통 (0..5)
   { id: 0, code: 'MIL-1', branch: 0, tier: 1, parent: null, stat: TECH_STAT.REGEN, op: 'add', value: 50, name: '징병령', desc: '병력 재생 +5%' },
   { id: 1, code: 'MIL-2A', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.SIEGE, op: 'add', value: 100, name: '공성 전술', desc: '적 기지 공격 피해 +10%' },
-  { id: 2, code: 'MIL-2B', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 60, name: '병참 창고', desc: '병력 상한 +6%' },
+  { id: 2, code: 'MIL-2B', branch: 0, tier: 2, parent: 0, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 100, name: '병참 창고', desc: '병력 상한 +10%' },
   { id: 3, code: 'MIL-3A', branch: 0, tier: 3, parent: 1, stat: TECH_STAT.SIEGE, op: 'add', value: 150, name: '공성 장비', desc: '적 기지 공격 피해 +15%' },
-  { id: 4, code: 'MIL-3B', branch: 0, tier: 3, parent: 2, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 60, name: '예비대 편성', desc: '병력 상한 +6%' },
+  { id: 4, code: 'MIL-3B', branch: 0, tier: 3, parent: 2, stat: TECH_STAT.TROOP_CAP, op: 'add', value: 150, name: '예비대 편성', desc: '병력 상한 +15%' },
   { id: 5, code: 'MIL-4', branch: 0, tier: 4, parent: 3, parentAlt: 4, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '총동원령', desc: '깃발 슬롯 +1' },
   // 재정 ECO (6..11) — 2A/2B 양자택일
   { id: 6, code: 'ECO-1', branch: 1, tier: 1, parent: null, stat: TECH_STAT.CONVERT, op: 'add', value: -50, name: '징발 규정', desc: '편성비 −5% (전 병종)' },
@@ -449,8 +449,8 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1200, name: '채굴', desc: '사막·산 영토 골드 +120%' },
   { id: 11, code: 'ECO-4', branch: 1, tier: 4, parent: 9, parentAlt: 10, stat: TECH_STAT.GOLD, op: 'add', value: 200, name: '국고', desc: '모든 지형 골드 +20%' },
   // 행정 TER (12..17) — 2A/2B 양자택일
-  { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -60, name: '개척민', desc: '중립 땅 점령비용 −6%' },
-  { id: 13, code: 'TER-2A', branch: 2, tier: 2, parent: 12, exclusive: 14, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -80, name: '확장', desc: '중립 땅 점령비용 −8%' },
+  { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -50, name: '개척민', desc: '중립 땅 점령비용 −5%' },
+  { id: 13, code: 'TER-2A', branch: 2, tier: 2, parent: 12, exclusive: 14, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -100, name: '확장', desc: '중립 땅 점령비용 −10%' },
   { id: 14, code: 'TER-2B', branch: 2, tier: 2, parent: 12, exclusive: 13, stat: TECH_STAT.BASE_DMG, op: 'add', value: -100, name: '요새화', desc: '기지 체력 피해 −10%' },
   { id: 15, code: 'TER-3A', branch: 2, tier: 3, parent: 13, stat: TECH_STAT.BASE_PROD, op: 'add', value: 100, name: '기지 증산', desc: '모든 기지 생산 +10%' },
   { id: 16, code: 'TER-3B', branch: 2, tier: 3, parent: 14, stat: TECH_STAT.BASE_RECOVER, op: 'add', value: 500, name: '기지 재건', desc: '기지 생산력 회복 +50%' },
@@ -458,9 +458,9 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   // 기동 MOB — 공통 (18..23)
   { id: 18, code: 'MOB-1', branch: 3, tier: 1, parent: null, stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 200, name: '행군로', desc: '귀환 속도 ×1.5 → ×1.7' },
   { id: 19, code: 'MOB-2A', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -2, name: '전령', desc: '재지정·태세 전환 쿨타임 −0.4초', icon: '속도선이 붙은 신호 깃발' },
-  { id: 20, code: 'MOB-2B', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련', desc: '이탈 대기 3.0초 → 2.0초', icon: '방패 뒤로 꺾여 돌아가는 화살표' },
+  { id: 20, code: 'MOB-2B', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 300, name: '급속 귀환', desc: '귀환 속도 ×1.7 → ×2.0', icon: '기지 지붕 + 안으로 들어가는 화살표' },
   { id: 21, code: 'MOB-3A', branch: 3, tier: 3, parent: 19, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -3, name: '지휘 체계', desc: '재지정·태세 전환 쿨타임 −0.6초', icon: '시계' },
-  { id: 22, code: 'MOB-3B', branch: 3, tier: 3, parent: 20, stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 500, name: '급속 귀환', desc: '귀환 속도 +×0.5', icon: '기지 지붕 + 안으로 들어가는 화살표' },
+  { id: 22, code: 'MOB-3B', branch: 3, tier: 3, parent: 20, stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련', desc: '이탈 대기 3.0초 → 2.0초', icon: '방패 뒤로 꺾여 돌아가는 화살표' },
   { id: 23, code: 'MOB-4', branch: 3, tier: 4, parent: 21, parentAlt: 22, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '참모부', desc: '깃발 슬롯 +1' },
   // 창병 SPE — 창병 깃발에만 (24..29)
   { id: 24, code: 'SPE-1', branch: 4, tier: 1, parent: null, stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10, name: '행군 대열', desc: '창병 이동 +10' },
@@ -473,15 +473,15 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 30, code: 'SWO-1', branch: 5, tier: 1, parent: null, stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10, name: '검술', desc: '검병 공격 +10' },
   { id: 31, code: 'SWO-2A', branch: 5, tier: 2, parent: 30, stat: TECH_STAT.SPEED_SWORD, op: 'add', value: 10, name: '경장 행군', desc: '검병 이동 +10', icon: '발자국 + 속도선' },
   { id: 32, code: 'SWO-2B', branch: 5, tier: 2, parent: 30, stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10, name: '사슬 갑옷', desc: '검병 방어 +10' },
-  { id: 33, code: 'SWO-3A', branch: 5, tier: 3, parent: 31, stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10, name: '정예 검사', desc: '검병 공격 +10' },
-  { id: 34, code: 'SWO-3B', branch: 5, tier: 3, parent: 32, stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10, name: '철갑 보병', desc: '검병 방어 +10', icon: '투구' },
+  { id: 33, code: 'SWO-3A', branch: 5, tier: 3, parent: 31, stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 20, name: '정예 검사', desc: '검병 공격 +20' },
+  { id: 34, code: 'SWO-3B', branch: 5, tier: 3, parent: 32, stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 20, name: '철갑 보병', desc: '검병 방어 +20', icon: '투구' },
   { id: 35, code: 'SWO-4', branch: 5, tier: 4, parent: 34, parentAlt: 33, stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200, name: '돌격 보병', desc: '검병 점령 소모 −0.20' },
   // 기병 CAV — 기병 깃발에만 (36..41)
   { id: 36, code: 'CAV-1', branch: 6, tier: 1, parent: null, stat: TECH_STAT.SPEED_CAVALRY, op: 'add', value: 10, name: '군마', desc: '기병 이동 +10' },
   { id: 37, code: 'CAV-2A', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'add', value: -100, name: '마구간', desc: '기병 유지비 가중 −0.1 (1000명당 0.9 → 0.85골드/초)' },
-  { id: 38, code: 'CAV-2B', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 20, name: '기병창', desc: '기병 공격 +20' },
+  { id: 38, code: 'CAV-2B', branch: 6, tier: 2, parent: 36, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 30, name: '기병창', desc: '기병 공격 +30' },
   { id: 39, code: 'CAV-3A', branch: 6, tier: 3, parent: 37, stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'add', value: -200, name: '목초지', desc: '기병 유지비 가중 −0.2 (1000명당 0.85 → 0.75골드/초)', icon: '울타리 친 풀밭' },
-  { id: 40, code: 'CAV-3B', branch: 6, tier: 3, parent: 38, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 30, name: '중기병', desc: '기병 공격 +30' },
+  { id: 40, code: 'CAV-3B', branch: 6, tier: 3, parent: 38, stat: TECH_STAT.COMBAT_ATK_CAVALRY, op: 'add', value: 40, name: '중기병', desc: '기병 공격 +40' },
   { id: 41, code: 'CAV-4', branch: 6, tier: 4, parent: 40, parentAlt: 39, stat: TECH_STAT.CONVERT_CAVALRY, op: 'add', value: -100, name: '군마 징발', desc: '기병 편성비 −0.1 (×1.2 → ×1.1)' },
 ];
 

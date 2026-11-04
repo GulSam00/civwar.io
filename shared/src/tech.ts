@@ -185,12 +185,12 @@ export function techShallowPm(_stat: readonly number[]): number {
   return SHALLOW_MOVE_PERMILLE;
 }
 
-/** v4.5: 그 플레이어의 이탈 대기 tick (무테크 15, MOB-2B 철수 훈련 10) */
+/** v4.5: 그 플레이어의 이탈 대기 tick (무테크 15, MOB-3B 철수 훈련 10) */
 export function techDisengageTicks(stat: readonly number[]): number {
   return stat[TECH_STAT.DISENGAGE_TICKS];
 }
 
-/** v4.5: 그 플레이어의 귀환 속도 배율 ‰ (무테크 1500, MOB-3B 급속 귀환 2200) */
+/** v4.5: 그 플레이어의 귀환 속도 배율 ‰ (무테크 1500, MOB-1 1700, MOB-2B 급속 귀환 2000) */
 export function techReturnSpeedPm(stat: readonly number[]): number {
   return stat[TECH_STAT.RETURN_SPEED];
 }

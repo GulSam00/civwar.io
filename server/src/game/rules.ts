@@ -220,7 +220,7 @@ export function moveCostPermille(state: Readonly<GameState>, _p: Readonly<Player
  */
 export function speedMilliAt(state: Readonly<GameState>, f: Readonly<Flag>, t: number): number {
   const p = state.players[f.ownerId];
-  const ret = f.state === 'RETURNING' ? techReturnSpeedPm(p.statPm) : 1000; // v4.5: 플레이어 스탯 (무테크 1500, MOB-3B 급속 귀환 2200)
+  const ret = f.state === 'RETURNING' ? techReturnSpeedPm(p.statPm) : 1000; // v4.5: 플레이어 스탯 (무테크 1500, MOB-1 1700, MOB-2B 급속 귀환 2000)
   return Math.max(
     1,
     Math.floor(

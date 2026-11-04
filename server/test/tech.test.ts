@@ -118,9 +118,9 @@ describe('v4.6 노드 표', () => {
     const s = (c: string) => TECH_NODES[id(c)];
     expect(s('MIL-1')).toMatchObject({ stat: TECH_STAT.REGEN, op: 'add', value: 50, name: '징병령' });
     expect(s('MIL-2A')).toMatchObject({ stat: TECH_STAT.SIEGE, value: 100, name: '공성 전술' });
-    expect(s('MIL-2B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
+    expect(s('MIL-2B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 100 });
     expect(s('MIL-3A')).toMatchObject({ stat: TECH_STAT.SIEGE, value: 150, name: '공성 장비' });
-    expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 60 });
+    expect(s('MIL-3B')).toMatchObject({ stat: TECH_STAT.TROOP_CAP, value: 150 });
     expect(s('MIL-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, tier: 4, name: '총동원령' });
     expect(s('SPE-1')).toMatchObject({ stat: TECH_STAT.SPEED_SPEAR, op: 'add', value: 10 });
     expect(s('SPE-2A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SPEAR, op: 'add', value: 10 });
@@ -128,21 +128,21 @@ describe('v4.6 노드 표', () => {
     expect(s('SPE-3B')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SPEAR, op: 'add', value: -100 });
     expect(s('SWO-2A')).toMatchObject({ stat: TECH_STAT.SPEED_SWORD, op: 'add', value: 10 });
     expect(s('SWO-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10 });
-    expect(s('SWO-3A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 10 });
-    expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 10 });
+    expect(s('SWO-3A')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_SWORD, op: 'add', value: 20 });
+    expect(s('SWO-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_DEF_SWORD, op: 'add', value: 20 });
     expect(s('SWO-4')).toMatchObject({ stat: TECH_STAT.CAPTURE_MULT_SWORD, op: 'add', value: -200 });
     expect(s('CAV-2A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'add', value: -100 });
-    expect(s('CAV-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 20 });
+    expect(s('CAV-2B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 30 });
     expect(s('CAV-4')).toMatchObject({ stat: TECH_STAT.CONVERT_CAVALRY, op: 'add', value: -100 });
     expect(s('CAV-3A')).toMatchObject({ stat: TECH_STAT.UPKEEP_WEIGHT_CAVALRY, op: 'add', value: -200 });
-    expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 30 });
-    expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
+    expect(s('CAV-3B')).toMatchObject({ stat: TECH_STAT.COMBAT_ATK_CAVALRY, value: 40 });
+    expect(s('MOB-2B')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 300, name: '급속 귀환' });
     expect(s('MOB-1')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 200 });
     expect(s('MOB-2A')).toMatchObject({ stat: TECH_STAT.ORDER_COOLDOWN, value: -2 });
     expect(s('MOB-3A')).toMatchObject({ stat: TECH_STAT.ORDER_COOLDOWN, value: -3 });
     const cd = (...codes: string[]) => techStatValues(codes.reduce((m, c) => m + 2 ** s(c).id, 0))[TECH_STAT.ORDER_COOLDOWN];
     expect([cd('MOB-1'), cd('MOB-1', 'MOB-2A'), cd('MOB-1', 'MOB-2A', 'MOB-3A')]).toEqual([20, 18, 15]); // 4.0 · 3.6 · 3.0초
-    expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 500, name: '급속 귀환' });
+    expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 10, name: '철수 훈련' });
     expect(s('MOB-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, name: '참모부' });
     expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -100 });
     expect(s('ECO-1')).toMatchObject({ stat: TECH_STAT.CONVERT, op: 'add', value: -50 });
@@ -161,14 +161,14 @@ describe('v4.6 노드 표', () => {
     expect(v[TECH_STAT.SIEGE]).toBe(1250); // 공성 전술 +10% + 공성 장비 +15%
     expect(v[TECH_STAT.DEF_COST]).toBe(1000);
     expect(v[TECH_STAT.REGEN]).toBe(1050);
-    expect(v[TECH_STAT.TROOP_CAP]).toBe(1120);
+    expect(v[TECH_STAT.TROOP_CAP]).toBe(1250);
     expect(v[TECH_STAT.COMBAT_ATK]).toBe(0); // 공통 공격·방어 점수 노드는 없다 (병종 갈래만)
     expect(v[TECH_STAT.COMBAT_DEF]).toBe(0);
     expect(v[TECH_STAT.SPEED]).toBe(0); // 기동 갈래에 이동 보너스 없음 (2026-10-24)
-    expect(v[TECH_STAT.NEUTRAL_COST]).toBe(1000 - 60 - 80);
+    expect(v[TECH_STAT.NEUTRAL_COST]).toBe(1000 - 50 - 100);
     expect(v[TECH_STAT.SLOT_BONUS]).toBe(2); // 총동원령(MIL-4) + 참모부(MOB-4)
     expect(v[TECH_STAT.DISENGAGE_TICKS]).toBe(10);
-    expect(v[TECH_STAT.RETURN_SPEED]).toBe(2200);
+    expect(v[TECH_STAT.RETURN_SPEED]).toBe(2000);
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
     expect([v[TECH_STAT.GOLD_PLAIN], v[TECH_STAT.GOLD_POOR], v[TECH_STAT.CONVERT], v[TECH_STAT.GOLD]]).toEqual([150, 2000, 950, 1200]); // 국고 = 전체 골드 배율 +20%
@@ -272,7 +272,7 @@ describe('v4.6 효과 합산 [A-71] — 구매 순서 무관', () => {
     expect(v[TECH_STAT.SPEED_SPEAR]).toBe(10); // SPE-1 행군 대열
     expect(v[TECH_STAT.CAPTURE_MULT_SPEAR]).toBe(900); // 기본 1000 - 100: SPE-3B (v5.8: SPE-2A 는 공격)
     expect(v[TECH_STAT.COMBAT_ATK_SPEAR]).toBe(10); // SPE-2A 장창 돌격
-    expect(v[TECH_STAT.NEUTRAL_COST]).toBe(860);
+    expect(v[TECH_STAT.NEUTRAL_COST]).toBe(850);
   });
   it('techStatValues 는 마스크만의 함수 (노드 하나만 있을 때 정확히 그 스탯 하나만 바뀐다)', () => {
     const base = techStatValues(0);
@@ -325,8 +325,8 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'MOB-1', 'MOB-2A'); // 기동 갈래는 이동에 영향 없음
     expect(sp3()).toEqual([140, 168, 126]);
   });
-  it('v4.5 MOB-2B 철수 훈련: 전투 중 회수 → 이탈 대기 10 tick (무테크 15)', () => {
-    for (const [codes, expectTicks] of [[[], 15], [['MOB-1', 'MOB-2B'], 10]] as [string[], number][]) {
+  it('v5.8 MOB-3B 철수 훈련: 전투 중 회수 → 이탈 대기 10 tick (무테크 15)', () => {
+    for (const [codes, expectTicks] of [[[], 15], [['MOB-1', 'MOB-2B', 'MOB-3B'], 10]] as [string[], number][]) {
       const sim = makeSim();
       const s = sim.state;
       const p = s.players[2];
@@ -345,7 +345,7 @@ describe('v4.6 계산식 연결', () => {
       expect(ev!.untilTick - ev!.tick).toBe(expectTicks);
     }
   });
-  it('v4.5 MOB-3B 급속 귀환: 귀환 속도 ×1.5 → ×2.2 (행군 속도는 그대로)', () => {
+  it('v5.8 MOB-2B 급속 귀환: 귀환 속도 ×1.5 → ×2.0 (행군로 MOB-1 포함, 행군 속도는 그대로)', () => {
     const s = makeSim().state;
     const p = s.players[1];
     const pos = s.players[1].homeTileId;
@@ -353,14 +353,14 @@ describe('v4.6 계산식 연결', () => {
     const march = speedMilliAt(s, f, pos);
     f.state = 'RETURNING';
     const ret0 = speedMilliAt(s, f, pos);
-    giveTech(p, 'MOB-1', 'MOB-2B', 'MOB-3B');
+    giveTech(p, 'MOB-1', 'MOB-2B');
     f.state = 'MARCHING';
     const march1 = speedMilliAt(s, f, pos);
     f.state = 'RETURNING';
     const ret1 = speedMilliAt(s, f, pos);
     expect(Math.abs(ret0 - (march * 1500) / 1000)).toBeLessThanOrEqual(1.5);
-    expect(Math.abs(ret1 - (march1 * 2200) / 1000)).toBeLessThanOrEqual(2.2);
-    expect(ret1 * 1000).toBeGreaterThan(ret0 * 1000 * 1.4);
+    expect(Math.abs(ret1 - (march1 * 2000) / 1000)).toBeLessThanOrEqual(2.0);
+    expect(ret1 * 1000).toBeGreaterThan(ret0 * 1000 * 1.3); // 2.0 / 1.5 ≈ 1.33
     expect(march1).toBe(march); // 귀환 속도만 오르고 행군 속도는 그대로
   });
   it('슬롯: MOB-4 참모부 +1, MIL-4 총동원령 +1, 전부 사면 +2 (FLAG_CAP_HARD_MAX 안에서)', () => {
