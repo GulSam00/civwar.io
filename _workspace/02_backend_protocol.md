@@ -1,7 +1,7 @@
 # civwar.io 백엔드 프로토콜 · 구현 문서 (Phase 3 — GDD v4.2)
 
 > **프론트엔드의 유일한 신뢰 소스.** 서버가 실제로 보내는 메시지와 이 문서가 다르면 버그다.
-> **v5.9 갱신(2026-11-05, 후퇴 피해 완화)**: 메시지 형식 변경 없음. 수치만 바뀐다 — `DISENGAGE_TICKS` 15 → 8, 철수 훈련(MOB-3B) 10 → 5 tick, 모델 2 이탈 대기 배율 `DISENGAGE_VALUE_PERMILLE_V2` 700 → 900. 새 상수 `RETURN_BREAKAWAY_TICKS` = 10: 귀환 깃발이 `flag_disengaged{broke_away}` 한 뒤 10 tick 동안은 이동해도 `breakaway` 비트가 유지된다(서버 내부 `breakawayUntilTick`, 스냅숏 필드 추가 없음). 아래 옛 절의 15 tick·×0.5 는 이 값으로 읽는다.
+> **v5.10 갱신(2026-11-05, 후퇴 피해 완화)**: 메시지 형식 변경 없음. 수치만 바뀐다 — `DISENGAGE_TICKS` 15 → 8, 철수 훈련(MOB-3B) 10 → 5 tick, 모델 2 이탈 대기 배율 `DISENGAGE_VALUE_PERMILLE_V2` 700 → 900. 새 상수 `RETURN_BREAKAWAY_TICKS` = 10: 귀환 깃발이 `flag_disengaged{broke_away}` 한 뒤 10 tick 동안은 이동해도 `breakaway` 비트가 유지된다(서버 내부 `breakawayUntilTick`, 스냅숏 필드 추가 없음). 아래 옛 절의 15 tick·×0.5 는 이 값으로 읽는다.
 >
 > **v5.6 갱신(2026-11-02, 깃발 조작 변경)**: 재지정 경직 제거, 재지정·태세 공용 쿨타임 15 tick, `cmd_flag_issue.posture` 필수, 재지정은 방어 깃발 + 적·중립 땅일 때만 공격으로 자동 전환. **호환 깨짐(필드·거절 코드 제거·개명) → §40 을 먼저 읽을 것. 아래 옛 절의 `LOCKED`·`POSTURE_COOLDOWN`·`postureHeld`·`resumeTick`·`lockUntilTick`·`postureCooldownUntilTick`·`flag_posture_changed.auto` 설명은 §40 이 대체한다.**
 > **v5.1 갱신(2026-10-28, GDD v5.1 사용자 확정)**: 점령 소모 배율 전 병종 1000, **사기 0 자동 후퇴(4d)**, **기지 사기 하한 300**, **기지별 출전 쿨타임 25 tick**. 프로토콜은 **추가만** — 거절 `BASE_COOLDOWN`, `snapshot_full.bases[].dispatchReadyTick`, `flag_recalled.reason`. 클라이언트 `REJECT_TEXT: Record<CmdRejectReason, …>` 는 새 키가 없어 tsc 가 깨진다 → **§37 을 먼저 읽을 것.**

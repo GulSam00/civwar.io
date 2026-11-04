@@ -40,7 +40,7 @@ describe('§27 태세 버튼 상태', () => {
     expect(cd.combatWarning).toBeNull(); // 막혀 있으면 경고도 없다
   });
 
-  it('교전 중 전환 경고: 이탈 대기 초는 소유자 스탯(소수 한 자리), 배율은 DISENGAGE_VALUE_PERMILLE_V2 (v5.9)', () => {
+  it('교전 중 전환 경고: 이탈 대기 초는 소유자 스탯(소수 한 자리), 배율은 DISENGAGE_VALUE_PERMILLE_V2 (v5.10)', () => {
     const pen = `전투력 −${(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%`;
     const base = `교전 중 전환: 이탈 대기 ${+((DISENGAGE_TICKS * 200) / 1000).toFixed(1)}초, ${pen}`;
     expect(flagActionState(flag({ inCombat: true }), 0, 200).combatWarning).toBe(base);

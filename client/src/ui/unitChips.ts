@@ -64,7 +64,7 @@ export interface FlagActionState {
  * 선택한 내 깃발의 [귀환]/[태세 변경] 버튼 상태 — 서버 거절 순서(프로토콜 §4, §27.1-3)와 같은 조건으로 미리 막는다.
  *  recall: ROUTED → RETURNING
  *  posture: ROUTED → RETURNING → ORDER_COOLDOWN  (DISENGAGING·IN_COMBAT 은 더 이상 거절하지 않는다 — 전투 중 전환은 이탈 대기를 치르고 즉시 적용)
- * disengageTicks: 소유자 스탯 이탈 대기 tick (v5.9: 기본 8, 철수 훈련 5) — 경고 문구의 초 (소수 한 자리)
+ * disengageTicks: 소유자 스탯 이탈 대기 tick (v5.10: 기본 8, 철수 훈련 5) — 경고 문구의 초 (소수 한 자리)
  */
 export function flagActionState(f: FlagSnapshot, tick: number, tickMs: number, disengageTicks: number = DISENGAGE_TICKS): FlagActionState {
   const cdTicks = Math.max(0, f.orderCooldownUntilTick - tick);
@@ -73,7 +73,7 @@ export function flagActionState(f: FlagSnapshot, tick: number, tickMs: number, d
   const recallBlocked = f.routed ? '패주 중' : returning ? '귀환 중 — 취소 불가' : null;
   const postureBlocked = f.routed ? '패주 중' : returning ? '귀환 중' : cooldownSec > 0 ? `쿨타임 ${cooldownSec}초` : null;
   let combatWarning: string | null = null;
-  const penalty = `전투력 −${(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%`; // v5.9: 모델 2 이탈 대기 배율
+  const penalty = `전투력 −${(1000 - DISENGAGE_VALUE_PERMILLE_V2) / 10}%`; // v5.10: 모델 2 이탈 대기 배율
   if (postureBlocked === null && f.disengaging) combatWarning = `이탈 대기 중 — 전환해도 남은 대기 시간은 그대로, ${penalty}`;
   else if (postureBlocked === null && f.inCombat) combatWarning = `교전 중 전환: 이탈 대기 ${+((disengageTicks * tickMs) / 1000).toFixed(1)}초, ${penalty}`;
   return {

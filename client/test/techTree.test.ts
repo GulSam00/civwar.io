@@ -88,7 +88,7 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(d.beforeLabel).toBe('없을 때');
     expect(d.rows[0]).toMatchObject({ label: '적 기지 공격 피해 배율', before: '×1.10', after: '×1.25' });
   });
-  it('set 노드: 마구간 기병 유지비 가중치 1.80 → 1.70, 철수 훈련 무테크 대기 → 노드 값 (v5.9: 1.6초 → 1.0초)', () => {
+  it('set 노드: 마구간 기병 유지비 가중치 1.80 → 1.70, 철수 훈련 무테크 대기 → 노드 값 (v5.10: 1.6초 → 1.0초)', () => {
     expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '1.80', after: '1.70' });
     expect(techDetailRows(nd('MOB-3B'), { techMask: mask(id('MOB-1'), id('MOB-2B')) }).rows[0]).toMatchObject({ before: `${((DISENGAGE_TICKS * 200) / 1000).toFixed(1)}초`, after: `${((nd('MOB-3B').value * 200) / 1000).toFixed(1)}초` });
   });

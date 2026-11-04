@@ -101,7 +101,7 @@ export interface Flag {
   botPlannedPosture: Posture | null;
   disengageUntilTick: number | null;
   breakaway: boolean;
-  /** v5.9: 귀환 깃발의 이탈 면제가 이동으로 풀리지 않는 마지막 tick (RETURN_BREAKAWAY_TICKS). 스냅숏에 싣지 않는다 */
+  /** v5.10: 귀환 깃발의 이탈 면제가 이동으로 풀리지 않는 마지막 tick (RETURN_BREAKAWAY_TICKS). 스냅숏에 싣지 않는다 */
   breakawayUntilTick: number;
   blocked: boolean;
   calmTicks: number; // 주둔 유지비 무위협 누진 (4.4d)

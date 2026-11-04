@@ -90,7 +90,7 @@ describe('v5.1 4d 사기 붕괴 자동 후퇴 (모델 2)', () => {
     expect(a.morale).toBe(0);
     expect(a.routed).toBe(false);
     expect(a.state).toBe('RETURNING');
-    expect(a.disengageUntilTick).toBe(1 + 8); // 소유자 스탯 기본 8 tick (v5.9)
+    expect(a.disengageUntilTick).toBe(1 + 8); // 소유자 스탯 기본 8 tick (v5.10)
     expect(a.disengageHold).toBe(true);
     expect(a.returnBaseTileId).toBe(null);
     const iDis = msgs.findIndex((m) => m.type === 'flag_disengage_started' && m.flagId === a.id);

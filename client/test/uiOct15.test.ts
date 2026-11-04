@@ -276,7 +276,7 @@ describe('§22.7 테크 급속 귀환(MOB-2B) · 철수 훈련(MOB-3B) — v5.8 
     expect(n20.name).toBe('급속 귀환');
     expect(n22.name).toBe('철수 훈련');
   });
-  it('철수 훈련: 상세 "이탈 대기 시간 (무테크) → (노드 값)" (v5.9: 1.6초 → 1.0초)', () => {
+  it('철수 훈련: 상세 "이탈 대기 시간 (무테크) → (노드 값)" (v5.10: 1.6초 → 1.0초)', () => {
     const d = techDetailRows(n22, ctx as Parameters<typeof techDetailRows>[1]);
     expect(d.rows[0]).toMatchObject({ label: '이탈 대기 시간', before: `${((DISENGAGE_TICKS * 200) / 1000).toFixed(1)}초`, after: `${((n22.value * 200) / 1000).toFixed(1)}초`, changed: true });
   });

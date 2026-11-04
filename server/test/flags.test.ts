@@ -253,7 +253,7 @@ describe('깃발 접촉 = 8방향 (사용자 결정 2026-10-11)', () => {
 });
 
 describe('이탈 대기 · 패주', () => {
-  it('전투 중 회수 → 1.6초 대기(실효값 ×0.9, v5.9) → broke_away, 패주 깃발 명령은 ROUTED', () => {
+  it('전투 중 회수 → 1.6초 대기(실효값 ×0.9, v5.10) → broke_away, 패주 깃발 명령은 ROUTED', () => {
     const { sim, s, c } = scenario();
     setTileOwner(s, c, 2, false);
     setTileOwner(s, c + 1, 1, false);
@@ -267,7 +267,7 @@ describe('이탈 대기 · 패주', () => {
     const r = run(sim, DISENGAGE_TICKS + 1); // 명령 tick + DISENGAGE_TICKS
     expect(r.personal[0]).toMatchObject({ accepted: true, flagId: def.id });
     expect(r.all.find((m) => m.type === 'flag_disengage_started')).toBeTruthy();
-    // v5.9: 검 방어 ×0.9 vs 검 공격 → 수비가 (1/0.9)² ≈ 1.23배 잃는다
+    // v5.10: 검 방어 ×0.9 vs 검 공격 → 수비가 (1/0.9)² ≈ 1.23배 잃는다
     expect(d0 - def.troopsMilli).toBeGreaterThan(0.95 * (1000 / DISENGAGE_VALUE_PERMILLE_V2) ** 2 * (a0 - atk.troopsMilli));
     expect(r.all.find((m) => m.type === 'flag_disengaged')).toMatchObject({ flagId: def.id, reason: 'broke_away' });
     expect(def.breakaway).toBe(true);
@@ -637,7 +637,7 @@ describe('QA 후속 (I-2, m-9, m-10, I-1)', () => {
     expect(ledgerImbalance(s)).toBe(0);
   });
 
-  it('v5.9: 귀환 깃발 이탈 면제 — broke_away 뒤 RETURN_BREAKAWAY_TICKS 동안은 칸을 옮겨도 다시 붙잡히지 않고, 지난 뒤 첫 이동에서 풀린다', () => {
+  it('v5.10: 귀환 깃발 이탈 면제 — broke_away 뒤 RETURN_BREAKAWAY_TICKS 동안은 칸을 옮겨도 다시 붙잡히지 않고, 지난 뒤 첫 이동에서 풀린다', () => {
     const sim = makeSim();
     const s = sim.state;
     const c = findOpenArea(s, 3);

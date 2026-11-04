@@ -229,8 +229,8 @@ export const FLAG_RECALL_REFUND_PERMILLE = 850;
 /** v4.2 [A-63]: RETURNING(회수·IDLE 자동 귀환·패주) 이동 속도 배율. 행군·재지정 이동엔 적용 안 함 */
 export const RETURN_SPEED_PERMILLE = 1500; // v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.RETURN_SPEED (MOB-3B 급속 귀환 2200)
 /** 이탈 대기 tick (4.15 g). v4.5: 무테크 값 — 플레이어 스탯 TECH_STAT.DISENGAGE_TICKS (MOB-3B 철수 훈련 5) */
-export const DISENGAGE_TICKS = 8; // v5.9 (사용자 2026-11-05, 후퇴 피해 완화): 15 → 8 (1.6초)
-/** v5.9 (사용자 2026-11-05): 귀환 깃발이 이탈(broke_away)한 뒤 교전 대상이 되지 않는 tick. 지난 뒤 처음 칸을 옮기면 면제가 풀린다 (귀환 외 이탈은 한 칸 이동까지 그대로) */
+export const DISENGAGE_TICKS = 8; // v5.10 (사용자 2026-11-05, 후퇴 피해 완화): 15 → 8 (1.6초)
+/** v5.10 (사용자 2026-11-05): 귀환 깃발이 이탈(broke_away)한 뒤 교전 대상이 되지 않는 tick. 지난 뒤 처음 칸을 옮기면 면제가 풀린다 (귀환 외 이탈은 한 칸 이동까지 그대로) */
 export const RETURN_BREAKAWAY_TICKS = 10;
 export const FLAG_IDLE_TIMEOUT = 600;
 /**
@@ -640,7 +640,7 @@ export const BASE_BUFF: readonly (readonly number[])[] = [
 ];
 export const COMBAT_GAMMA = 2; // 대비 지수 (구현은 정수 역제곱 고정; 값은 표시·문서용)
 export const COMBAT_VMIN = 100; // 편 채널값 하한
-export const DISENGAGE_VALUE_PERMILLE_V2 = 900; // 이탈 대기 배율 (모델 1 은 500). v5.9 (사용자 2026-11-05): 700 → 900
+export const DISENGAGE_VALUE_PERMILLE_V2 = 900; // 이탈 대기 배율 (모델 1 은 500). v5.10 (사용자 2026-11-05): 700 → 900
 // 사기 (깃발 단위, ‰ 0..1000)
 export const MORALE_MAX = 1000;
 /** v5.4 (사용자 확정 2026-10-31): 출전한 새 깃발의 시작 사기 ‰ (화면 90%). 기지에서 기다렸다 나가는 요격을 너프한다 — 행군 중 MORALE_RECOVER 로 회복하므로 기지 앞 짧은 출전만 불리하다. 모델 2 전용 */

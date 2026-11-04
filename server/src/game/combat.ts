@@ -358,7 +358,7 @@ export function stage4b_flagCombatPhaseB(state: GameState, plan: FlagCombatPlan,
       f.disengageUntilTick = null;
       f.disengageHold = false;
       f.breakaway = true;
-      if (f.state === 'RETURNING') f.breakawayUntilTick = t + RETURN_BREAKAWAY_TICKS; // v5.9: 귀환 이탈은 2초 동안 이동해도 면제 유지
+      if (f.state === 'RETURNING') f.breakawayUntilTick = t + RETURN_BREAKAWAY_TICKS; // v5.10: 귀환 이탈은 2초 동안 이동해도 면제 유지
       f.inCombat = false;
       brokeAway.add(f.id);
       out.broadcast.push({ type: 'flag_disengaged', tick: t, flagId: f.id, reason: 'broke_away' });

@@ -36,7 +36,7 @@ import { isNarrowScreen, useDraggableWindow } from './draggable.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
-const sec1 = (ticks: number) => `${+((ticks * TICK_MS) / 1000).toFixed(1)}초`; // v5.9: 이탈 대기처럼 1초 단위가 아닌 값
+const sec1 = (ticks: number) => `${+((ticks * TICK_MS) / 1000).toFixed(1)}초`; // v5.10: 이탈 대기처럼 1초 단위가 아닌 값
 const min = (ticks: number) => `${Math.round((ticks * TICK_MS) / 60000)}분`;
 
 /** 표 한 줄 — 이름 · 값 (설명 문장 없음) */

@@ -142,7 +142,7 @@ describe('v4.6 노드 표', () => {
     expect(s('MOB-3A')).toMatchObject({ stat: TECH_STAT.ORDER_COOLDOWN, value: -3 });
     const cd = (...codes: string[]) => techStatValues(codes.reduce((m, c) => m + 2 ** s(c).id, 0))[TECH_STAT.ORDER_COOLDOWN];
     expect([cd('MOB-1'), cd('MOB-1', 'MOB-2A'), cd('MOB-1', 'MOB-2A', 'MOB-3A')]).toEqual([20, 18, 15]); // 4.0 · 3.6 · 3.0초
-    expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 5, name: '철수 훈련' }); // v5.9: 10 → 5
+    expect(s('MOB-3B')).toMatchObject({ stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 5, name: '철수 훈련' }); // v5.10: 10 → 5
     expect(s('MOB-4')).toMatchObject({ stat: TECH_STAT.SLOT_BONUS, value: 1, name: '참모부' });
     expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -100 });
     expect(s('ECO-1')).toMatchObject({ stat: TECH_STAT.BASE_GOLD, op: 'add', value: 50, name: '세금 징수' });
@@ -167,7 +167,7 @@ describe('v4.6 노드 표', () => {
     expect(v[TECH_STAT.SPEED]).toBe(0); // 기동 갈래에 이동 보너스 없음 (2026-10-24)
     expect(v[TECH_STAT.NEUTRAL_COST]).toBe(1000 - 50 - 100);
     expect(v[TECH_STAT.SLOT_BONUS]).toBe(2); // 총동원령(MIL-4) + 참모부(MOB-4)
-    expect(v[TECH_STAT.DISENGAGE_TICKS]).toBe(5); // v5.9 철수 훈련 1.0초
+    expect(v[TECH_STAT.DISENGAGE_TICKS]).toBe(5); // v5.10 철수 훈련 1.0초
     expect(v[TECH_STAT.RETURN_SPEED]).toBe(2000);
     expect(v[TECH_STAT.UPKEEP_COEF]).toBe(90); // 유지비 계수 노드 없음 (2026-10-24)
     expect(v[TECH_STAT.SUPPLY_COEF]).toBe(20);
@@ -325,7 +325,7 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'MOB-1', 'MOB-2A'); // 기동 갈래는 이동에 영향 없음
     expect(sp3()).toEqual([140, 168, 126]);
   });
-  it('v5.9 MOB-3B 철수 훈련: 전투 중 회수 → 이탈 대기 5 tick (무테크 8)', () => {
+  it('v5.10 MOB-3B 철수 훈련: 전투 중 회수 → 이탈 대기 5 tick (무테크 8)', () => {
     for (const [codes, expectTicks] of [[[], 8], [['MOB-1', 'MOB-2B', 'MOB-3B'], 5]] as [string[], number][]) {
       const sim = makeSim();
       const s = sim.state;

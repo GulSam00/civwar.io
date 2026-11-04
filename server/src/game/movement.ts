@@ -172,7 +172,7 @@ export function stage4_moveFlags(state: GameState, t: number, out: Outbox): void
         }
       }
     }
-    if (moved && !(f.state === 'RETURNING' && t < f.breakawayUntilTick)) f.breakaway = false; // v5.9: 귀환 이탈 면제 RETURN_BREAKAWAY_TICKS
+    if (moved && !(f.state === 'RETURNING' && t < f.breakawayUntilTick)) f.breakaway = false; // v5.10: 귀환 이탈 면제 RETURN_BREAKAWAY_TICKS
     if (applyExposureAttrition(state, f, t, out)) continue;
 
     if (f.state === 'MARCHING') {

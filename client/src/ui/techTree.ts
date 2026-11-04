@@ -164,7 +164,7 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   else if (stat === S.TROOP_CAP) (label = '병력 상한 배율'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.SUPPLY_COEF) (label = '보급선 비용 계수 (칸당)'), (fmt = (v) => pmText(v[stat]));
   else if (stat === S.SPEED) (label = '이동 점수 (전 병종 공통)'), (fmt = (v) => `+${v[stat]}`);
-  // v4.5 (§22.7): 스탯 11 = 이탈 대기 tick (v5.9: MOB-3B 철수 훈련 8 → 5), 13 = 귀환 속도 ‰ (MOB-1 1700, MOB-2B 급속 귀환 2000)
+  // v4.5 (§22.7): 스탯 11 = 이탈 대기 tick (v5.10: MOB-3B 철수 훈련 8 → 5), 13 = 귀환 속도 ‰ (MOB-1 1700, MOB-2B 급속 귀환 2000)
   else if (stat === S.DISENGAGE_TICKS) (label = '이탈 대기 시간'), (fmt = (v) => `${((v[stat] * ((consts?.TICK_MS as number | undefined) ?? 200)) / 1000).toFixed(1)}초`);
   else if (stat === S.SLOT_BONUS) (label = '깃발 슬롯 보너스'), (fmt = (v) => `+${v[stat]}`);
   else if (stat === S.ORDER_COOLDOWN) (label = '재지정·태세 전환 쿨타임'), (fmt = (v) => `${((v[stat] * ((consts?.TICK_MS as number | undefined) ?? 200)) / 1000).toFixed(1)}초`);
