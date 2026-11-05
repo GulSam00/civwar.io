@@ -555,3 +555,14 @@ UI 문구: Help 규칙 절·단축키 요약, README 조작표, 로비 하단 �
 
 - `MORALE_NEUTRAL`(800 고정)을 없애고 `moraleBands(unit, stat)` 로 바꿨다. `mid` = `moraleNeutralPoint`(창병은 ±0 경계가 없어 400), `low` = `mid` 의 절반. 기세 테크를 반영한다.
 - 칩·깃발 패널·hover 카드 모두 `mid`·`low` 자리에 `<u>` 눈금을 그리고, 색은 `moraleTone(value, bands)` 로 정한다.
+
+## 지형 스탯 절대값 표기 (2026-11-05, 이슈 20261104-0111)
+
+- 사용자 결정은 design-decisions.md 2026-11-05 항목, 규칙은 `client/UI-CONVENTIONS.md` 2절.
+- `ui/unitStats.ts`: `goldPer100TilesPerMin` → `terrainGoldPerMin`(순수)·`goldPerTilePerMin`. `secPer10Tiles` → `terrainMoveCost`·`unitMovePerSec`(순수)·`movePerSec`. `UnitSpec.sec10` → `move`.
+- 지형 툴팁: 이동은 배지가 아니라 본문 행 `이동력 칸당 N`. 평원도 100으로 표시한다(종전엔 보정이 없으면 행을 뺐다). 내 부대를 선택하면 `칸당 125 · 기 84/초`처럼 그 병종 초당 이동력을 붙인다. 옵션 창 항목 이름 `이동 보정` → `이동력`.
+- 점령 `15명/칸` → `칸당 15명`, 골드 `+50/분 · 100칸` → `칸당 +0.5/분`.
+- 골드 흐름: HUD 골드·순수입 hover·하단 골드 패널·테크 창이 `fmt.fmtGoldPerMin`(골드/초 × 60 반올림)으로 /분 표시. 병력 재생은 /초 그대로.
+- 도움말에 `이동력`·`골드` 행 추가(무테크 값, 상수에서 계산).
+- 근사: 초당 이동력은 서버 `speedMilliAt` 의 floor 를 평원에서 한 번만 하고, 지형 칸 이동력은 ‰ ÷ 10 반올림(사막 111.1 → 111)이라 나눈 칸당 초는 서버와 2% 안쪽으로 다르다(`client/test/terrainAbsolute.test.ts`가 확인).
+- 스크린샷 `_workspace/ui-2026-11-05/`(산 칸 툴팁, HUD /분).

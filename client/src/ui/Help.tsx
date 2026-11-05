@@ -33,6 +33,9 @@ import {
 } from '@civwar/shared';
 import { UnitIcon } from './unitIcons.js';
 import { isNarrowScreen, useDraggableWindow } from './draggable.js';
+import { techStatsOf } from './techInfo.js';
+import { TERRAIN_NAME } from './text.js';
+import { fmt1, terrainGoldPerMin, terrainMoveCost, unitMovePerSec } from './unitStats.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
@@ -40,6 +43,10 @@ const sec1 = (ticks: number) => `${+((ticks * TICK_MS) / 1000).toFixed(1)}초`; 
 const min = (ticks: number) => `${Math.round((ticks * TICK_MS) / 60000)}분`;
 
 /** 표 한 줄 — 이름 · 값 (설명 문장 없음) */
+/** 2026-11-05 지형 표기 (무테크): 칸당 이동력(평원 100) · 칸당 골드/분 — 육지 다섯 지형 */
+const LAND = [TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN];
+const NO_TECH = techStatsOf(0);
+
 const Row = ({ k, children }: { k: string; children: React.ReactNode }) => (
   <tr>
     <th scope="row">{k}</th>
@@ -99,6 +106,12 @@ export function Help({ onClose }: { onClose: () => void }) {
               </Row>
               <Row k="병종">
                 <UnitIcon unit={0} withName /> 방어↑ 속도↓ · <UnitIcon unit={1} withName /> 중간 · <UnitIcon unit={2} withName /> 공격↑ 속도↑ 방어↓
+              </Row>
+              <Row k="이동력">
+                칸당 {LAND.map((t) => `${TERRAIN_NAME[t]} ${terrainMoveCost(t)}`).join(' · ')} · 초당 <UnitIcon unit={0} /> {fmt1(unitMovePerSec(0, NO_TECH))} · <UnitIcon unit={1} /> {fmt1(unitMovePerSec(1, NO_TECH))} · <UnitIcon unit={2} /> {fmt1(unitMovePerSec(2, NO_TECH))} · 칸 이동력 ÷ 초당 이동력 = 칸당 초
+              </Row>
+              <Row k="골드">
+                칸당 {LAND.map((t) => `${TERRAIN_NAME[t]} +${terrainGoldPerMin(t, NO_TECH)}`).join(' · ')}/분 (테크 전)
               </Row>
               <Row k="태세">
                 공격(마름모) · 방어(원, 보호 반경 {FRONT_RADIUS}칸) · 재지정·전환 공용 쿨타임 {sec(FLAG_ORDER_COOLDOWN_TICKS)} · 전환 시 진척도 0 · 방어 깃발을 적·중립 땅으로 보내면 공격으로 자동 전환

@@ -12,7 +12,7 @@ export type TooltipField = (typeof TOOLTIP_FIELDS)[number];
 export const TOOLTIP_FIELD_NAME: Record<TooltipField, string> = {
   terrain: '지형 유형',
   defense: '전투 보정',
-  speed: '이동 보정',
+  speed: '이동력',
   cost: '점령 비용',
   gold: '골드',
   owner: '소유자',

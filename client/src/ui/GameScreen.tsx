@@ -26,7 +26,7 @@ import { disengageTicksOf } from '../state/disengage.js';
 import { incomeOf, productionRows, type SourceRow } from './production.js';
 import { DiplomacyPanel, EventFeed, IncomingProposals, Scoreboard, openCard } from './panels.js';
 import { PlayerCard } from './PlayerCard.js';
-import { fmtCompact, ratioBudget, troopBarParts } from './fmt.js';
+import { fmtCompact, fmtGoldPerMin, ratioBudget, troopBarParts } from './fmt.js';
 import { RELATION_NAME, TARGET_KIND_NAME, hoverTarget } from './playerInfo.js';
 import { ClockIcon, EmoteIcon, FullscreenIcon, HelpIcon, LeaveIcon } from './hudIcons.js';
 import { TechWindow } from './TechWindow.js';
@@ -695,8 +695,13 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
   const nameOf = (t: number) => g.baseNames.get(t);
   const isCap = (t: number) => g.capitalTiles.has(t);
   const troopTip = prodRows?.length ? { title: `병력 재생 +${(income?.troops ?? 0).toFixed(1)}/초 — 출처`, unit: '/초', rows: productionRows(prodRows, 'troops', nameOf, isCap) } : null;
+  // 2026-11-05: 골드는 /분 (서버 값 골드/초 × 60)
   const goldTip = prodRows?.length
-    ? { title: `골드 순수입 +${(income?.net ?? 0).toFixed(1)}/초 — 출처${income && income.gross > income.net ? ` (유지비 −${(income.gross - income.net).toFixed(1)} 반영)` : ''}`, unit: '/초', rows: productionRows(prodRows, 'gold', nameOf, isCap) }
+    ? {
+        title: `골드 순수입 ${fmtGoldPerMin(income?.net ?? 0)} — 출처${income && income.gross > income.net ? ` (유지비 ${fmtGoldPerMin(income.net - income.gross)} 반영)` : ''}`,
+        unit: '/분',
+        rows: productionRows(prodRows, 'gold', nameOf, isCap).map((r) => ({ ...r, amount: r.amount * 60 })),
+      }
     : null;
   // 테크 버튼 배지 = 지금 살 수 있는 노드 수 (내가 명령할 수 있을 때만)
   const mineP = me !== null ? g.players.get(me) : undefined;
@@ -714,7 +719,7 @@ function Hud({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputControl
           <Stat label="병력" value={`${fmtCompact(p.troops + g.deployedTroopsOf(p.id))} / ${fmtCompact(g.troopCapOf(p))}`} breakdown={troopTip} />
           <Stat
             label={p.upkeepPm > 0 ? `골드 · 유지비 −${(p.upkeepPm / 10).toFixed(0)}%` : '골드'}
-            value={`${p.gold.toLocaleString()}${income ? ` +${income.net.toFixed(1)}/초` : ''}`}
+            value={`${p.gold.toLocaleString()}${income ? ` ${fmtGoldPerMin(income.net)}` : ''}`}
             warn={p.upkeepPm >= 300}
             breakdown={goldTip}
           />
@@ -876,7 +881,7 @@ function SourceTip({ title, unit, rows }: { title: string; unit: string; rows: S
             <span className="source-prod muted">—</span>
           )}
           <span className="source-amt">
-            +{r.amount.toFixed(r.amount < 10 ? 2 : 1)}
+            +{unit === '/분' ? Math.round(r.amount).toLocaleString() : r.amount.toFixed(r.amount < 10 ? 2 : 1)}
             {unit}
           </span>
         </div>
@@ -906,11 +911,11 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
     gold = (
       <div className="gold-flow">
         <span>
-          골드 순수입 <b className={inc.net <= 0 || p.gold < 0 ? 'warn-text' : ''}>{inc.net < 0 ? '−' : '+'}{Math.abs(inc.net).toFixed(1)}/초</b>
+          골드 순수입 <b className={inc.net <= 0 || p.gold < 0 ? 'warn-text' : ''}>{fmtGoldPerMin(inc.net)}</b>
           {p.gold < 0 && <b className="warn-text"> · 골드 마이너스</b>}
         </span>
         <span className="muted small">
-          총 +{inc.gross.toFixed(1)} · 깃발 유지비 <b className={upkeep > 0 ? 'upkeep' : ''}>−{upkeep.toFixed(1)}/초</b>
+          총 {fmtGoldPerMin(inc.gross)} · 깃발 유지비 <b className={upkeep > 0 ? 'upkeep' : ''}>−{fmtGoldPerMin(upkeep, false)}</b>
           {p.upkeepPm > 0 && ` (총수입의 ${(p.upkeepPm / 10).toFixed(0)}%)`}
         </span>
         <span className="muted small" title="출전한 깃발 병력 1000명이 1분에 쓰는 골드 (테크 반영). 기지에 남은 병력은 무료">

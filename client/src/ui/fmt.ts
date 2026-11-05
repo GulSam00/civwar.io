@@ -28,6 +28,16 @@ export function fmtCompact(n: number): string {
   return neg && s !== '0' ? `−${s}` : s;
 }
 
+/**
+ * 골드 흐름 표기 (2026-11-05 사용자 결정: 골드·유지비는 /분, 이동·사기·쿨타임은 초).
+ * 서버·production 값은 골드/초라 ×60 해서 정수로 반올림 — "+60/분", "−12/분"
+ */
+export function fmtGoldPerMin(perSec: number, sign = true): string {
+  const v = Math.round(perSec * 60);
+  const s = Math.abs(v).toLocaleString();
+  return `${sign ? (v < 0 ? '−' : '+') : ''}${s}/분`;
+}
+
 /** 초당 값 (+520/s, +1.2K/s). 10 미만이면 소수 한 자리 */
 export function fmtRate(perSec: number): string {
   const sign = perSec < 0 ? '−' : '+';

@@ -1,19 +1,20 @@
 /**
  * 지형 정보 툴팁 내용 (사용자 요청 2026-10-10, 2026-10-28 개편) — 마우스가 맵 위 칸에 있을 때 커서 옆에 보여 준다.
  * 수치는 shared 상수(match_config.constants 가 있으면 그 값)에서 만든다. 표시 전용.
- *   전투·이동 보정 = 지형 이름 오른쪽 작은 배지 (공격+5% · 방어+50% · 이동−50%)
+ *   전투 보정 = 지형 이름 오른쪽 작은 배지 (공격+5% · 방어+50%)
  *     모델 2: TERRAIN_BUFF[지형][태세][채널] — 태세 한쪽에만 붙는 보정은 배지 앞에 태세 아이콘(검 = 공격 태세 · 방패 = 방어 태세)
  *     모델 1: COMBAT_TERRAIN_DEF_POSTURE_PERMILLE (방어 태세 방어력)
- *     이동 = 1000 / TERRAIN_MOVE_PERMILLE (v4.5 §22.1: 물은 전부 통행 불가)
+ *   이동력 = 칸 하나를 지나는 데 드는 이동력, 평원 100 (2026-11-05 사용자 결정 — unitStats.terrainMoveCost).
+ *     병종 초당 이동력(unitStats.movePerSec)으로 나누면 칸당 초. 부대를 선택하면 그 병종 초당 이동력을 옆에 붙인다 (v4.5 §22.1: 물은 통행 불가)
  *   점령 = 그 칸 한 칸에 드는 병력 (ui/unitStats.captureCost — 서버 tileCost 와 같은 식)
  *     v5.1: 병종 배율 1000 통일 → 무테크면 한 숫자. 기지 칸은 "함락까지 약 N명" (unitStats.baseCaptureTroops, GDD 4.4)
- *   골드 = 그 지형 100칸이 1분에 버는 골드 (테크 반영)
+ *   골드 = 그 지형 한 칸이 1분에 버는 골드 (테크 반영, 2026-11-05 "칸당 +n/분")
  */
-import { COMBAT_TERRAIN_DEF_POSTURE_PERMILLE, TERRAIN_BUFF, TERRAIN_MOVE_PERMILLE, isClaimable } from '@civwar/shared';
+import { COMBAT_TERRAIN_DEF_POSTURE_PERMILLE, TERRAIN_BUFF, isClaimable } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import { TERRAIN_NAME, UNIT_SHORT } from './text.js';
 import type { TooltipField } from './options.js';
-import { baseCaptureTroops, captureCost, goldPer100TilesPerMin, type TopoLike } from './unitStats.js';
+import { baseCaptureTroops, captureCost, fmt1, goldPerTilePerMin, movePerSec, terrainMoveCost, type TopoLike } from './unitStats.js';
 
 /** 지형 보정 배지. posture = 그 태세일 때만 붙는 보정 (없으면 태세 무관) */
 export interface TipBadge {
@@ -29,7 +30,7 @@ export interface TipRow {
   field: TooltipField;
   label: string;
   value: string;
-  /** defense·speed 행: 지형 이름 옆에 배지로 그린다 */
+  /** defense 행: 지형 이름 옆에 배지로 그린다 */
   badges?: TipBadge[];
 }
 
@@ -113,8 +114,9 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     add('terrain', '지형', terrain);
     const cb = combatBadges(m, ter);
     if (cb.length) add('defense', '전투', cb.map((b) => b.long).join(' · '), cb);
-    const movePm = Math.round(1000000 / arr(m, 'TERRAIN_MOVE_PERMILLE', TERRAIN_MOVE_PERMILLE)[ter]);
-    if (movePm !== 1000) add('speed', '이동', `이동 속도 ${pct(movePm)}`, [{ text: `이동${pct(movePm)}`, tone: movePm > 1000 ? 'up' : 'down', posture: null, long: `이동 속도 ${pct(movePm)}` }]);
+    // 2026-11-05: 칸당 이동력 (평원 100). 선택한 내 부대가 있으면 그 병종 초당 이동력도 — 나누면 칸당 초
+    const mv = `칸당 ${terrainMoveCost(ter, m.config.constants)}`;
+    add('speed', '이동력', sel !== null && me !== null ? `${mv} · ${UNIT_SHORT[sel]} ${fmt1(movePerSec(m, me, sel))}/초` : mv);
     if (me !== null) {
       // 점령에 드는 병력 (내 땅·동맹 땅은 생략). 선택한 부대가 있으면 그 병종만, 없으면 세 병종 —
       // v5.1: 병종 배율은 전 병종 1000 이라 무테크면 셋이 같다 → 한 숫자로. 병종 전용 점령 테크로 달라지면 병종별로 적는다.
@@ -129,11 +131,11 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
           const nums = same ? `${unitTag}약 ${costs[0]}명` : units.map((u, i) => `${UNIT_SHORT[u]} 약 ${costs[i]}`).join(' · ') + '명';
           add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 깃발 있음 (시간 ×2)' : ''}`);
         } else {
-          add('cost', '점령', same ? `${unitTag}${costs[0]}명/칸` : `${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명/칸`);
+          add('cost', '점령', same ? `${unitTag}칸당 ${costs[0]}명` : `칸당 ${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
         }
       }
     }
-    if (sel === null) add('gold', '골드', `+${goldPer100TilesPerMin(m, me, ter)}/분 · 100칸`);
+    if (sel === null) add('gold', '골드', `칸당 +${goldPerTilePerMin(m, me, ter)}/분`);
   }
   const ownerId = isClaimable(ter) ? m.owners[tile] : 0;
   const ownerName = ownerId === 0 ? (isClaimable(ter) ? '중립' : '—') : `${nicknameOf(ownerId)}${ownerId === me ? ' (나)' : m.isAlly(me ?? 0, ownerId) ? ' (동맹)' : ''}`;

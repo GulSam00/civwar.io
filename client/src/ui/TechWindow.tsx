@@ -12,6 +12,7 @@ import { usePolled } from './hooks.js';
 import { techNodes } from './techInfo.js';
 import { incomeOf } from './production.js';
 import { fmtWait, secondsToAfford, techAncestors, techDetailRows, techLayout, techNodeViews, techPriceInfo, techScopeText, purchasableByBranch, type TechNodeState, type TechNodeView } from './techTree.js';
+import { fmtGoldPerMin } from './fmt.js';
 import { StateGlyph, TechIcon } from './techIcons.js';
 import { UnitIcon } from './unitIcons.js';
 import { useDraggableWindow } from './draggable.js';
@@ -86,7 +87,7 @@ export function TechWindow({ store, ctl, narrow }: { store: ClientStore; ctl: Ga
       {viewer && (
         <span className="tw-gold">
           골드 <b>{viewer.gold.toLocaleString()}</b>
-          <span className="muted"> (+{(incomeOf(g, viewer.id)?.net ?? 0).toFixed(1)}/초)</span>
+          <span className="muted"> ({fmtGoldPerMin(incomeOf(g, viewer.id)?.net ?? 0)})</span>
           <span className="muted"> · 구매 {viewer.techCount}회</span>
         </span>
       )}
@@ -513,7 +514,7 @@ function TechDetailPanel({
             <dt>골드</dt>
             <dd>
               {viewer.gold.toLocaleString()}
-              {wait === 0 ? <span className="ok-text"> — 지금 살 수 있음</span> : wait === null ? <span className="warn-text"> — 순수입이 없어 모이지 않음</span> : <span> → {fmtWait(wait)} (순수입 +{inc.net.toFixed(1)}/초)</span>}
+              {wait === 0 ? <span className="ok-text"> — 지금 살 수 있음</span> : wait === null ? <span className="warn-text"> — 순수입이 없어 모이지 않음</span> : <span> → {fmtWait(wait)} (순수입 {fmtGoldPerMin(inc.net)})</span>}
             </dd>
           </>
         )}

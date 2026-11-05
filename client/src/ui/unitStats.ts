@@ -6,6 +6,7 @@
  *   기지 함락  = 남은 체력 × 칸 비용 ÷ 1000 (baseCaptureTroops — 체력은 hpPct 근사)
  *   지형 골드  = shared tileGoldWeight × GOLD_RATE × 골드 스탯 (server economy.grossGoldMilliPerTick 를 칸 하나로)
  *   이동       = rules.ts 깃발 속도 (FLAG_SPEED_BASE_MILLI × (병종 속도 + 테크 점수) ÷ 지형 느려짐)
+ *               v5.11 표기: 지형 = 칸당 이동력 (평원 100), 병종 = 초당 이동력 — 나누면 칸당 초
  */
 import {
   ADJACENCY_COEF_PERMILLE,
@@ -32,6 +33,7 @@ import {
   TECH_POINT_PERMILLE,
   TECH_STAT,
   TERRAIN_COST_PERMILLE,
+  TERRAIN_MOVE_PERMILLE,
   TICK_MS,
   UNIT_ASSAULT_PERMILLE,
   UNIT_SPEED_PERMILLE,
@@ -139,23 +141,40 @@ export function neutralPlainCost(g: GameModel, playerId: number, unit: number): 
   return Math.max(c(k, 'MIN_TILE_COST', MIN_TILE_COST), Math.floor((v + MICRO - 1) / MICRO));
 }
 
-/** 그 지형 100칸이 1분에 버는 골드 (테크 반영, 반올림). 물 = 0 */
-export function goldPer100TilesPerMin(g: GameModel, playerId: number | null, terrain: number): number {
-  const k = g.config.constants;
-  const stat = playerId !== null ? statOf(g, playerId) : techStatsOf(0, k);
+/** 지형 한 칸이 1분에 버는 골드 (테크 스탯 반영, 소수 둘째 자리 반올림). 물 = 0 — 순수 함수 (도움말이 무테크 값으로 쓴다) */
+export function terrainGoldPerMin(terrain: number, stat: readonly number[], k?: Consts): number {
   const w = tileGoldWeight(terrain, stat);
   const milliPerTick = (w * c(k, 'GOLD_RATE_PERMILLE', GOLD_RATE_PERMILLE) * stat[TECH_STAT.GOLD]) / 1e9;
   const ticksPerMin = 60000 / c(k, 'TICK_MS', TICK_MS);
-  return Math.round((milliPerTick * ticksPerMin * 100) / 1000);
+  return Math.round((milliPerTick * ticksPerMin) / 10) / 100;
 }
 
-/** 평원 10칸을 걷는 데 걸리는 초 (지형 느려짐 1000 기준, 귀환 가속 제외) */
-export function secPer10Tiles(g: GameModel, playerId: number, unit: number): number {
+/** 그 지형 한 칸이 1분에 버는 골드 (그 플레이어 테크 반영). playerId null = 무테크 */
+export function goldPerTilePerMin(g: GameModel, playerId: number | null, terrain: number): number {
   const k = g.config.constants;
-  const stat = statOf(g, playerId);
+  return terrainGoldPerMin(terrain, playerId !== null ? statOf(g, playerId) : techStatsOf(0, k), k);
+}
+
+/**
+ * 2026-11-05 이동력 표기 (사용자 결정): 평원 한 칸 = 이동력 100.
+ *   지형 = 칸 하나를 지나는 데 드는 이동력 (TERRAIN_MOVE_PERMILLE ÷ 10 — 평원 100 · 언덕 125 · 산 200)
+ *   병종 = 1초에 쓰는 이동력 (평원 깃발 속도 milli칸/tick × tick/초 ÷ 10 — 검병 무테크 70)
+ *   칸 이동력 ÷ 초당 이동력 = 그 칸에 걸리는 초 (서버 speedMilliAt 의 floor 차이만큼 근사)
+ */
+export function terrainMoveCost(terrain: number, k?: Consts): number {
+  return Math.round(c<readonly number[]>(k, 'TERRAIN_MOVE_PERMILLE', TERRAIN_MOVE_PERMILLE)[terrain] / 10);
+}
+
+/** 병종의 초당 이동력 (테크 속도 점수 반영, 귀환 가속 제외) */
+export function unitMovePerSec(unit: number, stat: readonly number[], k?: Consts): number {
   const speed = c<readonly number[]>(k, 'UNIT_SPEED_PERMILLE', UNIT_SPEED_PERMILLE)[unit] + TECH_POINT_PERMILLE * techSpeedPts(stat, unit);
   const milliTilesPerTick = Math.max(1, Math.floor((c(k, 'FLAG_SPEED_BASE_MILLI', FLAG_SPEED_BASE_MILLI) * speed) / 1000));
-  return Math.round((10_000 / milliTilesPerTick) * (c(k, 'TICK_MS', TICK_MS) / 1000));
+  return (milliTilesPerTick * (1000 / c(k, 'TICK_MS', TICK_MS))) / 10;
+}
+
+/** 그 플레이어 병종의 초당 이동력 */
+export function movePerSec(g: GameModel, playerId: number, unit: number): number {
+  return unitMovePerSec(unit, statOf(g, playerId), g.config.constants);
 }
 
 /** 사기 곱 범위 ‰ — 사기 0 일 때 / 100% 일 때 (테크 기세 반영) */
@@ -203,7 +222,8 @@ export interface UnitSpec {
   def: number;
   /** 점령 속도 점수 (검병 100) */
   assault: number;
-  sec10: number;
+  /** 초당 이동력 (평원 한 칸 = 100) */
+  move: number;
   /** 중립 평원 한 칸 점령 병력 */
   capture: number;
   /** 병력 100명을 편성할 때 풀에서 빠지는 병력 */
@@ -225,7 +245,7 @@ export function unitSpec(g: GameModel, playerId: number, unit: Unit): UnitSpec {
     atk: Math.round(cs.atk / TECH_POINT_PERMILLE),
     def: Math.round(cs.def / TECH_POINT_PERMILLE),
     assault: Math.round(c<readonly number[]>(k, 'UNIT_ASSAULT_PERMILLE', UNIT_ASSAULT_PERMILLE)[unit] / 10),
-    sec10: secPer10Tiles(g, playerId, unit),
+    move: movePerSec(g, playerId, unit),
     capture: neutralPlainCost(g, playerId, unit),
     convertPer100: Math.ceil(techConvertPm(stat, unit) / 10),
     upkeepPerMin: Math.round(unitUpkeepPerKilo(g, playerId, unit) * 60),

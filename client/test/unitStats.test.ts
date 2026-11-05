@@ -53,11 +53,11 @@ describe('표시용 절대값', () => {
     expect(moraleMultiplier(UNIT.SPEAR, MORALE_MAX)).toBe(1100);
   });
 
-  it('출전 버튼 능력치 (무테크): 공격·방어, 평원 10칸, 점령 소모, 편성비, 유지비/분', () => {
+  it('출전 버튼 능력치 (무테크): 공격·방어, 초당 이동력, 점령 소모, 편성비, 유지비/분', () => {
     const { g } = setup();
     const v = [UNIT.SPEAR, UNIT.SWORD, UNIT.CAVALRY].map((u) => unitSpec(g, 1, u));
     expect(v.map((x) => [x.atk, x.def])).toEqual([[90, 110], [100, 100], [120, 90]]);
-    expect(v.map((x) => x.sec10)).toEqual([16, 14, 12]);
+    expect(v.map((x) => x.move)).toEqual([63, 70, 84]); // 2026-11-05: 초당 이동력 (평원 칸당 100)
     expect(v.map((x) => x.capture)).toEqual([7, 7, 7]); // v5.1: 점령 소모 배율 전 병종 1000
     expect(v.map((x) => x.convertPer100)).toEqual([100, 100, 120]);
     expect(v.map((x) => x.upkeepPerMin)).toEqual([18, 30, 54]);

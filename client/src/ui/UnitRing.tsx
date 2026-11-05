@@ -157,9 +157,9 @@ export function UnitRing({ store, ctl }: { store: ClientStore; ctl: GameInputCon
 function UnitSpecTable({ unit, v }: { unit: Unit; v: UnitSpec }) {
   const rows: [string, string][] = [
     ['공격 · 방어', `${v.atk} · ${v.def}`],
-    ['이동', `평원 10칸 ${v.sec10}초`],
+    ['이동력', `${fmt1(v.move)}/초 (평원 칸당 100)`],
     ['점령 속도', `${v.assault} (검병 100)`],
-    ['점령 소모', `${v.capture}명/칸 (중립 평원)`],
+    ['점령 소모', `칸당 ${v.capture}명 (중립 평원)`],
     ['편성비', `100명 출전 = 병력 ${v.convertPer100} 소모`],
     ['유지비', `1000명당 골드 −${v.upkeepPerMin}/분`],
     ['사기 전투력', `${pctOfPm(v.moraleFloor)} ~ ${pctOfPm(v.moraleFull)}`],
