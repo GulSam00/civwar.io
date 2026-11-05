@@ -4,6 +4,7 @@
  */
 import {
   GOLD_RATE_PERMILLE,
+  TECH_COST_ROUND,
   TECH_NODE_BASE_COST,
   TECH_NODES,
   TECH_PROGRESSIVE_COEF_PERMILLE,
@@ -35,13 +36,19 @@ export function techStatsOf(techMask: number, consts?: Consts): number[] {
   return techStatValues(techMask, techNodes(consts), c(consts, 'TECH_STAT_BASE', TECH_STAT_BASE));
 }
 
-/** 프로토콜 §19: cost = floor(TECH_NODE_BASE_COST[tier-1] × (1000 + 60 × 보유 노드 수) / 1000) */
+/** 프로토콜 §19: cost = TECH_NODE_BASE_COST[tier-1] × (1000 + 60 × 보유 노드 수) / 1000 을 TECH_COST_ROUND(10) 단위로 반올림 (v5.11) */
 export function techCost(tier: number, techCount: number, consts?: Consts): number {
-  return techNodeCost(tier, techCount, c(consts, 'TECH_NODE_BASE_COST', TECH_NODE_BASE_COST), c(consts, 'TECH_PROGRESSIVE_COEF_PERMILLE', TECH_PROGRESSIVE_COEF_PERMILLE));
+  return techNodeCost(
+    tier,
+    techCount,
+    c(consts, 'TECH_NODE_BASE_COST', TECH_NODE_BASE_COST),
+    c(consts, 'TECH_PROGRESSIVE_COEF_PERMILLE', TECH_PROGRESSIVE_COEF_PERMILLE),
+    c(consts, 'TECH_COST_ROUND', TECH_COST_ROUND),
+  );
 }
 
 /**
- * §8 골드: goldMilli/tick = floor(goldWeight × 2080 × goldPm / 10⁹), net = gross − floor(gross × upkeepPm / 1000).
+ * §8 골드: goldMilli/tick = floor(goldWeight × 2000 × goldPm / 10⁹), net = gross − floor(gross × upkeepPm / 1000).
  * goldPm = 스탯 GOLD (techMask 에서). 표시용 초당 값 (실수).
  */
 export function goldPerSecond(goldWeight: number, techMask: number, upkeepPm: number, consts?: Consts): { gross: number; net: number } {

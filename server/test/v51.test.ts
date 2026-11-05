@@ -400,7 +400,7 @@ describe('v5.1 기지별 출전 쿨타임 BASE_DISPATCH_COOLDOWN_TICKS', () => {
     const me = 1;
     const p = s.players[me];
     p.troopsMilli = 5_000_000;
-    p.goldMilli = 0;
+    p.goldMilli = 150_000; // 테크(최저 160)는 못 사고, 새 깃발 유지비로 빚 회피(wouldGoBroke)에 걸리지 않을 만큼 (v5.11: 골드 비율 2080 → 2000)
     const t = s.tick;
     for (const b of p.baseTiles) s.bases[s.baseIndexOf.get(b)!].dispatchReadyTick = t + 10;
     expect(decideBot(s, me, t, p.bot).filter((c) => c.type === 'cmd_flag_issue')).toEqual([]);

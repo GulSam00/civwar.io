@@ -101,10 +101,10 @@ describe('지형 툴팁 항목 필터', () => {
   it('행 순서: 지형 → 전투 보정 → 이동 → 점령 비용 → 골드 → 소유자 → 기지 체력 (보정 없는 평원·내 땅 점령 비용은 생략)', () => {
     const i = terrainInfo(model(), 3, 1, nick)!;
     expect(i.rows.map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'cost', 'gold', 'owner']);
-    // 2026-10-28 절대값: 적 언덕 한 칸 = 11 × 1.3 × 병종 점령 배율, 올림 · 언덕 100칸 = 900 × 2.08 × 300 tick ÷ 1000 × 100
+    // 2026-10-28 절대값: 적 언덕 한 칸 = 11 × 1.3 × 병종 점령 배율, 올림 · 언덕 100칸 = 833 × 2.00 × 300 tick ÷ 1000 × 100 (v5.11)
     // v5.1: 병종 배율 전 병종 1000 → 무테크면 병종 무관 15명/칸 (한 숫자로 표기)
     expect(i.rows.find((r) => r.field === 'cost')!.value).toBe('15명/칸');
-    expect(i.rows.find((r) => r.field === 'gold')!.value).toBe('+56/분 · 100칸');
+    expect(i.rows.find((r) => r.field === 'gold')!.value).toBe('+50/분 · 100칸');
     const cap = terrainInfo(model(), 1, 1, nick)!;
     expect(cap.rows.map((r) => r.field)).toEqual(['terrain', 'gold', 'owner', 'baseHp']);
     expect(cap.rows.find((r) => r.field === 'baseHp')).toEqual({ field: 'baseHp', label: '수도 체력', value: '80%' });

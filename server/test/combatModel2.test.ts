@@ -228,11 +228,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-11-02 v5.6: 봇이 태세를 명시하고 재지정 뒤 쿨타임을 기다려 태세를 바꾸므로 다시 고정.
  * 2026-11-03 v5.8: 재정 골드 개편(언덕 이관·수치·국고 ×1.2), 공용 쿨타임 4초, 기동 테크 교체, 병종 편성비·기병 유지비, 병종 갈래 재구성, 공통·병종 노드 수치와 MOB-2B·3B 교환, 기지 골드 테크(ECO-1)로 다시 고정.
  * 2026-11-05 v5.10: 이탈 대기 15 → 8 tick(모델 1·2 공통)·철수 훈련 5 tick·귀환 이탈 면제 2초로 다시 고정.
+ * 2026-11-05 v5.11: 화면 값 5·10 단위(사막·산 이동, 골드 비율 2000·지형 골드 가중, 개간·채굴 +100%, 테크 가격 10 단위 반올림)로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: '240fd6da5207468dd1f83533c7b94fc030cd3d53704296808842cec45770ee56', state: '88af7378fa6438666383915396a5d7229e17f619560aea5ee98da7ad5a14e701' },
-  G2: { stream: '7fbc228fb2f7afe7547a9ffe5678c7599b3fe79e15fb5135e998d2500fd9b4d1', state: '7b7161d866bed21bdab1b1f4a8047bed4c556152cf3ae332c7647c7fd3ed1d92' },
-  G3: { stream: '564003cc87c39dd60bccc767759d5d6f67ee8c54516adbbcfffcb0636b0ed56f', state: 'c6cc2ecfeb4eedf97c2ffafc894a8fa5479af2603b64a7576d8c3462eb74f21b' },
+  G1: { stream: '377564c2e249685956db6e087845810f27e8b2ee531504be096eaed05962c9fd', state: 'e5f7fb67ae7589110fe7d9f878ac68c351f53f0bd362d5a84d970c870a71d12e' },
+  G2: { stream: '9daa909f53bb4702a123e4ed4285c7df5d77fa969bcaee3df4ceb9730c285cce', state: '88e62cb040ccb9494d59bcf039c928993dcc79800c271634c19730787efc98d2' },
+  G3: { stream: '5580510daa504e99fc33518a4488b2121c52941b628f36ebadf62ee3b98a7c8e', state: '35c5395873e00b46f69340b2e1b57a4144603883ba2a250c7ed8bf7d2ba343b9' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {

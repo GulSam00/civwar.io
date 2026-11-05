@@ -100,9 +100,10 @@ export const MAP_GEN_DEFAULT: Readonly<MapGenConfig> = {
 /** 점령비용 배율. 물은 점령 불가 → 0(미사용) */
 export const TERRAIN_COST_PERMILLE = [0, 1000, 1150, 1300, 800, 1700, 0] as const;
 /** 골드 가중치 */
-export const TERRAIN_GOLD_MILLI = [0, 1000, 2000, 900, 300, 300, 0] as const; // 패치 6차 (사용자 2026-10-25): 비옥 2300 → 2000, 산 250 → 300
+export const TERRAIN_GOLD_MILLI = [0, 1000, 2000, 833, 333, 333, 0] as const; // 패치 6차 (사용자 2026-10-25): 비옥 2300 → 2000, 산 250 → 300. v5.11 (사용자 2026-11-05, 화면 값 5·10 단위): 언덕 900 → 833 · 사막·산 300 → 333 (100칸 분당 60·120·50·20·20)
 /** "느려짐 배율". v4.5: 물(DEEP·SHALLOW)은 통행 불가 → 조회되지 않음. SHALLOW 5000 은 기록용(커스텀 표시 호환) */
-export const TERRAIN_MOVE_PERMILLE = [0, 1000, 1000, 1250, 1100, 1800, 5000] as const;
+// v5.11 (사용자 2026-11-05, 화면 값 5·10 단위): 사막 1100 → 1111 (이동 −10%), 산 1800 → 2000 (−50%). 언덕 1250 = −20%
+export const TERRAIN_MOVE_PERMILLE = [0, 1000, 1000, 1250, 1111, 2000, 5000] as const;
 export const SHALLOW_MOVE_PERMILLE = 5000; // v4.5: 미사용 (해상 이동 폐지)
 
 export const TERRAIN_GEN = {
@@ -197,7 +198,7 @@ export const REGEN_BASE_MILLI = 800; // 0.8
 export const REGEN_SQRT_COEF_PERMILLE = 500; // 0.50
 
 // ══ 골드 ══
-export const GOLD_RATE_PERMILLE = 2080; // [A-39]
+export const GOLD_RATE_PERMILLE = 2000; // [A-39]. v5.11 (사용자 2026-11-05, 화면 값 5·10 단위): 2080 → 2000 — 평원 100칸 분당 62 → 60
 
 // ══ 점령 비용 ══
 export const NEUTRAL_BASE = 7; // [A-37]. v4.5 (사용자 2026-10-15): 고정 비용 — √칸 항(NEUTRAL_SQRT_COEF_PERMILLE 750) 폐기
@@ -373,7 +374,7 @@ export const TECH_STAT = {
   BASE_PROD: 46, // 모든 기지 생산(병력·골드) 배율 ‰ (기지 증산 +100). 2026-10-24: 수도 전용 → 전 기지
   // 2026-10-24 재정 개편: 지형별 골드 보너스(‰, 기본 0)와 공통 편성비 배율
   GOLD_PLAIN: 47, // 평지·비옥·언덕 영토 골드 가산 ‰ (농경 +50 · 관개 +100)
-  GOLD_POOR: 48, // 사막·산 영토 골드 가산 ‰ (개간 +800 · 채굴 +1200)
+  GOLD_POOR: 48, // 사막·산 영토 골드 가산 ‰ (개간 +1000 · 채굴 +1000)
   CONVERT: 49, // 편성비 공통 배율 ‰ (기본 1000, v5.8: 노드 없음) — 병종별 CONVERT_* 에 곱한다
   // 51: 폐지된 GOLD_TERRAIN (v5.8 국고가 GOLD 로 바뀜). 뒤 칸 번호 유지를 위해 비워 둔다
   SIEGE: 50, // 공성: 내 깃발이 적 기지에 입히는 체력 피해 배율 ‰ (기본 1000, 공성 전술 +100 · 공성 장비 +150). tick 당 피해 상한에도 같은 배율
@@ -405,8 +406,10 @@ export const TECH_STAT_BASE: readonly number[] = [
 
 /** [A-69] 티어별 기본 가격 (인덱스 = tier-1) */
 export const TECH_NODE_BASE_COST = [160, 360, 700, 1200] as const;
-/** [A-69·A-70] 구매 1회마다 +6% (총 구매 수 기준) */
+/** [A-69·A-70] 구매 1회마다 +6% (총 구매 수 기준). v5.11: 결과는 TECH_COST_ROUND 단위로 반올림 */
 export const TECH_PROGRESSIVE_COEF_PERMILLE = 60;
+/** v5.11 (사용자 2026-11-05, 화면 값 5·10 단위): 누진 가격을 이 단위로 반올림 (169.6 → 170) */
+export const TECH_COST_ROUND = 10;
 export const TECH_NODE_COUNT = 42; // 2026-10-24: 4티어 × 7갈래. techMask 는 53비트 안전 정수(노드 ≤ 53)
 
 export interface TechNodeDef {
@@ -448,9 +451,9 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   // 재정 ECO (6..11) — 2A/2B 양자택일
   { id: 6, code: 'ECO-1', branch: 1, tier: 1, parent: null, stat: TECH_STAT.BASE_GOLD, op: 'add', value: 50, name: '세금 징수', desc: '기지 골드 +5% (수도 포함 모든 기지)' },
   { id: 7, code: 'ECO-2A', branch: 1, tier: 2, parent: 6, exclusive: 8, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 50, name: '농경', desc: '평지·비옥·언덕 영토 골드 +5%' },
-  { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 800, name: '개간', desc: '사막·산 영토 골드 +80%' },
+  { id: 8, code: 'ECO-2B', branch: 1, tier: 2, parent: 6, exclusive: 7, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1000, name: '개간', desc: '사막·산 영토 골드 +100%' },
   { id: 9, code: 'ECO-3A', branch: 1, tier: 3, parent: 7, stat: TECH_STAT.GOLD_PLAIN, op: 'add', value: 100, name: '관개', desc: '평지·비옥·언덕 영토 골드 +10%' },
-  { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1200, name: '채굴', desc: '사막·산 영토 골드 +120%' },
+  { id: 10, code: 'ECO-3B', branch: 1, tier: 3, parent: 8, stat: TECH_STAT.GOLD_POOR, op: 'add', value: 1000, name: '채굴', desc: '사막·산 영토 골드 +100%' },
   { id: 11, code: 'ECO-4', branch: 1, tier: 4, parent: 9, parentAlt: 10, stat: TECH_STAT.GOLD, op: 'add', value: 200, name: '국고', desc: '모든 지형 골드 +20%' },
   // 행정 TER (12..17) — 2A/2B 양자택일
   { id: 12, code: 'TER-1', branch: 2, tier: 1, parent: null, stat: TECH_STAT.NEUTRAL_COST, op: 'add', value: -50, name: '개척민', desc: '중립 땅 점령비용 −5%' },
@@ -461,9 +464,9 @@ export const TECH_NODES: readonly TechNodeDef[] = [
   { id: 17, code: 'TER-4', branch: 2, tier: 4, parent: 15, parentAlt: 16, stat: TECH_STAT.BASE_DMG, op: 'add', value: -200, name: '기지 확충', desc: '기지 체력 피해 −20%' },
   // 기동 MOB — 공통 (18..23)
   { id: 18, code: 'MOB-1', branch: 3, tier: 1, parent: null, stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 200, name: '행군로', desc: '귀환 속도 ×1.5 → ×1.7' },
-  { id: 19, code: 'MOB-2A', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -2, name: '전령', desc: '재지정·태세 전환 쿨타임 −0.4초', icon: '속도선이 붙은 신호 깃발' },
+  { id: 19, code: 'MOB-2A', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -2, name: '전령', desc: '재지정·태세 전환 쿨타임 −10%', icon: '속도선이 붙은 신호 깃발' },
   { id: 20, code: 'MOB-2B', branch: 3, tier: 2, parent: 18, stat: TECH_STAT.RETURN_SPEED, op: 'add', value: 300, name: '급속 귀환', desc: '귀환 속도 ×1.7 → ×2.0', icon: '기지 지붕 + 안으로 들어가는 화살표' },
-  { id: 21, code: 'MOB-3A', branch: 3, tier: 3, parent: 19, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -3, name: '지휘 체계', desc: '재지정·태세 전환 쿨타임 −0.6초', icon: '시계' },
+  { id: 21, code: 'MOB-3A', branch: 3, tier: 3, parent: 19, stat: TECH_STAT.ORDER_COOLDOWN, op: 'add', value: -3, name: '지휘 체계', desc: '재지정·태세 전환 쿨타임 −15%', icon: '시계' },
   { id: 22, code: 'MOB-3B', branch: 3, tier: 3, parent: 20, stat: TECH_STAT.DISENGAGE_TICKS, op: 'set', value: 5, name: '철수 훈련', desc: '이탈 대기 1.6초 → 1.0초', icon: '방패 뒤로 꺾여 돌아가는 화살표' },
   { id: 23, code: 'MOB-4', branch: 3, tier: 4, parent: 21, parentAlt: 22, stat: TECH_STAT.SLOT_BONUS, op: 'add', value: 1, name: '참모부', desc: '깃발 슬롯 +1' },
   // 창병 SPE — 창병 깃발에만 (24..29)

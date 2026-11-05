@@ -11,6 +11,7 @@ import {
   TECH_NODE_COUNT,
   TECH_NODES,
   TECH_PROGRESSIVE_COEF_PERMILLE,
+  TECH_COST_ROUND,
   TECH_STAT,
   TECH_STAT_BASE,
   TECH_STAT_COUNT,
@@ -90,14 +91,17 @@ export function techExclusiveBlocker(mask: number, nodeId: number, nodes: readon
   return x !== undefined && techOwned(mask, x) ? x : null;
 }
 
-/** [A-69·A-70] cost(node, n) = floor(BASE[tier-1] × (1000 + 60 × n) / 1000), n = 지금까지 산 노드 수 */
+/** [A-69·A-70] cost(node, n) = round(BASE[tier-1] × (1000 + 60 × n) / 1000, 10 단위), n = 지금까지 산 노드 수. v5.11: floor → 10 단위 반올림 */
 export function techNodeCost(
   tier: number,
   purchasedCount: number,
   baseCost: readonly number[] = TECH_NODE_BASE_COST,
   coefPermille: number = TECH_PROGRESSIVE_COEF_PERMILLE,
+  round: number = TECH_COST_ROUND,
 ): number {
-  return Math.floor((baseCost[tier - 1] * (1000 + coefPermille * purchasedCount)) / 1000);
+  const milli = baseCost[tier - 1] * (1000 + coefPermille * purchasedCount); // 가격 × 1000 (정수)
+  const unit = round * 1000;
+  return Math.floor((milli + unit / 2) / unit) * round;
 }
 
 /**

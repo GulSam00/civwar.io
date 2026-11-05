@@ -18,7 +18,7 @@ describe('노드 상태 (01b 5.1 [A-79] + 양자택일)', () => {
   });
   it('보유가 최우선, 그다음 요청 중', () => {
     const p = { techMask: mask(0), techCount: 1, gold: 0 };
-    expect(techNodeState(p, TECH_NODES[0], TECH_NODES, 169, new Set([0]))).toBe('owned');
+    expect(techNodeState(p, TECH_NODES[0], TECH_NODES, 170, new Set([0]))).toBe('owned');
     expect(techNodeState(p, TECH_NODES[1], TECH_NODES, 381, new Set([1]))).toBe('pending');
     expect(techNodeState(p, TECH_NODES[3], TECH_NODES, 742)).toBe('locked'); // MIL-3A 부모 MIL-2A 미보유
   });
@@ -37,15 +37,15 @@ describe('노드 상태 (01b 5.1 [A-79] + 양자택일)', () => {
   it('views: 진행 링 = gold / cost (상한 1), 배지 수 = 구매 가능 수', () => {
     const p = { techMask: mask(id('ECO-1')), techCount: 1, gold: 200 };
     const v = techNodeViews(p);
-    // n=1 → T1 169, T2 381
-    expect(v[0].cost).toBe(169);
+    // n=1 → T1 170, T2 380 (v5.11: 10 단위 반올림)
+    expect(v[0].cost).toBe(170);
     expect(v[0].state).toBe('buyable');
     const t2 = v[id('ECO-2A')];
-    expect(t2.cost).toBe(381);
+    expect(t2.cost).toBe(380);
     expect(t2.state).toBe('short');
-    expect(t2.progress).toBeCloseTo(200 / 381, 6);
+    expect(t2.progress).toBeCloseTo(200 / 380, 6);
     expect(v[0].progress).toBe(1);
-    // T1 6개(ECO-1 보유 제외) 모두 169 ≤ 200, T2 는 381 > 200
+    // T1 6개(ECO-1 보유 제외) 모두 170 ≤ 200, T2 는 380 > 200
     expect(purchasableCount(p)).toBe(6);
     const dots = purchasableByBranch(v);
     expect(dots[1]).toBe(false); // 경제: ECO-1 보유, ECO-2A/2B 골드 부족
@@ -55,13 +55,12 @@ describe('노드 상태 (01b 5.1 [A-79] + 양자택일)', () => {
 
 describe('가격 표시 (+6% 누진, §19.3)', () => {
   it('기본·반영 횟수·가산%·다음 가격', () => {
-    expect(techPriceInfo(3, 0)).toEqual({ cost: 700, base: 700, purchased: 0, surchargePct: 0, nextCost: 742 });
+    expect(techPriceInfo(3, 0)).toEqual({ cost: 700, base: 700, purchased: 0, surchargePct: 0, nextCost: 740 });
     const p = techPriceInfo(3, 12);
-    expect(p.cost).toBe(Math.floor((700 * (1000 + 60 * 12)) / 1000)); // 1204 (01b 예시)
-    expect(p.cost).toBe(1204);
+    expect(p.cost).toBe(1200); // 700 × 1.72 = 1204 → 10 단위 반올림 (v5.11)
     expect(p.surchargePct).toBe(72);
-    expect(techPriceInfo(2, 8).cost).toBe(532);
-    expect(techPriceInfo(4, 0)).toEqual({ cost: 1200, base: 1200, purchased: 0, surchargePct: 0, nextCost: 1272 }); // 2026-10-24 T4
+    expect(techPriceInfo(2, 8).cost).toBe(530);
+    expect(techPriceInfo(4, 0)).toEqual({ cost: 1200, base: 1200, purchased: 0, surchargePct: 0, nextCost: 1270 }); // 2026-10-24 T4
   });
   it('match_config.constants 값 우선', () => {
     expect(techPriceInfo(1, 2, { TECH_NODE_BASE_COST: [100, 200, 300], TECH_PROGRESSIVE_COEF_PERMILLE: 100 }).cost).toBe(120);
@@ -107,7 +106,7 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.90' });
     expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2B')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×0.90', after: '×0.70' });
     expect(techDetailRows(nd('TER-3A'), { techMask: mask(id('TER-1'), id('TER-2A')) }).rows[0]).toMatchObject({ label: '기지 생산 배율 (모든 기지)', before: '×1.00', after: '×1.10' });
-    expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ label: '사막·산 영토 골드 보너스', before: '+0%', after: '+80%' });
+    expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ label: '사막·산 영토 골드 보너스', before: '+0%', after: '+100%' });
     expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '기지 골드 배율 (모든 기지)', before: '×1.00', after: '×1.05' });
   });
   it('실제 값 행: 골드 수입, 슬롯 (콜백)', () => {

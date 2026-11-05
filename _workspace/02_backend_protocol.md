@@ -1134,7 +1134,7 @@ emote: IN_GAME 멤버만, 정수 0..`EMOTE_CODE_MAX`(15), 세션당 1초 1회. �
 ```
 owned(mask, i)      = ((mask >>> i) & 1) == 1
 canBuy(mask, i)     = !owned(mask, i) && (parent(i) == null || owned(mask, parent(i)))       // techPrereqMet
-cost(i, n)          = floor(TECH_NODE_BASE_COST[tier(i)-1] × (1000 + 60 × n) / 1000)          // techNodeCost, n = techCount
+cost(i, n)          = round10(TECH_NODE_BASE_COST[tier(i)-1] × (1000 + 60 × n) / 1000)        // techNodeCost, n = techCount. v5.11: floor → TECH_COST_ROUND(10) 단위 반올림
 stat = techStatValues(mask):  v = TECH_STAT_BASE.slice()
                                for 보유 'set' 노드: v[stat] = value
                                for 보유 'add' 노드: v[stat] += value                        // 순서 무관

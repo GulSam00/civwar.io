@@ -8,12 +8,12 @@ import { GameModel } from '../src/state/gameModel.js';
 import { pacingNote, defaultPrivateSettings } from '../../server/src/room/settings.js';
 
 describe('테크', () => {
-  // v4.3 (프로토콜 §19): 가격 = floor(TECH_NODE_BASE_COST[tier-1] × (1000 + 60 × 보유 노드 수) / 1000)
-  it('가격 = floor(BASE × (1000 + 60 × 총구매수) / 1000) (§19)', () => {
+  // v4.3 (프로토콜 §19): 가격 = TECH_NODE_BASE_COST[tier-1] × (1000 + 60 × 보유 노드 수) / 1000, v5.11: 10 단위 반올림
+  it('가격 = BASE × (1000 + 60 × 총구매수) / 1000 → 10 단위 반올림 (§19, v5.11)', () => {
     expect(techCost(1, 0)).toBe(160);
-    expect(techCost(1, 1)).toBe(169);
-    expect(techCost(2, 8)).toBe(532);
-    expect(techCost(3, 14)).toBe(1288);
+    expect(techCost(1, 1)).toBe(170);
+    expect(techCost(2, 8)).toBe(530);
+    expect(techCost(3, 14)).toBe(1290);
   });
   it('노드 표는 match_config.constants.TECH_NODES 우선', () => {
     expect(techNodes()).toBe(TECH_NODES);
@@ -22,9 +22,9 @@ describe('테크', () => {
   });
   it('골드 수입 §8 (유지비 차감) — v5.8: 국고는 전체 골드 배율 +20%', () => {
     const r = goldPerSecond(2700, 0, 0);
-    expect(r.gross).toBeCloseTo((Math.floor((2700 * 2080 * 1000) / 1e9) * 5) / 1000, 9);
+    expect(r.gross).toBeCloseTo((Math.floor((2700 * 2000 * 1000) / 1e9) * 5) / 1000, 9);
     const e = goldPerSecond(100000, 2 ** 11, 0); // ECO-4(id 11) — ×1.2
-    expect(e.gross).toBeCloseTo((Math.floor((100000 * 2080 * 1200) / 1e9) * 5) / 1000, 9);
+    expect(e.gross).toBeCloseTo((Math.floor((100000 * 2000 * 1200) / 1e9) * 5) / 1000, 9);
     const u = goldPerSecond(100000, 2 ** 11, 300);
     expect(u.net).toBeLessThan(u.gross);
   });

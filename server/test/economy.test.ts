@@ -43,21 +43,21 @@ describe('병력 (3.2)', () => {
 });
 
 describe('골드 (3.3)', () => {
-  it('평균 지형 390타일 → floor(376350 × 2080 × 1000 / 1e9) = 782', () => {
-    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350 }))).toBe(782);
+  it('평균 지형 390타일 → floor(376350 × 2000 × 1000 / 1e9) = 752 (v5.11)', () => {
+    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350 }))).toBe(752);
   });
   it('v5.8: 전체 골드 배율은 국고 ECO-4 만 올린다 (+20%)', () => {
-    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A') }))).toBe(782);
-    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4') }))).toBe(939);
+    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A') }))).toBe(752);
+    expect(grossGoldMilliPerTick(player({ goldWeight: 376_350, ...techOf('ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4') }))).toBe(903);
   });
 });
 
 describe('테크·슬롯 (3.4)', () => {
-  it('누진 비용 (v4.3: 160/360/700, +6%)', () => {
+  it('누진 비용 (v4.3: 160/360/700, +6%, v5.11: 10 단위 반올림)', () => {
     expect(techCost(1, 0)).toBe(160);
-    expect(techCost(1, 1)).toBe(169);
-    expect(techCost(2, 2)).toBe(403);
-    expect(techCost(3, 4)).toBe(868);
+    expect(techCost(1, 1)).toBe(170);
+    expect(techCost(2, 2)).toBe(400);
+    expect(techCost(3, 4)).toBe(870);
   });
   it('flagCap 표 (GDD 3.2) + MOB-4 참모부 +1', () => {
     expect([100, 390, 600, 900, 1200].map((tiles) => flagCap(player({ tiles })))).toEqual([3, 4, 5, 6, 7]);

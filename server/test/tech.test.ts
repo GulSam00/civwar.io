@@ -147,9 +147,9 @@ describe('v4.6 노드 표', () => {
     expect(s('TER-2B')).toMatchObject({ stat: TECH_STAT.BASE_DMG, value: -100 });
     expect(s('ECO-1')).toMatchObject({ stat: TECH_STAT.BASE_GOLD, op: 'add', value: 50, name: '세금 징수' });
     expect(s('ECO-2A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 50 });
-    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 800 });
+    expect(s('ECO-2B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1000 });
     expect(s('ECO-3A')).toMatchObject({ stat: TECH_STAT.GOLD_PLAIN, value: 100 });
-    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1200 });
+    expect(s('ECO-3B')).toMatchObject({ stat: TECH_STAT.GOLD_POOR, value: 1000 });
     expect(s('ECO-4')).toMatchObject({ stat: TECH_STAT.GOLD, value: 200, tier: 4 });
     expect(s('TER-3A')).toMatchObject({ stat: TECH_STAT.BASE_PROD, value: 100, name: '기지 증산' });
     expect(s('TER-3B')).toMatchObject({ stat: TECH_STAT.BASE_RECOVER, value: 500 });
@@ -206,19 +206,19 @@ describe('v4.6 선행·양자택일', () => {
 });
 
 describe('v4.6 가격식 [A-69] — 4티어', () => {
-  it('cost = floor(BASE[tier] × (1000 + 60n) / 1000) — n = 0 / 8 / 14', () => {
+  it('cost = BASE[tier] × (1000 + 60n) / 1000 를 10 단위 반올림 (v5.11) — n = 0 / 8 / 14', () => {
     expect([1, 2, 3, 4].map((t) => techNodeCost(t, 0))).toEqual([160, 360, 700, 1200]);
-    expect([1, 2, 3, 4].map((t) => techNodeCost(t, 8))).toEqual([236, 532, 1036, 1776]);
-    expect([1, 2, 3, 4].map((t) => techNodeCost(t, 14))).toEqual([294, 662, 1288, 2208]);
+    expect([1, 2, 3, 4].map((t) => techNodeCost(t, 8))).toEqual([240, 530, 1040, 1780]);
+    expect([1, 2, 3, 4].map((t) => techNodeCost(t, 14))).toEqual([290, 660, 1290, 2210]);
   });
-  it('서버 구매 경로: 9번째(n=8) T3 = 1036, 15번째(n=14) T2 = 662 (갈래 무관 총 구매 수)', () => {
+  it('서버 구매 경로: 9번째(n=8) T3 = 1040, 15번째(n=14) T2 = 660 (갈래 무관 총 구매 수)', () => {
     const sim = makeSim();
     const eight = ['MIL-1', 'ECO-1', 'TER-1', 'MOB-1', 'SPE-1', 'SWO-1', 'CAV-1', 'MOB-2A'];
     const r = buyAll(sim, 1, [...eight, 'MOB-3A', 'ECO-2A', 'TER-2A', 'MIL-2A', 'MIL-2B', 'SPE-2A', 'SPE-2B']);
     expect(r.every((x) => x.accepted)).toBe(true);
-    expect(r.map((x) => x.cost)).toEqual([160, 169, 179, 188, 198, 208, 217, 511, 1036, 554, 576, 597, 619, 640, 662]);
+    expect(r.map((x) => x.cost)).toEqual([160, 170, 180, 190, 200, 210, 220, 510, 1040, 550, 580, 600, 620, 640, 660]);
     expect(sim.state.players[1].techPurchased).toBe(15);
-    expect(techNodeCost(1, sim.state.players[1].techPurchased)).toBe(304);
+    expect(techNodeCost(1, sim.state.players[1].techPurchased)).toBe(300);
   });
 });
 
@@ -385,12 +385,12 @@ describe('v4.6 계산식 연결', () => {
     recomputeGoldWeight(s, p);
     const w0 = p.goldWeight;
     expect(w0).toBe(sum());
-    // 지형 한 칸 가중치: 평지 1000 / 비옥 2000 / 언덕 900 / 사막 300 / 산 300 (기본, 패치 6차)
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 900, 300, 300]);
+    // 지형 한 칸 가중치: 평지 1000 / 비옥 2000 / 언덕 833 / 사막 333 / 산 333 (기본, v5.11)
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 833, 333, 333]);
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A');
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 1035, 300, 300]); // +15%, 사막·산 불변
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 957, 333, 333]); // +15%, 사막·산 불변
     giveTech(p, 'ECO-1', 'ECO-2B', 'ECO-3B');
-    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 900, 900, 900]); // +200%, 평지·언덕 불변
+    expect([TERRAIN.PLAIN, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 833, 999, 999]); // +200%, 평지·언덕 불변
     recomputeGoldWeight(s, p);
     expect(p.goldWeight).toBe(sum());
     expect(p.goldWeight).toBeGreaterThanOrEqual(w0); // 시작 영토가 평지뿐이면 같다
@@ -402,9 +402,9 @@ describe('v4.6 계산식 연결', () => {
     giveTech(p, 'ECO-1', 'ECO-2A', 'ECO-3A', 'ECO-4');
     expect(p.statPm[TECH_STAT.GOLD]).toBe(1200);
     // 국고: 칸 가중치는 그대로고 전체 골드 배율로 ×1.2
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 1035, 300, 300]);
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1150, 2300, 957, 333, 333]);
     giveTech(p, 'ECO-4');
-    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 900, 300, 300]); // 국고만: 칸 가중치 불변
+    expect([TERRAIN.PLAIN, TERRAIN.FERTILE, TERRAIN.HILLS, TERRAIN.DESERT, TERRAIN.MOUNTAIN].map((t) => tileGoldWeight(t, p.statPm))).toEqual([1000, 2000, 833, 333, 333]); // 국고만: 칸 가중치 불변
     // 소유 칸이 바뀌어도 현재 스탯 기준 가중치로 유지된다
     giveTech(p, 'ECO-1', 'ECO-2B');
     recomputeGoldWeight(s, p);
@@ -420,12 +420,12 @@ describe('v4.6 계산식 연결', () => {
     expect(p.baseTiles).toEqual([p.homeTileId]); // 시작 = 수도 한 칸 (평원 100칸분 = 가중 100000)
     const run = (...codes: string[]) => (giveTech(p, ...codes), computeProduction(s, p));
     const r0 = run();
-    expect(r0.grossMilli).toBe(208); // floor(100000 × 2080 / 1e6)
+    expect(r0.grossMilli).toBe(200); // floor(100000 × 2000 / 1e6)
     const r1 = run('ECO-1');
-    expect(r1.grossMilli).toBe(218); // 105000 → 218.4
+    expect(r1.grossMilli).toBe(210); // 105000 → 210
     expect(r1.regenMilli).toBe(r0.regenMilli);
     const r2 = run('ECO-1', 'TER-1', 'TER-2A', 'TER-3A');
-    expect(r2.grossMilli).toBe(240); // 환산 110칸 × 1000 × 1.05 = 115500 → 240.2
+    expect(r2.grossMilli).toBe(231); // 환산 110칸 × 1000 × 1.05 = 115500 → 231
     expect(r2.regenMilli).toBeGreaterThan(r0.regenMilli); // 기지 증산은 병력도 올린다
   });
   it('점령비용: TER-1/2A(중립), SWO-2B(검병) — 군사 갈래는 점령비용을 줄이지 않는다', () => {
