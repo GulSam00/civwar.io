@@ -282,7 +282,7 @@ describe('§22.7 테크 급속 귀환(MOB-2B) · 철수 훈련(MOB-3B) — v5.8 
   });
   it('급속 귀환: 상세 "귀환 속도 배율 ×1.70 → ×2.00" (행군로 보유 기준)', () => {
     const d = techDetailRows(n20, ctx as Parameters<typeof techDetailRows>[1]);
-    expect(d.rows[0]).toMatchObject({ before: '×1.70', after: '×2.00', changed: true });
+    expect(d.rows[0]).toMatchObject({ before: '170%', after: '200%', changed: true });
     expect(d.rows[0].label).toContain('귀환 속도');
   });
 });

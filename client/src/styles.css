@@ -574,11 +574,6 @@ kbd {
   padding-bottom: 0;
   margin-bottom: 0;
 }
-.tt-mbar.mbar.wide {
-  display: block;
-  width: auto;
-  margin: 2px 0 3px;
-}
 .tt-row.tt-strong .tt-v {
   font-weight: 700;
 }
@@ -2224,6 +2219,98 @@ kbd {
 }
 .tt-row.tt-floor .tt-v {
   color: #81d4fa;
+}
+/* 2026-11-06 깃발 hover 카드 (이슈 20261104-0112): 병종·병력·주인 / 태세·상태 / 사기 / 지금 공격·방어 */
+.terrain-tip .fc-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.terrain-tip .fc-owner {
+  color: var(--muted);
+  font-size: 12px;
+}
+.terrain-tip .fc-posture {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+}
+.terrain-tip .fc-posture.atk {
+  color: #ff8a80;
+}
+.terrain-tip .fc-posture.def {
+  color: var(--primary-hi);
+}
+.terrain-tip .fc-morale {
+  justify-content: flex-start;
+  gap: 0;
+}
+.terrain-tip .fc-morale .mbar.wide {
+  flex: 1;
+  width: auto;
+  min-width: 90px;
+  margin: 0 8px;
+}
+.terrain-tip .fc-pct {
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
+.terrain-tip .fc-now {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.terrain-tip .fc-ch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.terrain-tip .fc-ch .posture-atk {
+  color: var(--atk);
+}
+.terrain-tip .fc-ch .posture-def {
+  color: var(--primary-hi);
+}
+/* 깃발 선택 패널: 병종·병력과 태세 한 줄 */
+.flag-panel-body .fp-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fp-line .fp-posture {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 깃발 선택 패널: 공격력·방어력 한 줄, 지금 태세 쪽이 밝다 */
+.cs-row.cs-pair {
+  gap: 12px;
+  opacity: 1;
+}
+.cs-pair .cs-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.6;
+}
+.cs-pair .cs-cell.now {
+  opacity: 1;
+}
+.cs-pair .cs-cell.now b {
+  font-size: 15px;
+}
+.morale-row .fp-more {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.morale-row .fp-more:hover,
+.morale-row .fp-more.on {
+  color: var(--text);
 }
 
 /* ══════════ 2026-10-18 UI 개선 (OpenFront.io 참고 — 1·2·3·4·6·7·9) ══════════ */

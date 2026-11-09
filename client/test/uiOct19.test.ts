@@ -55,12 +55,12 @@ describe('m-6 테크 상세 — 국고(ECO-4)는 전체 골드 배율 (v5.8)', (
   const mask = (...ids: number[]) => ids.reduce((m, i) => m + 2 ** i, 0);
   it('앞 노드(농경·관개)와 무관하게 골드 생산 배율 ×1.00 → ×1.20 으로 보인다', () => {
     const d = techDetailRows(node, { techMask: mask(id('ECO-1'), id('ECO-2A'), id('ECO-3A')) });
-    expect(d.rows[0]).toMatchObject({ before: '×1.00', after: '×1.20' });
+    expect(d.rows[0]).toMatchObject({ before: '100%', after: '120%' });
     expect(d.rows).toHaveLength(1);
   });
   it('이미 보유한 노드: "없을 때" ×1.00 · "보유" ×1.20', () => {
     const d = techDetailRows(node, { techMask: mask(id('ECO-1'), id('ECO-2B'), id('ECO-3B'), node.id) });
-    expect(d.rows[0]).toMatchObject({ before: '×1.00', after: '×1.20' });
+    expect(d.rows[0]).toMatchObject({ before: '100%', after: '120%' });
   });
 });
 

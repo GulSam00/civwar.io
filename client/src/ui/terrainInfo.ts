@@ -129,7 +129,7 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
         const unitTag = sel !== null ? `${UNIT_SHORT[sel]} ` : '';
         if (isBase) {
           const nums = same ? `${unitTag}약 ${costs[0]}명` : units.map((u, i) => `${UNIT_SHORT[u]} 약 ${costs[i]}`).join(' · ') + '명';
-          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 깃발 있음 (시간 ×2)' : ''}`);
+          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 중 시간 2배' : ''}`);
         } else {
           add('cost', '점령', same ? `${unitTag}칸당 ${costs[0]}명` : `칸당 ${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
         }
@@ -148,7 +148,7 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     if (name && sel === null) add('baseHp', m.capitalTiles.has(tile) ? '수도' : '기지', name);
     add('baseHp', m.capitalTiles.has(tile) ? '수도 체력' : '기지 체력', `${Math.round(b.hpPct)}%`);
     const prod = m.baseProdPm(tile);
-    if (prod !== null && sel === null) add('baseHp', '생산력', `${Math.floor(prod / 10)}%${prod < 1000 ? ' (회복 중)' : ''}`);
+    if (prod !== null && sel === null) add('baseHp', '생산력', `${Math.floor(prod / 10)}%`); // 2026-11-06: 괄호 설명 제거 (100% 미만 = 회복 중, 도움말)
     // v5.1: 내 기지 출전 쿨타임 (기지 아이콘의 원형 게이지와 같은 값)
     const wait = me !== null && b.ownerId === me ? m.baseDispatchWait(tile) : 0;
     if (wait > 0) add('baseHp', '출전', `준비 중 ${Math.ceil((wait * m.config.tickMs) / 1000)}초`);
