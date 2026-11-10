@@ -113,6 +113,7 @@ export function Help({ onClose }: { onClose: () => void }) {
               <Row k="골드">
                 칸당 {LAND.map((t) => `${TERRAIN_NAME[t]} +${terrainGoldPerMin(t, NO_TECH)}`).join(' · ')}/분 (테크 전)
               </Row>
+              <Row k="지형 툴팁">이동력·점령·골드 값은 모두 그 칸 하나 기준 (이동력 125 = 칸 하나를 지나는 데 125 · 점령 10명 = 칸 하나에 10명)</Row>
               <Row k="태세">
                 공격(마름모) · 방어(원, 보호 반경 {FRONT_RADIUS}칸) · 재지정·전환 공용 쿨타임 {sec(FLAG_ORDER_COOLDOWN_TICKS)} · 전환 시 진척도 0 · 방어 깃발을 적·중립 땅으로 보내면 공격으로 자동 전환
               </Row>

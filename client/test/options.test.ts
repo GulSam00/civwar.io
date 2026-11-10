@@ -103,9 +103,9 @@ describe('지형 툴팁 항목 필터', () => {
     expect(i.rows.map((r) => r.field)).toEqual(['terrain', 'defense', 'speed', 'cost', 'gold', 'owner']);
     // 2026-10-28 절대값: 적 언덕 한 칸 = 11 × 1.3 × 병종 점령 배율, 올림 · 언덕 100칸 = 833 × 2.00 × 300 tick ÷ 1000 × 100 (v5.11)
     // v5.1: 병종 배율 전 병종 1000 → 무테크면 병종 무관 15명/칸 (한 숫자로 표기)
-    expect(i.rows.find((r) => r.field === 'cost')!.value).toBe('칸당 15명');
-    expect(i.rows.find((r) => r.field === 'gold')!.value).toBe('칸당 +0.5/분'); // 2026-11-05: 칸당 골드/분
-    expect(i.rows.find((r) => r.field === 'speed')!.value).toBe('칸당 125'); // 이동력: 평원 100 기준
+    expect(i.rows.find((r) => r.field === 'cost')!.value).toBe('15명');
+    expect(i.rows.find((r) => r.field === 'gold')!.value).toBe('+0.5/분'); // 2026-11-05: 칸당 골드/분
+    expect(i.rows.find((r) => r.field === 'speed')!.value).toBe('125'); // 이동력: 평원 100 기준
     const cap = terrainInfo(model(), 1, 1, nick)!;
     expect(cap.rows.map((r) => r.field)).toEqual(['terrain', 'speed', 'gold', 'owner', 'baseHp']); // 평원도 이동력 100 표시
     expect(cap.rows.find((r) => r.field === 'baseHp')).toEqual({ field: 'baseHp', label: '수도 체력', value: '80%' });
@@ -114,8 +114,8 @@ describe('지형 툴팁 항목 필터', () => {
     expect(terrainInfo(model(), 3, 1, nick, { selectedUnit: 2 })!.rows.map((r) => [r.field, r.value])).toEqual([
       ['terrain', '언덕'],
       ['defense', '방어 태세일 때 방어력 +30%'],
-      ['speed', '칸당 125 · 기 84/초'], // 선택 병종 초당 이동력 — 125 ÷ 84 ≈ 1.5초/칸
-      ['cost', '기 칸당 15명'],
+      ['speed', '125 · 기 84/초'], // 선택 병종 초당 이동력 — 125 ÷ 84 ≈ 1.5초/칸
+      ['cost', '기 15명'],
     ]);
     expect(terrainInfo(model(), 7, 1, nick, { selectedUnit: 1 })!.rows.map((r) => r.field)).toEqual(['terrain', 'speed', 'cost', 'baseHp']);
   });

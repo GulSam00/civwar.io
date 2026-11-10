@@ -115,7 +115,7 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     const cb = combatBadges(m, ter);
     if (cb.length) add('defense', '전투', cb.map((b) => b.long).join(' · '), cb);
     // 2026-11-05: 칸당 이동력 (평원 100). 선택한 내 부대가 있으면 그 병종 초당 이동력도 — 나누면 칸당 초
-    const mv = `칸당 ${terrainMoveCost(ter, m.config.constants)}`;
+    const mv = String(terrainMoveCost(ter, m.config.constants)); // 2026-11-10: '칸당' 접두어 제거 (값만)
     add('speed', '이동력', sel !== null && me !== null ? `${mv} · ${UNIT_SHORT[sel]} ${fmt1(movePerSec(m, me, sel))}/초` : mv);
     if (me !== null) {
       // 점령에 드는 병력 (내 땅·동맹 땅은 생략). 선택한 부대가 있으면 그 병종만, 없으면 세 병종 —
@@ -131,11 +131,11 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
           const nums = same ? `${unitTag}약 ${costs[0]}명` : units.map((u, i) => `${UNIT_SHORT[u]} 약 ${costs[i]}`).join(' · ') + '명';
           add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 중 시간 2배' : ''}`);
         } else {
-          add('cost', '점령', same ? `${unitTag}칸당 ${costs[0]}명` : `칸당 ${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
+          add('cost', '점령', same ? `${unitTag}${costs[0]}명` : `${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
         }
       }
     }
-    if (sel === null) add('gold', '골드', `칸당 +${goldPerTilePerMin(m, me, ter)}/분`);
+    if (sel === null) add('gold', '골드', `+${goldPerTilePerMin(m, me, ter)}/분`);
   }
   const ownerId = isClaimable(ter) ? m.owners[tile] : 0;
   const ownerName = ownerId === 0 ? (isClaimable(ter) ? '중립' : '—') : `${nicknameOf(ownerId)}${ownerId === me ? ' (나)' : m.isAlly(me ?? 0, ownerId) ? ' (동맹)' : ''}`;

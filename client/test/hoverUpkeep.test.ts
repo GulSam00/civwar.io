@@ -39,7 +39,7 @@ describe('지형 정보 툴팁', () => {
     const i = terrainInfo(model(), 3, 1, nick)!;
     expect(i.terrain).toBe('언덕');
     expect(i.mods).toContain('방어 태세일 때 방어력 +30%');
-    expect(i.mods).toContain('이동력 칸당 125'); // 2026-11-05: 배지 % 대신 칸당 이동력 (평원 100)
+    expect(i.mods).toContain('이동력 125'); // 2026-11-05: 배지 % 대신 칸 이동력 (평원 100), 2026-11-10 '칸당' 제거
     expect(i.rows.find((r) => r.field === 'defense')!.badges).toEqual([{ text: '방어+30%', tone: 'up', posture: 1, long: '방어 태세일 때 방어력 +30%' }]);
     expect(i.ownerName).toBe('P2');
     expect(i.base).toBeNull();
