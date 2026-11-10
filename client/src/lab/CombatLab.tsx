@@ -186,6 +186,7 @@ export function CombatLab() {
             <NumField label="손실 하한 (만분율)" title="출전 병력 합 대비 tick 당 손실 하한 (COMBAT_LOSS_FLOOR_BP)" value={global.floorBp} onChange={(v) => updateGlobal({ floorBp: v })} />
             <NumField label="최소 손실 (milli)" title="tick 당 최소 손실 (COMBAT_MIN_LOSS_MILLI, 1000 = 1명)" value={global.minLossMilli} onChange={(v) => updateGlobal({ minLossMilli: v })} />
             <NumField label="손실 1%당 사기 감소" title="이번 tick 자기 병력 손실 1% 마다 추가 사기 감소 (MORALE_DROP_LOSS_K)" value={global.lossK} onChange={(v) => updateGlobal({ lossK: v })} />
+            <NumField label="사상자 1명당 사기 감소 상한" title="손실 감소는 그 tick 사상자 1명당 이 값을 넘지 않는다 (MORALE_DROP_LOSS_PER_TROOP)" value={global.lossPerTroop} onChange={(v) => updateGlobal({ lossPerTroop: v })} />
             <NumField label="최대 tick" title="이 tick 에서 끊는다" value={global.maxTicks} min={1} onChange={(v) => updateGlobal({ maxTicks: v })} />
             <button type="button" className="btn btn-sm" onClick={() => updateGlobal(DEFAULT_GLOBAL)}>
               게임 값으로

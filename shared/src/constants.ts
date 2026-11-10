@@ -658,6 +658,8 @@ export const MORALE_DROP_PER_TICK = [3, 4, 5] as const;
 export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 4] as const;
 /** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (v5.7 사용자 결정: 10 → 5) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
 export const MORALE_DROP_LOSS_K = 5;
+/** v5.13 (사용자 결정 2026-11-10): 손실 감소 상한 = 그 tick 사상자 1명당 ‰. 손실 감소 = min(손실% × K, floor(사상자 명) × 2) — 작은 깃발이 몇 명 잃은 것으로 사기가 급락하지 않게 한다 */
+export const MORALE_DROP_LOSS_PER_TROOP = 2;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
 /** v5.1 (GDD 4.5, 사용자 확정 2026-10-28): 자기 기지 칸(수도 포함) 위 깃발의 사기 하한 ‰ (화면 30%). 모델 2 전용.

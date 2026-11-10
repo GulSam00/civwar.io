@@ -15,6 +15,7 @@ import {
   MORALE_BASE_FLOOR,
   MORALE_DROP_DEFEND_PER_TICK,
   MORALE_DROP_LOSS_K,
+  MORALE_DROP_LOSS_PER_TROOP,
   MORALE_DROP_PER_TICK,
   MORALE_FLOOR,
   MORALE_FULL,
@@ -53,6 +54,7 @@ export interface GlobalConfig {
   floorBp: number; // 출전 병력 합 대비 손실 하한 (만분율)
   minLossMilli: number; // tick 당 최소 손실 (milli)
   lossK: number; // 손실 1% 당 추가 사기 감소
+  lossPerTroop: number; // 손실 감소 상한 — 그 tick 사상자 1명당
   maxTicks: number; // 이 tick 에서 끊는다
 }
 
@@ -61,6 +63,7 @@ export const DEFAULT_GLOBAL: GlobalConfig = {
   floorBp: COMBAT_LOSS_FLOOR_BP,
   minLossMilli: COMBAT_MIN_LOSS_MILLI,
   lossK: MORALE_DROP_LOSS_K,
+  lossPerTroop: MORALE_DROP_LOSS_PER_TROOP,
   maxTicks: 3000,
 };
 
@@ -222,9 +225,11 @@ export class CombatSim {
 
     // 4b — 병력 차감
     const lossBp = [0, 0];
+    const lossMilli = [0, 0];
     for (const i of [0, 1] as const) {
       const l = det[i].lossMilli;
       if (l > 0 && st[i].troopsMilli > 0) lossBp[i] = Math.floor((l * 10000) / st[i].troopsMilli);
+      lossMilli[i] = l;
       st[i].troopsMilli -= l;
     }
     // 패주
@@ -261,7 +266,7 @@ export class CombatSim {
           continue;
         }
         const fixed = c.posture === POSTURE.DEFEND ? c.dropDefend : c.dropAttack;
-        const byLoss = Math.floor((lossBp[i] * g.lossK + 50) / 100);
+        const byLoss = Math.min(Math.floor((lossBp[i] * g.lossK + 50) / 100), Math.floor(lossMilli[i] / 1000) * g.lossPerTroop);
         const drop = Math.max(1, fixed + byLoss);
         s.morale = Math.max(c.onOwnBase ? MORALE_BASE_FLOOR : 0, s.morale - drop);
       } else {

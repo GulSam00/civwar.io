@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MORALE_DROP_LOSS_K, MORALE_DROP_PER_TICK, POSTURE, TERRAIN, UNIT, channelValues, sideLossDetail, type CombatFlagInput } from '@civwar/shared';
+import { MORALE_DROP_LOSS_K, MORALE_DROP_LOSS_PER_TROOP, MORALE_DROP_PER_TICK, POSTURE, TERRAIN, UNIT, channelValues, sideLossDetail, type CombatFlagInput } from '@civwar/shared';
 import { CombatSim, DEFAULT_GLOBAL, defaultSide, presetStats } from '../src/lab/combatSim.js';
 
 const flag = (unit: number, morale: number, posture: number = POSTURE.ATTACK): CombatFlagInput => ({
@@ -26,7 +26,7 @@ describe('전투 실험실 — statOverride', () => {
 });
 
 describe('전투 실험실 — CombatSim', () => {
-  it('첫 tick 손실이 shared sideLossDetail 과 같고 사기 감소 = 고정 + K × 손실%', () => {
+  it('첫 tick 손실이 shared sideLossDetail 과 같고 사기 감소 = 고정 + min(K × 손실%, 사상자 1명당 2)', () => {
     const a = defaultSide(UNIT.SWORD);
     const b = defaultSide(UNIT.CAVALRY);
     const sim = new CombatSim([a, b], DEFAULT_GLOBAL);
@@ -38,11 +38,13 @@ describe('전투 실험실 — CombatSim', () => {
     expect(r.sides[0].lossMilli).toBe(det[0].lossMilli);
     expect(r.sides[1].lossMilli).toBe(det[1].lossMilli);
     const bp = Math.floor((det[0].lossMilli * 10000) / 100_000);
-    expect(r.sides[0].morale).toBe(1000 - (MORALE_DROP_PER_TICK[UNIT.SWORD] + Math.floor((bp * MORALE_DROP_LOSS_K + 50) / 100)));
+    const byLoss = Math.min(Math.floor((bp * MORALE_DROP_LOSS_K + 50) / 100), Math.floor(det[0].lossMilli / 1000) * MORALE_DROP_LOSS_PER_TROOP);
+    expect(r.sides[0].morale).toBe(1000 - (MORALE_DROP_PER_TICK[UNIT.SWORD] + byLoss));
   });
 
   it('사기 0 이면 이탈 대기 후 이탈로 끝난다', () => {
-    const sim = new CombatSim([defaultSide(UNIT.SWORD), defaultSide(UNIT.SPEAR)], DEFAULT_GLOBAL);
+    // v5.13: 100 명끼리는 사상자 상한으로 사기보다 병력이 먼저 바닥난다 — 1000 명끼리로 본다
+    const sim = new CombatSim([{ ...defaultSide(UNIT.SWORD), troops: 1000 }, { ...defaultSide(UNIT.SPEAR), troops: 1000 }], DEFAULT_GLOBAL);
     while (sim.step());
     expect(sim.result).not.toBeNull();
     expect(sim.logs.some((l) => l.kind === 'retreat')).toBe(true);
