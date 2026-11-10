@@ -604,6 +604,50 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(hit(1, true)).toBe(0);
   });
 
+  it('GDD v5.12 ①②: 앵커가 옆 칸 적대 기지면 행군(MARCHING) 중 교전이어도 ×0.5 로 민다, 기지 옆 수비 깃발도 방어로 본다', () => {
+    type Def = 'none' | 'onBase' | 'nextToBase' | 'thirdParty';
+    const hit = (def: Def, o: { state?: Flag['state']; anchorIsBase?: boolean } = {}) => {
+      const { s } = duelState(2);
+      const home = s.players[2].homeTileId;
+      const b = s.bases[s.baseIndexOf.get(home)!];
+      const land = (t: number) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t];
+      const nb = s.graph.neighbors(home).find(land)!;
+      // 기지와 공격 깃발 모두에 붙은 칸 (기지 옆 수비 자리)
+      const side = s.graph.contactNeighbors(home).find((t) => t !== nb && land(t) && s.graph.touching(nb, t))!;
+      expect(side).toBeDefined();
+      setTileOwner(s, side, 2);
+      if (def === 'onBase') addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      if (def === 'nextToBase') addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: side, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      if (def === 'thirdParty') addFlag(s, { ownerId: 3, unit: U.SPEAR, troops: 3000, pos: side, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+      const anchor = o.anchorIsBase === false ? side : home;
+      const atk = addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, anchorTileId: anchor, targetOwnerId: 2, posture: POSTURE.ATTACK, state: o.state ?? 'MARCHING', spendBudgetMilli: 750_000 });
+      s.tick = 1;
+      const out = newOutbox();
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out); // 교전 개시
+      expect(atk.inCombat).toBe(def !== 'none');
+      b.hpMilli = b.maxHpMilli;
+      b.damagedThisTick = false;
+      s.tick = 2;
+      const plan = stage6_combatPhaseA(s, 2);
+      const dmg = plan.baseHits.find((h) => h.flagId === atk.id)?.dmg ?? 0;
+      const hp0 = b.hpMilli;
+      stage7_combatPhaseB(s, plan, 2, out);
+      return { dmg, lost: hp0 - b.hpMilli };
+    };
+    const free = hit('none', { state: 'ENGAGED' }).dmg; // 비전투 ENGAGED 가 미는 원래 피해
+    expect(free).toBeGreaterThan(0);
+    const half = Math.floor((free * BASE_DEFENDED_DMG_PERMILLE) / 1000);
+    // ① 행군 중 교전 (종전에는 피해 0)
+    expect(hit('onBase').dmg).toBe(half);
+    // ② 기지 칸이 비어 있어도 기지 옆 수비 깃발과 교전 중이면 방어된 기지로 ×0.5 (상한도 ×0.5)
+    expect(hit('nextToBase').dmg).toBe(half);
+    expect(hit('nextToBase', { state: 'ENGAGED' }).dmg).toBe(half);
+    // 앵커가 그 기지가 아니면 행군 깃발은 종전대로 못 민다
+    expect(hit('onBase', { anchorIsBase: false }).dmg).toBe(0);
+    // 기지 주인 편이 아닌 제3국 깃발은 기지를 지키는 깃발이 아니다
+    expect(hit('thirdParty').dmg).toBe(0);
+  });
+
   it('틱당 기지 피해 상한 [A 패치 5차]: 200, 방어 깃발이 선 기지는 100 (요새화·공성 테크 배율은 상한에도 곱해진다)', () => {
     const lost = (defended: boolean, fortPm = 1000, siegePm = 1000) => {
       const { s } = duelState(2);

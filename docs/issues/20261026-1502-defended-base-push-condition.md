@@ -1,7 +1,7 @@
 ---
 id: 20261026-1502-defended-base-push-condition
 title: 방어 깃발이 선 기지를 미는 조건 완화 검토
-status: later
+status: doing
 priority: medium
 created: 2026-10-26
 external:

@@ -47,8 +47,8 @@ export interface TerrainInfo {
 }
 
 export interface TerrainInfoOpts {
-  /** 칸 이웃·거리 — 있으면 점령 비용에 인접 가산·보급 거리를 넣는다 */
-  topo?: TopoLike | null;
+  /** 칸 이웃·거리 — 있으면 점령 비용에 인접 가산·보급 거리를 넣는다. touching 이 있으면 기지 옆 수비 깃발도 방어로 본다 (v5.12) */
+  topo?: (TopoLike & { touching?(a: number, b: number): boolean }) | null;
   /** 내 부대를 선택한 상태면 그 병종 — 행동에 필요한 항목(보정·그 병종 점령 비용·기지 체력)만 남긴다 */
   selectedUnit?: number | null;
 }
@@ -89,13 +89,19 @@ export function combatBadges(m: GameModel, ter: number): TipBadge[] {
 }
 
 /**
- * 기지 칸 위에 나(me)와 적대인 전투 가능 깃발이 서 있는가 (server gauge.baseOccupiedByHostile — 패주·이탈 직후 아님).
- * 있으면 그 기지는 교전 중 공격 깃발만 ×0.5 피해로 민다 (BASE_DEFENDED_DMG_PERMILLE) — 함락 시간 ×2.
+ * 그 기지가 나(me)에게 "방어된 기지"인가 (server gauge.baseDefendedByHostile — 패주·이탈 직후 아님).
+ * 기지 칸 위에 적대 깃발이 있거나, GDD v5.12: 기지와 접촉하는 칸(8방향, touching)에 기지 주인(또는 동맹)의 깃발이 있으면 방어된 기지다 (touching 이 없으면 칸 위만 본다).
+ * 방어된 기지는 교전 중 공격 깃발이 ×0.5 피해로 민다 (BASE_DEFENDED_DMG_PERMILLE) — 함락 시간 ×2.
  */
-export function baseGuarded(m: GameModel, tile: number, me: number): boolean {
+export function baseGuarded(m: GameModel, tile: number, me: number, touching: ((a: number, b: number) => boolean) | null = null): boolean {
+  const live = (f: { routed: boolean; breakaway: boolean; troops: number }) => !f.routed && !f.breakaway && f.troops > 0;
+  const hostile = (o: number) => o !== me && !m.isAlly(me, o);
+  for (const f of m.flags.values()) if (f.posTileId === tile && live(f) && hostile(f.ownerId)) return true;
+  const bo = m.owners[tile];
+  if (!touching || bo === 0) return false;
   for (const f of m.flags.values()) {
-    if (f.posTileId !== tile || f.routed || f.breakaway || f.troops <= 0) continue;
-    if (f.ownerId !== me && !m.isAlly(me, f.ownerId)) return true;
+    if (f.posTileId === tile || !touching(tile, f.posTileId) || !live(f) || !hostile(f.ownerId)) continue;
+    if (f.ownerId === bo || m.isAlly(bo, f.ownerId)) return true;
   }
   return false;
 }
@@ -129,7 +135,7 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
         const unitTag = sel !== null ? `${UNIT_SHORT[sel]} ` : '';
         if (isBase) {
           const nums = same ? `${unitTag}약 ${costs[0]}명` : units.map((u, i) => `${UNIT_SHORT[u]} 약 ${costs[i]}`).join(' · ') + '명';
-          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 중 시간 2배' : ''}`);
+          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me, opts.topo?.touching ? (a, b) => opts.topo!.touching!(a, b) : null) ? ' · 수비 중 시간 2배' : ''}`);
         } else {
           add('cost', '점령', same ? `${unitTag}${costs[0]}명` : `${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
         }
