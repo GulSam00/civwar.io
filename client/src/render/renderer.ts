@@ -791,17 +791,7 @@ export class GameRenderer {
         ctx.fillRect(bx - 1, below - 1, bw + 2, bh + 2);
         ctx.fillStyle = '#ffd54f';
         ctx.fillRect(bx, below, (bw * pct) / 100, bh);
-        if (cam.zoom >= 14) {
-          ctx.font = 'bold 10px system-ui, sans-serif';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-          const t = `생산 ${Math.floor(pct)}%`;
-          ctx.strokeText(t, bx + bw + 4, below + bh / 2);
-          ctx.fillStyle = '#ffe9a8';
-          ctx.fillText(t, bx + bw + 4, below + bh / 2);
-        }
+        // 2026-11-10 사용자 요청: 바 옆 '생산 NN%' 글자 제거 (값은 기지 hover 툴팁 생산력 행)
       }
       if (extra?.name && cam.zoom >= (capital ? 7 : 9)) this.label(ctx, extra.name, p.x, by - 9, capital ? 12 : 11, capital ? '#ffe9a8' : '#fff');
     }

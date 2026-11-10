@@ -139,6 +139,8 @@ export function GameScreen({ store }: { store: ClientStore }) {
         if (preview && picked && picked !== 'blocked' && preview.kind !== 'blocked' && preview.kind !== picked) {
           preview = { ...preview, kind: picked, posture: picked === 'attack' ? POSTURE.ATTACK : POSTURE.DEFEND, disk: [], count: 0 };
         }
+        // 2026-11-10 사용자 요청: 깃발을 선택한 동안(재지정 예고)은 방어 보호 범위(십자 모양 영역)를 그리지 않는다
+        if (preview && sel) preview = { ...preview, disk: [] };
       }
       const route = canCmd ? controller.currentRoute() : null;
       const routeKind = ix.issue ? (ix.issue.phase === 'pick' ? ix.issue.posture : preview ? (preview.kind as 'attack' | 'defend' | 'blocked') : null) : null;
@@ -1065,7 +1067,7 @@ const FP_HELP = {
 /** 맵 위 선·원 범례 (renderer.ts 에서 그리는 것) */
 const MAP_LEGEND: [string, string][] = [
   ['파란 점선 + ✕', '방어 태세 부대 → 목적지(앵커) 칸. ✕ 가 목적지 (공격 태세면 빨간 점선)'],
-  ['파란 점선 원', '부대 선택·출전 조준 중 내 땅을 가리키면 보이는 방어 범위 미리보기 — 목적지에서 6칸 안 내 땅을 지킵니다. 원 안에 내 땅이 하나도 안 남으면 부대는 대기로 바뀝니다'],
+  ['파란 점선 원', '출전 조준 중 내 땅을 가리키면 보이는 방어 범위 미리보기 — 목적지에서 6칸 안 내 땅을 지킵니다. 원 안에 내 땅이 하나도 안 남으면 부대는 대기로 바뀝니다'],
   ['움직이는 점선 + 화살촉', '출전·이동 경로 미리보기 (빨강 = 공격, 파랑 = 방어, 회색 = 갈 수 없음)'],
   ['회색 점선 + 멈춤 표시', '방어 태세는 적 땅을 지나지 못해 그 앞에서 멈춥니다'],
   ['깃발 테두리 색', '빨강 = 공격 태세 · 파랑 = 방어 태세 · 회색 점선 = 패주'],
