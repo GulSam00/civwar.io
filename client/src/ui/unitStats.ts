@@ -116,7 +116,7 @@ export function captureCost(g: GameModel, topo: TopoLike | null, playerId: numbe
 /**
  * v5.1 (GDD 4.4 점령 비용 표시, [A-5.1-6·7]) — 그 기지를 함락하는 데 드는 병력 ≈ ceil(남은 체력 milli × 칸 비용 ÷ 1000).
  * 서버 applyBaseHits 의 지출 = 적용 피해 × tileCost ÷ 1000 (tick 마다 올림). 공성·요새화 배율은 속도·상한만 바꾸고 체력당 병력은 그대로.
- * 근사: 남은 체력은 스냅숏 hpPct(정수 %)에서 되돌린다 — 최대 체력 = 처음 수도였던 칸(map_init.spawns[].homeTileId) 15000, 나머지 10000.
+ * 근사: 남은 체력은 스냅숏 hpPct(정수 %)에서 되돌린다 — 최대 체력 = 처음 수도였던 칸(map_init.spawns[].homeTileId) CAPITAL_HP_MILLI(22500), 나머지 BASE_HP_MILLI(15000).
  * tick 마다 올림하므로 실제 소모가 조금 더 많을 수 있다 → 표시는 "약 N명". 기지가 아니거나 칸 비용이 없으면(내 땅·동맹) null.
  */
 export function baseCaptureTroops(g: GameModel, topo: TopoLike | null, playerId: number, unit: number, tile: number): number | null {

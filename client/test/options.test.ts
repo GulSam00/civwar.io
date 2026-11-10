@@ -121,16 +121,16 @@ describe('지형 툴팁 항목 필터', () => {
   });
   it('v5.1 기지 칸 = 함락까지 약 N명 (남은 체력 × 칸 비용 ÷ 1000), 수비 깃발이 있으면 시간 ×2', () => {
     const m = model();
-    // 적 평원 기지 체력 100% = 10000 milli × 11명/칸 (토폴로지 없음 = 인접 가산·보급 제외) ÷ 1000 = 110
-    expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')).toEqual({ field: 'cost', label: '함락까지', value: '약 110명' });
+    // 적 평원 기지 체력 100% = 15000 milli × 11명/칸 (토폴로지 없음 = 인접 가산·보급 제외) ÷ 1000 = 165 (이슈 20261110-2055 체력 ×1.5)
+    expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')).toEqual({ field: 'cost', label: '함락까지', value: '약 165명' });
     m.bases.get(7)!.hpPct = 50;
-    expect(terrainInfo(m, 7, 1, nick, { selectedUnit: 2 })!.rows.find((r) => r.field === 'cost')!.value).toBe('기 약 55명');
+    expect(terrainInfo(m, 7, 1, nick, { selectedUnit: 2 })!.rows.find((r) => r.field === 'cost')!.value).toBe('기 약 83명');
     m.flags.set(9, { id: 9, ownerId: 2, slotIndex: 0, unit: 0, posture: 1, troops: 50, posTileId: 7, anchorTileId: 7, targetOwnerId: 0, state: 'IDLE', targetTileId: null, progressPct: 0, stalled: false, inCombat: false, routed: false, blocked: false, disengaging: false, orderCooldownUntilTick: 0, disengageUntilTick: null, breakaway: false, halted: false, returnBaseTileId: null });
-    expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 55명 · 수비 중 시간 2배');
-    // 처음 수도였던 칸은 최대 체력 15000 — 적 땅이 되면 15000 × 80% × 적 평원 11명/칸 ÷ 1000 = 132
+    expect(terrainInfo(m, 7, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 83명 · 수비 중 시간 2배');
+    // 처음 수도였던 칸은 최대 체력 22500 — 적 땅이 되면 22500 × 80% × 적 평원 11명/칸 ÷ 1000 = 198
     m.owners[1] = 2;
     m.bases.get(1)!.ownerId = 2;
-    expect(terrainInfo(m, 1, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 132명');
+    expect(terrainInfo(m, 1, 1, nick)!.rows.find((r) => r.field === 'cost')!.value).toBe('약 198명');
   });
   it('끈 항목은 빠지고, 툴팁을 끄면 아무것도 없다', () => {
     const i = terrainInfo(model(), 3, 1, nick)!;

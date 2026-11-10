@@ -35,7 +35,7 @@ import { flagCap } from './economy.js';
 import { baseProdPm, type Flag, type GameState, type PlayerState } from './state.js';
 import { thresholdPct } from './victory.js';
 
-/** 기지 체력 % — 그 기지의 최대 체력 기준 (수도 20000 / 일반 10000) */
+/** 기지 체력 % — 그 기지의 최대 체력 기준 (수도 CAPITAL_HP_MILLI / 일반 BASE_HP_MILLI) */
 export function hpPct(b: Readonly<{ hpMilli: number; maxHpMilli: number }>): number {
   return Math.floor((b.hpMilli * 100) / b.maxHpMilli);
 }
