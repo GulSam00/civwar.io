@@ -34,7 +34,7 @@ import {
 import { validateMessage } from '../scripts/qa-schema.js';
 import { CivBot } from '../src/game/bot.js';
 import { combatInput, stage4a_flagCombatPhaseA, stage4b_flagCombatPhaseB } from '../src/game/combat.js';
-import { stage6_combatPhaseA, stage7_combatPhaseB } from '../src/game/gauge.js';
+import { defendedBaseTargetRO, stage6_combatPhaseA, stage7_combatPhaseB } from '../src/game/gauge.js';
 import { newOutbox } from '../src/game/outbox.js';
 import { buildMatchConfig, hpPct } from '../src/game/snapshot.js';
 import { captureBase } from '../src/game/basecapture.js';
@@ -602,6 +602,45 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     const half = hit(2, true);
     expect(half).toBe(Math.floor((free * BASE_DEFENDED_DMG_PERMILLE) / 1000));
     expect(hit(1, true)).toBe(0);
+  });
+
+  it('방어 깃발이 선 기지 ×0.5 는 행군(MARCHING) 중 교전에 들어간 공격 깃발에도 적용된다 [이슈 20261026-1502] (halted 아님)', () => {
+    const run = (state: 'MARCHING' | 'ENGAGED') => {
+      const { s } = duelState(2);
+      const home = s.players[2].homeTileId;
+      const nb = s.graph.neighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
+      addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      // 앵커 = 기지, 경로 다음 칸 = 기지. 교전 시작 때 halted 가 꺼진다 (combat.ts 4b)
+      const atk = addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, anchorTileId: home, nextTileId: home, targetOwnerId: 2, posture: POSTURE.ATTACK, state, spendBudgetMilli: 750_000 });
+      s.tick = 1;
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, newOutbox());
+      expect(atk.inCombat).toBe(true);
+      expect(atk.halted).toBe(false);
+      expect(defendedBaseTargetRO(s, atk)).toBe(home);
+      s.tick = 2;
+      const h = stage6_combatPhaseA(s, 2).baseHits.find((x) => x.flagId === atk.id);
+      expect(h?.defended).toBe(true);
+      return h?.dmg ?? 0;
+    };
+    const marching = run('MARCHING');
+    expect(marching).toBeGreaterThan(0);
+    expect(marching).toBe(run('ENGAGED')); // 상태와 무관하게 같은 피해
+  });
+
+  it('방어 깃발 ×0.5 예외는 방어 태세·패주 공격 깃발에는 적용되지 않는다 [이슈 20261026-1502]', () => {
+    const { s } = duelState(2);
+    const home = s.players[2].homeTileId;
+    const nb = s.graph.neighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
+    addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+    const atk = addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, anchorTileId: home, nextTileId: home, targetOwnerId: 2, posture: POSTURE.ATTACK, state: 'MARCHING' });
+    s.tick = 1;
+    stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, newOutbox());
+    expect(defendedBaseTargetRO(s, atk)).toBe(home);
+    atk.posture = POSTURE.DEFEND;
+    expect(defendedBaseTargetRO(s, atk)).toBeNull();
+    atk.posture = POSTURE.ATTACK;
+    atk.routed = true;
+    expect(defendedBaseTargetRO(s, atk)).toBeNull();
   });
 
   it('틱당 기지 피해 상한 [A 패치 5차]: 200, 방어 깃발이 선 기지는 100 (요새화·공성 테크 배율은 상한에도 곱해진다)', () => {

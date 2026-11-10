@@ -35,7 +35,7 @@ import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } 
 
 export function stage5_accumulateBudget(state: GameState, _t: number): void {
   for (const f of state.flags) {
-    if (!pushing(f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음
+    if (!pushing(f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음 (방어된 기지와 교전 중이면 상태 무관하게 누적)
     const per = f.initialTroops * FLAG_SPEND_RATE_PERMILLE;
     f.spendBudgetMilli = Math.min(f.spendBudgetMilli + per, per * FLAG_SPEND_BUDGET_CAP_TICKS);
   }
@@ -93,10 +93,13 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
 /**
  * 패치 4차 (모델 2) — 방어 깃발이 서 있는 기지를 미는 교전 중 공격 깃발의 목표 기지 칸. 해당 없으면 null.
  * 교전 중이라 pushing(f) 는 아니지만, 타깃이 "전투 가능한 적대 깃발이 선 기지"면 피해 ×BASE_DEFENDED_DMG_PERMILLE 로 밀 수 있다.
+ * 2026-11-10 (이슈 20261026-1502): 깃발 상태 조건(ENGAGED 또는 halted) 제거. 공격 깃발 대부분이 기지 옆에서
+ * MARCHING 상태로 교전에 들어가고, 교전 시작 때 halted 가 꺼져(combat.ts 4b) 예외가 거의 발동하지 않았다.
+ * RETURNING 은 posture 와 무관하게 공격하지 않으므로 계속 제외한다.
  */
 export function defendedBaseTargetRO(state: Readonly<GameState>, f: Readonly<Flag>): number | null {
   if (state.combatModel !== 2 || !f.inCombat || f.posture !== POSTURE.ATTACK || f.routed || f.breakaway) return null;
-  if (!(f.state === 'ENGAGED' || f.halted)) return null;
+  if (f.state === 'RETURNING') return null;
   const X = selectAttackTargetRO(state, f);
   if (X === null || !state.map.isBase[X] || !baseOccupiedByHostile(state, X, f.ownerId)) return null;
   return X;
