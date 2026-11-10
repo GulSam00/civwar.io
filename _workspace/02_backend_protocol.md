@@ -2872,7 +2872,7 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 - 이후 경로(5단계 예산 누적, 6단계 `adv × BASE_DEFENDED_DMG_PERMILLE`, `BaseHit.defended` → 상한 ×0.5, 7단계 지출·사기 소모·함락)는 §36.7·36.8 그대로. 상수·메시지 변경 없음.
 - 클라이언트 `terrainInfo.baseGuarded(m, tile, me, touching)` 가 같은 정의로 "수비 중 시간 2배"를 붙인다(`TopologyView.touching`).
 
-## 44. GDD v5.13 — 기지 체력 ×1.5 (프로토콜 변경 없음 — 2026-11-11, 사용자 결정)
+## 44. GDD v5.14 — 기지 체력 ×1.5 (프로토콜 변경 없음 — 2026-11-11, 사용자 결정)
 
 - 상수만 바뀐다: `BASE_HP_MILLI` 10000 → 15000, `CAPITAL_HP_MILLI` 15000 → 22500, `BASE_HP_REGEN_MILLI` 50 → 75. `BASE_HP_DMG_CAP_MILLI_PER_TICK` 200·`BASE_HP_CAPTURE_PERMILLE` 500 은 그대로.
 - `snapshot.baseHp[].hpPct` 는 기지별 최대 체력 기준 % 라 의미가 같다. `match_config.constants` 로 새 값이 나가고, 클라이언트 `unitStats.baseCaptureTroops`·도움말 "함락 최단 N초"는 상수를 읽어 따라 바뀐다.
