@@ -580,3 +580,10 @@ UI 문구: Help 규칙 절·단축키 요약, README 조작표, 로비 하단 �
 - 플레이어 카드는 이미 수치·짧은 라벨만 있어 바꾸지 않았다.
 - 개발 빌드 전용 `window.__civwarCtl`(GameInputController) 노출 추가 — 화면 확인 때 `renderer.flagScreens` 로 깃발 좌표를 읽어 hover 를 재현한다.
 - 스크린샷 `_workspace/ui-2026-11-06/` (before/after hover 카드, 선택 패널 사기 상세 펼침, 지형 툴팁·대상 바·HUD, 테크 상세 %, 하단 독).
+
+## 공성 시각 효과 (2026-11-10)
+
+- 사용자 채택: 피격 흔들림 · 포위 고리(B) · 함락 파동(C). 시안의 균열·파편, 전투 충돌 불꽃은 넣지 않았다.
+- `render/siegeFx.ts` (순수): `SiegeTracker.observe` 가 기지별 직전 체력·주인을 기억해 피격(체력 감소)·함락(주인 변경) 시각을 기록한다. 처음 본 기지는 효과 없음. `shakeOffset`·`underSiege`·`waveProgress`·`ringSweep`. 테스트 `client/test/siegeFx.test.ts` 6건.
+- `renderer.drawBases`: 체력 바 → 둘레 고리(체력 100%이고 포위가 없으면 생략). 포위 고리 색 = 그 기지를 `targetTileId` 로 밀고 있는 ENGAGED 공격 깃발 주인(없으면 COLOR_ATTACK). 지명·생산력 바는 고리 위·아래로 옮겼다.
+- 화면 확인: 봇 판에서 2분 넘게 공성이 없어 브라우저에서 기지 hpPct·ownerId 를 바꿔 장면을 만들었다(서버 값 아님). 실제 판 공성 장면은 보지 못했다. 스크린샷 `_workspace/ui-2026-11-10/`.

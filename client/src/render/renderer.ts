@@ -12,6 +12,7 @@ import type { GameModel } from '../state/gameModel.js';
 import { disengageTicksOf as disengageTicksModel, orderCooldownTicksOf } from '../state/disengage.js';
 import { createTopologyView, type TileLayer, type TopologyView } from './topology.js';
 import { fitZoom, worldToScreen, type Camera } from './camera.js';
+import { SiegeTracker, ringSweep, shakeOffset, underSiege, waveProgress } from './siegeFx.js';
 import { FlagInterpolator, type Pt } from './flagInterp.js';
 import { moraleNeutralPoint } from '../ui/unitStats.js';
 import { techStatsOf } from '../ui/techInfo.js';
@@ -210,7 +211,7 @@ export class GameRenderer {
 
     this.drawAnnexFlash(ctx, model, topo, now);
     this.drawTerritoryNames(ctx, model, topo, view, now);
-    this.drawBases(ctx, model, topo, view);
+    this.drawBases(ctx, model, topo, view, now);
     this.drawRouteArrow(ctx, topo, view);
     this.drawFlags(ctx, model, topo, view, now);
     this.drawDispatchGauges(ctx, model, topo, view);
@@ -346,6 +347,7 @@ export class GameRenderer {
    * 멸망·합병 (§21.3) — 넘어간 칸을 합병한 플레이어 색 + 흰 테두리로 1.6초 동안 번쩍였다가 사라진다.
    * 칸 목록은 GameModel.annexFlashes (player_eliminated 직후 같은 tick tileChanges). Path2D 는 flash 마다 한 번 만든다.
    */
+  private siege = new SiegeTracker();
   private annexPaths = new WeakMap<object, { fill: Path2D; edge: Path2D }>();
   private drawAnnexFlash(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, now: number): void {
     if (!model.annexFlashes.length) return;
@@ -720,15 +722,26 @@ export class GameRenderer {
    * 수도 = 금색 바깥 테두리 + 안쪽 사각 + 별 (칸이 커도 한눈에 구분). 위 = 체력 바.
    * §21: 아래 = 생산력 바(baseExtra.productivityPct, 회복 중일 때만), 체력 바 위 = 지명(baseExtra.name — 수도 줌 7+, 기지 줌 9+).
    */
-  private drawBases(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView): void {
+  private drawBases(ctx: CanvasRenderingContext2D, model: GameModel, topo: TopologyView, view: RenderView, now: number): void {
     const cam = this.camera;
     const s = baseIconSize(cam.zoom);
+    // 2026-11-10 공성 효과: 지금 이 기지를 밀고 있는 공격 깃발의 주인 (포위 고리 색)
+    const attackerOf = new Map<number, number>();
+    for (const f of model.flags.values()) {
+      if (f.targetTileId === null || f.routed || f.posture !== POSTURE.ATTACK || f.state !== 'ENGAGED') continue;
+      const tb = model.bases.get(f.targetTileId);
+      if (tb && tb.ownerId !== f.ownerId && !attackerOf.has(f.targetTileId)) attackerOf.set(f.targetTileId, f.ownerId);
+    }
     for (const tile of model.baseTiles) {
       const b = model.bases.get(tile);
       if (!b) continue;
+      const fx = this.siege.observe(tile, b.hpPct, b.ownerId, now);
       const c = topo.tileCenter(tile);
-      const p = worldToScreen(cam, c.x, c.y);
-      if (p.x < -s - 40 || p.y < -s - 40 || p.x > cam.viewW + s + 40 || p.y > cam.viewH + s + 40) continue;
+      const p0 = worldToScreen(cam, c.x, c.y);
+      if (p0.x < -s - 40 || p0.y < -s - 40 || p0.x > cam.viewW + s + 40 || p0.y > cam.viewH + s + 40) continue;
+      // 피격 흔들림: 기지 아이콘만 흔든다 (고리·바·지명은 제자리)
+      const sh = shakeOffset(now, fx.hitAt);
+      const p = { x: p0.x + sh.dx, y: p0.y + sh.dy };
       const capital = model.capitalTiles.has(tile);
       const x0 = p.x - s / 2;
       const y0 = p.y - s / 2;
@@ -776,15 +789,61 @@ export class GameRenderer {
       }
       const bw = Math.max(s, 18);
       const bh = s >= 28 ? 5 : 4;
-      const bx = p.x - bw / 2;
-      const by = y0 - bh - (capital ? 4 + lw : 3);
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
-      ctx.fillStyle = b.ownerId ? playerColor(b.ownerId) : '#ddd';
-      ctx.fillRect(bx, by, (bw * Math.max(0, Math.min(100, b.hpPct))) / 100, bh);
+      const bx = p0.x - bw / 2;
+      // B 포위 고리 (2026-11-10): 체력 바 대신 기지 둘레 고리 = 남은 체력 (12시부터 시계 방향, 주인 색).
+      // 체력이 가득이고 포위도 없으면 그리지 않는다. 포위 중이면 바깥에 공격자 색 점선 고리가 돈다.
+      const ringR = s * 0.72 + (capital ? lw + 3 : 3);
+      const ringW = Math.max(3, Math.min(6, s * 0.16));
+      const attacker = attackerOf.get(tile);
+      const sieged = underSiege(now, fx.hitAt, attacker !== undefined);
+      if (b.hpPct < 100 || sieged) {
+        ctx.lineCap = 'butt';
+        ctx.lineWidth = ringW + 2;
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.beginPath();
+        ctx.arc(p0.x, p0.y, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+        const sweep = ringSweep(b.hpPct);
+        if (sweep > 0) {
+          // 흰 테두리 + 주인 색 — 주인 색 영토 위에서도 보이게
+          ctx.beginPath();
+          ctx.arc(p0.x, p0.y, ringR, -Math.PI / 2, -Math.PI / 2 + sweep);
+          ctx.lineWidth = ringW;
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+          ctx.stroke();
+          ctx.lineWidth = Math.max(1.5, ringW - 2);
+          ctx.strokeStyle = b.ownerId ? playerColor(b.ownerId) : '#ddd';
+          ctx.stroke();
+        }
+        if (sieged) {
+          const dash = Math.max(4, ringR * 0.35);
+          ctx.setLineDash([dash, dash * 0.8]);
+          ctx.lineDashOffset = -(now / 40) % (dash * 1.8);
+          ctx.lineWidth = Math.max(1.5, ringW * 0.55);
+          ctx.strokeStyle = attacker !== undefined ? playerColor(attacker) : COLOR_ATTACK;
+          ctx.beginPath();
+          ctx.arc(p0.x, p0.y, ringR + ringW + 2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+        }
+      }
+      // C 함락 파동: 주인이 바뀐 순간 새 주인 색 고리가 퍼지며 사라진다
+      const wv = waveProgress(now, fx.capturedAt);
+      if (wv !== null) {
+        ctx.save();
+        ctx.globalAlpha = 1 - wv;
+        ctx.lineWidth = Math.max(2, ringW) * (1 - wv * 0.5);
+        ctx.strokeStyle = b.ownerId ? playerColor(b.ownerId) : '#ffffff';
+        ctx.beginPath();
+        ctx.arc(p0.x, p0.y, ringR + wv * s * 2.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      const by = p0.y - ringR - ringW - (sieged ? ringW + 4 : 2);
       // §21.4 생산력 바 (칸 아래, 금색 — 회복 중일 때만 GameScreen 이 넘긴다) · §21.5 지명 (체력 바 위)
       const extra = view.baseExtra?.(tile);
-      const below = y0 + s + (capital ? 4 + lw : 3);
+      const below = p0.y + ringR + ringW + 3;
       if (extra?.productivityPct !== undefined) {
         const pct = Math.max(0, Math.min(100, extra.productivityPct));
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
@@ -793,7 +852,7 @@ export class GameRenderer {
         ctx.fillRect(bx, below, (bw * pct) / 100, bh);
         // 2026-11-10 사용자 요청: 바 옆 '생산 NN%' 글자 제거 (값은 기지 hover 툴팁 생산력 행)
       }
-      if (extra?.name && cam.zoom >= (capital ? 7 : 9)) this.label(ctx, extra.name, p.x, by - 9, capital ? 12 : 11, capital ? '#ffe9a8' : '#fff');
+      if (extra?.name && cam.zoom >= (capital ? 7 : 9)) this.label(ctx, extra.name, p0.x, by - 4, capital ? 12 : 11, capital ? '#ffe9a8' : '#fff');
     }
   }
 
