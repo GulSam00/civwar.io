@@ -30,12 +30,14 @@ import {
   THRESHOLD_FLOOR_PCT,
   THRESHOLD_START_PCT,
   TICK_MS,
+  UNIT_ASSAULT_PERMILLE,
+  techConvertPm,
 } from '@civwar/shared';
 import { UnitIcon } from './unitIcons.js';
 import { isNarrowScreen, useDraggableWindow } from './draggable.js';
 import { techStatsOf } from './techInfo.js';
 import { TERRAIN_NAME } from './text.js';
-import { fmt1, terrainGoldPerMin, terrainMoveCost, unitMovePerSec } from './unitStats.js';
+import { fmt1, moraleNeutralPoint, moraleRange, pctOfPm, terrainGoldPerMin, terrainMoveCost, unitMovePerSec } from './unitStats.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
@@ -106,6 +108,19 @@ export function Help({ onClose }: { onClose: () => void }) {
               </Row>
               <Row k="병종">
                 <UnitIcon unit={0} withName /> 방어↑ 속도↓ · <UnitIcon unit={1} withName /> 중간 · <UnitIcon unit={2} withName /> 공격↑ 속도↑ 방어↓
+              </Row>
+              <Row k="병종 상세">
+                {([0, 1, 2] as const).map((u) => {
+                  const r = moraleRange(u, NO_TECH);
+                  const n = moraleNeutralPoint(u, NO_TECH);
+                  return (
+                    <span key={u}>
+                      {u > 0 && ' · '}
+                      <UnitIcon unit={u} /> 점령 속도 {Math.round(UNIT_ASSAULT_PERMILLE[u] / 10)} · 편성 100명 = 병력 {Math.ceil(techConvertPm(NO_TECH, u) / 10)} · 사기 전투력 {pctOfPm(r.floor)}~{pctOfPm(r.full)} · ±0 경계 {n === null ? '없음' : `사기 ${Math.round(n / 10)}%`}
+                    </span>
+                  );
+                })}
+                {' '}(테크 전) · 상성표 없음 — 교전 손실은 양쪽 공격·방어 비교로 나뉨
               </Row>
               <Row k="이동력">
                 칸당 {LAND.map((t) => `${TERRAIN_NAME[t]} ${terrainMoveCost(t)}`).join(' · ')} · 초당 <UnitIcon unit={0} /> {fmt1(unitMovePerSec(0, NO_TECH))} · <UnitIcon unit={1} /> {fmt1(unitMovePerSec(1, NO_TECH))} · <UnitIcon unit={2} /> {fmt1(unitMovePerSec(2, NO_TECH))} · 칸 이동력 ÷ 초당 이동력 = 칸당 초

@@ -917,20 +917,12 @@ function CommandBar({ store, ctl }: { store: ClientStore; ctl: GameInputControll
     gold = (
       <div className="gold-flow">
         {/* 2026-11-06: 순수입은 상단 HUD 골드 옆에 있다 → 여기선 유지비만 */}
-        <span>
+        {/* 2026-11-10: 병종별 1000명당 유지비는 hover 로 (독 한 줄 절약) */}
+        <span title={`출전한 깃발 병력 1000명당 유지비 (테크 반영, 기지에 남은 병력은 무료): ${perKilo.map((r, u) => `${UNIT_NAME[u as Unit]} −${Math.round(r * 60)}`).join(' · ')}/분`}>
           깃발 유지비 <b className={upkeep > 0 ? 'upkeep' : ''}>−{fmtGoldPerMin(upkeep, false)}</b>
           <span className="muted small"> · 총수입 {fmtGoldPerMin(inc.gross)}</span>
           {inc.net <= 0 && <b className="warn-text"> · 순수입 {fmtGoldPerMin(inc.net)}</b>}
           {p.gold < 0 && <b className="warn-text"> · 골드 마이너스</b>}
-        </span>
-        <span className="muted small" title="출전한 깃발 병력 1000명이 1분에 쓰는 골드 (테크 반영). 기지에 남은 병력은 무료">
-          병력 1000명당 유지비{' '}
-          {perKilo.map((r, u) => (
-            <span key={u} className="upkeep-unit">
-              <UnitIcon unit={u as Unit} size={13} /> −{Math.round(r * 60)}
-            </span>
-          ))}
-          /분
         </span>
       </div>
     );
@@ -1143,7 +1135,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
             </div>
           )}
           <div className="cs-row" title={FP_HELP.capture}>
-            점령 칸당 <b>{capBase}명</b>
+            점령 <b>{capBase}명</b>
             {capTarget !== null && (
               <span className="muted small">
                 {' '}

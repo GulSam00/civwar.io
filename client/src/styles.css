@@ -1347,12 +1347,6 @@ kbd {
   gap: 4px;
   white-space: nowrap;
 }
-.upkeep-unit {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-right: 6px;
-}
 .help .unit-tag {
   vertical-align: -0.15em;
 }
