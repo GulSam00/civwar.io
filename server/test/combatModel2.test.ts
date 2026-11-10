@@ -559,6 +559,28 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 5]);
   });
 
+  it('사기 손실 감소는 그 tick 사상자 1명당 2 를 넘지 않는다 (v5.13): 창 100 대 100 은 1명 손실(1%) → 손실 감소 min(5, 2) = 2', () => {
+    const { s, c } = duelState(2);
+    const a = addFlag(s, { ownerId: 1, unit: U.SPEAR, troops: 100, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    const d = addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 100, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    a.morale = 1000;
+    d.morale = 1000;
+    s.tick = 1;
+    stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, newOutbox());
+    expect(a.troopsMilli).toBe(99_000); // 최소 손실 1000 milli
+    expect(1000 - a.morale).toBe(3 + 2); // 고정 3 + 상한 걸린 손실 감소 2 (상한 없으면 3 + 5)
+    // 사상자가 많으면 상한이 걸리지 않는다: 창 3000 대 3000 은 tick당 수십 명 → 손실 감소 = 손실% × 5 그대로
+    const big = duelState(2);
+    const b = addFlag(big.s, { ownerId: 1, unit: U.SPEAR, troops: 3000, pos: big.c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    addFlag(big.s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: big.c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    b.morale = 1000;
+    big.s.tick = 1;
+    stage4b_flagCombatPhaseB(big.s, stage4a_flagCombatPhaseA(big.s, 1), 1, newOutbox());
+    const lost = 3_000_000 - b.troopsMilli;
+    expect(lost).toBeGreaterThan(10_000);
+    expect(1000 - b.morale).toBe(3 + Math.floor((Math.floor((lost * 10000) / 3_000_000) * 5 + 50) / 100));
+  });
+
   it('기지 함락 시 그 칸 위 이전 주인 깃발은 귀환으로 퇴각한다 [A 패치 2차] (모델 2, 마지막 기지 제외, 모델 1 불변)', () => {
     for (const model of [1, 2] as const) {
       const { s } = duelState(model);
