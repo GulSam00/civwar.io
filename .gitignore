@@ -9,3 +9,4 @@ _workspace/ai-match/**/video/
 .claude/skills/ai-match-monitor/recorder/node_modules/
 .claude/skills/ai-match-monitor/recorder/package-lock.json
 _workspace/ai-match/**/events.jsonl
+_workspace/ai-match/**/shots/*.png
