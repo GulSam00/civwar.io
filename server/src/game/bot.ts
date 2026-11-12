@@ -78,7 +78,7 @@ import { ANNEX } from './annex.js';
 import { engageLossPerTick, flagValue } from './combat.js';
 import { baseDispatchReadyTick, pickOriginBaseFor } from './flagops.js';
 import { flagCap, heldTroopsMilli, techCost, troopCap, unitUpkeepRateMilli } from './economy.js';
-import { guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, threatened, tileCost } from './rules.js';
+import { capturing, guardContains, marchFrontCountAt, marchMatch, maxProgress, pushing, spendRateMilli, threatened, tileCost } from './rules.js';
 import { NEUTRAL, isAlly, type Flag, type GameState, type PlayerState } from './state.js';
 import type { BotBrain } from './tick.js';
 
@@ -497,10 +497,10 @@ function threatItems(ctx: Ctx): { items: ThreatItem[]; baseTh: [number, number][
   const items: ThreatItem[] = [];
   for (const g of state.flags) {
     // v4.2 8.7 1: 위협 = pushing(g) (앵커 점령 ENGAGED + 행군 중 정지 점령 halted)
-    if (g.ownerId === me || g.routed || !pushing(g) || g.targetTileId === null) continue;
+    if (g.ownerId === me || g.routed || g.targetTileId === null || !capturing(state, g)) continue; // v5.15: 방어 주둔 점령도 위협
     if (!hostilePlayer(state, me, g.ownerId) || state.owners[g.targetTileId] !== me) continue;
     const cost = tileCost(state, g, g.targetTileId);
-    const rate = Math.min(Math.floor((g.initialTroops * FLAG_SPEND_RATE_PERMILLE) / cost), maxProgress(g, state));
+    const rate = Math.min(Math.floor(spendRateMilli(g) / cost), maxProgress(g, state));
     items.push({ e: g, tile: g.targetTileId, threat: g.progressMilli + rate * BOT_THREAT_LOOKAHEAD });
   }
   const baseTh: [number, number][] = [];

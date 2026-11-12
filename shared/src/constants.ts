@@ -221,6 +221,8 @@ export const FLAG_SPEED_BASE_MILLI = 140; // v4.2 [A-64] 120 → 140 (쟁기 규
 export const FLAG_SPEND_RATE_PERMILLE = 15;
 export const FLAG_SPEND_BUDGET_CAP_TICKS = 25;
 export const FLAG_TILE_RATE_BASE = 2;
+/** GDD v5.15 (사용자 2026-11-13): 방어 태세 주둔 점령 속도 배율 — 게이지 상한·AP 예산 누적 모두 ×0.6, 칸당 병력 비용은 공격과 같다 */
+export const DEFEND_CAPTURE_SPEED_PERMILLE = 600;
 export const FRONT_RADIUS = 6;
 export const FRONT_MAX_RANGE = 40;
 export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2). 사용자 결정 2026-10-11: 깃발 접촉(전투·ZOC·진척 유지) = 8방향(대각선 포함, topology.touching). 땅 점령은 4방향 그대로

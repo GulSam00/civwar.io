@@ -1099,7 +1099,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
   const ep = engagePreview(g, f); // §33 교전 중일 때만
   // 2026-10-28: 점령 소모 = 칸당 병력 (배율 대신). 목표 칸이 있으면 그 칸의 실제 비용
   const capBase = neutralPlainCost(g, f.ownerId, f.unit);
-  const capTarget = f.targetTileId !== null && f.posture === POSTURE.ATTACK ? captureCost(g, ctl.renderer.topo, f.ownerId, f.unit, f.targetTileId) : null;
+  const capTarget = f.targetTileId !== null && (f.posture === POSTURE.ATTACK || f.state === 'ENGAGED') ? captureCost(g, ctl.renderer.topo, f.ownerId, f.unit, f.targetTileId) : null;
   return (
     <div className={`flag-panel ${help ? 'with-help' : ''}`}>
       <div className="flag-panel-head" title={FP_HELP.head}>
@@ -1189,7 +1189,7 @@ function FlagPanel({ store, ctl, narrow }: { store: ClientStore; ctl: GameInputC
           )}
         </div>
         {f.state === 'MARCHING' && eta !== undefined && <div title={FP_HELP.eta}>도착까지 약 {Math.max(0, Math.ceil(((eta - g.tick) * g.config.tickMs) / 1000))}초</div>}
-        {f.posture === POSTURE.ATTACK && f.state === 'ENGAGED' && <div title={FP_HELP.progress}>점령 진척 {f.progressPct}%</div>}
+        {f.state === 'ENGAGED' && (f.posture === POSTURE.ATTACK || f.progressPct > 0) && <div title={FP_HELP.progress}>점령 진척 {f.progressPct}%</div>}
       </div>
       {mine && (
         <div className="flag-panel-actions">

@@ -2877,3 +2877,16 @@ TypeScript(`shared/src/protocol.ts`): `BaseSnapshot.dispatchReadyTick?: number`,
 - 상수만 바뀐다: `BASE_HP_MILLI` 10000 → 15000, `CAPITAL_HP_MILLI` 15000 → 22500, `BASE_HP_REGEN_MILLI` 50 → 75. `BASE_HP_DMG_CAP_MILLI_PER_TICK` 200·`BASE_HP_CAPTURE_PERMILLE` 500 은 그대로.
 - `snapshot.baseHp[].hpPct` 는 기지별 최대 체력 기준 % 라 의미가 같다. `match_config.constants` 로 새 값이 나가고, 클라이언트 `unitStats.baseCaptureTroops`·도움말 "함락 최단 N초"는 상수를 읽어 따라 바뀐다.
 - 모델 1·2 공통이라 골든 해시(`combatModel2.test.ts` GOLDEN)를 다시 뽑았다.
+
+## 45. GDD v5.15 — 방어 태세 주둔 점령 (프로토콜 변경 없음 — 2026-11-13, 사용자 결정, 모델 2 전용)
+
+- 새 상수 `DEFEND_CAPTURE_SPEED_PERMILLE = 600` (`match_config.constants` 로 나간다). 메시지 모양 변경 없음.
+- `rules.defendCapturing(state, f)` = 모델 2 · DEFEND · `ENGAGED` · 비전투 · 패주·breakaway 아님 · `troopsMilli ≥ (FLAG_MIN_TROOPS + 1) × 1000` · `marchFrontNonEmpty`. `rules.capturing = pushing(f) or defendCapturing`.
+  - 5단계 예산 누적·6단계 Phase A·7단계 `updateStall` 대상이 `pushing` → `capturing` 으로 넓어졌다. 타깃은 공격과 같은 `selectAttackTargetRO`(marchFront = 옆 4칸의 중립·적). 기지 칸이면 기지 체력을 민다(종전 경로 그대로).
+  - 속도: `rules.spendRateMilli(f)` = `initialTroops × FLAG_SPEND_RATE_PERMILLE` × 0.6(방어), `maxProgress` × 0.6(방어). 칸당 비용 `tileCost` 는 그대로.
+  - 지출 상한: `availAP` 는 방어 태세면 `troopsMilli − FLAG_MIN_TROOPS × 1000` 까지만 쓴다(수비 병력 보존). 그래서 점령으로는 소진되지 않고, 10단계 방어 `ENGAGED` 소진(40명 미만)은 전투 손실에서만 일어난다.
+  - 행군 중 정지 점령(halted)은 여전히 공격 태세만(`attackReady`). 방어 경로·ZOC·방어 보너스·`isGarrison` 은 그대로.
+  - 점령 사기 소모(7단계, 게이지를 민 tick 마다)도 같은 규칙으로 받는다.
+- `rules.threatened` 와 봇 `threatItems` 의 적 조건이 `capturing(g)` 로 넓어졌다(적 방어 깃발의 주둔 점령도 위협). 봇 위협 속도 추정은 `spendRateMilli`.
+- 스냅숏 `flags[].progressPct`·`targetTileId` 는 종전 규칙대로 나가므로, 방어 깃발도 점령 중이면 진척이 보인다. 클라이언트는 방어 `ENGAGED` 깃발의 진척이 0보다 크면 대상 칸 게이지·부대 정보 "점령 진척"·포위 고리를 그린다.
+- 모델 1 은 비트 동일(골든 해시 그대로).

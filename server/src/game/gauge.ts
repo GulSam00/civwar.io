@@ -16,7 +16,6 @@ import {
   FLAG_IDLE_TIMEOUT,
   FLAG_MIN_TROOPS,
   FLAG_SPEND_BUDGET_CAP_TICKS,
-  FLAG_SPEND_RATE_PERMILLE,
   FLAG_STALL_TICKS,
   POSTURE,
   PROGRESS_DECAY_MILLI_PER_TICK,
@@ -27,7 +26,7 @@ import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { combatEligible, moraleFloorOf, type FlagPresence } from './combat.js';
 import { isGarrison } from './economy.js';
-import { attackExhausted, availAP, guardCount, inMarchFront, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
+import { attackExhausted, availAP, capturing, guardCount, inMarchFront, marchFrontNonEmpty, maxProgress, selectAttackTargetRO, spendRateMilli, threatened, tileCost } from './rules.js';
 import { ANNEX } from './annex.js';
 import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } from './state.js';
 
@@ -35,8 +34,8 @@ import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } 
 
 export function stage5_accumulateBudget(state: GameState, _t: number): void {
   for (const f of state.flags) {
-    if (!pushing(f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음
-    const per = f.initialTroops * FLAG_SPEND_RATE_PERMILLE;
+    if (!capturing(state, f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음 (v5.15: 방어 주둔 점령 포함)
+    const per = spendRateMilli(f); // v5.15: 방어 태세 ×0.6
     f.spendBudgetMilli = Math.min(f.spendBudgetMilli + per, per * FLAG_SPEND_BUDGET_CAP_TICKS);
   }
 }
@@ -68,8 +67,9 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
   const baseHits: BaseHit[] = [];
   for (const f of state.flags) {
     // 패치 4차: 교전 중이어도 방어 깃발이 선 기지는 밀 수 있다 (피해 ×BASE_DEFENDED_DMG_PERMILLE)
-    const defX = pushing(f) ? null : defendedBaseTargetRO(state, f);
-    if (!pushing(f) && defX === null) continue; // v4.2 (4.4a c)
+    const cap = capturing(state, f); // v5.15: 방어 주둔 점령 포함
+    const defX = cap ? null : defendedBaseTargetRO(state, f);
+    if (!cap && defX === null) continue; // v4.2 (4.4a c)
     const X = defX ?? selectAttackTargetRO(state, f);
     if (X === null) continue;
     const c = tileCost(state, f, X);
@@ -190,7 +190,7 @@ export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number,
     else applyBaseHits(state, X, group.map((g) => g.e as BaseHit), t, out);
   }
   for (const f of state.flags) {
-    if (!pushing(f) || pushedSet.has(f.id)) continue; // v4.2: updateStall 대상 = pushing(f)
+    if (pushedSet.has(f.id) || !capturing(state, f)) continue; // v4.2: updateStall 대상 = pushing(f) (v5.15: + defendCapturing)
     updateStall(f, 0, t, out);
   }
   // 2026-10-24 [A] 모델 2: 점령·기지 공격으로 게이지를 민 tick 마다 사기 소모 (병종별 실효 점령 배율 비례, flagId ASC)

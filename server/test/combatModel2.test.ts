@@ -348,8 +348,8 @@ describe('모델 2 — 결정론 · 회계 · 프로토콜', () => {
             if (f.morale < p.morale) dropSeen++;
           } else if (!f.routed) {
             // 2026-10-24: 점령·기지 공격(게이지를 미는 깃발)은 비전투여도 사기가 깎인다 — 그 외에는 줄지 않는다
-            if (f.posture !== POSTURE.ATTACK) expect(f.morale).toBeGreaterThanOrEqual(p.morale);
-            else expect(f.morale).toBeGreaterThanOrEqual(p.morale - 8);
+            // v5.15: 방어 태세도 주둔 점령(defendCapturing)으로 게이지를 밀면 같은 점령 사기 소모를 받는다 — 태세 무관
+            expect(f.morale).toBeGreaterThanOrEqual(p.morale - 8);
             if (f.morale > p.morale) recSeen++;
           }
         }

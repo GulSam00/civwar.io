@@ -533,8 +533,10 @@ export class GameRenderer {
     for (const f of model.flags.values()) {
       const tr = this.trackProgress(f, now);
       seen.add(f.id);
-      if (f.posture !== POSTURE.ATTACK || f.targetTileId === null) continue;
-      if (tr.shownPct <= 0 && f.state !== 'ENGAGED') continue;
+      if (f.targetTileId === null) continue;
+      if (f.posture === POSTURE.ATTACK) {
+        if (tr.shownPct <= 0 && f.state !== 'ENGAGED') continue;
+      } else if (f.state !== 'ENGAGED' || tr.shownPct <= 0) continue; // GDD v5.15: 방어 주둔 점령 — 진척이 있을 때만
       const t = f.targetTileId;
       const c = topo.tileCenter(t);
       // 공격 방향 = 대상 칸 이웃 중 공격자 소유 칸들의 평균 방향
@@ -728,7 +730,7 @@ export class GameRenderer {
     // 2026-11-10 공성 효과: 지금 이 기지를 밀고 있는 공격 깃발의 주인 (포위 고리 색)
     const attackerOf = new Map<number, number>();
     for (const f of model.flags.values()) {
-      if (f.targetTileId === null || f.routed || f.posture !== POSTURE.ATTACK || f.state !== 'ENGAGED') continue;
+      if (f.targetTileId === null || f.routed || f.state !== 'ENGAGED') continue; // GDD v5.15: 방어 주둔 점령도 기지를 민다
       const tb = model.bases.get(f.targetTileId);
       if (tb && tb.ownerId !== f.ownerId && !attackerOf.has(f.targetTileId)) attackerOf.set(f.targetTileId, f.ownerId);
     }

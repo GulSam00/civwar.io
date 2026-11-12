@@ -6,7 +6,7 @@
  *  내 타일      → 푸른 보호 원(guard, 반경 FRONT_RADIUS), 방어 태세 · 보호 n타일
  *  동맹 / 물 / 사거리 밖 → 회색(불가)
  */
-import { FRONT_MAX_RANGE, FRONT_RADIUS, POSTURE, type Posture } from '@civwar/shared';
+import { DEFEND_CAPTURE_SPEED_PERMILLE, FRONT_MAX_RANGE, FRONT_RADIUS, POSTURE, type Posture } from '@civwar/shared';
 import type { GameModel } from '../state/gameModel.js';
 import type { TopologyView } from '../render/topology.js';
 
@@ -57,6 +57,11 @@ export function computePreview(model: GameModel, topo: TopologyView, me: number,
   return { ...p, kind: 'attack', posture: POSTURE.ATTACK, disk: [], count: 0, held: true, label: `공격 태세 유지 · 내 땅까지 이동${wait}` };
 }
 
+/** GDD v5.15: 방어 주둔 점령 속도 배율 (‰) — 서버 match_config.constants 우선 */
+function defendCapturePm(model: GameModel): number {
+  return (model.config.constants?.DEFEND_CAPTURE_SPEED_PERMILLE as number | undefined) ?? DEFEND_CAPTURE_SPEED_PERMILLE;
+}
+
 function computeDefaultPreview(model: GameModel, topo: TopologyView, me: number, tile: number, rangeField: Int32Array | null): CursorPreview | null {
   if (tile < 0 || !model.terrain) return null;
   const radius = (model.config.constants?.FRONT_RADIUS as number | undefined) ?? FRONT_RADIUS;
@@ -67,7 +72,7 @@ function computeDefaultPreview(model: GameModel, topo: TopologyView, me: number,
     const disk = topo.disk(tile, radius);
     let n = 0;
     for (const t of disk) if (model.owners[t] === me) n++;
-    return { kind: 'defend', tile, posture: POSTURE.DEFEND, disk, count: n, label: `방어 태세 · 여기로 이동해 지킴 · 보호 ${n}타일` };
+    return { kind: 'defend', tile, posture: POSTURE.DEFEND, disk, count: n, label: `방어 태세 · 여기로 이동해 지킴 · 보호 ${n}타일 · 도착하면 옆 칸 점령(속도 ×${defendCapturePm(model) / 1000})` };
   }
   if (model.isAlly(me, owner)) return { kind: 'blocked', tile, posture: null, disk: [], count: 0, label: '동맹 영토' };
   if (rangeField) {
