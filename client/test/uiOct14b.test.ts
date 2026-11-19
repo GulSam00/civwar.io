@@ -156,7 +156,7 @@ describe('§21.5 지명', () => {
     expect(rows).toEqual([
       { field: 'baseHp', label: '기지', value: '가람' },
       { field: 'baseHp', label: '기지 체력', value: '50%' },
-      { field: 'baseHp', label: '생산력', value: '50% (회복 중)' },
+      { field: 'baseHp', label: '생산력', value: '50%' },
     ]);
     expect(terrainInfo(g, CAP1, 1, (n) => `P${n}`)!.base).toBe('수도 한울 · 체력 100%');
   });

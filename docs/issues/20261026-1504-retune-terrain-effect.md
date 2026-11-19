@@ -1,7 +1,7 @@
 ---
 id: 20261026-1504-retune-terrain-effect
 title: 지형 효과 배율 재조정 (측정 후)
-status: later
+status: done
 priority: low
 created: 2026-10-26
 external:
@@ -20,3 +20,4 @@ external:
 ## 로그
 
 - 2026-10-26: 12차 직후 selfplay: 평균 종료 30.6분, 탈락 1.3/판
+- 2026-11-10: 사용자 요청으로 작업하지 않고 종료

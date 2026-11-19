@@ -566,3 +566,24 @@ UI 문구: Help 규칙 절·단축키 요약, README 조작표, 로비 하단 �
 - 도움말에 `이동력`·`골드` 행 추가(무테크 값, 상수에서 계산).
 - 근사: 초당 이동력은 서버 `speedMilliAt` 의 floor 를 평원에서 한 번만 하고, 지형 칸 이동력은 ‰ ÷ 10 반올림(사막 111.1 → 111)이라 나눈 칸당 초는 서버와 2% 안쪽으로 다르다(`client/test/terrainAbsolute.test.ts`가 확인).
 - 스크린샷 `_workspace/ui-2026-11-05/`(산 칸 툴팁, HUD /분).
+
+## UI 전면 정리 (2026-11-06, 이슈 20261104-0112)
+
+- 사용자 결정은 design-decisions.md 2026-11-06 항목, 규칙은 `client/UI-CONVENTIONS.md` 6절.
+- 새 순수 모듈 `ui/flagView.ts`: `flagStatusParts`(상태 줄 — hover 카드·선택 패널 공용), `moraleDetailRows`(선택 패널 사기 상세 접기 행, GameScreen 의 `moraleRows` 대체). 테스트 `client/test/flagView.test.ts` 5건.
+- hover 카드 `moraleCard` → `flagCard`. 병종 아이콘은 `glyphSvg`(DOM 판 24 격자 아이콘, `postureSvg` 도 이걸 쓴다)로 그린다. 하단 설명문 `.tt-note` 줄과 `.tt-mbar` 스타일은 카드에서 빠졌다(`.tt-note` 는 UnitRing 이 아직 쓴다).
+- 깃발 선택 패널: 병종·병력과 태세 한 줄(`.fp-line`), 공격력·방어력 한 줄(`.cs-pair`, 기본·테크 내역은 title), `지금 공격·방어`는 모델 2 에서도 별도 행(`data-testid="flag-now"`). 사기 상세는 `상세` 버튼 접기(`data-testid="morale-detail"`, 기본 닫힘). 문구: `교전 개시 예상 약 N초` → `도착까지 약 N초`, `진척도` → `점령 진척`, 빚 줄 `골드 빚 — …`.
+- 지형 툴팁: 기지 생산력 `(회복 중)` 괄호, 함락 행 `수비 깃발 있음 (시간 ×2)` → `수비 중 시간 2배`.
+- 상단 대상 바: 점유율 제거(순위표), 중립이면 종류 태그 생략·`중립 기지` → `기지`.
+- HUD: `타일` 칸 제거(점유율 hover 에 칸 수). 하단 독: `골드 순수입` 줄 제거(상단 HUD 와 중복) → `깃발 유지비 −n/분 · 총수입 +n/분`, 순수입이 0 이하일 때만 경고로 붙인다.
+- 테크 상세(`techTree.primaryRow`): `×1.20` → `120%`, ‰ → %, 라벨의 `배율` 제거. 기존 테스트 기대값 갱신(techTree·uiOct15·uiOct19).
+- 플레이어 카드는 이미 수치·짧은 라벨만 있어 바꾸지 않았다.
+- 개발 빌드 전용 `window.__civwarCtl`(GameInputController) 노출 추가 — 화면 확인 때 `renderer.flagScreens` 로 깃발 좌표를 읽어 hover 를 재현한다.
+- 스크린샷 `_workspace/ui-2026-11-06/` (before/after hover 카드, 선택 패널 사기 상세 펼침, 지형 툴팁·대상 바·HUD, 테크 상세 %, 하단 독).
+
+## 공성 시각 효과 (2026-11-10)
+
+- 사용자 채택: 피격 흔들림 · 포위 고리(B) · 함락 파동(C). 시안의 균열·파편, 전투 충돌 불꽃은 넣지 않았다.
+- `render/siegeFx.ts` (순수): `SiegeTracker.observe` 가 기지별 직전 체력·주인을 기억해 피격(체력 감소)·함락(주인 변경) 시각을 기록한다. 처음 본 기지는 효과 없음. `shakeOffset`·`underSiege`·`waveProgress`·`ringSweep`. 테스트 `client/test/siegeFx.test.ts` 6건.
+- `renderer.drawBases`: 체력 바 → 둘레 고리(체력 100%이고 포위가 없으면 생략). 포위 고리 색 = 그 기지를 `targetTileId` 로 밀고 있는 ENGAGED 공격 깃발 주인(없으면 COLOR_ATTACK). 지명·생산력 바는 고리 위·아래로 옮겼다.
+- 화면 확인: 봇 판에서 2분 넘게 공성이 없어 브라우저에서 기지 hpPct·ownerId 를 바꿔 장면을 만들었다(서버 값 아님). 실제 판 공성 장면은 보지 못했다. 스크린샷 `_workspace/ui-2026-11-10/`.

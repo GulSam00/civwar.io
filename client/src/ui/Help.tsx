@@ -22,6 +22,7 @@ import {
   HARD_TIMEOUT_TICK,
   MAX_ALLIES_PER_PLAYER,
   NEUTRAL_BASE,
+  DEFEND_CAPTURE_SPEED_PERMILLE,
   FLAG_ORDER_COOLDOWN_TICKS,
   PROGRESS_DECAY_MILLI_PER_TICK,
   RETURN_BREAKAWAY_TICKS,
@@ -30,12 +31,14 @@ import {
   THRESHOLD_FLOOR_PCT,
   THRESHOLD_START_PCT,
   TICK_MS,
+  UNIT_ASSAULT_PERMILLE,
+  techConvertPm,
 } from '@civwar/shared';
 import { UnitIcon } from './unitIcons.js';
 import { isNarrowScreen, useDraggableWindow } from './draggable.js';
 import { techStatsOf } from './techInfo.js';
 import { TERRAIN_NAME } from './text.js';
-import { fmt1, terrainGoldPerMin, terrainMoveCost, unitMovePerSec } from './unitStats.js';
+import { fmt1, moraleNeutralPoint, moraleRange, pctOfPm, terrainGoldPerMin, terrainMoveCost, unitMovePerSec } from './unitStats.js';
 
 /** 틱 → "n초" / "n분" */
 const sec = (ticks: number) => `${Math.round((ticks * TICK_MS) / 1000)}초`;
@@ -102,10 +105,23 @@ export function Help({ onClose }: { onClose: () => void }) {
                 점유율 {THRESHOLD_START_PCT}% ({min(THRESHOLD_DECAY_START)}부터 하락, 바닥 {THRESHOLD_FLOOR_PCT}%) · {min(ENDGAME_RUSH_TICK)} 종반 러시 · {min(HARD_TIMEOUT_TICK)} 종료 시 최대 영토
               </Row>
               <Row k="깃발">
-                최소 {FLAG_MIN_TROOPS}명 · 점령 중엔 칸 하나를 더 못 먹을 만큼 줄면 소진 · 방어 깃발은 {FLAG_MIN_TROOPS}명 미만이면 소진 · 내 땅에서 {FRONT_MAX_RANGE}칸 · 회수 환급 {FLAG_RECALL_REFUND_PERMILLE / 10}%
+                최소 {FLAG_MIN_TROOPS}명 · 점령 중엔 칸 하나를 더 못 먹을 만큼 줄면 소진 · 방어 깃발은 {FLAG_MIN_TROOPS}명 미만이면 소진(점령으로는 그 아래로 쓰지 않음) · 내 땅에서 {FRONT_MAX_RANGE}칸 · 회수 환급 {FLAG_RECALL_REFUND_PERMILLE / 10}%
               </Row>
               <Row k="병종">
                 <UnitIcon unit={0} withName /> 방어↑ 속도↓ · <UnitIcon unit={1} withName /> 중간 · <UnitIcon unit={2} withName /> 공격↑ 속도↑ 방어↓
+              </Row>
+              <Row k="병종 상세">
+                {([0, 1, 2] as const).map((u) => {
+                  const r = moraleRange(u, NO_TECH);
+                  const n = moraleNeutralPoint(u, NO_TECH);
+                  return (
+                    <span key={u}>
+                      {u > 0 && ' · '}
+                      <UnitIcon unit={u} /> 점령 속도 {Math.round(UNIT_ASSAULT_PERMILLE[u] / 10)} · 편성 100명 = 병력 {Math.ceil(techConvertPm(NO_TECH, u) / 10)} · 사기 전투력 {pctOfPm(r.floor)}~{pctOfPm(r.full)} · ±0 경계 {n === null ? '없음' : `사기 ${Math.round(n / 10)}%`}
+                    </span>
+                  );
+                })}
+                {' '}(테크 전) · 상성표 없음 — 교전 손실은 양쪽 공격·방어 비교로 나뉨
               </Row>
               <Row k="이동력">
                 칸당 {LAND.map((t) => `${TERRAIN_NAME[t]} ${terrainMoveCost(t)}`).join(' · ')} · 초당 <UnitIcon unit={0} /> {fmt1(unitMovePerSec(0, NO_TECH))} · <UnitIcon unit={1} /> {fmt1(unitMovePerSec(1, NO_TECH))} · <UnitIcon unit={2} /> {fmt1(unitMovePerSec(2, NO_TECH))} · 칸 이동력 ÷ 초당 이동력 = 칸당 초
@@ -113,11 +129,12 @@ export function Help({ onClose }: { onClose: () => void }) {
               <Row k="골드">
                 칸당 {LAND.map((t) => `${TERRAIN_NAME[t]} +${terrainGoldPerMin(t, NO_TECH)}`).join(' · ')}/분 (테크 전)
               </Row>
+              <Row k="지형 툴팁">이동력·점령·골드 값은 모두 그 칸 하나 기준 (이동력 125 = 칸 하나를 지나는 데 125 · 점령 10명 = 칸 하나에 10명)</Row>
               <Row k="태세">
                 공격(마름모) · 방어(원, 보호 반경 {FRONT_RADIUS}칸) · 재지정·전환 공용 쿨타임 {sec(FLAG_ORDER_COOLDOWN_TICKS)} · 전환 시 진척도 0 · 방어 깃발을 적·중립 땅으로 보내면 공격으로 자동 전환
               </Row>
               <Row k="점령">
-                진척도 100% = 1칸 · 중립 칸 비용 {NEUTRAL_BASE} · 미는 중이 아니면 {decaySec}초에 0으로 감소
+                진척도 100% = 1칸 · 중립 칸 비용 {NEUTRAL_BASE} · 미는 중이 아니면 {decaySec}초에 0으로 감소 · 방어 태세는 도착해 주둔하는 동안만 옆 칸 점령 (속도 ×{DEFEND_CAPTURE_SPEED_PERMILLE / 1000}, 칸당 비용 같음, {FLAG_MIN_TROOPS}명은 남김)
               </Row>
               <Row k="전투">
                 1칸 이내 접촉 · 0.2초마다 양쪽 −{COMBAT_LOSS_BP / 100}% · 지형: 평원·비옥 공격 태세 공격력 {pctOf(TERRAIN_BUFF[TERRAIN.PLAIN][0][0])} · 언덕 방어 태세 방어력 {pctOf(TERRAIN_BUFF[TERRAIN.HILLS][1][1])} · 산 방어 태세 방어력 {pctOf(TERRAIN_BUFF[TERRAIN.MOUNTAIN][1][1])} · 사막 공격력 {pctOf(TERRAIN_BUFF[TERRAIN.DESERT][0][0])} · 내 기지 칸 방어력 ×{(BASE_BUFF[1][1] / 1000).toFixed(1)}

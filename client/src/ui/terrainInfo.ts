@@ -47,8 +47,8 @@ export interface TerrainInfo {
 }
 
 export interface TerrainInfoOpts {
-  /** 칸 이웃·거리 — 있으면 점령 비용에 인접 가산·보급 거리를 넣는다 */
-  topo?: TopoLike | null;
+  /** 칸 이웃·거리 — 있으면 점령 비용에 인접 가산·보급 거리를 넣는다. touching 이 있으면 기지 옆 수비 깃발도 방어로 본다 (v5.12) */
+  topo?: (TopoLike & { touching?(a: number, b: number): boolean }) | null;
   /** 내 부대를 선택한 상태면 그 병종 — 행동에 필요한 항목(보정·그 병종 점령 비용·기지 체력)만 남긴다 */
   selectedUnit?: number | null;
 }
@@ -89,13 +89,19 @@ export function combatBadges(m: GameModel, ter: number): TipBadge[] {
 }
 
 /**
- * 기지 칸 위에 나(me)와 적대인 전투 가능 깃발이 서 있는가 (server gauge.baseOccupiedByHostile — 패주·이탈 직후 아님).
- * 있으면 그 기지는 교전 중 공격 깃발만 ×0.5 피해로 민다 (BASE_DEFENDED_DMG_PERMILLE) — 함락 시간 ×2.
+ * 그 기지가 나(me)에게 "방어된 기지"인가 (server gauge.baseDefendedByHostile — 패주·이탈 직후 아님).
+ * 기지 칸 위에 적대 깃발이 있거나, GDD v5.12: 기지와 접촉하는 칸(8방향, touching)에 기지 주인(또는 동맹)의 깃발이 있으면 방어된 기지다 (touching 이 없으면 칸 위만 본다).
+ * 방어된 기지는 교전 중 공격 깃발이 ×0.5 피해로 민다 (BASE_DEFENDED_DMG_PERMILLE) — 함락 시간 ×2.
  */
-export function baseGuarded(m: GameModel, tile: number, me: number): boolean {
+export function baseGuarded(m: GameModel, tile: number, me: number, touching: ((a: number, b: number) => boolean) | null = null): boolean {
+  const live = (f: { routed: boolean; breakaway: boolean; troops: number }) => !f.routed && !f.breakaway && f.troops > 0;
+  const hostile = (o: number) => o !== me && !m.isAlly(me, o);
+  for (const f of m.flags.values()) if (f.posTileId === tile && live(f) && hostile(f.ownerId)) return true;
+  const bo = m.owners[tile];
+  if (!touching || bo === 0) return false;
   for (const f of m.flags.values()) {
-    if (f.posTileId !== tile || f.routed || f.breakaway || f.troops <= 0) continue;
-    if (f.ownerId !== me && !m.isAlly(me, f.ownerId)) return true;
+    if (f.posTileId === tile || !touching(tile, f.posTileId) || !live(f) || !hostile(f.ownerId)) continue;
+    if (f.ownerId === bo || m.isAlly(bo, f.ownerId)) return true;
   }
   return false;
 }
@@ -115,7 +121,7 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     const cb = combatBadges(m, ter);
     if (cb.length) add('defense', '전투', cb.map((b) => b.long).join(' · '), cb);
     // 2026-11-05: 칸당 이동력 (평원 100). 선택한 내 부대가 있으면 그 병종 초당 이동력도 — 나누면 칸당 초
-    const mv = `칸당 ${terrainMoveCost(ter, m.config.constants)}`;
+    const mv = String(terrainMoveCost(ter, m.config.constants)); // 2026-11-10: '칸당' 접두어 제거 (값만)
     add('speed', '이동력', sel !== null && me !== null ? `${mv} · ${UNIT_SHORT[sel]} ${fmt1(movePerSec(m, me, sel))}/초` : mv);
     if (me !== null) {
       // 점령에 드는 병력 (내 땅·동맹 땅은 생략). 선택한 부대가 있으면 그 병종만, 없으면 세 병종 —
@@ -129,13 +135,13 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
         const unitTag = sel !== null ? `${UNIT_SHORT[sel]} ` : '';
         if (isBase) {
           const nums = same ? `${unitTag}약 ${costs[0]}명` : units.map((u, i) => `${UNIT_SHORT[u]} 약 ${costs[i]}`).join(' · ') + '명';
-          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me) ? ' · 수비 깃발 있음 (시간 ×2)' : ''}`);
+          add('cost', '함락까지', `${nums}${baseGuarded(m, tile, me, opts.topo?.touching ? (a, b) => opts.topo!.touching!(a, b) : null) ? ' · 수비 중 시간 2배' : ''}`);
         } else {
-          add('cost', '점령', same ? `${unitTag}칸당 ${costs[0]}명` : `칸당 ${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
+          add('cost', '점령', same ? `${unitTag}${costs[0]}명` : `${units.map((u, i) => `${UNIT_SHORT[u]} ${costs[i]}`).join(' · ')}명`);
         }
       }
     }
-    if (sel === null) add('gold', '골드', `칸당 +${goldPerTilePerMin(m, me, ter)}/분`);
+    if (sel === null) add('gold', '골드', `+${goldPerTilePerMin(m, me, ter)}/분`);
   }
   const ownerId = isClaimable(ter) ? m.owners[tile] : 0;
   const ownerName = ownerId === 0 ? (isClaimable(ter) ? '중립' : '—') : `${nicknameOf(ownerId)}${ownerId === me ? ' (나)' : m.isAlly(me ?? 0, ownerId) ? ' (동맹)' : ''}`;
@@ -148,7 +154,7 @@ export function terrainInfo(m: GameModel, tile: number, me: number | null, nickn
     if (name && sel === null) add('baseHp', m.capitalTiles.has(tile) ? '수도' : '기지', name);
     add('baseHp', m.capitalTiles.has(tile) ? '수도 체력' : '기지 체력', `${Math.round(b.hpPct)}%`);
     const prod = m.baseProdPm(tile);
-    if (prod !== null && sel === null) add('baseHp', '생산력', `${Math.floor(prod / 10)}%${prod < 1000 ? ' (회복 중)' : ''}`);
+    if (prod !== null && sel === null) add('baseHp', '생산력', `${Math.floor(prod / 10)}%`); // 2026-11-06: 괄호 설명 제거 (100% 미만 = 회복 중, 도움말)
     // v5.1: 내 기지 출전 쿨타임 (기지 아이콘의 원형 게이지와 같은 값)
     const wait = me !== null && b.ownerId === me ? m.baseDispatchWait(tile) : 0;
     if (wait > 0) add('baseHp', '출전', `준비 중 ${Math.ceil((wait * m.config.tickMs) / 1000)}초`);

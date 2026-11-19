@@ -85,7 +85,7 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
     const d = techDetailRows(nd('MIL-3A'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }); // 공성 전술 +10% + 공성 장비 +15% 보유
     expect(d.owned).toBe(true);
     expect(d.beforeLabel).toBe('없을 때');
-    expect(d.rows[0]).toMatchObject({ label: '적 기지 공격 피해 배율', before: '×1.10', after: '×1.25' });
+    expect(d.rows[0]).toMatchObject({ label: '적 기지 공격 피해', before: '110%', after: '125%' });
   });
   it('set 노드: 마구간 기병 유지비 가중치 1.80 → 1.70, 철수 훈련 무테크 대기 → 노드 값 (v5.10: 1.6초 → 1.0초)', () => {
     expect(techDetailRows(nd('CAV-2A'), { techMask: mask(id('CAV-1')) }).rows[0]).toMatchObject({ before: '1.80', after: '1.70' });
@@ -97,24 +97,24 @@ describe('상세 패널 지금 → 구매 후 (절대 점수)', () => {
   });
   it('사기·기지 스탯 행 (재정·행정·병종 T3·T4)', () => {
     expect(techDetailRows(nd('MIL-4'), { techMask: mask(id('MIL-1'), id('MIL-2A'), id('MIL-3A')) }).rows[0]).toMatchObject({ label: '깃발 슬롯 보너스', before: '+0', after: '+1' });
-    expect(techDetailRows(nd('MIL-2B'), { techMask: mask(id('MIL-1')) }).rows[0]).toMatchObject({ label: '병력 상한 배율', before: '×1.00', after: '×1.10' });
-    expect(techDetailRows(nd('MIL-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '병력 재생 배율', before: '×1.00', after: '×1.05' });
-    expect(techDetailRows(nd('SWO-4'), { techMask: mask(id('SWO-1'), id('SWO-2B'), id('SWO-3B')) }).rows[0]).toMatchObject({ label: '검병 점령 소모 배율', before: '×1.00', after: '×0.80' });
+    expect(techDetailRows(nd('MIL-2B'), { techMask: mask(id('MIL-1')) }).rows[0]).toMatchObject({ label: '병력 상한', before: '100%', after: '110%' });
+    expect(techDetailRows(nd('MIL-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '병력 재생', before: '100%', after: '105%' });
+    expect(techDetailRows(nd('SWO-4'), { techMask: mask(id('SWO-1'), id('SWO-2B'), id('SWO-3B')) }).rows[0]).toMatchObject({ label: '검병 점령 소모', before: '100%', after: '80%' });
     expect(techDetailRows(nd('SWO-2B'), { techMask: mask(id('SWO-1')) }).rows[0]).toMatchObject({ before: '100', after: '110' });
     expect(techDetailRows(nd('CAV-3B'), { techMask: mask(id('CAV-1'), id('CAV-2B')) }).rows[0]).toMatchObject({ before: '150', after: '190' });
-    expect(techDetailRows(nd('CAV-4'), { techMask: mask(id('CAV-1'), id('CAV-2B'), id('CAV-3B')) }).rows[0]).toMatchObject({ before: '×1.20', after: '×1.10' });
-    expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×1.00', after: '×0.90' });
-    expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2B')) }).rows[0]).toMatchObject({ label: '기지 체력 피해 배율', before: '×0.90', after: '×0.70' });
-    expect(techDetailRows(nd('TER-3A'), { techMask: mask(id('TER-1'), id('TER-2A')) }).rows[0]).toMatchObject({ label: '기지 생산 배율 (모든 기지)', before: '×1.00', after: '×1.10' });
+    expect(techDetailRows(nd('CAV-4'), { techMask: mask(id('CAV-1'), id('CAV-2B'), id('CAV-3B')) }).rows[0]).toMatchObject({ before: '120%', after: '110%' });
+    expect(techDetailRows(nd('TER-2B'), { techMask: mask(id('TER-1')) }).rows[0]).toMatchObject({ label: '기지 체력 피해', before: '100%', after: '90%' });
+    expect(techDetailRows(nd('TER-4'), { techMask: mask(id('TER-1'), id('TER-2B')) }).rows[0]).toMatchObject({ label: '기지 체력 피해', before: '90%', after: '70%' });
+    expect(techDetailRows(nd('TER-3A'), { techMask: mask(id('TER-1'), id('TER-2A')) }).rows[0]).toMatchObject({ label: '기지 생산 (모든 기지)', before: '100%', after: '110%' });
     expect(techDetailRows(nd('ECO-2B'), { techMask: mask(id('ECO-1')) }).rows[0]).toMatchObject({ label: '사막·산 영토 골드 보너스', before: '+0%', after: '+100%' });
-    expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '기지 골드 배율 (모든 기지)', before: '×1.00', after: '×1.05' });
+    expect(techDetailRows(nd('ECO-1'), { techMask: 0 }).rows[0]).toMatchObject({ label: '기지 골드 (모든 기지)', before: '100%', after: '105%' });
   });
   it('실제 값 행: 골드 수입, 슬롯 (콜백)', () => {
     const g = techDetailRows(nd('ECO-4'), { techMask: 0 });
     expect(g.rows[0]).toMatchObject({
-      label: '골드 생산 배율',
-      before: '×1.00',
-      after: '×1.20',
+      label: '골드 생산',
+      before: '100%',
+      after: '120%',
       changed: true,
     });
     const slot = techDetailRows(nd('MOB-4'), { techMask: mask(id('MOB-1'), id('MOB-2A'), id('MOB-3A')), flagCap: (m) => 3 + (techOwned(m, id('MOB-4')) ? 1 : 0) });

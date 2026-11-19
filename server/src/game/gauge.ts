@@ -16,7 +16,6 @@ import {
   FLAG_IDLE_TIMEOUT,
   FLAG_MIN_TROOPS,
   FLAG_SPEND_BUDGET_CAP_TICKS,
-  FLAG_SPEND_RATE_PERMILLE,
   FLAG_STALL_TICKS,
   POSTURE,
   PROGRESS_DECAY_MILLI_PER_TICK,
@@ -27,7 +26,7 @@ import { beginReturn, flagById, removeFlag } from './flagops.js';
 import type { Outbox } from './outbox.js';
 import { combatEligible, moraleFloorOf, type FlagPresence } from './combat.js';
 import { isGarrison } from './economy.js';
-import { attackExhausted, availAP, guardCount, marchFrontNonEmpty, maxProgress, pushing, selectAttackTargetRO, threatened, tileCost } from './rules.js';
+import { attackExhausted, availAP, capturing, guardCount, inMarchFront, marchFrontNonEmpty, maxProgress, selectAttackTargetRO, spendRateMilli, threatened, tileCost } from './rules.js';
 import { ANNEX } from './annex.js';
 import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } from './state.js';
 
@@ -35,8 +34,8 @@ import { baseProdPm, isAlly, NEUTRAL, setTileOwner, type Flag, type GameState } 
 
 export function stage5_accumulateBudget(state: GameState, _t: number): void {
   for (const f of state.flags) {
-    if (!pushing(f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음
-    const per = f.initialTroops * FLAG_SPEND_RATE_PERMILLE;
+    if (!capturing(state, f) && defendedBaseTargetRO(state, f) === null) continue; // v4.2: ENGAGED·ATTACK 또는 halted, 비전투. 걷는 MARCHING 은 누적 없음 (v5.15: 방어 주둔 점령 포함)
+    const per = spendRateMilli(f); // v5.15: 방어 태세 ×0.6
     f.spendBudgetMilli = Math.min(f.spendBudgetMilli + per, per * FLAG_SPEND_BUDGET_CAP_TICKS);
   }
 }
@@ -68,8 +67,9 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
   const baseHits: BaseHit[] = [];
   for (const f of state.flags) {
     // 패치 4차: 교전 중이어도 방어 깃발이 선 기지는 밀 수 있다 (피해 ×BASE_DEFENDED_DMG_PERMILLE)
-    const defX = pushing(f) ? null : defendedBaseTargetRO(state, f);
-    if (!pushing(f) && defX === null) continue; // v4.2 (4.4a c)
+    const cap = capturing(state, f); // v5.15: 방어 주둔 점령 포함
+    const defX = cap ? null : defendedBaseTargetRO(state, f);
+    if (!cap && defX === null) continue; // v4.2 (4.4a c)
     const X = defX ?? selectAttackTargetRO(state, f);
     if (X === null) continue;
     const c = tileCost(state, f, X);
@@ -91,15 +91,38 @@ export function stage6_combatPhaseA(state: Readonly<GameState>, t: number): Push
 }
 
 /**
- * 패치 4차 (모델 2) — 방어 깃발이 서 있는 기지를 미는 교전 중 공격 깃발의 목표 기지 칸. 해당 없으면 null.
- * 교전 중이라 pushing(f) 는 아니지만, 타깃이 "전투 가능한 적대 깃발이 선 기지"면 피해 ×BASE_DEFENDED_DMG_PERMILLE 로 밀 수 있다.
+ * 패치 4차 (모델 2) — 방어 깃발이 지키는 기지를 미는 교전 중 공격 깃발의 목표 기지 칸. 해당 없으면 null.
+ * 교전 중이라 pushing(f) 는 아니지만, 타깃이 "방어된 기지"(baseDefendedByHostile)면 피해 ×BASE_DEFENDED_DMG_PERMILLE 로 밀 수 있다.
+ * GDD v5.12 (이슈 20261026-1502): ① 앵커가 바로 옆(marchFront) 적대 기지면 깃발 상태(MARCHING·ENGAGED)와 타깃 선택에 상관없이
+ * 그 기지를 민다 — 교전에 들어가면 halted 가 꺼지고(combat 4b) 행군 깃발은 앵커에 못 닿아 종전 조건이 거의 발동하지 않았다.
+ * ② 기지 칸 위뿐 아니라 기지 바로 옆에서 지키는 기지 주인(또는 동맹) 깃발이 있어도 방어된 기지로 본다.
  */
 export function defendedBaseTargetRO(state: Readonly<GameState>, f: Readonly<Flag>): number | null {
-  if (state.combatModel !== 2 || !f.inCombat || f.posture !== POSTURE.ATTACK || f.routed || f.breakaway) return null;
-  if (!(f.state === 'ENGAGED' || f.halted)) return null;
+  if (state.combatModel !== 2 || !f.inCombat || f.posture !== POSTURE.ATTACK || f.routed || f.breakaway || f.state === 'RETURNING') return null;
+  const A = f.anchorTileId;
+  if (state.map.isBase[A] && inMarchFront(state, f, A) && baseDefendedByHostile(state, A, f.ownerId)) return A; // ①
+  if (f.state !== 'ENGAGED' && !f.halted) return null; // 종전 조건: 앵커가 기지가 아니어도 ENGAGED 깃발의 타깃이 방어된 기지면 민다
   const X = selectAttackTargetRO(state, f);
-  if (X === null || !state.map.isBase[X] || !baseOccupiedByHostile(state, X, f.ownerId)) return null;
+  if (X === null || !state.map.isBase[X] || !baseDefendedByHostile(state, X, f.ownerId)) return null;
   return X;
+}
+
+/**
+ * GDD v5.12 ② — 기지 칸 X 가 ownerId 에게 "방어된 기지"인가: 기지 칸 위에 적대 전투 가능 깃발이 있거나(baseOccupiedByHostile),
+ * 기지와 접촉하는 칸(8방향)에 기지 주인(또는 그 동맹)의 전투 가능 깃발이 있고 그 깃발이 ownerId 와 적대다. 태세는 묻지 않는다.
+ */
+export function baseDefendedByHostile(state: Readonly<GameState>, X: number, ownerId: number): boolean {
+  if (baseOccupiedByHostile(state, X, ownerId)) return true;
+  const bo = state.owners[X];
+  if (bo === NEUTRAL) return false;
+  for (const n of state.graph.contactNeighbors(X)) {
+    for (const g of state.flags) {
+      if (g.posTileId !== n || !combatEligible(g)) continue;
+      if (g.ownerId === ownerId || isAlly(state, ownerId, g.ownerId)) continue;
+      if (g.ownerId === bo || isAlly(state, bo, g.ownerId)) return true;
+    }
+  }
+  return false;
 }
 
 /** v4.4: 기지 칸 X 위에 ownerId 와 적대인 전투 가능 깃발(패주·소진·이탈 직후 아님)이 있는가 */
@@ -167,7 +190,7 @@ export function stage7_combatPhaseB(state: GameState, plan: PushPlan, t: number,
     else applyBaseHits(state, X, group.map((g) => g.e as BaseHit), t, out);
   }
   for (const f of state.flags) {
-    if (!pushing(f) || pushedSet.has(f.id)) continue; // v4.2: updateStall 대상 = pushing(f)
+    if (pushedSet.has(f.id) || !capturing(state, f)) continue; // v4.2: updateStall 대상 = pushing(f) (v5.15: + defendCapturing)
     updateStall(f, 0, t, out);
   }
   // 2026-10-24 [A] 모델 2: 점령·기지 공격으로 게이지를 민 tick 마다 사기 소모 (병종별 실효 점령 배율 비례, flagId ASC)

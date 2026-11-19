@@ -18,7 +18,7 @@ import { BlockedIcon } from './hudIcons.js';
 import { UNIT_NAME } from './text.js';
 import { playerColor } from '../render/palette.js';
 import type { RoutePreview } from '../input/route.js';
-import { UNIT_ROLE, fmt1, pctOfPm, unitSpec, type UnitSpec } from './unitStats.js';
+import { UNIT_ROLE, fmt1, unitSpec, type UnitSpec } from './unitStats.js';
 
 interface Tip {
   key: string;
@@ -155,16 +155,12 @@ export function UnitRing({ store, ctl }: { store: ClientStore; ctl: GameInputCon
  * 상성은 따로 정해진 표가 없다: 교전 손실은 양쪽 공격·방어 수치 비교로 나뉘므로 그 수치를 그대로 보인다.
  */
 function UnitSpecTable({ unit, v }: { unit: Unit; v: UnitSpec }) {
+  // 2026-11-10: 4줄로 간추림 — 점령 속도·편성비·사기 범위·±0 경계·사기 감소는 도움말 '병종 상세'로
   const rows: [string, string][] = [
     ['공격 · 방어', `${v.atk} · ${v.def}`],
-    ['이동력', `${fmt1(v.move)}/초 (평원 칸당 100)`],
-    ['점령 속도', `${v.assault} (검병 100)`],
-    ['점령 소모', `칸당 ${v.capture}명 (중립 평원)`],
-    ['편성비', `100명 출전 = 병력 ${v.convertPer100} 소모`],
-    ['유지비', `1000명당 골드 −${v.upkeepPerMin}/분`],
-    ['사기 전투력', `${pctOfPm(v.moraleFloor)} ~ ${pctOfPm(v.moraleFull)}`],
-    ['±0 경계', v.moraleNeutral === null ? '없음 (늘 보너스)' : `사기 ${Math.round(v.moraleNeutral / 10)}%`],
-    ['사기 감소', `교전 −${fmt1(v.rates.dropAtk)}%/초 (방어 태세 −${fmt1(v.rates.dropDef)})`],
+    ['이동력', `${fmt1(v.move)}/초`],
+    ['점령', `${v.capture}명`],
+    ['유지비', `1000명당 −${v.upkeepPerMin}/분`],
   ];
   return (
     <div className="unit-spec">
@@ -175,7 +171,6 @@ function UnitSpecTable({ unit, v }: { unit: Unit; v: UnitSpec }) {
           <span className="tt-v">{val}</span>
         </div>
       ))}
-      <div className="tt-note">상성표 없음 — 교전 손실은 양쪽 공격·방어 비교로 나뉩니다</div>
     </div>
   );
 }

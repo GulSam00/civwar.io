@@ -133,19 +133,19 @@ export const BASE_RELAX_MIN_CAPITAL_DIST = 9;
 export const BASE_RELAX_MIN_WATER_DIST = 1;
 
 // ══ 기지 체력 ══
-/** 패치 5차 (사용자 2026-10-25) [A]: 기지 체력은 기지별 — 일반·중립 기지 10000, 처음 수도였던 칸 15000(점령당해도 수도 체력 유지). 구 22500 공통 */
-export const BASE_HP_MILLI = 10000;
-export const CAPITAL_HP_MILLI = 15000; // 패치 5차 재조정: 20000 → 15000 (수도 점령·탈락이 너무 줄어서, 사용자 확정)
+/** 패치 5차 (사용자 2026-10-25) [A]: 기지 체력은 기지별 — 일반·중립 기지 15000, 처음 수도였던 칸 22500 (이슈 20261110-2055 로 ×1.5)(점령당해도 수도 체력 유지). 구 22500 공통 */
+export const BASE_HP_MILLI = 15000; // 이슈 20261110-2055 (사용자 2026-11-11): 10000 → 15000 (공성 시간·병력 ×1.5, 상한 200 유지)
+export const CAPITAL_HP_MILLI = 22500; // 패치 5차: 20000 → 15000. 이슈 20261110-2055: 15000 → 22500 (공성 시간·병력 ×1.5)
 /** 점령 직후 체력 = 그 기지 최대 체력 × 이 값 ‰ (사용자 확정 — 각 최대치의 50%) */
 export const BASE_HP_CAPTURE_PERMILLE = 500;
 /** 마지막 피해 뒤 이 tick 이 지나면 BASE_HP_REGEN_MILLI 씩 회복. 패치 5차: 50 → 25(5초), 35 → 50 (수도도 같은 값) */
-export const BASE_HP_REGEN_MILLI = 50;
+export const BASE_HP_REGEN_MILLI = 75; // 이슈 20261110-2055: 50 → 75 (최대 체력 ×1.5 에 맞춰 회복 비율 유지)
 export const BASE_REGEN_DELAY_TICK = 25;
 export const BASE_CAPTURE_LOCK_TICK = 25;
 /** v5.1 (GDD 2.5·4.2, 사용자 확정 2026-10-28): 기지에서 깃발이 출전한 tick t 부터 이 tick 동안 그 기지는 출발 기지가 될 수 없다.
  *  BaseState.dispatchReadyTick = t + 이 값, 출전 가능 = 현재 tick ≥ dispatchReadyTick. 소유권이 바뀌면 0 으로 초기화 [A-5.1-2] */
 export const BASE_DISPATCH_COOLDOWN_TICKS = 25;
-/** 패치 5차: 300 → 200. 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 일반 기지 최소 50 tick(10초), 수도 75 tick(15초).
+/** 패치 5차: 300 → 200. 깃발 수와 무관하게 기지 하나가 한 tick 에 잃는 체력 상한 (milli). 일반 기지 최소 75 tick(15초), 수도 113 tick(22.5초) — 이슈 20261110-2055 체력 ×1.5 후.
  *  방어 깃발이 선 기지는 이 상한도 BASE_DEFENDED_DMG_PERMILLE 만큼 줄고, 요새화·공성 테크 배율은 상한에도 곱해진다 */
 export const BASE_HP_DMG_CAP_MILLI_PER_TICK = 200;
 
@@ -221,6 +221,8 @@ export const FLAG_SPEED_BASE_MILLI = 140; // v4.2 [A-64] 120 → 140 (쟁기 규
 export const FLAG_SPEND_RATE_PERMILLE = 15;
 export const FLAG_SPEND_BUDGET_CAP_TICKS = 25;
 export const FLAG_TILE_RATE_BASE = 2;
+/** GDD v5.15 (사용자 2026-11-13): 방어 태세 주둔 점령 속도 배율 — 게이지 상한·AP 예산 누적 모두 ×0.6, 칸당 병력 비용은 공격과 같다 */
+export const DEFEND_CAPTURE_SPEED_PERMILLE = 600;
 export const FRONT_RADIUS = 6;
 export const FRONT_MAX_RANGE = 40;
 export const FLAG_ENGAGE_RANGE = 1; // ATTACK 도착 판정 + 깃발 교전 거리(D-2). 사용자 결정 2026-10-11: 깃발 접촉(전투·ZOC·진척 유지) = 8방향(대각선 포함, topology.touching). 땅 점령은 4방향 그대로
@@ -658,6 +660,8 @@ export const MORALE_DROP_PER_TICK = [3, 4, 5] as const;
 export const MORALE_DROP_DEFEND_PER_TICK = [2, 3, 4] as const;
 /** 그 tick 자기 병력 손실 1%당 추가 사기 감소 ‰ (v5.7 사용자 결정: 10 → 5) — 많이 잃는 편이 더 빨리 꺾이고, 이기는 편은 사기를 지킨다 */
 export const MORALE_DROP_LOSS_K = 5;
+/** v5.13 (사용자 결정 2026-11-10): 손실 감소 상한 = 그 tick 사상자 1명당 ‰. 손실 감소 = min(손실% × K, floor(사상자 명) × 2) — 작은 깃발이 몇 명 잃은 것으로 사기가 급락하지 않게 한다 */
+export const MORALE_DROP_LOSS_PER_TROOP = 2;
 export const MORALE_RECOVER = 3; // 비전투 tick 당 회복 ‰
 export const MORALE_RECOVER_BASE = 10; // 자기 기지 칸 위 비전투 tick 당 회복 ‰
 /** v5.1 (GDD 4.5, 사용자 확정 2026-10-28): 자기 기지 칸(수도 포함) 위 깃발의 사기 하한 ‰ (화면 30%). 모델 2 전용.

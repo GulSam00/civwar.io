@@ -229,11 +229,12 @@ describe('combatMath — 문서 시나리오 숫자 재현 (사기 만땅 양쪽
  * 2026-11-03 v5.8: 재정 골드 개편(언덕 이관·수치·국고 ×1.2), 공용 쿨타임 4초, 기동 테크 교체, 병종 편성비·기병 유지비, 병종 갈래 재구성, 공통·병종 노드 수치와 MOB-2B·3B 교환, 기지 골드 테크(ECO-1)로 다시 고정.
  * 2026-11-05 v5.10: 이탈 대기 15 → 8 tick(모델 1·2 공통)·철수 훈련 5 tick·귀환 이탈 면제 2초로 다시 고정.
  * 2026-11-05 v5.11: 화면 값 5·10 단위(사막·산 이동, 골드 비율 2000·지형 골드 가중, 개간·채굴 +100%, 테크 가격 10 단위 반올림)로 다시 고정.
+ * 2026-11-11 v5.14: 기지 체력 ×1.5(15000/22500)·회복 +75 (모델 1·2 공통)로 다시 고정.
  */
 const GOLDEN = {
-  G1: { stream: '377564c2e249685956db6e087845810f27e8b2ee531504be096eaed05962c9fd', state: 'e5f7fb67ae7589110fe7d9f878ac68c351f53f0bd362d5a84d970c870a71d12e' },
-  G2: { stream: '9daa909f53bb4702a123e4ed4285c7df5d77fa969bcaee3df4ceb9730c285cce', state: '88e62cb040ccb9494d59bcf039c928993dcc79800c271634c19730787efc98d2' },
-  G3: { stream: '5580510daa504e99fc33518a4488b2121c52941b628f36ebadf62ee3b98a7c8e', state: '35c5395873e00b46f69340b2e1b57a4144603883ba2a250c7ed8bf7d2ba343b9' },
+  G1: { stream: '29e4762a1d49087f545510a9a5ced86ec721928b3af1c230bbcb7b9ab95cb389', state: '49b280d8adcf1bc04ba16c540c7daae49e25df69a99d60945bf48c63c2c96e99' },
+  G2: { stream: '67e4f4fb64642021be9a9c87f0261ffdfcc349a3ca00f5449ef5697c99945968', state: 'c654c039ad6e238d8c67ade7a7f999ac5bd0305fcae198b2f96845115dc9aca4' },
+  G3: { stream: '687f18523c2a36432b0875485858342e2a7983646af236e353e7dac9caa6e2be', state: '82d06479b3a67e3371ec6aa77ce1f6ec0ede9de9388de29e7cedb04a2ac04648' },
 };
 
 function playHash(seed: number, mix: BotDifficultyName[], ticks: number, model: 1 | 2 | undefined, hook?: (out: { broadcast: ServerMessage[] }, s: GameState) => void) {
@@ -347,8 +348,8 @@ describe('모델 2 — 결정론 · 회계 · 프로토콜', () => {
             if (f.morale < p.morale) dropSeen++;
           } else if (!f.routed) {
             // 2026-10-24: 점령·기지 공격(게이지를 미는 깃발)은 비전투여도 사기가 깎인다 — 그 외에는 줄지 않는다
-            if (f.posture !== POSTURE.ATTACK) expect(f.morale).toBeGreaterThanOrEqual(p.morale);
-            else expect(f.morale).toBeGreaterThanOrEqual(p.morale - 8);
+            // v5.15: 방어 태세도 주둔 점령(defendCapturing)으로 게이지를 밀면 같은 점령 사기 소모를 받는다 — 태세 무관
+            expect(f.morale).toBeGreaterThanOrEqual(p.morale - 8);
             if (f.morale > p.morale) recSeen++;
           }
         }
@@ -489,44 +490,44 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(big.morale).toBeGreaterThan(950);
   });
 
-  it('기지 체력 [A 패치 5차]: 일반·중립 10000 / 처음 수도 15000, 퍼센트는 기지별 최대 기준, 점령 직후 각 최대의 50%, 점령당해도 수도는 수도 체력', () => {
+  it('기지 체력 [A 패치 5차, 이슈 20261110-2055 ×1.5]: 일반·중립 15000 / 처음 수도 22500, 퍼센트는 기지별 최대 기준, 점령 직후 각 최대의 50%, 점령당해도 수도는 수도 체력', () => {
     const { s } = duelState(2);
     const home = s.players[2].homeTileId;
     const cap = s.bases[s.baseIndexOf.get(home)!];
     const plain = s.bases.find((x) => !s.capitalTiles.has(x.tileId))!;
     expect([cap.maxHpMilli, plain.maxHpMilli]).toEqual([CAPITAL_HP_MILLI, BASE_HP_MILLI]);
     expect([cap.hpMilli, plain.hpMilli]).toEqual([CAPITAL_HP_MILLI, BASE_HP_MILLI]);
-    expect([CAPITAL_HP_MILLI, BASE_HP_MILLI, BASE_HP_DMG_CAP_MILLI_PER_TICK]).toEqual([15000, 10000, 200]);
-    cap.hpMilli = 5000;
-    plain.hpMilli = 5000;
+    expect([CAPITAL_HP_MILLI, BASE_HP_MILLI, BASE_HP_DMG_CAP_MILLI_PER_TICK]).toEqual([22500, 15000, 200]);
+    cap.hpMilli = 7500;
+    plain.hpMilli = 7500;
     expect([hpPct(cap), hpPct(plain)]).toEqual([33, 50]);
-    // 수도 칸 함락: 새 주인이 차지해도 최대 체력은 15000, 점령 직후 50% = 7500
+    // 수도 칸 함락: 새 주인이 차지해도 최대 체력은 22500, 점령 직후 50% = 11250
     cap.hpMilli = 0;
     const out = newOutbox();
     captureBase(s, home, 1, 1, out);
-    expect(cap.hpMilli).toBe(7500);
+    expect(cap.hpMilli).toBe(11250);
     expect(cap.maxHpMilli).toBe(CAPITAL_HP_MILLI);
     captureBase(s, plain.tileId, 1, 1, out);
-    expect(plain.hpMilli).toBe(5000);
+    expect(plain.hpMilli).toBe(7500);
     const caps = out.broadcast.filter((m) => m.type === 'base_captured');
     expect(caps.map((m) => (m as { newHpPct: number }).newHpPct)).toEqual([50, 50]);
   });
 
-  it('기지 회복 [A 패치 5차]: 마지막 피해 25 tick(5초) 뒤부터 tick 당 +50, 최대 체력에서 멈춘다. 교전 소모는 없다', () => {
+  it('기지 회복 [A 패치 5차, 이슈 20261110-2055]: 마지막 피해 25 tick(5초) 뒤부터 tick 당 +75, 최대 체력에서 멈춘다. 교전 소모는 없다', () => {
     const { s } = duelState(2);
-    const b = s.bases[s.baseIndexOf.get(s.players[2].homeTileId)!]; // 수도 15000
-    b.hpMilli = 14800;
+    const b = s.bases[s.baseIndexOf.get(s.players[2].homeTileId)!]; // 수도 22500
+    b.hpMilli = 22300;
     b.lastDamageTick = 0;
     const heal = (t: number) => {
       s.tick = t;
       stage8_baseRegen(s, t);
     };
     for (let t = 1; t <= 24; t++) heal(t);
-    expect(b.hpMilli).toBe(14800); // 25 tick 이 지나기 전엔 회복 없음
+    expect(b.hpMilli).toBe(22300); // 25 tick 이 지나기 전엔 회복 없음
     heal(25);
-    expect(b.hpMilli).toBe(14850);
+    expect(b.hpMilli).toBe(22375);
     for (let t = 26; t <= 40; t++) heal(t);
-    expect(b.hpMilli).toBe(15000); // 상한에서 멈춤
+    expect(b.hpMilli).toBe(22500); // 상한에서 멈춤
     // 방어 깃발이 교전 중이어도 기지 체력은 깎이지 않는다 (교전 소모 폐지)
     const home = s.players[2].homeTileId;
     const nb = s.graph.contactNeighbors(home).find((x) => isClaimable(s.map.terrain[x]) && !s.map.isBase[x])!;
@@ -537,7 +538,7 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
       s.tick = t;
       stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, t), t, out);
     }
-    expect(b.hpMilli).toBe(15000);
+    expect(b.hpMilli).toBe(CAPITAL_HP_MILLI);
     expect(b.lastDamageTick).toBe(0);
   });
 
@@ -556,6 +557,28 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     };
     expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.DEFEND))).toEqual([2, 3, 4]);
     expect([U.SPEAR, U.SWORD, U.CAVALRY].map((u) => drop(u, POSTURE.ATTACK))).toEqual([3, 4, 5]);
+  });
+
+  it('사기 손실 감소는 그 tick 사상자 1명당 2 를 넘지 않는다 (v5.13): 창 100 대 100 은 1명 손실(1%) → 손실 감소 min(5, 2) = 2', () => {
+    const { s, c } = duelState(2);
+    const a = addFlag(s, { ownerId: 1, unit: U.SPEAR, troops: 100, pos: c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    const d = addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 100, pos: c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    a.morale = 1000;
+    d.morale = 1000;
+    s.tick = 1;
+    stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, newOutbox());
+    expect(a.troopsMilli).toBe(99_000); // 최소 손실 1000 milli
+    expect(1000 - a.morale).toBe(3 + 2); // 고정 3 + 상한 걸린 손실 감소 2 (상한 없으면 3 + 5)
+    // 사상자가 많으면 상한이 걸리지 않는다: 창 3000 대 3000 은 tick당 수십 명 → 손실 감소 = 손실% × 5 그대로
+    const big = duelState(2);
+    const b = addFlag(big.s, { ownerId: 1, unit: U.SPEAR, troops: 3000, pos: big.c, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    addFlag(big.s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: big.c + 1, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+    b.morale = 1000;
+    big.s.tick = 1;
+    stage4b_flagCombatPhaseB(big.s, stage4a_flagCombatPhaseA(big.s, 1), 1, newOutbox());
+    const lost = 3_000_000 - b.troopsMilli;
+    expect(lost).toBeGreaterThan(10_000);
+    expect(1000 - b.morale).toBe(3 + Math.floor((Math.floor((lost * 10000) / 3_000_000) * 5 + 50) / 100));
   });
 
   it('기지 함락 시 그 칸 위 이전 주인 깃발은 귀환으로 퇴각한다 [A 패치 2차] (모델 2, 마지막 기지 제외, 모델 1 불변)', () => {
@@ -604,6 +627,50 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(hit(1, true)).toBe(0);
   });
 
+  it('GDD v5.12 ①②: 앵커가 옆 칸 적대 기지면 행군(MARCHING) 중 교전이어도 ×0.5 로 민다, 기지 옆 수비 깃발도 방어로 본다', () => {
+    type Def = 'none' | 'onBase' | 'nextToBase' | 'thirdParty';
+    const hit = (def: Def, o: { state?: Flag['state']; anchorIsBase?: boolean } = {}) => {
+      const { s } = duelState(2);
+      const home = s.players[2].homeTileId;
+      const b = s.bases[s.baseIndexOf.get(home)!];
+      const land = (t: number) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t];
+      const nb = s.graph.neighbors(home).find(land)!;
+      // 기지와 공격 깃발 모두에 붙은 칸 (기지 옆 수비 자리)
+      const side = s.graph.contactNeighbors(home).find((t) => t !== nb && land(t) && s.graph.touching(nb, t))!;
+      expect(side).toBeDefined();
+      setTileOwner(s, side, 2);
+      if (def === 'onBase') addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: home, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      if (def === 'nextToBase') addFlag(s, { ownerId: 2, unit: U.SPEAR, troops: 3000, pos: side, posture: POSTURE.DEFEND, state: 'ENGAGED' });
+      if (def === 'thirdParty') addFlag(s, { ownerId: 3, unit: U.SPEAR, troops: 3000, pos: side, posture: POSTURE.ATTACK, state: 'ENGAGED' });
+      const anchor = o.anchorIsBase === false ? side : home;
+      const atk = addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 3000, pos: nb, anchorTileId: anchor, targetOwnerId: 2, posture: POSTURE.ATTACK, state: o.state ?? 'MARCHING', spendBudgetMilli: 750_000 });
+      s.tick = 1;
+      const out = newOutbox();
+      stage4b_flagCombatPhaseB(s, stage4a_flagCombatPhaseA(s, 1), 1, out); // 교전 개시
+      expect(atk.inCombat).toBe(def !== 'none');
+      b.hpMilli = b.maxHpMilli;
+      b.damagedThisTick = false;
+      s.tick = 2;
+      const plan = stage6_combatPhaseA(s, 2);
+      const dmg = plan.baseHits.find((h) => h.flagId === atk.id)?.dmg ?? 0;
+      const hp0 = b.hpMilli;
+      stage7_combatPhaseB(s, plan, 2, out);
+      return { dmg, lost: hp0 - b.hpMilli };
+    };
+    const free = hit('none', { state: 'ENGAGED' }).dmg; // 비전투 ENGAGED 가 미는 원래 피해
+    expect(free).toBeGreaterThan(0);
+    const half = Math.floor((free * BASE_DEFENDED_DMG_PERMILLE) / 1000);
+    // ① 행군 중 교전 (종전에는 피해 0)
+    expect(hit('onBase').dmg).toBe(half);
+    // ② 기지 칸이 비어 있어도 기지 옆 수비 깃발과 교전 중이면 방어된 기지로 ×0.5 (상한도 ×0.5)
+    expect(hit('nextToBase').dmg).toBe(half);
+    expect(hit('nextToBase', { state: 'ENGAGED' }).dmg).toBe(half);
+    // 앵커가 그 기지가 아니면 행군 깃발은 종전대로 못 민다
+    expect(hit('onBase', { anchorIsBase: false }).dmg).toBe(0);
+    // 기지 주인 편이 아닌 제3국 깃발은 기지를 지키는 깃발이 아니다
+    expect(hit('thirdParty').dmg).toBe(0);
+  });
+
   it('틱당 기지 피해 상한 [A 패치 5차]: 200, 방어 깃발이 선 기지는 100 (요새화·공성 테크 배율은 상한에도 곱해진다)', () => {
     const lost = (defended: boolean, fortPm = 1000, siegePm = 1000) => {
       const { s } = duelState(2);
@@ -627,6 +694,38 @@ describe('모델 2 — 4a/4b 서버 경로', () => {
     expect(lost(false, 500)).toBe(BASE_HP_DMG_CAP_MILLI_PER_TICK / 2); // 요새화 ×0.5
     expect(lost(false, 1000, 1500)).toBe(BASE_HP_DMG_CAP_MILLI_PER_TICK * 1.5); // 공성 ×1.5
     expect(lost(true, 1000, 1500)).toBe((BASE_HP_DMG_CAP_MILLI_PER_TICK * 1.5) / 2);
+  });
+
+  it('이슈 20261110-2055 (사용자 2026-11-11): 기지 체력 ×1.5, 상한 200 유지 → 공성 시간·병력 ×1.5 — 수도 끝까지 밀어 tick·지출을 잰다', async () => {
+    const { tileCost } = await import('../src/game/rules.js');
+    expect([BASE_HP_MILLI, CAPITAL_HP_MILLI, BASE_HP_DMG_CAP_MILLI_PER_TICK]).toEqual([15000, 22500, 200]);
+    const { s } = duelState(2);
+    const home = s.players[2].homeTileId;
+    const b = s.bases[s.baseIndexOf.get(home)!];
+    expect(b.maxHpMilli).toBe(CAPITAL_HP_MILLI);
+    const nb = s.graph.neighbors(home).find((t) => isClaimable(s.map.terrain[t]) && !s.map.isBase[t])!;
+    const f = addFlag(s, { ownerId: 1, unit: U.SWORD, troops: 9000, pos: nb, anchorTileId: home, targetOwnerId: 2, posture: POSTURE.ATTACK, state: 'ENGAGED', spendBudgetMilli: 9_000_000 });
+    const c = tileCost(s, f, home);
+    const troops0 = f.troopsMilli;
+    const out = newOutbox();
+    let ticks = 0;
+    for (let t = 1; t <= 1000 && s.owners[home] === 2; t++) {
+      s.tick = t;
+      f.spendBudgetMilli = 9_000_000; // 예산은 넉넉히 — 상한만 시간을 정한다 (실측: 피해 tick 의 98% 가 상한 제한)
+      stage7_combatPhaseB(s, stage6_combatPhaseA(s, t), t, out);
+      ticks = t;
+    }
+    expect(s.owners[home]).toBe(1);
+    // 시간: ceil(22500 ÷ 200) = 113 tick (22.6초) ≈ 구 15000 ÷ 200 = 75 tick 의 ×1.5
+    expect(ticks).toBe(Math.ceil(CAPITAL_HP_MILLI / BASE_HP_DMG_CAP_MILLI_PER_TICK));
+    expect(Math.abs(ticks / 75 - 1.5)).toBeLessThan(0.01);
+    // 병력: tick 마다 ceil(적용 피해 × 칸 비용 ÷ 1000) 이고 tick 당 지출은 그대로라 tick 수에 비례 → 구 규칙 실제 지출의 ×1.5
+    const spent = (troops0 - f.troopsMilli) / 1000;
+    const perTick = Math.ceil((BASE_HP_DMG_CAP_MILLI_PER_TICK * c) / 1000);
+    const lastNet = CAPITAL_HP_MILLI - (ticks - 1) * BASE_HP_DMG_CAP_MILLI_PER_TICK;
+    expect(spent).toBe((ticks - 1) * perTick + Math.ceil((lastNet * c) / 1000));
+    const oldSpent = 75 * perTick;
+    expect(Math.abs(spent / oldSpent - 1.5)).toBeLessThan(0.02);
   });
 
   it('점령 사기 소모 [A]: 게이지를 미는 tick 마다 v5.1 전 병종 -6 (CAPTURE_MORALE_DROP x 점령 배율 1000), 모델 1 은 사기 없음', () => {

@@ -141,9 +141,9 @@ export interface TechDetailCtx {
   flagCap?: (mask: number) => number;
 }
 
-const x2 = (pm: number) => `×${(pm / 1000).toFixed(2)}`;
-const x3 = (pm: number) => `×${(pm / 1000).toFixed(3)}`;
-const pmText = (pm: number) => `${pm}‰`;
+// 2026-11-06 (UI-CONVENTIONS 2절): 배율(×1.10)·‰ 대신 기본 대비 % (110%)
+const x2 = (pm: number) => `${Math.round(pm / 10)}%`;
+const pmText = (pm: number) => `${Number((pm / 10).toFixed(1))}%`;
 
 /** 스탯 하나의 주 행 (라벨 + 서식) */
 function primaryRow(stat: number, before: number[], after: number[], consts: Consts): StatRow {
@@ -153,22 +153,22 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   const u = (base: number) => UNIT_NAME[stat - base];
   let label: string;
   let fmt: (v: number[]) => string;
-  if (stat === S.ATK_COST) (label = '적 땅 점령비용 배율'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.DEF_COST) (label = '내 땅 피점령비용 배율'), (fmt = (v) => x2(v[stat]));
+  if (stat === S.ATK_COST) (label = '적 땅 점령비용'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.DEF_COST) (label = '내 땅 피점령비용'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.COMBAT_ATK) (label = '공격 점수 (전 병종)'), (fmt = (v) => `+${v[stat]}`);
   else if (stat === S.COMBAT_DEF) (label = '방어 점수 (전 병종)'), (fmt = (v) => `+${v[stat]}`);
-  else if (stat === S.GOLD) (label = '골드 생산 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.GOLD) (label = '골드 생산'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.UPKEEP_COEF) (label = '깃발 유지비 계수'), (fmt = (v) => pmText(v[stat]));
-  else if (stat === S.REGEN) (label = '병력 재생 배율'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.NEUTRAL_COST) (label = '중립 땅 점령비용 배율'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.TROOP_CAP) (label = '병력 상한 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.REGEN) (label = '병력 재생'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.NEUTRAL_COST) (label = '중립 땅 점령비용'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.TROOP_CAP) (label = '병력 상한'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.SUPPLY_COEF) (label = '보급선 비용 계수 (칸당)'), (fmt = (v) => pmText(v[stat]));
   else if (stat === S.SPEED) (label = '이동 점수 (전 병종 공통)'), (fmt = (v) => `+${v[stat]}`);
   // v4.5 (§22.7): 스탯 11 = 이탈 대기 tick (v5.10: MOB-3B 철수 훈련 8 → 5), 13 = 귀환 속도 ‰ (MOB-1 1700, MOB-2B 급속 귀환 2000)
   else if (stat === S.DISENGAGE_TICKS) (label = '이탈 대기 시간'), (fmt = (v) => `${((v[stat] * ((consts?.TICK_MS as number | undefined) ?? 200)) / 1000).toFixed(1)}초`);
   else if (stat === S.SLOT_BONUS) (label = '깃발 슬롯 보너스'), (fmt = (v) => `+${v[stat]}`);
   else if (stat === S.ORDER_COOLDOWN) (label = '재지정·태세 전환 쿨타임'), (fmt = (v) => `${((v[stat] * ((consts?.TICK_MS as number | undefined) ?? 200)) / 1000).toFixed(1)}초`);
-  else if (stat === S.RETURN_SPEED) (label ='귀환 속도 배율 (회수·자동 귀환·패주)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.RETURN_SPEED) (label ='귀환 속도 (회수·자동 귀환·패주)'), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.COMBAT_ATK_SPEAR && stat <= S.COMBAT_ATK_CAVALRY) {
     const unit = stat - S.COMBAT_ATK_SPEAR;
     label = `${u(S.COMBAT_ATK_SPEAR)} 공격`;
@@ -183,7 +183,7 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
     fmt = (v) => String(Math.round(c<readonly number[]>(consts, 'UNIT_SPEED_PERMILLE', UNIT_SPEED_PERMILLE)[unit] / TECH_POINT_PERMILLE) + techSpeedPts(v, unit));
   } else if (stat >= S.UPKEEP_WEIGHT_SPEAR && stat <= S.UPKEEP_WEIGHT_CAVALRY) (label = `${u(S.UPKEEP_WEIGHT_SPEAR)} 유지비 가중치`), (fmt = (v) => (v[stat] / 1000).toFixed(2));
   else if (stat >= S.CONVERT_SPEAR && stat <= S.CONVERT_CAVALRY) (label = `${u(S.CONVERT_SPEAR)} 편성비 (병력 1당 풀 차감)`), (fmt = (v) => x2(v[stat]));
-  else if (stat >= S.CAPTURE_MULT_SPEAR && stat <= S.CAPTURE_MULT_CAVALRY) (label = `${u(S.CAPTURE_MULT_SPEAR)} 점령 소모 배율`), (fmt = (v) => x2(v[stat]));
+  else if (stat >= S.CAPTURE_MULT_SPEAR && stat <= S.CAPTURE_MULT_CAVALRY) (label = `${u(S.CAPTURE_MULT_SPEAR)} 점령 소모`), (fmt = (v) => x2(v[stat]));
   // 2026-10-24: 사기(전투 모델 2)·기지 효과
   else if (stat === S.MORALE_DROP) (label = '사기 감소율 (전 병종)'), (fmt = (v) => x2(v[stat]));
   else if (stat >= S.MORALE_DROP_SPEAR && stat <= S.MORALE_DROP_CAVALRY) (label = `${u(S.MORALE_DROP_SPEAR)} 사기 감소율`), (fmt = (v) => x2(v[S.MORALE_DROP] + v[stat]));
@@ -191,14 +191,14 @@ function primaryRow(stat: number, before: number[], after: number[], consts: Con
   else if (stat >= S.MORALE_RECOVER_SPEAR && stat <= S.MORALE_RECOVER_CAVALRY) (label = `${u(S.MORALE_RECOVER_SPEAR)} 사기 회복`), (fmt = (v) => x2(v[S.MORALE_RECOVER] + v[stat]));
   else if (stat === S.MORALE_FULL_BONUS) (label = '기세 보너스 (전 병종)'), (fmt = (v) => `+${v[stat] / 10}%p`);
   else if (stat >= S.MORALE_FULL_BONUS_SPEAR && stat <= S.MORALE_FULL_BONUS_CAVALRY) (label = `${u(S.MORALE_FULL_BONUS_SPEAR)} 기세 보너스`), (fmt = (v) => `+${(v[S.MORALE_FULL_BONUS] + v[stat]) / 10}%p`);
-  else if (stat === S.BASE_DMG) (label = '기지 체력 피해 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.BASE_DMG) (label = '기지 체력 피해'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.BASE_RECOVER) (label = '기지 생산력 회복 속도'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.BASE_PROD) (label = '기지 생산 배율 (모든 기지)'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.BASE_GOLD) (label = '기지 골드 배율 (모든 기지)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.BASE_PROD) (label = '기지 생산 (모든 기지)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.BASE_GOLD) (label = '기지 골드 (모든 기지)'), (fmt = (v) => x2(v[stat]));
   else if (stat === S.GOLD_PLAIN) (label = '평지·비옥·언덕 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
   else if (stat === S.GOLD_POOR) (label = '사막·산 영토 골드 보너스'), (fmt = (v) => `+${v[stat] / 10}%`);
-  else if (stat === S.CONVERT) (label = '편성비 배율 (전 병종)'), (fmt = (v) => x2(v[stat]));
-  else if (stat === S.SIEGE) (label = '적 기지 공격 피해 배율'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.CONVERT) (label = '편성비 (전 병종)'), (fmt = (v) => x2(v[stat]));
+  else if (stat === S.SIEGE) (label = '적 기지 공격 피해'), (fmt = (v) => x2(v[stat]));
   else (label = `스탯 ${stat}`), (fmt = (v) => String(v[stat]));
   const b = fmt(before);
   const a = fmt(after);

@@ -154,8 +154,12 @@ describe('v4.6 태세 전환 즉시 적용 (§27)', () => {
     expect(def.inCombat).toBe(false);
     expect(r.all.map((m) => m.type)).toContain('combat_ended');
     const aEnd = atk.troopsMilli;
-    run(sim, 20);
-    expect(atk.troopsMilli).toBe(aEnd); // 이후 손실 없음
+    const r3 = run(sim, 20);
+    // 이후 전투 손실 없음. v5.15: 방어 주둔 점령으로 옆 칸을 미는 병력 지출만 있을 수 있다 (수비 병력 40명 아래로는 쓰지 않는다)
+    expect(r3.all.map((m) => m.type)).not.toContain('combat_started');
+    expect(atk.inCombat).toBe(false);
+    expect(atk.troopsMilli).toBeLessThanOrEqual(aEnd);
+    expect(atk.troopsMilli).toBeGreaterThanOrEqual(40 * 1000);
     expect(aMid).toBeGreaterThanOrEqual(aEnd);
   });
 

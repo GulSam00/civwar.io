@@ -7,11 +7,13 @@
 import {
   DEBT_CAPTURE_COST_PERMILLE,
   DEBT_CAPTURE_SPEED_PERMILLE,
+  DEFEND_CAPTURE_SPEED_PERMILLE,
   ADJACENCY_COEF_PERMILLE,
   ENDGAME_RUSH_COST_MULT_PERMILLE,
   ENEMY_BASE,
   FLAG_SPEED_BASE_MILLI,
   FLAG_TILE_RATE_BASE,
+  FLAG_SPEND_RATE_PERMILLE,
   FLAG_MIN_TROOPS,
   FRONT_RADIUS,
   MIN_TILE_COST,
@@ -93,6 +95,41 @@ export function pushing(f: Readonly<Flag>): boolean {
 }
 
 /**
+ * GDD v5.15 (이슈 20261110-2056, 사용자 결정): 방어 태세 주둔 점령 — 앵커에 도착해 주둔(ENGAGED·DEFEND)한 비전투 깃발이
+ * 옆 칸(marchFront, 중립·적)을 공격과 같은 쟁기 규칙으로 민다. 속도 ×DEFEND_CAPTURE_SPEED_PERMILLE, 행군 중 정지 점령은 없다.
+ * 점령에는 FLAG_MIN_TROOPS 위 병력만 쓴다(수비 병력 보존) — 남은 병력이 그 이하면 점령만 멈추고 주둔은 계속한다. ZOC·방어 보너스는 그대로.
+ */
+export function defendCapturing(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  return (
+    state.combatModel === 2 && // 모델 2 전용 (모델 1 비트 동일)
+    f.posture === POSTURE.DEFEND &&
+    f.state === 'ENGAGED' &&
+    !f.inCombat &&
+    !f.routed &&
+    !f.breakaway &&
+    f.troopsMilli >= (FLAG_MIN_TROOPS + 1) * 1000 &&
+    marchFrontNonEmpty(state, f)
+  );
+}
+
+/** 게이지를 미는 깃발 = pushing(f)(공격) 또는 defendCapturing(방어 주둔 점령). 5·6·7단계와 위협 판정이 쓴다 */
+export function capturing(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
+  return pushing(f) || defendCapturing(state, f);
+}
+
+/** v5.15: 점령 속도 배율 (‰) — 방어 태세면 ×0.6, 공격 1000 */
+export function captureSpeedPm(f: Readonly<Flag>): number {
+  return f.posture === POSTURE.DEFEND ? DEFEND_CAPTURE_SPEED_PERMILLE : 1000;
+}
+
+/** v5.15: tick 당 AP 예산 누적 (milli) = 초기 병력 × FLAG_SPEND_RATE_PERMILLE × 태세 배율 */
+export function spendRateMilli(f: Readonly<Flag>): number {
+  const per = f.initialTroops * FLAG_SPEND_RATE_PERMILLE;
+  const pm = captureSpeedPm(f);
+  return pm === 1000 ? per : Math.floor((per * pm) / 1000);
+}
+
+/**
  * selectAttackTarget 읽기 전용판 (4.4a c, [A-52]). sticky: 현 타깃이 marchFront 안이면 유지.
  * 새 타깃 = argmin ( 행군 중 경로 앞 칸이면 0 아니면 1, distance(t, anchor), tileCost, tileId ). 진척 리셋은 Phase B 가 판단.
  */
@@ -131,12 +168,12 @@ export function guardCount(state: Readonly<GameState>, f: Readonly<Flag>): numbe
 
 /**
  * 4.4 (d) threatened — v4.2: 적 조건 = pushing(g) (행군 중 정지 점령하는 적 깃발 포함).
- * threatened(f) = f.inCombat or 적대 g : pushing(g) and g.targetTileId in guard(f)
+ * threatened(f) = f.inCombat or 적대 g : capturing(g) and g.targetTileId in guard(f) — v5.15: 방어 주둔 점령(defendCapturing)도 위협
  */
 export function threatened(state: Readonly<GameState>, f: Readonly<Flag>): boolean {
   if (f.inCombat) return true;
   for (const g of state.flags) {
-    if (!pushing(g) || g.targetTileId === null) continue;
+    if (g.targetTileId === null || !capturing(state, g)) continue;
     if (g.ownerId === f.ownerId || isAlly(state, f.ownerId, g.ownerId)) continue;
     if (guardContains(state, f, g.targetTileId)) return true;
   }
@@ -217,12 +254,16 @@ export function attackExhausted(state: Readonly<GameState>, f: Readonly<Flag>): 
   return Math.floor(f.troopsMilli / 1000) * 1000 < attackExhaustLineMilli(state, f);
 }
 
+/** v5.15: 방어 태세는 FLAG_MIN_TROOPS 명을 남기고 그 위 병력만 점령에 쓴다 (수비 병력 보존) */
 export function availAP(f: Readonly<Flag>): number {
-  return Math.floor(Math.min(f.spendBudgetMilli, f.troopsMilli) / 1000);
+  const usable = f.posture === POSTURE.DEFEND ? Math.max(0, f.troopsMilli - FLAG_MIN_TROOPS * 1000) : f.troopsMilli;
+  return Math.floor(Math.min(f.spendBudgetMilli, usable) / 1000);
 }
 
 export function maxProgress(f: Readonly<Flag>, state?: Readonly<GameState>): number {
-  const base = FLAG_TILE_RATE_BASE * UNIT_ASSAULT_PERMILLE[f.unit];
+  const raw = FLAG_TILE_RATE_BASE * UNIT_ASSAULT_PERMILLE[f.unit];
+  const pm = captureSpeedPm(f);
+  const base = pm === 1000 ? raw : Math.floor((raw * pm) / 1000); // v5.15: 방어 주둔 점령 ×0.6
   // 패치 6차: 빚이면 점령 속도 ×0.5
   return state && state.players[f.ownerId].goldMilli < 0 ? Math.floor((base * DEBT_CAPTURE_SPEED_PERMILLE) / 1000) : base;
 }
