@@ -76,19 +76,44 @@ function git(args, timeout = 5000) {
   }
 }
 
-/** upstream 보다 뒤처졌으면 경고 문구. 오프라인·upstream 없음·git 아님이면 null (경고 없음) */
-function behindWarning() {
-  if (git(['rev-parse', '--abbrev-ref', '@{u}']) === null) return null;
-  if (git(['fetch', '--quiet'], 3000) === null) return null;
-  const behind = Number(git(['rev-list', '--count', 'HEAD..@{u}']) ?? '0');
-  return behind > 0 ? `⚠ upstream 보다 ${behind}커밋 뒤처져 있음 — 이슈 목록이 낡았을 수 있음 (자동 pull 안 함, 필요하면 git pull)` : null;
+/** 원격 기본 브랜치 이름 (예: origin/main). origin/HEAD 가 없으면 origin/main 으로 본다 */
+function defaultRemoteBranch() {
+  return git(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']) ?? 'origin/main';
+}
+
+/** ref 에 있는데 HEAD 에 없는 커밋 수. ref 가 없거나 git 이 실패하면 0 */
+function behindCount(/** @type {string} */ ref) {
+  if (git(['rev-parse', '--verify', '--quiet', ref]) === null) return 0;
+  return Number(git(['rev-list', '--count', `HEAD..${ref}`]) ?? '0');
+}
+
+/**
+ * 뒤처짐 경고 문구들. 오프라인·git 아님이면 빈 배열 (경고 없음).
+ * upstream 만 보면 작업 브랜치(upstream = 자기 자신)가 main 보다 뒤처진 것을 놓친다 —
+ * 2026-11-19 다른 세션이 main 에 먼저 끝낸 이슈를 같은 이슈로 중복 작업했다. 그래서 원격 기본 브랜치와도 비교한다.
+ * @returns {string[]}
+ */
+function behindWarnings() {
+  if (git(['fetch', '--quiet', 'origin'], 4000) === null) return [];
+  /** @type {string[]} */
+  const warns = [];
+  const upstream = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  if (upstream !== null) {
+    const n = behindCount(upstream);
+    if (n > 0) warns.push(`⚠ upstream(${upstream})보다 ${n}커밋 뒤처져 있음 — 필요하면 git pull`);
+  }
+  const base = defaultRemoteBranch();
+  if (base !== upstream) {
+    const n = behindCount(base);
+    if (n > 0) warns.push(`⚠ ${base} 보다 ${n}커밋 뒤처져 있음 — 아래 목록은 이 브랜치 기준이라 낡았을 수 있음. 이슈를 맡기 전에 ${base} 의 이슈 상태를 확인하고 merge 할 것 (자동 merge 안 함)`);
+  }
+  return warns;
 }
 
 function main() {
   /** @type {string[]} */
   const out = [];
-  const warn = behindWarning();
-  if (warn) out.push(warn);
+  out.push(...behindWarnings());
 
   /** @type {Issue[]} */
   const issues = [];
